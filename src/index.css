@@ -1,0 +1,143 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  color-scheme: dark;
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --focus-ring: 2px solid rgba(255,255,255,0.3);
+  font-size: 13px;
+}
+
+:root[data-theme='dark'] {
+  /* ── Backgrounds: resolve-style near-black ── */
+  --bg:          #0f0f0f;   /* outermost shell                           */
+  --bg-elevated: #161616;   /* panel faces                               */
+  --bg-muted:    #1c1c1c;   /* input fields, sub-sections                */
+  --bg-soft:     #232323;   /* hover targets, active states              */
+  --bg-panel:    #141414;   /* main panel face                           */
+  --bg-track:    #0c0c0c;   /* timeline track bed                        */
+
+  /* ── Text ── */
+  --text:        #c8c4c0;   /* primary readable text                     */
+  --text-dim:    #7a7672;   /* secondary / labels                        */
+  --text-muted:  #484644;   /* placeholders, disabled, rulers            */
+  --text-label:  #8e8a86;   /* panel headers, track names                */
+
+  /* ── Borders: single-pixel hard edges, no softness ── */
+  --border:        #272727; /* default hairline between panels           */
+  --border-soft:   #1e1e1e; /* extra-subtle dividers                     */
+  --border-bright: #333333; /* hover / active panel edges                */
+
+  /* ── Accent: muted amber — same hue, less warm ── */
+  --accent:        #c8a882;
+  --accent-bright: #d4b896;
+  --accent-soft:   rgba(200, 168, 130, 0.10);
+  --accent-glow:   rgba(200, 168, 130, 0.15);
+
+  /* ── Clip colors ── */
+  --clip-blue:      #274e7a;
+  --clip-blue-hi:   #2e5a8c;
+  --clip-blue-bg:   rgba(32, 64, 108, 0.90);
+  --clip-orange:    #7a4c1c;
+  --clip-orange-hi: #8c5820;
+  --clip-orange-bg: rgba(108, 64, 20, 0.90);
+  --clip-green:     #255840;
+  --clip-green-hi:  #2c6848;
+
+  /* ── Status ── */
+  --success:  #3d8058;
+  --warning:  #b08030;
+  --error:    #983838;
+
+  /* ── Timeline ── */
+  --timeline-grid: #111111;
+  --playhead:      #e8a050;
+
+  /* ── No panel gradients — flat like native apps ── */
+  --panel-grad-top:    transparent;
+  --panel-grad-bottom: transparent;
+  --panel-inner-shadow: none;
+  --panel-shadow: none;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg:            #e0ddd8;
+  --bg-elevated:   #f0ede8;
+  --bg-muted:      #e8e5e0;
+  --bg-soft:       #d8d5d0;
+  --bg-panel:      #ebe8e3;
+  --bg-track:      #d4d1cc;
+  --text:          #1a1816;
+  --text-dim:      #48443e;
+  --text-muted:    #78746e;
+  --text-label:    #58544e;
+  --border:        #c8c4be;
+  --border-soft:   #d4d0ca;
+  --border-bright: #b0aca6;
+  --accent:        #8c7048;
+  --accent-bright: #a08050;
+  --accent-soft:   rgba(140, 112, 72, 0.12);
+  --accent-glow:   rgba(140, 112, 72, 0.18);
+  --clip-blue:     #3468a0;
+  --clip-blue-hi:  #4078b0;
+  --clip-blue-bg:  rgba(52, 104, 160, 0.80);
+  --clip-orange:   #a06030;
+  --clip-orange-hi: #b07038;
+  --clip-orange-bg: rgba(160, 96, 48, 0.78);
+  --clip-green:    #2a7850;
+  --clip-green-hi: #328860;
+  --success:       #288060;
+  --warning:       #a07828;
+  --error:         #a04040;
+  --timeline-grid: #d8d5d0;
+  --playhead:      #c08840;
+  --panel-grad-top:    rgba(255,255,255,0.5);
+  --panel-grad-bottom: rgba(0,0,0,0.04);
+  --panel-inner-shadow: inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 rgba(0,0,0,0.06);
+  --panel-shadow:  0 1px 4px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='tab']:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+a {
+  color: inherit;
+}
+
+/* Mono font for timecodes, labels, numbers */
+.mono {
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+}

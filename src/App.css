@@ -1,0 +1,1914 @@
+/* ============================================================
+   CINEGEN — App Shell
+   ============================================================ */
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.app-loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.min-window-warning {
+  background: rgba(200, 136, 42, 0.12);
+  border-bottom: 1px solid rgba(200, 136, 42, 0.35);
+  color: #e8c490;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.68rem;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.04em;
+}
+
+/* ============================================================
+   TOP BAR — matches reference image dark title bar
+   ============================================================ */
+
+.top-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  box-shadow: none;
+  min-height: 44px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.top-bar__left,
+.top-bar__center,
+.top-bar__right {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.5rem;
+  -webkit-app-region: no-drag;
+}
+
+.top-bar__left {
+  overflow: hidden;
+}
+
+.top-bar__center {
+  justify-content: center;
+}
+
+.top-bar__right {
+  justify-content: flex-end;
+  gap: 0.32rem;
+}
+
+/* macOS traffic lights */
+.window-traffic {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-right: 0.5rem;
+}
+
+.traffic-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.traffic-dot.is-red    { background: #ff5f57; }
+.traffic-dot.is-yellow { background: #febc2e; }
+.traffic-dot.is-green  { background: #28c840; }
+
+/* Primary tab nav — pill style matching reference */
+.top-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 3px;
+  background: var(--bg-muted);
+}
+
+.top-nav__button {
+  min-width: 80px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 4px 14px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+  transition: all 110ms ease;
+}
+
+.top-nav__button:hover {
+  color: var(--text);
+  background: var(--bg-soft);
+  border-color: var(--border-bright);
+}
+
+.top-nav__button.is-active {
+  color: var(--text);
+  border-color: var(--border-bright);
+  background: var(--bg-soft);
+  box-shadow: none;
+}
+
+/* Ghost nav items (Stock, ConfyUI, etc.) */
+.top-nav__ghost {
+  padding: 4px 12px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  cursor: default;
+  letter-spacing: 0.01em;
+}
+
+/* Window action buttons */
+.window-action {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  min-width: 22px;
+  min-height: 22px;
+}
+
+.top-icon {
+  font-size: 0.7rem;
+}
+
+/* ============================================================
+   SHARED INTERACTIVE ELEMENTS
+   ============================================================ */
+
+.search-input,
+.input,
+.textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 5px 9px;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--bg-muted);
+  transition: border-color 100ms ease;
+}
+
+.search-input:focus,
+.input:focus,
+.textarea:focus,
+select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.search-input::placeholder,
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* Base button reset shared styles */
+.primary-button,
+.outline-button,
+.icon-button,
+.tool-button,
+.link-button,
+.preset-card,
+.rail-tab,
+.timeline-clip,
+.top-nav__button,
+.viewer-tab {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text);
+  background: var(--bg-soft);
+  cursor: pointer;
+  transition: border-color 100ms ease, background 100ms ease, color 100ms ease;
+}
+
+.primary-button,
+.outline-button,
+.icon-button,
+.tool-button,
+.rail-tab,
+.link-button,
+.top-nav__button,
+.viewer-tab {
+  padding: 4px 10px;
+  font-size: 0.72rem;
+}
+
+.tool-button,
+.outline-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tool-button span {
+  line-height: 1;
+}
+
+/* Primary action button */
+.primary-button {
+  border-color: var(--border-bright);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.primary-button:hover {
+  background: var(--bg-soft);
+  border-color: var(--accent);
+}
+
+/* Outline button */
+.outline-button {
+  background: var(--bg-muted);
+  border-color: var(--border-bright);
+}
+
+.outline-button:hover {
+  background: var(--bg-soft);
+  border-color: var(--border-bright);
+}
+
+/* Link button */
+.link-button {
+  background: transparent;
+  border-color: transparent;
+  padding-inline: 3px;
+  color: var(--accent-bright);
+}
+
+.link-button:hover {
+  color: var(--text);
+}
+
+/* Icon button */
+.icon-button {
+  min-width: 28px;
+  min-height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 3px 7px;
+  background: var(--bg-muted);
+  border-color: var(--border);
+}
+
+.icon-button:hover {
+  border-color: var(--border-bright);
+  background: var(--bg-soft);
+}
+
+/* Hover state for generic buttons */
+.tool-button:hover,
+.rail-tab:hover,
+.timeline-clip:hover,
+.preset-card:hover,
+.viewer-tab:hover {
+  border-color: var(--border-bright);
+  background: var(--bg-soft);
+}
+
+/* Active/selected state */
+.tool-button.is-active,
+.rail-tab.is-active,
+.preset-card.is-active,
+.viewer-tab.is-active {
+  border-color: var(--border-bright);
+  color: var(--text);
+  background: var(--bg-soft);
+  box-shadow: none;
+}
+
+.icon-button:active,
+.tool-button:active,
+.top-nav__button:active,
+.rail-tab:active,
+.viewer-tab:active {
+  opacity: 0.8;
+}
+
+/* ============================================================
+   TAB PANELS
+   ============================================================ */
+
+.tab-panels {
+  position: relative;
+  overflow: hidden;
+}
+
+.tab-panel {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tab-panel.is-active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* ============================================================
+   STATUS STRIP — bottom footer bar
+   ============================================================ */
+
+.status-strip {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0 0.75rem;
+  min-height: 26px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 0.64rem;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   PANEL RESIZERS
+   ============================================================ */
+
+.panel-resizer {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+/* Vertical resizer — between side panels and viewer (drag left/right) */
+.panel-resizer--vertical {
+  width: 5px;
+  cursor: col-resize;
+  margin: 0 1px;
+}
+
+.panel-resizer--vertical::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1px;
+  height: 32px;
+  border-radius: 1px;
+  background: var(--border-bright);
+  transition: background 120ms ease, height 120ms ease;
+}
+
+.panel-resizer--vertical:hover::after,
+.panel-resizer--vertical:active::after {
+  background: var(--accent);
+  height: 48px;
+}
+
+/* Horizontal resizer — between upper panels and timeline (drag up/down) */
+.panel-resizer--horizontal {
+  height: 5px;
+  width: 100%;
+  cursor: row-resize;
+  margin: 1px 0;
+}
+
+.panel-resizer--horizontal::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  height: 1px;
+  width: 48px;
+  border-radius: 1px;
+  background: var(--border-bright);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+.panel-resizer--horizontal:hover::after,
+.panel-resizer--horizontal:active::after {
+  background: var(--accent);
+  width: 72px;
+}
+
+/* ============================================================
+   EDIT TAB — NLE layout
+   ============================================================ */
+
+.edit-tab {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  padding: 6px;
+  padding-bottom: 0;
+  gap: 5px;
+}
+
+.edit-tab__header-actions {
+  display: none;
+}
+
+.tool-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tool-cluster .tool-button,
+.tool-cluster .outline-button {
+  min-height: 26px;
+}
+
+.edit-tab__grid {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============================================================
+   PANELS — shared panel chrome
+   ============================================================ */
+
+.edit-tab__left-rail,
+.edit-tab__right-rail,
+.viewer,
+.timeline,
+.generate-tab__left-panel,
+.generate-tab__center-panel,
+.generate-tab__right-panel,
+.export-tab__main,
+.export-tab__queue {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-panel);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.edit-tab__left-rail,
+.edit-tab__right-rail {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.edit-tab__left-rail {
+  width: var(--left-rail-width, 260px);
+  grid-template-rows: auto 1fr;
+}
+
+.edit-tab__right-rail {
+  width: var(--right-rail-width, 280px);
+  grid-template-rows: auto auto 1fr;
+}
+
+.edit-tab__left-rail.is-collapsed {
+  width: 48px;
+}
+
+/* Viewer fills remaining space */
+.edit-tab__grid > .viewer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.edit-tab__right-rail.is-compact .rail-tab {
+  min-width: 44px;
+}
+
+.edit-tab__right-rail.is-compact .rail-tab span {
+  display: none;
+}
+
+/* ============================================================
+   PANEL HEADER
+   ============================================================ */
+
+.panel-header {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   RAIL SYSTEM — left/right side panels
+   ============================================================ */
+
+.rail-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+}
+
+.rail-tab-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+
+.edit-tab__right-rail .rail-tab-strip {
+  flex-direction: row;
+  padding: 5px 8px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+
+.rail-tab {
+  min-height: 28px;
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 0.58rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  border-radius: 0;
+}
+
+.rail-tab:hover {
+  background: var(--bg-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.rail-tab.is-active {
+  color: var(--text);
+  border-color: var(--border-bright);
+  background: var(--bg-soft);
+}
+
+.rail-tab svg {
+  flex: 0 0 auto;
+}
+
+.edit-tab__left-rail .rail-tab {
+  width: 100%;
+}
+
+.edit-tab__left-rail .rail-tab span {
+  display: none;
+}
+
+.edit-tab__right-rail .rail-tab {
+  min-width: 72px;
+}
+
+.rail-content {
+  overflow: auto;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+/* ============================================================
+   ASSET / LIST ITEMS
+   ============================================================ */
+
+.asset-list,
+.history-list,
+.variation-list,
+.effect-list,
+.output-grid,
+.job-list,
+.asset-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.asset-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.media-import-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.media-import-actions span {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.asset-drop-zone {
+  border: 1px dashed var(--border-bright);
+  border-radius: 0;
+  padding: 10px 8px;
+  font-size: 0.62rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-muted);
+  text-align: center;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255,255,255,0.01),
+    rgba(255,255,255,0.01) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+  letter-spacing: 0.04em;
+}
+
+.asset-drop-zone.is-active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.asset-tile,
+.asset-list__item,
+.history-list__item,
+.job-list__item,
+.output-card,
+.preset-card {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-muted);
+  padding: 5px;
+}
+
+.asset-tile {
+  display: grid;
+  gap: 4px;
+}
+
+.asset-tile.is-placeholder {
+  opacity: 0.65;
+}
+
+.asset-tile__thumb {
+  height: 72px;
+  border-radius: 0;
+  border: 1px solid var(--border-bright);
+  display: grid;
+  place-items: center;
+  font-size: 0.52rem;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  background:
+    radial-gradient(100px 50px at 50% 20%, rgba(255,255,255,0.06), transparent 65%),
+    var(--bg-soft);
+  overflow: hidden;
+  position: relative;
+}
+
+.asset-tile__thumb.is-audio {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--bg-muted),
+    var(--bg-muted) 3px,
+    var(--bg-soft) 3px,
+    var(--bg-soft) 6px
+  );
+}
+
+.asset-tile__thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.asset-tile__thumb-label {
+  font-size: 0.52rem;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.asset-tile__meta {
+  display: grid;
+  gap: 2px;
+}
+
+.asset-tile__meta strong {
+  font-size: 0.58rem;
+  font-weight: 500;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.asset-tile__meta span {
+  font-size: 0.52rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.asset-tile .link-button,
+.asset-tile__hint {
+  font-size: 0.55rem;
+  min-height: 16px;
+}
+
+.asset-tile__hint {
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Drag-and-drop ── */
+.asset-tile.is-draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.asset-tile.is-dragging {
+  opacity: 0.35;
+}
+
+/* Ghost follows the pointer — fixed position, pointer-events off so hit-testing works */
+.asset-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 9999;
+  transform-origin: top left;
+  translate: 12px 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  font-size: 0.65rem;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 4px 8px;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
+}
+
+.timeline__section.is-drop-target {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.asset-list__item,
+.job-list__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.asset-list__item strong,
+.job-list__item strong,
+.output-card__header h3,
+.variation-list strong,
+.history-item__summary strong {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.asset-list__item p,
+.job-list__item p,
+.variation-list p,
+.output-card__prompt,
+.history-item__summary span,
+.history-item__details p,
+.inspector-meta p {
+  margin: 0;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.rail-panel-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 0.60rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.effect-list li {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 6px 8px;
+  font-size: 0.68rem;
+  background: var(--bg-muted);
+}
+
+/* ============================================================
+   VIEWER — center column panel
+   ============================================================ */
+
+.viewer,
+.timeline {
+  display: grid;
+  min-height: 0;
+}
+
+.viewer {
+  grid-template-rows: auto 1fr auto;
+}
+
+.viewer__header,
+.timeline__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+}
+
+.viewer__meta,
+.slider-row,
+.inline-actions,
+.export-actions-row,
+.timeline__header-actions,
+.timeline__transport,
+.viewer__transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.viewer__meta .outline-button {
+  min-height: 22px;
+  padding: 3px 8px;
+  font-size: 0.64rem;
+}
+
+.viewer__tabs {
+  display: flex;
+  gap: 3px;
+}
+
+.viewer-tab {
+  min-height: 24px;
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  border-radius: 0;
+}
+
+.viewer-tab:hover {
+  background: var(--bg-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.viewer-tab.is-active {
+  background: var(--bg-soft);
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+.slider-row {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+}
+
+.slider-row input[type='range'],
+.inspector-control input[type='range'] {
+  width: 80px;
+  accent-color: var(--accent);
+}
+
+/* Viewer canvas — dark grid background */
+.viewer__canvas {
+  margin: 8px;
+  border-radius: 0;
+  border: 1px solid var(--border-bright);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.025),
+      rgba(255,255,255,0.025) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.025),
+      rgba(255,255,255,0.025) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    var(--bg-track);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  transform: scale(var(--viewer-zoom));
+  transform-origin: center center;
+}
+
+.viewer__frame {
+  width: min(720px, 94%);
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border-bright);
+  background: #0a0a0a;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.viewer__image {
+  width: 76%;
+  height: 64%;
+  object-fit: cover;
+  border: 1px solid var(--border-bright);
+}
+
+.viewer__video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  display: block;
+  cursor: pointer;
+}
+
+.viewer__empty {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 1rem;
+}
+
+/* Viewer transport controls */
+.viewer__controls {
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+}
+
+/* Play button — graphite circle with subtle warmth */
+.icon-button.is-play {
+  background: var(--bg-muted);
+  border-color: var(--border-bright);
+  color: var(--text);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  box-shadow: none;
+}
+
+.icon-button.is-play:hover {
+  background: var(--bg-soft);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+.viewer__transport-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 0.64rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   TIMELINE
+   ============================================================ */
+
+/* Timeline sits full-width at the bottom of edit-tab */
+.edit-tab > .timeline {
+  margin: 0 0 6px;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+
+.timeline {
+  position: relative;
+  grid-template-rows: auto auto auto 1fr;
+  background: var(--timeline-grid);
+}
+
+.timeline__title-group {
+  display: grid;
+  gap: 1px;
+}
+
+.timeline__title-group h2,
+.generate-tab h2,
+.export-tab h2,
+.generate-tab h3,
+.export-tab h3 {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-muted);
+}
+
+.timeline__title-group span {
+  font-size: 0.60rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-muted);
+}
+
+.timeline__subtools {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.timeline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 2px 7px;
+  font-size: 0.60rem;
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--bg-muted);
+  cursor: pointer;
+  transition: all 100ms ease;
+}
+
+.timeline-chip:hover {
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+.timeline-chip.is-active {
+  color: var(--text);
+  border-color: var(--border-bright);
+  background: var(--bg-soft);
+}
+
+.timeline-zoom-readout {
+  margin-left: auto;
+  font-size: 0.60rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+.timeline__ruler {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  height: 22px;
+  background: var(--bg-elevated);
+  position: relative;
+  overflow: hidden;
+  cursor: crosshair;
+  flex-shrink: 0;
+}
+
+/* Matches the track header column width so scrub area lines up with clips */
+.timeline__ruler-track-offset {
+  flex-shrink: 0;
+  width: 120px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+/* Scrub zone — fills the clip area width */
+.timeline__ruler-scrub {
+  flex: 1 1 0;
+  position: relative;
+  cursor: col-resize;
+  /* Tick marks */
+  background:
+    repeating-linear-gradient(
+      90deg,
+      var(--border-bright) 0px,
+      var(--border-bright) 1px,
+      transparent 1px,
+      transparent 60px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      var(--border) 0px,
+      var(--border) 1px,
+      transparent 1px,
+      transparent 10px
+    );
+}
+
+.timeline__ruler-scrub:hover {
+  background-color: rgba(255,255,255,0.02);
+}
+
+/* Playhead triangle/head in the ruler */
+.timeline__ruler-head {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: var(--playhead);
+  pointer-events: none;
+}
+
+.timeline__ruler-head::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 8px solid var(--playhead);
+}
+
+.timeline__ruler-timecode {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  border-left: 1px solid var(--border);
+  background: var(--bg-elevated);
+  user-select: none;
+}
+
+.timeline__tracks {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+}
+
+.timeline__section {
+  overflow-y: auto;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+/* Video section: tracks anchor to the bottom so V1 is flush with the divider */
+.timeline__section--video {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.timeline__section--audio {
+  flex: 1 1 0;
+  min-height: 46px;
+}
+
+/* Playhead vertical line over the clips area */
+.timeline__playhead-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  z-index: 4;
+  pointer-events: none;
+  background: var(--playhead);
+  box-shadow: 0 0 6px rgba(255, 140, 56, 0.4);
+  transition: left 80ms linear;
+}
+
+/* ── Video / Audio section divider — draggable ── */
+.timeline-section-divider {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  height: 10px;
+  flex-shrink: 0;
+  background: var(--bg-track);
+  border-top: 1px solid var(--border-bright);
+  border-bottom: 1px solid var(--border-bright);
+  cursor: row-resize;
+  position: relative;
+  z-index: 5;
+  transition: background 100ms ease;
+}
+
+.timeline-section-divider:hover,
+.timeline-section-divider:active {
+  background: var(--bg-soft);
+}
+
+.timeline-section-divider span {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 0.50rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border);
+  user-select: none;
+}
+
+.timeline-section-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-bright);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+.timeline-section-divider:hover::after,
+.timeline-section-divider:active::after {
+  background: var(--accent);
+  width: 64px;
+}
+
+/* Timeline tracks */
+.timeline-track {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  height: var(--track-height, 46px);
+  min-height: var(--track-height, 46px);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.timeline-track__header {
+  padding: 5px 7px;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  background: var(--bg-elevated);
+}
+
+.timeline-track__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timeline-track__header strong {
+  font-size: 0.64rem;
+  font-weight: 500;
+  color: var(--text-label);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.timeline-track__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.track-action {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 0;
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: all 80ms ease;
+}
+
+.track-action:hover {
+  color: var(--text);
+  border-color: var(--border-bright);
+  background: var(--bg-soft);
+}
+
+.timeline-track__clips {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding: 4px 6px;
+  overflow-x: auto;
+}
+
+.timeline-track.is-ghost .timeline-track__clips {
+  padding: 6px;
+}
+
+.timeline-ghost-bar {
+  height: 16px;
+  width: min(100%, 440px);
+  border-radius: 2px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: var(--bg-soft);
+}
+
+.timeline-ghost-bar.is-audio {
+  border-color: rgba(42, 138, 92, 0.4);
+  background: rgba(42, 138, 92, 0.15);
+}
+
+/* Clips — film-strip style with thumbnail area + info bar */
+.timeline-clip {
+  min-width: var(--clip-width, 100px);
+  text-align: left;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-width: 1px;
+  border-style: solid;
+  padding: 0;
+}
+
+.timeline-clip.is-video {
+  border-color: rgba(61, 120, 210, 0.8);
+  background: rgba(30, 70, 150, 0.95);
+}
+
+.timeline-clip.is-audio {
+  border-color: rgba(42, 138, 92, 0.8);
+  background: rgba(28, 90, 60, 0.95);
+}
+
+/* Alternate video tracks get orange */
+.timeline-track.is-video:nth-of-type(n+4) .timeline-clip.is-video {
+  border-color: rgba(200, 114, 12, 0.8);
+  background: rgba(140, 76, 8, 0.95);
+}
+
+/* Thumbnail frames strip — fills all space above the info bar */
+.timeline-clip__frames {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background-color: #0a0a0a;
+  /* Frame separator lines drawn as a pseudo overlay */
+}
+
+/* When no thumbnail — show film grain pattern */
+.timeline-clip__frames:not([style]) {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.18) 0px,
+      rgba(255,255,255,0.18) 2px,
+      #0a0a0a 2px,
+      #0a0a0a calc(var(--clip-width, 100px) / 5)
+    );
+}
+
+/* Vertical separator lines drawn on top of thumbnail tiles */
+.timeline-clip__frames::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0,0,0,0.5) 0px,
+      rgba(0,0,0,0.5) 1px,
+      transparent 1px,
+      transparent var(--frame-w, 40px)
+    );
+}
+
+.timeline-clip.is-audio .timeline-clip__frames {
+  /* Waveform bars: thin vertical lines on dark */
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.15) 0px,
+      rgba(255,255,255,0.15) 1px,
+      #0a0a0a 1px,
+      #0a0a0a 4px
+    );
+}
+
+/* Info bar — pinned to bottom of the clip */
+.timeline-clip__info {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 2px 6px;
+  background: rgba(0,0,0,0.45);
+  border-top: 1px solid rgba(0,0,0,0.3);
+}
+
+.timeline-clip__title {
+  font-size: 0.58rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 500;
+  line-height: 1.2;
+  color: rgba(255,255,255,0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.timeline-clip__time {
+  font-size: 0.54rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: rgba(255,255,255,0.55);
+  flex-shrink: 0;
+}
+
+.timeline-clip.is-selected {
+  box-shadow: 0 0 0 1.5px rgba(255,255,255,0.5), inset 0 0 0 1px rgba(255,255,255,0.12);
+}
+
+/* ============================================================
+   INSPECTOR — right rail content
+   ============================================================ */
+
+.inspector-meta {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 8px;
+  background: var(--bg-muted);
+}
+
+.inspector-meta strong {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.inspector-section {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 8px;
+  background: var(--bg-muted);
+  display: grid;
+  gap: 6px;
+}
+
+.inspector-section h4 {
+  margin: 0;
+  font-size: 0.60rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+}
+
+.inspector-control {
+  display: grid;
+  gap: 3px;
+}
+
+.inspector-control span {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   HISTORY / VARIATIONS
+   ============================================================ */
+
+.history-item__summary {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.history-item__details {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+/* ============================================================
+   PROPOSAL DRAWER
+   ============================================================ */
+
+.proposal-drawer {
+  position: fixed;
+  top: 14%;
+  right: 0.9rem;
+  width: min(400px, calc(100vw - 1.8rem));
+  max-height: 78vh;
+  overflow: auto;
+  z-index: 20;
+  border-radius: 0;
+  border: 1px solid var(--border-bright);
+  background: var(--bg-panel);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03);
+}
+
+.proposal-drawer__header,
+.proposal-drawer__section,
+.proposal-drawer__actions {
+  padding: 10px 12px;
+}
+
+.proposal-drawer__header,
+.proposal-drawer__section {
+  border-bottom: 1px solid var(--border);
+}
+
+.proposal-drawer__header h2,
+.proposal-drawer__section h3 {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-muted);
+}
+
+.proposal-drawer__header p,
+.proposal-drawer__section li {
+  font-size: 0.68rem;
+}
+
+.proposal-drawer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ============================================================
+   GENERATE TAB
+   ============================================================ */
+
+.generate-tab {
+  display: grid;
+  grid-template-columns: minmax(240px, 290px) 1fr minmax(250px, 290px);
+  gap: 6px;
+  padding: 6px;
+  height: 100%;
+}
+
+.generate-tab__left-panel,
+.generate-tab__center-panel,
+.generate-tab__right-panel,
+.export-tab__main,
+.export-tab__queue {
+  padding: 10px;
+  overflow: auto;
+}
+
+/* Side panels already inherit gradient bg from shared panel chrome selector */
+
+.output-card {
+  display: grid;
+  gap: 6px;
+}
+
+.output-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.output-card__versions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.output-card__versions li {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 6px;
+  background: var(--bg-muted);
+}
+
+.output-version-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.output-version-row span {
+  font-size: 0.67rem;
+}
+
+/* ============================================================
+   EXPORT TAB
+   ============================================================ */
+
+.export-tab {
+  display: grid;
+  grid-template-columns: 1.5fr minmax(280px, 1fr);
+  gap: 6px;
+  height: 100%;
+  padding: 6px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 5px;
+}
+
+.preset-card {
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+}
+
+.preset-card strong {
+  font-size: 0.70rem;
+  font-weight: 500;
+}
+
+.preset-card span {
+  font-size: 0.63rem;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-muted);
+}
+
+.advanced-settings {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.error-text {
+  color: var(--error);
+}
+
+/* ============================================================
+   TOAST REGION
+   ============================================================ */
+
+.toast-region {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 1.8rem;
+  width: min(360px, calc(100vw - 1.5rem));
+  display: grid;
+  gap: 5px;
+  z-index: 40;
+}
+
+.toast {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  border: 1px solid var(--border-bright);
+  border-radius: 0;
+  background: var(--bg-panel);
+  padding: 8px 10px;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+  animation: toast-in 200ms ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.toast--success {
+  border-color: var(--success);
+}
+
+.toast--error {
+  border-color: var(--error);
+}
+
+.toast__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.toast__description {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  word-break: break-word;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.toast__actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* ============================================================
+   EMPTY STATE
+   ============================================================ */
+
+.empty-state {
+  border: 1px dashed var(--border-bright);
+  border-radius: 0;
+  padding: 16px 12px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+/* ============================================================
+   MOBILE DRAWER
+   ============================================================ */
+
+.mobile-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 45;
+}
+
+.mobile-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: min(320px, 82vw);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.mobile-drawer--right {
+  right: 0;
+  left: auto;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.mobile-drawer__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  background: var(--bg-muted);
+}
+
+.mobile-drawer__header h2 {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mobile-drawer__content {
+  padding: 8px;
+  display: grid;
+  gap: 5px;
+  align-content: flex-start;
+}
+
+/* ============================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================ */
+
+@media (max-width: 1439px) {
+  .edit-tab__left-rail .rail-body {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-tab__left-rail .rail-tab-strip {
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .generate-tab {
+    grid-template-columns: minmax(210px, 270px) 1fr;
+  }
+
+  .generate-tab__right-panel {
+    grid-column: span 2;
+  }
+
+  .top-nav__ghost {
+    display: none;
+  }
+}
+
+@media (max-width: 1199px) {
+  .top-bar {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .top-bar__right {
+    justify-content: flex-start;
+  }
+
+  .generate-tab,
+  .export-tab {
+    grid-template-columns: 1fr;
+  }
+
+  .proposal-drawer {
+    left: 0.7rem;
+    right: 0.7rem;
+    width: auto;
+  }
+}
