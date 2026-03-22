@@ -55,15 +55,11 @@ AI-powered gap filling generates new footage to bridge clips on the timeline.
 
 Reusable media libraries for characters, locations, props, and vehicles. Upload reference images to maintain visual consistency across shots.
 
-![Elements](screenshots/elements.png)
-
-### Element Creation
-
-Generate new elements with AI or import from files.
-
 ![Element Create](screenshots/element_create.png)
 
 ![Element New](screenshots/element_new.png)
+
+![Elements](screenshots/elements.png)
 
 ### LLM Chat
 
