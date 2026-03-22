@@ -9,6 +9,70 @@ An AI-powered film production studio. Build generation workflows with a node edi
 
 ---
 
+## Screenshots
+
+### Project Manager
+
+![Project Manager](screenshots/project_manager.png)
+
+### Spaces — Node-Based Workflow Editor
+
+Build AI generation pipelines by connecting nodes on a canvas. 50+ models across image, video, and audio.
+
+![Spaces](screenshots/spaces.png)
+
+### Spaces — SAM3 Cloud Segmentation
+
+Segment objects from images with text, click, or box prompts. Red overlay, white-on-black, and cutout preview modes.
+
+![SAM3 Segmentation](screenshots/spaces_sam3.png)
+
+### Spaces — Timeline Preview
+
+Preview and arrange generated clips directly from the workflow canvas.
+
+![Spaces Timeline](screenshots/spaces_timeline.png)
+
+### Edit — Dual Viewer
+
+Multi-track NLE with source and timeline viewers, transport controls, and waveform display.
+
+![Edit Dual Viewer](screenshots/edit_dual%20viewer.png)
+
+### Edit — Single Viewer
+
+Focused editing with a single monitor and expanded timeline.
+
+![Edit Single Viewer](screenshots/edit_single%20viewer.png)
+
+### Edit — Fill Gap
+
+AI-powered gap filling generates new footage to bridge clips on the timeline.
+
+![Fill Gap](screenshots/edit_fill_gap.png)
+
+### Elements
+
+Reusable media libraries for characters, locations, props, and vehicles. Upload reference images to maintain visual consistency across shots.
+
+![Elements](screenshots/elements.png)
+
+### Element Creation
+
+Generate new elements with AI or import from files.
+
+![Element Create](screenshots/element_create.png)
+
+![Element New](screenshots/element_new.png)
+
+### LLM Chat
+
+Context-aware AI assistant for editorial workflow — cut planning, pacing suggestions, and scene analysis.
+
+![LLM Chat](screenshots/LLM.png)
+
+---
+
 ## Features
 
 ### Create — Node-Based Workflow Editor
@@ -88,8 +152,8 @@ Context-aware AI assistant for editorial workflow — cut planning, pacing sugge
 ### Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cinegen-desktop.git
-cd cinegen-desktop
+git clone https://github.com/christopherjohnogden/CineGen.git
+cd CineGen
 
 npm install
 ```
@@ -123,6 +187,7 @@ The packaged output goes to the `release/` directory.
 | `npm run build:native` | Rebuild the AVFoundation native module |
 | `npm run preview` | Build and launch the packaged app |
 | `npm run package` | Create distributable DMG/ZIP |
+| `npm run screenshots` | Capture app screenshots for docs |
 | `npm test` | Run tests |
 | `npm run test:watch` | Run tests in watch mode |
 
