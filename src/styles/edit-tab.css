@@ -1835,7 +1835,7 @@
 
 .svm__inline-input {
   flex: 1;
-  min-width: 120px;
+  min-width: 200px;
   padding: 5px 10px;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
@@ -2428,61 +2428,80 @@
   z-index: 10;
 }
 
-/* ── Viewer mode overlay (bottom-right of stage) ── */
+/* ── Output mode overlay (top-center of stage) ── */
 
-.svm__viewer-overlay {
+.svm__mode-overlay {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 3px 4px;
-  background: rgba(8, 9, 12, 0.75);
-  backdrop-filter: blur(8px);
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 9, 12, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
   z-index: 8;
 }
-.svm__vo-btn {
-  padding: 3px 8px;
+.svm__mo-btn {
+  padding: 4px 12px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 4px;
   color: var(--text-tertiary);
   font-family: var(--font-display);
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.svm__vo-btn:hover {
+.svm__mo-btn:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
 }
-.svm__vo-btn--active {
+.svm__mo-btn--active {
   color: var(--accent);
-  background: var(--accent-dim);
-  border-color: rgba(212, 160, 84, 0.2);
+  background: rgba(212, 160, 84, 0.14);
+  border-color: rgba(212, 160, 84, 0.22);
+  box-shadow: 0 0 6px rgba(212, 160, 84, 0.1);
 }
-.svm__vo-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
+
+/* ── Mask display overlay (bottom-right of stage) ── */
+
+.svm__viewer-overlay {
+  position: absolute;
+  bottom: 10px;
+  right: 28px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  background: rgba(8, 9, 12, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  z-index: 8;
 }
 .svm__vo-sep {
   width: 1px;
-  height: 14px;
-  background: rgba(255, 255, 255, 0.1);
-  margin: 0 2px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0 3px;
 }
 .svm__vo-opt {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
+  border-radius: 5px;
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-tertiary);
@@ -2490,15 +2509,18 @@
   font-family: var(--font-display);
   font-size: 9px;
   font-weight: 600;
-  transition: all 0.12s ease;
+  letter-spacing: 0.03em;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .svm__vo-opt:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
 }
 .svm__vo-opt--active {
   color: var(--accent);
-  background: var(--accent-dim);
+  background: rgba(212, 160, 84, 0.14);
+  border-color: rgba(212, 160, 84, 0.22);
+  box-shadow: 0 0 6px rgba(212, 160, 84, 0.1);
 }
 
 /* ── Settings popover ── */

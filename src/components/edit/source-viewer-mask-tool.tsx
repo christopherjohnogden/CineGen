@@ -1782,29 +1782,6 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
             Local
           </button>
         </div>
-        <>
-          <div className="svm__hud-sep" />
-          <div className="svm__mode-toggle">
-            <button
-              className={`svm__mode-btn${outputMode === 'frame' ? ' svm__mode-btn--active' : ''}`}
-              onClick={() => {
-                setOutputMode('frame');
-                setResultVideoUrl(null);
-                if (localMaskUrl) setViewMode('masked');
-              }}
-              title="Preview or insert the current frame only"
-            >
-              Frame
-            </button>
-            <button
-              className={`svm__mode-btn${outputMode === 'clip' ? ' svm__mode-btn--active' : ''}`}
-              onClick={() => setOutputMode('clip')}
-              title="Preview on the current frame, then track across the full clip"
-            >
-              Clip
-            </button>
-          </div>
-        </>
         <div className="svm__hud-sep" />
         <div className="svm__hud-tools">
           <button className={`svm__hud-btn${toolMode === 'text' ? ' svm__hud-btn--active' : ''}`} onClick={() => setToolMode('text')} title="Text prompt">
@@ -2085,7 +2062,31 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
           </div>
         )}
 
-        {/* Mask display overlay — bottom-right corner of stage, only when viewing mask */}
+        {/* Output mode overlay — top-center of stage */}
+        {!loading && (
+          <div className="svm__mode-overlay">
+            <button
+              className={`svm__mo-btn${outputMode === 'frame' ? ' svm__mo-btn--active' : ''}`}
+              onClick={() => {
+                setOutputMode('frame');
+                setResultVideoUrl(null);
+                if (localMaskUrl) setViewMode('masked');
+              }}
+              title="Preview or insert the current frame only"
+            >
+              FRAME
+            </button>
+            <button
+              className={`svm__mo-btn${outputMode === 'clip' ? ' svm__mo-btn--active' : ''}`}
+              onClick={() => setOutputMode('clip')}
+              title="Preview on the current frame, then track across the full clip"
+            >
+              CLIP
+            </button>
+          </div>
+        )}
+
+        {/* Mask display overlay — bottom-right corner of stage */}
         {!loading && viewMode === 'masked' && (resultVideoUrl || localMaskUrl) && (
           <div className="svm__viewer-overlay">
             <button className={`svm__vo-opt${maskDisplay === 'transparent' ? ' svm__vo-opt--active' : ''}`} onClick={() => setMaskDisplay('transparent')} title="Transparent background">
