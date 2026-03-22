@@ -1,0 +1,35 @@
+appId: com.cinegen.desktop
+productName: CINEGEN
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+asarUnpack:
+  - dist-electron/**/*.node
+mac:
+  target:
+    - dmg
+    - zip
+  icon: build/CineGen.icns
+  category: public.app-category.video
+extraResources:
+  - from: electron/splash.html
+    to: splash.html
+  - from: native/avfoundation/build/Release/cinegen_avfoundation.node
+    to: native/cinegen_avfoundation.node
+  - from: scripts/layer-decompose
+    to: scripts/layer-decompose
+  - from: vendor/fpcalc/fpcalc
+    to: vendor/fpcalc
+  - from: vendor/fpcalc/libchromaprint.1.dylib
+    to: vendor/libchromaprint.1.dylib
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

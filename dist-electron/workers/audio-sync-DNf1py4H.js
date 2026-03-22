@@ -1,0 +1,244 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, unlink, rmdir } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+const execFileAsync = promisify(execFile);
+function parseTimecode(tc, fps) {
+  const match = tc.match(/^(\d{2}):(\d{2}):(\d{2})([;:])(\d{2})$/);
+  if (!match) return null;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const s = parseInt(match[3], 10);
+  const separator = match[4];
+  const f = parseInt(match[5], 10);
+  const isDropFrame = separator === ";";
+  if (isDropFrame) {
+    const roundFps = Math.round(fps);
+    const dropFrames = Math.round(fps * 0.066666);
+    const totalMinutes = 60 * h + m;
+    const frameNumber = roundFps * 3600 * h + roundFps * 60 * m + roundFps * s + f - dropFrames * (totalMinutes - Math.floor(totalMinutes / 10));
+    return frameNumber;
+  } else {
+    return Math.round((h * 3600 + m * 60 + s) * fps) + f;
+  }
+}
+function computeTimecodeOffset(sourceTc, targetTc, fps) {
+  const sourceFrames = parseTimecode(sourceTc, fps);
+  const targetFrames = parseTimecode(targetTc, fps);
+  if (sourceFrames === null || targetFrames === null) return null;
+  return (targetFrames - sourceFrames) / fps;
+}
+const FP_INDEX_TO_SECONDS = 0.1238;
+function popcount32(n) {
+  n = n >>> 0;
+  n = n - (n >>> 1 & 1431655765);
+  n = (n & 858993459) + (n >>> 2 & 858993459);
+  return (n + (n >>> 4) & 252645135) * 16843009 >>> 24;
+}
+function crossCorrelateFingerprints(source, target) {
+  const maxShift = Math.max(source.length, target.length) - 1;
+  let bestOffset = 0;
+  let bestScore = -1;
+  for (let shift = -maxShift; shift <= maxShift; shift++) {
+    let totalBitErrors = 0;
+    let overlapCount = 0;
+    for (let i = 0; i < source.length; i++) {
+      const j = i + shift;
+      if (j < 0 || j >= target.length) continue;
+      totalBitErrors += popcount32((source[i] ^ target[j]) >>> 0);
+      overlapCount++;
+    }
+    if (overlapCount < 3) continue;
+    const avgBitError = totalBitErrors / overlapCount;
+    const score = 1 - avgBitError / 32;
+    if (score > bestScore) {
+      bestScore = score;
+      bestOffset = shift;
+    }
+  }
+  return {
+    offsetIndex: bestOffset,
+    confidence: Math.max(0, bestScore)
+  };
+}
+function levenshteinDistance(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from(
+    { length: m + 1 },
+    (_, i) => Array.from({ length: n + 1 }, (_2, j) => i === 0 ? j : j === 0 ? i : 0)
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+  }
+  return dp[m][n];
+}
+function stemOf(file) {
+  const name = path.basename(file);
+  const ext = path.extname(name);
+  if (ext === "" && name.startsWith(".")) return "";
+  return path.basename(name, ext);
+}
+function scoreFilenameSimilarity(fileA, fileB) {
+  const baseA = stemOf(fileA).toLowerCase();
+  const baseB = stemOf(fileB).toLowerCase();
+  if (baseA.length === 0 && baseB.length === 0) return 1;
+  const dist = levenshteinDistance(baseA, baseB);
+  const maxLen = Math.max(baseA.length, baseB.length);
+  if (maxLen === 0) return 1;
+  return 1 - dist / maxLen;
+}
+async function extractTimecode(filePath, ffprobePath) {
+  var _a, _b, _c;
+  let stdout;
+  try {
+    const result = await execFileAsync(ffprobePath, [
+      "-v",
+      "quiet",
+      "-print_format",
+      "json",
+      "-show_format",
+      "-show_streams",
+      filePath
+    ]);
+    stdout = result.stdout;
+  } catch {
+    return null;
+  }
+  let probe;
+  try {
+    probe = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  let fps = 24;
+  const videoStream = (_a = probe.streams) == null ? void 0 : _a.find((s) => s.codec_type === "video");
+  if (videoStream == null ? void 0 : videoStream.r_frame_rate) {
+    const [num, den] = videoStream.r_frame_rate.split("/").map(Number);
+    if (den && den > 0) fps = num / den;
+  }
+  const formatTags = ((_b = probe.format) == null ? void 0 : _b.tags) ?? {};
+  const tcFromFormat = formatTags["timecode"] ?? formatTags["com.apple.quicktime.timecode"] ?? null;
+  if (tcFromFormat) return { timecode: tcFromFormat, fps };
+  for (const stream of probe.streams ?? []) {
+    const tc = (_c = stream.tags) == null ? void 0 : _c["timecode"];
+    if (tc) return { timecode: tc, fps };
+  }
+  return null;
+}
+async function hasAudioStream(filePath, ffprobePath) {
+  var _a;
+  try {
+    const { stdout } = await execFileAsync(ffprobePath, [
+      "-v",
+      "quiet",
+      "-print_format",
+      "json",
+      "-show_streams",
+      "-select_streams",
+      "a",
+      filePath
+    ]);
+    const probe = JSON.parse(stdout);
+    return (((_a = probe.streams) == null ? void 0 : _a.length) ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+async function extractFingerprint(filePath, fpcalcPath) {
+  const { stdout } = await execFileAsync(fpcalcPath, ["-raw", filePath]);
+  const match = stdout.match(/FINGERPRINT=([^\n]+)/);
+  if (!match) throw new Error("fpcalc: no FINGERPRINT in output");
+  return match[1].split(",").map((v) => {
+    const parsed = parseInt(v.trim(), 10);
+    if (isNaN(parsed)) throw new Error(`fpcalc: invalid fingerprint value "${v}"`);
+    return parsed;
+  });
+}
+async function extractAudioToTempWav(videoPath, ffmpegPath) {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "cinegen-sync-"));
+  const wavPath = path.join(tmpDir, "audio.wav");
+  await execFileAsync(ffmpegPath, [
+    "-y",
+    "-i",
+    videoPath,
+    "-vn",
+    "-acodec",
+    "pcm_s16le",
+    "-ar",
+    "44100",
+    "-ac",
+    "1",
+    wavPath
+  ]);
+  return wavPath;
+}
+async function computeSyncOffset(sourceVideoPath, targetAudioPath, ffmpegPath, ffprobePath, fpcalcPath) {
+  let tempWavSource = null;
+  let tempWavTarget = null;
+  try {
+    const [sourceTc, targetTc] = await Promise.all([
+      extractTimecode(sourceVideoPath, ffprobePath),
+      extractTimecode(targetAudioPath, ffprobePath)
+    ]);
+    if (sourceTc && targetTc) {
+      const fps = sourceTc.fps;
+      const offset = computeTimecodeOffset(sourceTc.timecode, targetTc.timecode, fps);
+      if (offset !== null) {
+        return { offsetSeconds: offset, method: "timecode", confidence: 1 };
+      }
+    }
+    const [sourceHasAudio, targetHasAudio] = await Promise.all([
+      hasAudioStream(sourceVideoPath, ffprobePath),
+      hasAudioStream(targetAudioPath, ffprobePath)
+    ]);
+    if (!sourceHasAudio) throw new Error("Source video has no audio stream");
+    if (!targetHasAudio) throw new Error("Target audio file has no audio stream");
+    [tempWavSource, tempWavTarget] = await Promise.all([
+      extractAudioToTempWav(sourceVideoPath, ffmpegPath),
+      extractAudioToTempWav(targetAudioPath, ffmpegPath)
+    ]);
+    const [sourceFingerprint, targetFingerprint] = await Promise.all([
+      extractFingerprint(tempWavSource, fpcalcPath),
+      extractFingerprint(tempWavTarget, fpcalcPath)
+    ]);
+    const correlation = crossCorrelateFingerprints(sourceFingerprint, targetFingerprint);
+    const offsetSeconds = correlation.offsetIndex * FP_INDEX_TO_SECONDS;
+    return {
+      offsetSeconds,
+      method: "waveform",
+      confidence: correlation.confidence
+    };
+  } finally {
+    const cleanupFile = async (p) => {
+      if (!p) return;
+      try {
+        await unlink(p);
+        await rmdir(path.dirname(p));
+      } catch {
+      }
+    };
+    await Promise.all([cleanupFile(tempWavSource), cleanupFile(tempWavTarget)]);
+  }
+}
+export {
+  FP_INDEX_TO_SECONDS,
+  computeSyncOffset,
+  computeTimecodeOffset,
+  crossCorrelateFingerprints,
+  extractAudioToTempWav,
+  extractFingerprint,
+  extractTimecode,
+  hasAudioStream,
+  levenshteinDistance,
+  parseTimecode,
+  popcount32,
+  scoreFilenameSimilarity
+};

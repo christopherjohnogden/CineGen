@@ -1,0 +1,1 @@
+cmd_Release/cinegen_avfoundation.node := c++ -bundle -framework Cocoa -framework AVFoundation -framework QuartzCore -framework CoreMedia -undefined dynamic_lookup -Wl,-search_paths_first -mmacosx-version-min=11.0 -arch arm64 -L./Release -stdlib=libc++  -o Release/cinegen_avfoundation.node Release/obj.target/cinegen_avfoundation/src/cinegen_avfoundation.o Release/nothing.a 

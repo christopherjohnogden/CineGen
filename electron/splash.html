@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @font-face {
+      font-family: 'Outfit';
+      src: url('./Outfit-Variable.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      background: transparent;
+    }
+    body {
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Outfit', -apple-system, 'Helvetica Neue', sans-serif;
+      -webkit-app-region: drag;
+      position: relative;
+      border-radius: 6px;
+      -webkit-mask-image: -webkit-radial-gradient(white, black);
+      mask-image: radial-gradient(white, black);
+    }
+
+    /* Full-bleed background image */
+    .splash-bg {
+      position: absolute;
+      inset: 0;
+      background-image: url('./splash-bg.png');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+
+    /* Dark gradient overlay (bottom) for text legibility */
+    .overlay-bottom {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        transparent 50%,
+        rgba(0, 0, 0, 0.88) 100%
+      );
+    }
+
+    /* Subtle top vignette */
+    .overlay-top {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0.5) 0%,
+        transparent 30%,
+        transparent 100%
+      );
+    }
+
+    /* Wordmark (centered) */
+    .splash-title {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1;
+      font-size: 48px;
+      font-weight: 100;
+      letter-spacing: 12px;
+      color: #ffffff;
+      text-transform: uppercase;
+      text-indent: 12px;
+    }
+
+    /* Bottom column — status, version, progress bar, message */
+    .splash-bottom {
+      position: absolute;
+      bottom: 48px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 1;
+    }
+
+    /* Loading status row */
+    .splash-loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: rgba(255, 255, 255, 0.8);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .splash-loading-text {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    /* Version */
+    .splash-version {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.53);
+    }
+
+    /* Progress bar track */
+    .splash-progress {
+      width: 320px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.19);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    /* Progress bar fill — animated */
+    .splash-progress__fill {
+      width: 0%;
+      height: 100%;
+      background: #c83232;
+      border-radius: 2px;
+      animation: progress-fill 2.8s ease-in-out forwards;
+    }
+
+    @keyframes progress-fill {
+      0%   { width: 0%; }
+      15%  { width: 20%; }
+      40%  { width: 45%; }
+      60%  { width: 60%; }
+      80%  { width: 75%; }
+      100% { width: 85%; }
+    }
+
+    /* Loading message */
+    .splash-message {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.53);
+    }
+  </style>
+</head>
+<body>
+  <div class="splash-bg"></div>
+  <div class="overlay-bottom"></div>
+  <div class="overlay-top"></div>
+
+  <div class="splash-title">CINEGEN</div>
+
+  <div class="splash-bottom">
+    <div class="splash-version">v1.0.0</div>
+    <div class="splash-progress">
+      <div class="splash-progress__fill"></div>
+    </div>
+    <div class="splash-loading">
+      <div class="spinner"></div>
+      <span class="splash-loading-text">Opening project...</span>
+    </div>
+  </div>
+</body>
+</html>

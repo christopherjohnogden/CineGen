@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capabilities for CineGen desktop","local":true,"windows":["main"],"permissions":["core:default","core:event:allow-listen","core:event:allow-emit"]}}
