@@ -2428,6 +2428,79 @@
   z-index: 10;
 }
 
+/* ── Viewer mode overlay (bottom-right of stage) ── */
+
+.svm__viewer-overlay {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
+  background: rgba(8, 9, 12, 0.75);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 8;
+}
+.svm__vo-btn {
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text-tertiary);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.svm__vo-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+.svm__vo-btn--active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: rgba(212, 160, 84, 0.2);
+}
+.svm__vo-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.svm__vo-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 2px;
+}
+.svm__vo-opt {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  transition: all 0.12s ease;
+}
+.svm__vo-opt:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+.svm__vo-opt--active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
 /* ── Settings popover ── */
 
 .svm__settings-wrap {

@@ -599,9 +599,9 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
   const [toolMode, setToolMode] = useState<ToolMode>('text');
   const [promptMode, setPromptMode] = useState<PromptMode>('add');
   const [viewMode, setViewMode] = useState<ViewMode>('source');
-  const [maskDisplay, setMaskDisplay] = useState<MaskDisplay>('transparent');
+  const [maskDisplay, setMaskDisplay] = useState<MaskDisplay>('red-overlay');
   const [invertMask, setInvertMask] = useState(false);
-  const [outputMode, setOutputMode] = useState<MaskOutputMode>('clip');
+  const [outputMode, setOutputMode] = useState<MaskOutputMode>('frame');
   const [textPrompt, setTextPrompt] = useState('');
   const [promptHistory, setPromptHistory] = useState<CloudPrompt[]>([]);
   const [stageSize, setStageSize] = useState<ImageSize>({ width: 0, height: 0 });
@@ -2084,6 +2084,25 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
             {running && <div className="svm__running-overlay"><Spinner /></div>}
           </div>
         )}
+
+        {/* Mask display overlay — bottom-right corner of stage, only when viewing mask */}
+        {!loading && viewMode === 'masked' && (resultVideoUrl || localMaskUrl) && (
+          <div className="svm__viewer-overlay">
+            <button className={`svm__vo-opt${maskDisplay === 'transparent' ? ' svm__vo-opt--active' : ''}`} onClick={() => setMaskDisplay('transparent')} title="Transparent background">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="0" y="0" width="6" height="6" fill="#555" /><rect x="6" y="6" width="6" height="6" fill="#555" /><rect x="6" y="0" width="6" height="6" fill="#333" /><rect x="0" y="6" width="6" height="6" fill="#333" /></svg>
+            </button>
+            <button className={`svm__vo-opt${maskDisplay === 'red-overlay' ? ' svm__vo-opt--active' : ''}`} onClick={() => setMaskDisplay('red-overlay')} title="Red overlay on source">
+              <span className="svm__mask-opt-dot" style={{ background: '#e05050' }} />
+            </button>
+            <button className={`svm__vo-opt${maskDisplay === 'white-on-black' ? ' svm__vo-opt--active' : ''}`} onClick={() => setMaskDisplay('white-on-black')} title="White on black">
+              <span className="svm__mask-opt-dot svm__mask-opt-dot--split" />
+            </button>
+            <div className="svm__vo-sep" />
+            <button className={`svm__vo-opt${invertMask ? ' svm__vo-opt--active' : ''}`} onClick={() => setInvertMask((v) => !v)} title="Invert mask">
+              Inv
+            </button>
+          </div>
+        )}
       </div>
 
       {visibleAutoSegmentObjects.length > 0 && (
@@ -2171,9 +2190,9 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
         />
         <span className="svm__frame-num">{Math.round(currentFrameIndex)}f</span>
 
-        <div className="svm__transport-sep" />
+        <div className="svm__hud-spacer" />
 
-        {/* View mode toggle */}
+        {/* View mode toggle — centered */}
         <div className="svm__view-toggle">
           <button className={`svm__view-btn${viewMode === 'source' ? ' svm__view-btn--active' : ''}`} onClick={() => setViewMode('source')}>Src</button>
           <button
@@ -2184,28 +2203,6 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
             Mask
           </button>
         </div>
-
-        {/* Mask display options — only shown when viewing mask */}
-        {viewMode === 'masked' && (resultVideoUrl || localMaskUrl) && (
-          <>
-            <div className="svm__transport-sep" />
-            <div className="svm__mask-options">
-              <button className={`svm__mask-opt${maskDisplay === 'transparent' ? ' svm__mask-opt--active' : ''}`} onClick={() => setMaskDisplay('transparent')} title="Transparent background">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="0" y="0" width="6" height="6" fill="#555" /><rect x="6" y="6" width="6" height="6" fill="#555" /><rect x="6" y="0" width="6" height="6" fill="#333" /><rect x="0" y="6" width="6" height="6" fill="#333" /></svg>
-              </button>
-              <button className={`svm__mask-opt${maskDisplay === 'red-overlay' ? ' svm__mask-opt--active' : ''}`} onClick={() => setMaskDisplay('red-overlay')} title="Red overlay on source">
-                <span className="svm__mask-opt-dot" style={{ background: '#e05050' }} />
-              </button>
-              <button className={`svm__mask-opt${maskDisplay === 'white-on-black' ? ' svm__mask-opt--active' : ''}`} onClick={() => setMaskDisplay('white-on-black')} title="White on black">
-                <span className="svm__mask-opt-dot svm__mask-opt-dot--split" />
-              </button>
-              <div className="svm__transport-sep" />
-              <button className={`svm__hud-btn svm__hud-btn--sm${invertMask ? ' svm__hud-btn--active' : ''}`} onClick={() => setInvertMask((v) => !v)} title="Invert mask">
-                Invert
-              </button>
-            </div>
-          </>
-        )}
 
         <div className="svm__hud-spacer" />
 
