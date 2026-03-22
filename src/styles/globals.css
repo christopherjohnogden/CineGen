@@ -2254,7 +2254,7 @@ input[type='range']::-moz-range-track {
   pointer-events: none;
 }
 .create-timeline--open {
-  left: 240px;
+  left: 0;
   right: 0;
   transform: none;
 }
