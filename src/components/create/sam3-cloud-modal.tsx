@@ -38,6 +38,7 @@ interface DisplayRect {
 type PromptMode = 'add' | 'subtract';
 type ToolMode = 'text' | 'click' | 'box';
 type ImageViewMode = 'overlay' | 'cutout' | 'compare';
+type MaskDisplay = 'color-overlay' | 'red-overlay' | 'white-on-black';
 type VideoViewMode = 'source' | 'segmented';
 
 interface TextCloudPrompt {
@@ -134,6 +135,45 @@ function buildMaskOverlayDataUri(maskDataUri: string, fillColor: string, imageSi
     </svg>
   `.trim();
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+async function buildMaskDisplayPreview(
+  sourceUrl: string,
+  maskDataUri: string,
+  imageSize: ImageSize,
+  options: { threshold: number; blur: number; feather: number },
+  display: MaskDisplay,
+): Promise<string> {
+  const [sourceData, maskData] = await Promise.all([
+    loadImageData(sourceUrl, imageSize.width || undefined, imageSize.height || undefined),
+    loadImageData(maskDataUri, imageSize.width || undefined, imageSize.height || undefined),
+  ]);
+  const alpha = buildProcessedAlpha(maskData, options);
+  const preview = new ImageData(sourceData.width, sourceData.height);
+
+  for (let i = 0; i < alpha.length; i++) {
+    const offset = i * 4;
+    const maskAlpha = alpha[i] ?? 0;
+    const srcR = sourceData.data[offset] ?? 0;
+    const srcG = sourceData.data[offset + 1] ?? 0;
+    const srcB = sourceData.data[offset + 2] ?? 0;
+
+    if (display === 'white-on-black') {
+      const value = maskAlpha > 0 ? 255 : 0;
+      preview.data[offset] = value;
+      preview.data[offset + 1] = value;
+      preview.data[offset + 2] = value;
+      preview.data[offset + 3] = 255;
+    } else {
+      // red-overlay: blend red onto source where mask is present
+      const overlayStrength = (maskAlpha / 255) * 0.5;
+      preview.data[offset] = Math.round(srcR * (1 - overlayStrength) + 235 * overlayStrength);
+      preview.data[offset + 1] = Math.round(srcG * (1 - overlayStrength) + 78 * overlayStrength);
+      preview.data[offset + 2] = Math.round(srcB * (1 - overlayStrength) + 78 * overlayStrength);
+      preview.data[offset + 3] = 255;
+    }
+  }
+  return imageDataToDataUrl(preview);
 }
 
 function loadImageElement(src: string): Promise<HTMLImageElement> {
@@ -408,6 +448,7 @@ function ImageSegmentationPane({
   const [toolMode, setToolMode] = useState<ToolMode>('text');
   const [promptMode, setPromptMode] = useState<PromptMode>('add');
   const [viewMode, setViewMode] = useState<ImageViewMode>('overlay');
+  const [maskDisplay, setMaskDisplay] = useState<MaskDisplay>('color-overlay');
   const [textPrompt, setTextPrompt] = useState('');
   const [allMasks, setAllMasks] = useState<MaskData[]>([]);
   const [promptHistory, setPromptHistory] = useState<CloudPrompt[]>([]);
@@ -416,6 +457,7 @@ function ImageSegmentationPane({
   const [stageSize, setStageSize] = useState<ImageSize>({ width: 0, height: 0 });
   const [selectedCutoutPreviewUrl, setSelectedCutoutPreviewUrl] = useState<string | null>(null);
   const [isCutoutPreviewLoading, setIsCutoutPreviewLoading] = useState(false);
+  const [maskDisplayPreviewUrl, setMaskDisplayPreviewUrl] = useState<string | null>(null);
   const [remoteSourceUrl, setRemoteSourceUrl] = useState<string | null>(null);
   const [autoSegmenting, setAutoSegmenting] = useState(false);
   const [blur, setBlur] = useState(2);
@@ -509,6 +551,19 @@ function ImageSegmentationPane({
       });
     return () => { cancelled = true; };
   }, [blur, feather, imageSize, selectedMaskData, sourceUrl, threshold]);
+
+  // Build red-overlay / white-on-black preview when mask display mode changes
+  useEffect(() => {
+    let cancelled = false;
+    if (maskDisplay === 'color-overlay' || !selectedMaskData) {
+      setMaskDisplayPreviewUrl(null);
+      return;
+    }
+    buildMaskDisplayPreview(sourceUrl, selectedMaskData.dataUri, imageSize, { blur, feather, threshold }, maskDisplay)
+      .then((url) => { if (!cancelled) setMaskDisplayPreviewUrl(url); })
+      .catch((err) => { console.error('[sam3-cloud-image] Mask display preview error:', err); if (!cancelled) setMaskDisplayPreviewUrl(null); });
+    return () => { cancelled = true; };
+  }, [blur, feather, imageSize, maskDisplay, selectedMaskData, sourceUrl, threshold]);
 
   const getNormalizedEventPoint = useCallback((e: React.MouseEvent, clampToImage = false) => {
     const el = canvasRef.current;
@@ -933,11 +988,19 @@ function ImageSegmentationPane({
               onMouseMove={handleMouseMove}
               onMouseUp={(e) => void handleMouseUp(e)}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={sourceUrl} alt="Source" className="sam3__source-img" draggable={false} />
-              {selectedMaskOverlayUrl && (
+              {maskDisplay !== 'color-overlay' && maskDisplayPreviewUrl ? (
+                // Red overlay or white-on-black: single composited image
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={selectedMaskOverlayUrl} alt={`Mask ${selectedMask + 1}`} className="sam3__mask-img" draggable={false} />
+                <img src={maskDisplayPreviewUrl} alt={`Mask ${selectedMask + 1}`} className="sam3__source-img" draggable={false} />
+              ) : (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={sourceUrl} alt="Source" className="sam3__source-img" draggable={false} />
+                  {selectedMaskOverlayUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={selectedMaskOverlayUrl} alt={`Mask ${selectedMask + 1}`} className="sam3__mask-img" draggable={false} />
+                  )}
+                </>
               )}
               {promptOverlay}
               {drawBoxStyle && <div className="sam3__draw-box" style={drawBoxStyle} />}
@@ -972,6 +1035,19 @@ function ImageSegmentationPane({
               {mode === 'overlay' ? 'Original + Mask' : mode === 'cutout' ? 'Cutout' : 'Compare'}
             </button>
           ))}
+          {viewMode === 'overlay' && selectedMaskData && (
+            <div className="sam3__mask-display-opts">
+              <button className={`sam3__mask-opt${maskDisplay === 'color-overlay' ? ' sam3__mask-opt--active' : ''}`} onClick={() => setMaskDisplay('color-overlay')} title="Color overlay">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" fill="currentColor" /></svg>
+              </button>
+              <button className={`sam3__mask-opt${maskDisplay === 'red-overlay' ? ' sam3__mask-opt--active' : ''}`} onClick={() => setMaskDisplay('red-overlay')} title="Red overlay on source">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="3" fill="#eb4e4e" opacity="0.6" /><rect x="2" y="2" width="20" height="20" rx="3" stroke="currentColor" strokeWidth="2" /></svg>
+              </button>
+              <button className={`sam3__mask-opt${maskDisplay === 'white-on-black' ? ' sam3__mask-opt--active' : ''}`} onClick={() => setMaskDisplay('white-on-black')} title="White on black">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="3" fill="#000" /><circle cx="12" cy="12" r="6" fill="#fff" /></svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -9562,6 +9562,34 @@ input[type='range']::-moz-range-track {
   border-color: rgba(212, 160, 84, 0.25);
   color: var(--accent);
 }
+.sam3__mask-display-opts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.sam3__mask-opt {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s, border-color 0.1s;
+}
+.sam3__mask-opt:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+.sam3__mask-opt--active {
+  color: var(--accent);
+  background: rgba(212, 160, 84, 0.12);
+  border-color: rgba(212, 160, 84, 0.25);
+}
 .sam3__video-controls {
   display: flex;
   align-items: center;

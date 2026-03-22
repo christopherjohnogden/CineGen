@@ -4549,12 +4549,16 @@ async function resolveLocalMediaUrls(inputs) {
   return resolved;
 }
 async function generateWithFal(model, input, apiKey) {
+  var _a;
   configureFal(apiKey);
   console.log("[fal] Calling model:", model, "with input:", JSON.stringify(input, null, 2));
   try {
     return await srcExports.fal.subscribe(model, { input, logs: true });
   } catch (err) {
     console.error("[fal] Error details:", JSON.stringify((err == null ? void 0 : err.body) ?? err, null, 2));
+    if ((_a = err == null ? void 0 : err.body) == null ? void 0 : _a.detail) {
+      console.error("[fal] Validation errors:", JSON.stringify(err.body.detail, null, 2));
+    }
     throw err;
   }
 }

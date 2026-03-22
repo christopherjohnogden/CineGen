@@ -306,6 +306,9 @@ async function generateWithFal(
     return await fal.subscribe(model, { input, logs: true });
   } catch (err: any) {
     console.error('[fal] Error details:', JSON.stringify(err?.body ?? err, null, 2));
+    if (err?.body?.detail) {
+      console.error('[fal] Validation errors:', JSON.stringify(err.body.detail, null, 2));
+    }
     throw err;
   }
 }

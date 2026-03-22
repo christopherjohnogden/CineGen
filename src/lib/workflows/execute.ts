@@ -820,14 +820,26 @@ async function executeModelNode(
       if (value === undefined || value === null) continue;
       if (field.id === 'seed' && value === -1) continue;
 
-      const needsArrayWrap = typeof value === 'string' && (
+      // If the value is an ElementData object (from element port connections),
+      // extract the flat URL list for array-type params or the frontal URL for single params
+      const isElementData = typeof value === 'object' && value !== null && !Array.isArray(value)
+        && ('allUrls' in value || 'frontalImageUrl' in value);
+
+      const needsArrayParam =
         (field.falParam.endsWith('s') && field.falParam.startsWith('image_url'))
         || field.falParam === 'filesUrl'
         || field.falParam === 'imageUrls'
         || field.falParam === 'image_input'
-        || field.falParam === 'urls'
-      );
-      if (needsArrayWrap) {
+        || field.falParam === 'urls';
+
+      if (isElementData && needsArrayParam) {
+        const urls = (value as { allUrls?: string[] }).allUrls ?? [(value as { frontalImageUrl?: string }).frontalImageUrl].filter(Boolean);
+        const existing = Array.isArray(falInputs[field.falParam]) ? falInputs[field.falParam] as string[] : [];
+        falInputs[field.falParam] = [...existing, ...urls];
+      } else if (isElementData) {
+        // Single-value param from an element — use the frontal image URL
+        falInputs[field.falParam] = (value as { frontalImageUrl?: string }).frontalImageUrl ?? (value as { allUrls?: string[] }).allUrls?.[0];
+      } else if (typeof value === 'string' && needsArrayParam) {
         falInputs[field.falParam] = [value];
       } else if (field.portType === 'number' && field.fieldType === 'select' && typeof value === 'string') {
         falInputs[field.falParam] = Number(value);

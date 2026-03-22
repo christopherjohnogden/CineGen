@@ -13,7 +13,8 @@
     "preview": "npm run build && electron .",
     "package": "npm run build && electron-builder",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "screenshots": "npm run build && node scripts/take-screenshots.mjs"
   },
   "build": {
     "appId": "com.cinegen.desktop",
@@ -46,6 +47,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^7.6.13",
@@ -56,6 +58,7 @@
     "electron": "^35.0.0",
     "electron-builder": "^26.0.0",
     "jsdom": "^28.1.0",
+    "playwright": "^1.58.2",
     "typescript": "^5.9.3",
     "vite": "^6.3.0",
     "vite-plugin-electron": "^0.29.0",
