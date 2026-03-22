@@ -15,42 +15,6 @@ An AI-powered film production studio. Build generation workflows with a node edi
 
 ![Project Manager](screenshots/project_manager.png)
 
-### Spaces — Node-Based Workflow Editor
-
-Build AI generation pipelines by connecting nodes on a canvas. 50+ models across image, video, and audio.
-
-![Spaces](screenshots/spaces.png)
-
-### Spaces — SAM3 Cloud Segmentation
-
-Segment objects from images with text, click, or box prompts. Red overlay, white-on-black, and cutout preview modes.
-
-![SAM3 Segmentation](screenshots/spaces_sam3_2.png)
-
-### Spaces — Timeline Preview
-
-Preview and arrange generated clips directly from the workflow canvas.
-
-![Spaces Timeline](screenshots/spaces_timeline.png)
-
-### Edit — Dual Viewer
-
-Multi-track NLE with source and timeline viewers, transport controls, and waveform display.
-
-![Edit Dual Viewer](screenshots/edit_dual%20viewer.png)
-
-### Edit — Single Viewer
-
-Focused editing with a single monitor and expanded timeline.
-
-![Edit Single Viewer](screenshots/edit_single%20viewer.png)
-
-### Edit — Fill Gap
-
-AI-powered gap filling generates new footage to bridge clips on the timeline.
-
-![Fill Gap](screenshots/edit_fill_gap.png)
-
 ### Elements
 
 Reusable media libraries for characters, locations, props, and vehicles. Upload reference images to maintain visual consistency across shots.
@@ -60,6 +24,38 @@ Reusable media libraries for characters, locations, props, and vehicles. Upload 
 ![Element New](screenshots/element_new.png)
 
 ![Elements](screenshots/elements.png)
+
+### Spaces — Node-Based Workflow Editor
+
+Build AI generation pipelines by connecting nodes on a canvas. 50+ models across image, video, and audio.
+
+![Spaces](screenshots/spaces.png)
+
+### Spaces — Timeline Preview
+
+Preview and arrange generated clips directly from the workflow canvas.
+
+![Spaces Timeline](screenshots/spaces_timeline.png)
+
+### Spaces — SAM3 Cloud Segmentation
+
+Segment objects from images with text, click, or box prompts. Red overlay, white-on-black, and cutout preview modes.
+
+![SAM3 Segmentation](screenshots/spaces_sam3_2.png)
+
+### Edit — Dual Viewer
+
+Multi-track NLE with source and timeline viewers, transport controls, and waveform display.
+
+![Edit Single Viewer](screenshots/edit_single%20viewer.png)
+
+![Edit Dual Viewer](screenshots/edit_dual%20viewer.png)
+
+### Edit — Fill Gap
+
+AI-powered gap filling generates new footage to bridge clips on the timeline.
+
+![Fill Gap](screenshots/edit_fill_gap.png)
 
 ### LLM Chat
 
