@@ -1,6 +1,6 @@
-# CineGen Desktop
+# CINEGEN
 
-An AI-powered film production studio. Build generation workflows with a node editor, edit on a multi-track timeline, and export to MP4 — all from a single desktop app.
+A professional video editor with AI built in. Multi-track timeline, node-based generation workflows, and an integrated LLM assistant that can search your project, answer questions, and make edits for you. 50+ AI models for image, video, and audio generation.
 
 ![Electron](https://img.shields.io/badge/Electron-35-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
