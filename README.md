@@ -25,7 +25,7 @@ Build AI generation pipelines by connecting nodes on a canvas. 50+ models across
 
 Segment objects from images with text, click, or box prompts. Red overlay, white-on-black, and cutout preview modes.
 
-![SAM3 Segmentation](screenshots/spaces_sam3.png)
+![SAM3 Segmentation](screenshots/spaces_sam3_2.png)
 
 ### Spaces — Timeline Preview
 
