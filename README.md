@@ -2,6 +2,8 @@
 
 A professional video editor with AI built in. Multi-track timeline, node-based generation workflows, and an integrated LLM assistant that can search your project, answer questions, and make edits for you. 50+ AI models for image, video, and audio generation.
 
+This is an open-source project and actively evolving. Fork it, request features, report bugs, or contribute directly — all are welcome. If you have ideas for how to make this better, [open an issue](https://github.com/christopherjohnogden/CineGen/issues).
+
 ![Electron](https://img.shields.io/badge/Electron-35-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
