@@ -69,9 +69,14 @@ Context-aware AI assistant for editorial workflow — cut planning, pacing sugge
 
 ### Elements
 
-Reusable media libraries for characters, locations, props, and vehicles. Upload reference images to maintain visual consistency across shots.
+Reusable media libraries for characters, locations, props, and vehicles. Each element stores multiple reference images to maintain visual consistency across every shot in your project.
 
-Type `@` in any prompt node to reference your elements by name — their images are automatically included when generating.
+- **4 categories** — Characters, Locations, Props, Vehicles
+- **7 AI-generated reference panels per element** — each category has purpose-built angles (front, profile, back, detail, etc.) so models see your subject from every perspective
+- **Consistency engine** — the first generated panel becomes the reference for all subsequent panels, keeping the look locked in
+- **Hybrid workflow** — mix uploaded reference photos with AI-generated panels in the same element
+- **Per-panel regeneration** — regenerate any single panel without rebuilding the entire element
+- Type `@` in any prompt node to reference elements by name — their images are automatically included when generating
 
 ### Spaces — Node-Based Workflow Editor
 
@@ -82,23 +87,33 @@ A full-canvas node editor (React Flow) for building AI generation pipelines. Pre
 - **Video models** — Kling 3.0, LTX 2.3, Veo 3.1, Runway Gen-4, Sora 2, MiniMax, Wan 2.6 Flash
 - **Audio** — ElevenLabs Music, Suno Music
 - **Utility nodes** — Prompt, Shot Prompt, Element, Composition Plan, File Picker, Music Prompt, Asset Output
-- **Advanced nodes** — Shot Board (batch shot variations), Storyboarder (vision-driven scene breakdowns)
+- **Storyboarder node** — describe a scene and an LLM (Gemini, Claude, GPT-4.1, Llama 4) breaks it into 3–12 sequential shots with camera prompts, dialogue, and negative prompts. Optionally generate video for each shot and import the entire sequence to the timeline in one click
+- **Shot Board node** — 9-cell grid of camera angles (wide, close-up, over-shoulder, etc.) generated from a single reference image for rapid character coverage
+- **Composition Plan node** — multi-section music scoring with per-section style tags, duration, lyrics, and global style overrides
+- **SAM3 segmentation** — segment objects from generated images with text, click, or box prompts. Red overlay, white-on-black, and cutout preview modes
+- **Built-in timeline** — preview and arrange generated clips directly on the canvas, then import to the full editor
 - Connect nodes with edges, configure parameters in the inspector, and run the entire workflow or individual nodes
+- History, search, and workflow save/load panels in the toolbar
 
 ### Edit — Non-Linear Editor
 
-A multi-track timeline with a preview monitor, transport controls, and a collapsible asset drawer.
+A multi-track timeline with dual source/timeline viewers, transport controls, and a collapsible media pool.
 
 - Drag-and-drop clips from generated assets or imported media
+- **10 editing tools** — Select, Blade (cut at cursor), Ripple Trim, Roll Trim, Slip, Slide, Music, Fill Gap, Extend, and Mask
 - Trim (in/out points), split at playhead, speed adjustment (0.1x–2x)
 - Volume, opacity, and horizontal/vertical flip per clip
-- Keyframe animation for opacity and volume
+- Keyframe animation for opacity and volume with per-clip keyframe tracks
 - Transitions (dissolve, fade to/from black)
 - Track management — add, delete, reorder, mute, solo, lock
-- Audio waveform visualization
-- Source viewer with SAM3 masking tool
-- AI-assisted editing suggestions via LLM integration
-- AI tools — generate music, fill gaps between clips, extend clip duration, and auto-mask objects with SAM3
+- Audio waveform visualization on audio tracks
+- **Source viewer** — frame-accurate scrubbing with integrated SAM3 masking tool and proxy toggle
+- **Fill Gap** — AI generates new footage to bridge two clips using adjacent frame context (Kling 3.0)
+- **Extend** — lengthen a clip before or after using 9 video models with automatic frame extraction from adjacent clips
+- **Music generation** — genre, mood, style, and tempo presets with auto-prompt from extracted video frames. Instrumental toggle and duration snapping
+- **Audio sync** — align audio to video automatically, with batch sync for multiple clips
+- **Proxy playback** — toggle draft-quality playback for smoother editing on large projects
+- Multiple timeline tabs — work on different edits of the same project simultaneously
 
 ### LLM Chat
 
@@ -117,9 +132,10 @@ Context-aware AI assistant with full knowledge of your project — assets, timel
 
 Renders the timeline to MP4 using FFmpeg.
 
-- Quality presets: Draft (CRF 28), Standard (CRF 20), High (CRF 16)
-- Customizable frame rate
-- Real-time encoding progress
+- Resolution presets — 720p (Draft), 1080p (Standard), 4K (High Quality)
+- Frame rate options — 24, 30, 60 fps
+- Configurable aspect ratio — 16:9, 4:3, 21:9, 1:1, 9:16
+- Real-time encoding progress with output file size tracking
 
 ---
 
