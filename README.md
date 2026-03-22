@@ -67,7 +67,13 @@ Context-aware AI assistant for editorial workflow — cut planning, pacing sugge
 
 ## Features
 
-### Create — Node-Based Workflow Editor
+### Elements
+
+Reusable media libraries for characters, locations, props, and vehicles. Upload reference images to maintain visual consistency across shots.
+
+Type `@` in any prompt node to reference your elements by name — their images are automatically included when generating.
+
+### Spaces — Node-Based Workflow Editor
 
 A full-canvas node editor (React Flow) for building AI generation pipelines. Press **Space** to open the command palette.
 
@@ -92,6 +98,20 @@ A multi-track timeline with a preview monitor, transport controls, and a collaps
 - Audio waveform visualization
 - Source viewer with SAM3 masking tool
 - AI-assisted editing suggestions via LLM integration
+- AI tools — generate music, fill gaps between clips, extend clip duration, and auto-mask objects with SAM3
+
+### LLM Chat
+
+Context-aware AI assistant with full knowledge of your project — assets, timelines, transcripts, and elements.
+
+- **Ask mode** — project-aware Q&A for notes, summaries, prompt ideas, and production questions
+- **Search mode** — find quotes, mentions, assets, and timeline moments with clickable citations that jump to the source
+- **Cut mode** — propose transcript-driven selects and rough cuts, preview them, then apply as a new timeline
+- **Timeline mode** — reason about clip structure, trims, tracks, pacing, and suggest specific edits
+- `@` mention assets or timelines inline to give the LLM precise context
+- Clickable timestamp citations in responses — click to jump directly to that moment in the editor
+- Cloud providers (Google Gemini, OpenAI, Anthropic via fal.ai) or local inference via Ollama
+- Token usage and cost tracking per session
 
 ### Export
 
@@ -100,18 +120,6 @@ Renders the timeline to MP4 using FFmpeg.
 - Quality presets: Draft (CRF 28), Standard (CRF 20), High (CRF 16)
 - Customizable frame rate
 - Real-time encoding progress
-
-### Elements
-
-Reusable media libraries for characters, locations, props, and vehicles. Upload reference images to maintain visual consistency across shots.
-
-### LLM Chat
-
-Context-aware AI assistant for editorial workflow — cut planning, pacing suggestions, and scene analysis.
-
-- Cloud providers (Google Gemini, OpenAI, Anthropic via fal.ai)
-- Local inference via Ollama
-- Transcript-aware editing suggestions
 
 ---
 
