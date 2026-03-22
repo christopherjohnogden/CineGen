@@ -53,11 +53,14 @@ Multi-track NLE with source and timeline viewers, transport controls, and wavefo
 
 ![Edit Dual Viewer](screenshots/edit_dual%20viewer.png)
 
-### Edit — Fill Gap
+### Edit — AI-Tools
 
-AI-powered gap filling generates new footage to bridge clips on the timeline.
+AI-powered editing tools built directly into the timeline — fill gaps between clips with generated footage, extend clips in either direction, generate music from video context, and auto-mask objects with SAM3.
 
+![Fill Gap](screenshots/edit_music.png)
 ![Fill Gap](screenshots/edit_fill_gap.png)
+![Fill Gap](screenshots/edit_extend.png)
+![Fill Gap](screenshots/edit_mask.png)
 
 ### LLM Chat
 
