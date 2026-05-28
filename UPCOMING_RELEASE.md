@@ -19,16 +19,23 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## New Features
 
+### LLM tab: Copilot app actions **(in progress)**
+
+- Copilot can apply changes across CineGen via **`cinegen-skill-action`** buttons: **`add_nodes`** (prompt/model nodes to active or named Spaces workspace), **`save_elements`**, **`edit_timeline`** (split/trim/remove clips, close gaps, add markers), plus existing **`create_space`** workflows
+- **Prompt / node requests** ("give me a node for shot 13") show a one-click **Add to [workspace]** button — client infers the action even when the model only asks in text
+- Project context now includes **active Spaces workspace** and workspace list so Copilot knows where nodes will land
+
 ### LLM tab: Skill Builder **(in progress)**
 
 - **Skill Builder** sparkle button in the **main top nav**, immediately left of Settings (LLM tab only)
 - Each skill has a **name**, **description** (when Copilot should use it), and **markdown instructions** injected into the system prompt when active
 - **Skill selector** in the composer — **Shift+Space** opens the skill picker; selected skills insert as `#skill-name` tags in the reply field (same highlight treatment as `@` elements and `/` assets)
-- **10 built-in default skills** auto-seed on first load: **shot-list**, **storyboard**, **editorial-brief**, **rough-cut**, **remove-dead-space**, **prompt-writer**, **selects-highlights**, **b-roll-planner**, **delivery-prep**, **character-look-bible** — each tagged with surfaces (`llm`, `spaces`, `edit`, `elements`, `export`) and action instructions for cross-tab workflows
+- **11 built-in default skills** auto-seed on first load: **shot-list**, **storyboard**, **shot-list-video**, **editorial-brief**, **rough-cut**, **remove-dead-space**, **prompt-writer**, **selects-highlights**, **b-roll-planner**, **delivery-prep**, **character-look-bible** — each tagged with surfaces (`llm`, `spaces`, `edit`, `elements`, `export`) and action instructions for cross-tab workflows
 - **Import / export** via SKILL.md (YAML frontmatter + markdown body); skills stored app-wide in localStorage
 - Active skill highlighted in main nav, sidebar, and skill list
 - **AI skill authoring:** **New skill → Build with AI** opens a guided Q&A; uses installed CLI first (Claude Code / Codex / Gemini), then Cloud or Local
 - **Chat skill authoring:** ask Copilot to “create a skill for …” — same guided flow in chat with a **Save skill** button when the draft is ready
+- **Skill → Spaces actions:** shot-list outputs a formatted list only; **Create storyboards** / **Create videos** fork buttons launch **storyboard** or **shot-list-video** skills; Spaces workspaces use **one wired row per panel/clip** (Prompt → Nano Banana 2 / Seedance 2 / Kling 3 → Asset Output), not a single Multi Prompt node; **shot-list-video** supports intelligent durations and optional shot combining (Seedance up to 15s) **(in progress)**
 
 ### LLM tab: Background Copilot **(in progress)**
 

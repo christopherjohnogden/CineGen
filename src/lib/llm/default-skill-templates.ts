@@ -1,3 +1,5 @@
+import { COPILOT_ACTIONS_GUIDE } from '@/lib/llm/copilot-actions-guide';
+
 export type SkillSurface = 'llm' | 'spaces' | 'edit' | 'elements' | 'export';
 
 export interface SkillTemplate {
@@ -8,21 +10,7 @@ export interface SkillTemplate {
 }
 
 /** Shared guidance for skills that can emit app actions (Spaces, Edit, Export). */
-export const SKILL_ACTION_GUIDE = `
-When the user confirms they want CineGen to apply changes (not just plan in chat), include ONE \`cinegen-skill-action\` JSON block:
-
-\`\`\`cinegen-skill-action
-{"label":"Short button label","steps":[{"type":"navigate","tab":"edit"}]}
-\`\`\`
-
-Step types (use only what this skill needs):
-- \`navigate\`: \`{ "type": "navigate", "tab": "llm" | "spaces" | "edit" | "elements" | "export" }\`
-- \`create_space\`: \`{ "type": "create_space", "name": "...", "template": "storyboard" | "shot-ideas" | "multi-shot" | "b-roll", "prefill": { "scene": "...", "prompts": ["..."] } }\`
-- \`edit_timeline\`: \`{ "type": "edit_timeline", "timelineId": "active", "ops": [...] }\` — ops: \`trim_silence\`, \`close_gaps\`, \`add_markers\`, \`create_timeline\`, \`insert_placeholders\`
-- \`save_elements\`: \`{ "type": "save_elements", "items": [{ "kind": "character" | "location" | "select", "name": "...", "notes": "..." }] }\`
-- \`start_export\`: \`{ "type": "start_export", "preset": "youtube-1080p" | "social-916" | "prores-master" }\`
-
-Always summarize planned changes in chat before the action block. Destructive edit ops need explicit user confirmation first.`;
+export const SKILL_ACTION_GUIDE = COPILOT_ACTIONS_GUIDE;
 
 export const DEFAULT_SKILL_TEMPLATES: SkillTemplate[] = [
   {
@@ -45,15 +33,20 @@ When the user asks for a shot list:
 - **Action:** What happens in the shot
 - **Camera:** Movement, lens feel, framing notes
 - **Audio:** Dialogue, VO, ambience, music cue
-- **Duration:** Estimated seconds
+- **Duration:** Estimated seconds (be intelligent — inserts 2–3s, dialogue 5–8s, emotional holds 8–10s, establishing 4–6s)
 - **Notes:** Props, wardrobe, VFX, continuity
 \`\`\`
 
 4. Group shots by scene or location.
-5. End with a brief coverage summary (total shots, est. runtime, priority setups).
+5. End with a **Coverage summary** (total shots, est. runtime, priority setups).
 6. Keep language production-ready — no filler.
+7. **Do NOT** emit a \`cinegen-skill-action\` block — the shot list is planning only.
+8. End by asking the user which path they want next:
+   - **Storyboards** — panel prompts + image generation workspace
+   - **Videos** — clip prompts with intelligent durations + Seedance/Kling workspace
 
-If the user wants to generate shots in Spaces, offer a **Multi Prompt** workspace with one row per shot after the list is approved.
+Tell them they can click **Create storyboards** or **Create videos** below the message, or reply with their choice.
+
 ${SKILL_ACTION_GUIDE}`,
   },
   {
@@ -63,11 +56,12 @@ ${SKILL_ACTION_GUIDE}`,
       'Breaks scenes into storyboard panels with composition notes and image prompts. Use when the user wants a storyboard, key frames, previz, or visual beat breakdown.',
     instructions: `# Storyboard
 
-When storyboarding:
+When storyboarding (from scratch or from a shot list in this thread):
 
 1. Clarify scene, aspect ratio, style reference, and panel count if missing.
-2. Use script, brief, elements, and reference assets when available.
-3. For each panel output:
+2. Use script, brief, elements, shot list, and reference assets when available.
+3. If converting from a shot list, derive one image prompt per shot from Subject + Action + Camera + mood.
+4. For each panel output:
 
 \`\`\`
 ### Panel [N] — [Beat name]
@@ -75,14 +69,46 @@ When storyboarding:
 - **Subject & action:** What we see happening
 - **Camera:** Angle, lens feel, movement
 - **Mood / lighting:** Color, contrast, time of day
-- **Prompt:** Single image-gen prompt ready for Storyboarder or Prompt nodes
+- **Prompt:** Single image-gen prompt ready for Nano Banana 2
 - **Duration:** Hold time if animatic (seconds)
 \`\`\`
 
-4. Keep panel count practical (4–12 for a scene unless user asks for more).
-5. Note continuity between panels (wardrobe, eyelines, screen direction).
+5. Keep panel count practical (match shot list unless user asks to combine/skip panels).
+6. Note continuity between panels (wardrobe, eyelines, screen direction).
+7. Ask whether to combine any adjacent panels into one image (only when beats are visually redundant).
+8. After user confirms (or if they said to proceed), emit \`cinegen-skill-action\` with template \`storyboard-images\`, \`prefill.scene\`, and one \`prefill.prompts\` entry per panel (\`label\`, \`prompt\`, optional \`duration\`).
 
-When approved, emit a \`create_space\` action with template \`storyboard\` and prefill scene text plus panel prompts.
+${SKILL_ACTION_GUIDE}`,
+  },
+  {
+    name: 'shot-list-video',
+    surfaces: ['llm', 'spaces'],
+    description:
+      'Plans video clips from a shot list with intelligent durations and optional shot combining for Seedance (15s max) or Kling multi-prompt. Use when the user wants videos from a shot list.',
+    instructions: `# Shot List → Video
+
+When the user wants videos from a shot list (in this thread or pasted):
+
+1. Read the shot list. Use project elements and style context when available.
+2. **First ask:** Should consecutive shots be combined into longer clips?
+   - Seedance 2 supports one prompt up to **15 seconds** — e.g. three 5s shots → one 15s clip with timed beats.
+   - Kling 3 supports **multi_prompt** for true multi-shot clips within one generation.
+   - If user says no combining, one clip per shot.
+3. Assign **intelligent durations** per shot based on content:
+   - Inserts / reactions / cutaways: 2–3s
+   - Standard coverage / dialogue: 5–6s
+   - Emotional holds / slow dialogue: 7–9s
+   - Wide establishing: 4–6s
+   - Never exceed 15s per combined clip.
+4. When combining, group **consecutive** shots in the same scene that flow visually. Write a \`combinedPrompt\` with \`[Ns]\` beat markers for Seedance, or use \`kling-multi\` with per-shot prompts in \`shots\`.
+5. Present a **Clip plan** table before the action block:
+
+\`\`\`
+| Clip | Shots | Duration | Model | Notes |
+\`\`\`
+
+6. After user confirms, emit \`cinegen-skill-action\` with template \`video-from-shot-list\`, \`prefill.combineShots\`, and \`prefill.clipGroups\` (not a single multi-prompt node).
+
 ${SKILL_ACTION_GUIDE}`,
   },
   {
@@ -197,11 +223,14 @@ When writing generation prompts:
    - **Lighting** — key light direction, mood, color grade feel
    - **Style** — film stock, reference aesthetic, aspect ratio hint
 
-3. Output prompts ready to paste into CineGen Spaces nodes.
+3. Output each final prompt with a **Prompt:** line ready for Spaces.
 4. Offer 2–3 variants when useful (safe, bold, minimal).
 5. Keep each prompt under 200 words unless the user asks for detail.
+6. After writing a prompt, ask: "Add this to **[active workspace name from context]**?" unless the user already asked to add it.
+7. When the user confirms (or says add/yes), emit \`add_nodes\` with \`nodeType: "prompt"\` to \`spaceId: "active"\` — never tell them to copy-paste manually.
 
-If the user wants a workspace, offer \`create_space\` with template \`shot-ideas\` or \`multi-shot\` and prefill prompts array.
+If the user names a different workspace, use that name as \`spaceId\`.
+
 ${SKILL_ACTION_GUIDE}`,
   },
   {

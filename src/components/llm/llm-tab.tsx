@@ -62,6 +62,15 @@ import {
   splitComposerHighlightParts,
 } from '@/lib/llm/composer-tokens';
 import { SkillBuilder } from '@/components/llm/skill-builder';
+import { useWorkspace } from '@/components/workspace/workspace-shell';
+import {
+  describeSkillAction,
+  executeSkillAction,
+  parseSkillActionFromContent,
+  resolveSkillActionForMessage,
+  stripSkillActionBlock,
+} from '@/lib/llm/skill-actions';
+import { isShotListMessage } from '@/lib/llm/shot-list-parse';
 import {
   detectSkillAuthoringCancel,
   detectSkillAuthoringIntent,
@@ -148,6 +157,8 @@ interface ChatMessage {
   skillAuthoring?: boolean;
   skillDraft?: ParsedSkillDraft;
   skillDraftSaved?: boolean;
+  skillActionApplied?: boolean;
+  shotListForkUsed?: boolean;
 }
 
 interface StoredLLMState {
@@ -828,6 +839,7 @@ export function LLMTab({
   onCopilotThinkingChange,
   onCopilotResponseReadyWhileBackgrounded,
 }: LLMTabProps) {
+  const { dispatch, state: workspaceState } = useWorkspace();
   const initialState = useMemo(() => loadStoredState(projectId), [projectId]);
   const [mode, setMode] = useState<LLMMode>(initialState.mode);
   const [messages, setMessages] = useState<ChatMessage[]>(initialState.messages);
@@ -1404,6 +1416,41 @@ export function LLMTab({
     setSkillAuthoringCliSessionId(null);
   }, [messages]);
 
+  const handleExecuteSkillAction = useCallback((messageId: string) => {
+    const target = messages.find((message) => message.id === messageId);
+    if (!target || target.role !== 'assistant' || target.skillActionApplied) return;
+
+    const priorUserMessage = [...messages]
+      .slice(0, messages.findIndex((message) => message.id === messageId))
+      .reverse()
+      .find((message) => message.role === 'user');
+    const skillIdFromThread = findSkillIdInText(priorUserMessage?.content ?? target.content, skills);
+    const skillName = skills.find((skill) => skill.id === skillIdFromThread)?.name ?? activeSkill?.name ?? null;
+    const activeSpace = workspaceState.spaces.find((space) => space.id === workspaceState.activeSpaceId);
+    const action = resolveSkillActionForMessage(target.content, {
+      activeSkillName: skillName,
+      activeSpaceName: activeSpace?.name ?? null,
+      userMessage: priorUserMessage?.content ?? null,
+    });
+    if (!action) return;
+
+    executeSkillAction(action, dispatch, {
+      elements,
+      spaces: workspaceState.spaces,
+      activeSpaceId: workspaceState.activeSpaceId,
+      nodes: workspaceState.nodes,
+      edges: workspaceState.edges,
+      timelines,
+      activeTimelineId,
+      assets,
+    });
+    setMessages((current) => current.map((message) => (
+      message.id === messageId
+        ? { ...message, skillActionApplied: true }
+        : message
+    )));
+  }, [activeSkill?.name, activeTimelineId, assets, dispatch, elements, messages, skills, timelines, workspaceState]);
+
   const handleSkillAuthoringTurn = useCallback(async (content: string) => {
     const backend = resolveSkillAuthoringBackend({
       mode,
@@ -1481,10 +1528,10 @@ export function LLMTab({
     }
   }, [cliSession, cliProviders, falKey, localModel, messages, mode, model, skillAuthoringCliSessionId]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async (contentOverride?: string) => {
     if (isSending) return;
 
-    const content = draft.trim();
+    const content = (contentOverride ?? draft).trim();
     if (!content) return;
 
     const shouldAuthorSkill = skillAuthoringActive
@@ -1580,6 +1627,8 @@ export function LLMTab({
           timelines,
           activeTimelineId,
           elements,
+          spaces: workspaceState.spaces,
+          activeSpaceId: workspaceState.activeSpaceId,
           mode: chatWorkMode,
           focusQuery: content,
         });
@@ -1820,6 +1869,8 @@ export function LLMTab({
           timelines,
           activeTimelineId,
           elements,
+          spaces: workspaceState.spaces,
+          activeSpaceId: workspaceState.activeSpaceId,
           mode: 'ask',
           focusQuery: content,
           compact: true,
@@ -1923,6 +1974,8 @@ export function LLMTab({
         timelines,
         activeTimelineId,
         elements,
+        spaces: workspaceState.spaces,
+        activeSpaceId: workspaceState.activeSpaceId,
         mode: resolvedWorkMode,
         focusQuery: content,
       });
@@ -1965,7 +2018,27 @@ export function LLMTab({
     } finally {
       setIsSending(false);
     }
-  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, handleSkillAuthoringTurn, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, skillAuthoringActive, skillSystemPrompt, skillsCatalogPrompt, systemPrompt, temperature, timelines, workModeOverride]);
+  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, handleSkillAuthoringTurn, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, skillAuthoringActive, skillSystemPrompt, skillsCatalogPrompt, systemPrompt, temperature, timelines, workModeOverride, workspaceState]);
+
+  const handleShotListFork = useCallback((messageId: string, path: 'storyboard' | 'videos') => {
+    const target = messages.find((message) => message.id === messageId);
+    if (!target || target.shotListForkUsed) return;
+
+    const skillName = path === 'storyboard' ? 'storyboard' : 'shot-list-video';
+    const skill = skills.find((entry) => entry.name === skillName);
+    if (skill) setActiveSkillId(skill.id);
+
+    const content = path === 'storyboard'
+      ? `#storyboard Create storyboard panels from the shot list above. Ask if I want to combine any adjacent panels, then build the Spaces workspace with one wired Prompt + Nano Banana 2 row per panel.`
+      : `#shot-list-video Create video clips from the shot list above. Ask whether to combine consecutive shots into longer Seedance clips (up to 15s) or use Kling multi-prompt. Assign intelligent per-shot durations, show a clip plan, then build the Spaces workspace.`;
+
+    setMessages((current) => current.map((message) => (
+      message.id === messageId
+        ? { ...message, shotListForkUsed: true }
+        : message
+    )));
+    void handleSend(content);
+  }, [handleSend, messages, skills]);
 
   const handleComposerKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
@@ -2816,7 +2889,7 @@ export function LLMTab({
     ? (workModeOverride === 'auto' ? routedWorkMode : workModeOverride)
     : (workModeOverride === 'auto' ? workMode : workModeOverride);
 
-  const renderedMessages = useMemo(() => messages.map((message) => {
+  const renderedMessages = useMemo(() => messages.map((message, index) => {
     const workflow = message.cutWorkflow;
     const legacyParsedCutSet = !message.cutPlans && !message.cutProposal && message.role === 'assistant'
       ? parseCutProposals(message.content)
@@ -2828,10 +2901,27 @@ export function LLMTab({
       unresolvedSegmentCount: message.unresolvedSegmentCount,
       applicationError: message.applicationError,
     }] : legacyParsedCutSet?.proposals.map((proposal) => ({ proposal })) ?? []);
+    const priorUserMessage = [...messages.slice(0, index)].reverse().find((entry) => entry.role === 'user');
+    const skillIdFromThread = findSkillIdInText(priorUserMessage?.content ?? message.content, skills);
+    const skillName = skills.find((skill) => skill.id === skillIdFromThread)?.name ?? activeSkill?.name ?? null;
+    const activeSpace = workspaceState.spaces.find((space) => space.id === workspaceState.activeSpaceId);
+    const skillAction = message.role === 'assistant'
+      ? resolveSkillActionForMessage(message.content, {
+          activeSkillName: skillName,
+          activeSpaceName: activeSpace?.name ?? null,
+          userMessage: priorUserMessage?.content ?? null,
+        })
+      : null;
+    const isPlainShotList = message.role === 'assistant'
+      && !skillAction
+      && !parseSkillActionFromContent(message.content)
+      && isShotListMessage(message.content)
+      && !message.shotListForkUsed;
+    let messageBodySource = message.content;
+    if (message.skillDraft) messageBodySource = stripSkillDraftBlock(messageBodySource);
+    messageBodySource = stripSkillActionBlock(messageBodySource);
     const messageBodyContent = sanitizeWorkflowMessageContent(
-      legacyParsedCutSet?.cleanedMessage || (
-        message.skillDraft ? stripSkillDraftBlock(message.content) : message.content
-      ),
+      legacyParsedCutSet?.cleanedMessage || messageBodySource,
       workflow,
     );
     const canCreateCombinedTimeline = messageCutPlans.length > 1;
@@ -2889,6 +2979,70 @@ export function LLMTab({
         {message.skillDraftSaved && (
           <div className="copilot__skill-draft copilot__skill-draft--saved">
             <span className="copilot__skill-draft-saved">Skill saved to your skills list.</span>
+          </div>
+        )}
+
+        {skillAction && !message.skillActionApplied && (
+          <div className="copilot__skill-action">
+            <div className="copilot__skill-action-head">
+              <div>
+                <div className="copilot__skill-action-title">
+                  {skillAction.steps.some((step) => step.type === 'add_nodes') ? 'Ready to add' : 'Ready for Spaces'}
+                </div>
+                <div className="copilot__skill-action-desc">{describeSkillAction(skillAction, {
+                  spaces: workspaceState.spaces,
+                  activeSpaceId: workspaceState.activeSpaceId,
+                  timelines,
+                  activeTimelineId,
+                })}</div>
+              </div>
+              <button
+                type="button"
+                className="copilot__btn copilot__btn--accent"
+                onClick={() => handleExecuteSkillAction(message.id)}
+              >
+                {skillAction.label}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isPlainShotList && (
+          <div className="copilot__shot-list-fork">
+            <div className="copilot__shot-list-fork-head">
+              <div>
+                <div className="copilot__skill-action-title">Next step</div>
+                <div className="copilot__skill-action-desc">Turn this shot list into storyboard panels or video clips on Spaces.</div>
+              </div>
+              <div className="copilot__shot-list-fork-actions">
+                <button
+                  type="button"
+                  className="copilot__btn copilot__btn--accent"
+                  onClick={() => handleShotListFork(message.id, 'storyboard')}
+                >
+                  Create storyboards
+                </button>
+                <button
+                  type="button"
+                  className="copilot__btn"
+                  onClick={() => handleShotListFork(message.id, 'videos')}
+                >
+                  Create videos
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {message.shotListForkUsed && !skillAction && (
+          <div className="copilot__skill-action copilot__skill-action--applied">
+            <span className="copilot__skill-action-applied">Follow-up sent — Copilot will plan storyboards or videos from this shot list.</span>
+          </div>
+        )}
+
+        {message.skillActionApplied && (
+          <div className="copilot__skill-action copilot__skill-action--applied">
+            <span className="copilot__skill-action-applied">Applied in CineGen — check Spaces, Edit, or Elements for changes.</span>
           </div>
         )}
 
@@ -3348,23 +3502,28 @@ export function LLMTab({
       </article>
     );
   }), [
+    activeSkill?.name,
     assetNameById,
     cutPreviewModes,
     handleApplyCombinedCutMessage,
     handleApplyCutMessage,
     handleApplyWorkflowCombinedVariant,
     handleApplyWorkflowCutPlan,
+    handleExecuteSkillAction,
     handleGenerateCutVariants,
     handleOpenAppliedTimeline,
     handleSaveSkillFromChat,
     handleSelectClarifyingOption,
     handleSetCutPreviewMode,
+    handleShotListFork,
     handleUpdateBriefField,
     handleUpdateClarifyingCustom,
     isCliLlmMode,
     messages,
     renderMessageContent,
+    skills,
     timelines,
+    workspaceState,
   ]);
 
   /* ── Composer ── */

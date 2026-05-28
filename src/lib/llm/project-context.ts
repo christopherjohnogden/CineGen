@@ -2,8 +2,10 @@ import type { Asset, MediaFolder } from '@/types/project';
 import type { Element } from '@/types/elements';
 import type { Timeline } from '@/types/timeline';
 import type { TranscriptSegment, TranscriptWord } from '@/types/workflow';
+import type { WorkflowSpace } from '@/types/workspace';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { CUT_PLAN_CLOSE, CUT_PLAN_OPEN } from '@/lib/llm/cut-plan';
+import { COPILOT_ACTIONS_GUIDE } from '@/lib/llm/copilot-actions-guide';
 
 export type LLMWorkMode = 'ask' | 'search' | 'cut' | 'timeline';
 
@@ -306,6 +308,8 @@ export function buildModeSystemPrompt(_mode?: LLMWorkMode): string {
     "  Use source clip times, not timeline times. Use asset_id when available. If the user asked for a plan, proposal, options, parts, versions, or previews, set should_create_timeline to false. Only set should_create_timeline to true when the user explicitly asked to create/apply/build the timeline now.",
     "- Reason about timeline structure, clip usage, trims, tracks, pacing, and edit operations. Reference exact clips and timestamps.",
     "",
+    COPILOT_ACTIONS_GUIDE.trim(),
+    "",
     "## Response formatting",
     "When listing timeline clips, use ONE chronological numbered list across all tracks — never markdown tables of any kind.",
     "Format each clip like: **ClipName** — TrackName, 00:00.0 to 00:03.0 [timeline:TimelineName / clip:ClipName @ 00:00.0]",
@@ -324,9 +328,11 @@ function buildCompactProjectContext(params: {
   timelines: Timeline[];
   activeTimelineId: string;
   elements: Element[];
+  spaces?: WorkflowSpace[];
+  activeSpaceId?: string;
   focusQuery?: string;
 }): string {
-  const { projectId, assets, timelines, activeTimelineId, elements } = params;
+  const { projectId, assets, timelines, activeTimelineId, elements, spaces = [], activeSpaceId } = params;
   const activeTimeline = timelines.find((t) => t.id === activeTimelineId);
   const assetsById = new Map(assets.map((a) => [a.id, a]));
 
@@ -353,10 +359,13 @@ function buildCompactProjectContext(params: {
     if (sorted.length > 30) clipLines.push(`- ... and ${sorted.length - 30} more clips`);
   }
 
+  const activeSpace = spaces.find((space) => space.id === activeSpaceId) ?? spaces[0];
+
   const lines = [
     'PROJECT CONTEXT',
     `Project: ${projectId}`,
     `Active timeline: ${activeTimeline?.name ?? 'None'}`,
+    `Active Spaces workspace: ${activeSpace?.name ?? 'None'}`,
     `Assets: ${assets.length} (${videoCount} video, ${audioCount} audio, ${imageCount} image)`,
     `Timelines: ${timelines.length}`,
     '',
@@ -382,11 +391,13 @@ export function buildProjectContext(params: {
   timelines: Timeline[];
   activeTimelineId: string;
   elements: Element[];
+  spaces?: WorkflowSpace[];
+  activeSpaceId?: string;
   mode?: LLMWorkMode;
   focusQuery?: string;
   compact?: boolean;
 }): string {
-  const { projectId, assets, mediaFolders, timelines, activeTimelineId, elements, mode = 'ask', focusQuery } = params;
+  const { projectId, assets, mediaFolders, timelines, activeTimelineId, elements, spaces = [], activeSpaceId, mode = 'ask', focusQuery } = params;
 
   // Compact mode: minimal context for local/small models to keep prompt tokens low
   if (params.compact) {
@@ -395,6 +406,7 @@ export function buildProjectContext(params: {
   const foldersById = new Map(mediaFolders.map((folder) => [folder.id, folder]));
   const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
   const activeTimeline = timelines.find((timeline) => timeline.id === activeTimelineId);
+  const activeSpace = spaces.find((space) => space.id === activeSpaceId) ?? spaces[0];
   const clipUsageByAsset = new Map<string, string[]>();
   const focusTerms = extractFocusTerms(focusQuery);
   const isQuoteLookup = isQuoteLookupQuery(focusQuery);
@@ -468,6 +480,10 @@ export function buildProjectContext(params: {
   const elementLines = elements.length > 0
     ? elements.map((element) => `- ${element.type}: ${element.name}${element.description ? ` — ${element.description}` : ''}`)
     : ['- No project elements defined'];
+
+  const spaceLines = spaces.length > 0
+    ? spaces.map((space) => `- ${space.name} [${space.id}]${space.id === activeSpace?.id ? ' (active)' : ''} — ${space.nodes.length} nodes`)
+    : ['- No Spaces workspaces yet'];
 
   const transcriptReadyCount = assets.filter((asset) => getTranscriptPayload(asset).status === 'ready').length;
   const videoCount = assets.filter((asset) => asset.type === 'video').length;
@@ -557,6 +573,7 @@ export function buildProjectContext(params: {
     'ACTIVE PROJECT CONTEXT',
     `Project ID: ${projectId}`,
     `Active timeline: ${activeTimeline?.name ?? 'None'}`,
+    `Active Spaces workspace: ${activeSpace?.name ?? 'None'}`,
     `Assets: ${assets.length} total (${videoCount} video, ${audioCount} audio, ${imageCount} image)`,
     `Transcript-ready assets: ${transcriptReadyCount}`,
     `Word-timestamp-ready assets: ${wordReadyCount}`,
@@ -566,6 +583,9 @@ export function buildProjectContext(params: {
     '',
     'ELEMENTS',
     ...elementLines,
+    '',
+    'SPACES WORKSPACES',
+    ...spaceLines,
     '',
     'MEDIA POOL',
     ...assetLines,

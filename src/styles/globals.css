@@ -7484,6 +7484,67 @@ input[type='range']::-moz-range-track {
   color: var(--accent);
 }
 
+.copilot__skill-action {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 140, 60, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 140, 60, 0.06);
+}
+
+.copilot__skill-action-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copilot__skill-action-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.copilot__skill-action-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.copilot__skill-action--applied {
+  padding: 10px 14px;
+}
+
+.copilot__skill-action-applied {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.copilot__shot-list-fork {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(120, 180, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(120, 180, 255, 0.05);
+}
+
+.copilot__shot-list-fork-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copilot__shot-list-fork-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {

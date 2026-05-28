@@ -22,7 +22,7 @@ export interface LLMSkill {
 const SKILLS_STORAGE_KEY = 'cinegen_llm_skills';
 
 /** Bump when built-in skill copy changes so existing installs pick up updates. */
-export const BUILTIN_SKILLS_REVISION = 1;
+export const BUILTIN_SKILLS_REVISION = 4;
 
 export const SKILL_TEMPLATES: SkillTemplate[] = DEFAULT_SKILL_TEMPLATES;
 
