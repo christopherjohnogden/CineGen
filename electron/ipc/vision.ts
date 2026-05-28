@@ -164,6 +164,14 @@ function guessContentType(filePath: string): string {
     case '.tif':
     case '.tiff':
       return 'image/tiff';
+    case '.mp4':
+      return 'video/mp4';
+    case '.mov':
+      return 'video/quicktime';
+    case '.webm':
+      return 'video/webm';
+    case '.m4v':
+      return 'video/x-m4v';
     default:
       return 'application/octet-stream';
   }
@@ -206,6 +214,10 @@ async function uploadImagePath(apiKey: string, rawPath: string): Promise<string 
   const file = new File([blob], path.basename(fsPath), { type });
   fal.config({ credentials: apiKey });
   return fal.storage.upload(file);
+}
+
+async function uploadVideoPath(apiKey: string, rawPath: string): Promise<string | null> {
+  return uploadImagePath(apiKey, rawPath);
 }
 
 function normalizeDetectedObjects(
@@ -504,6 +516,72 @@ export async function analyzeAssetVisualSummary(params: VisionIndexAssetParams):
       error: 'Vision analysis JSON parse failed.',
     };
   }
+}
+
+export async function analyzeVideoWithPrompt(params: {
+  apiKey: string;
+  videoPath: string;
+  prompt: string;
+  detailedAnalysis?: boolean;
+}): Promise<string> {
+  if (!params.apiKey) throw new Error('No fal.ai API key provided.');
+
+  const uploaded = await uploadVideoPath(params.apiKey, params.videoPath).catch(() => null);
+  if (!uploaded) {
+    throw new Error('Could not upload the video file for analysis.');
+  }
+
+  fal.config({ credentials: params.apiKey });
+  const result = await fal.subscribe('fal-ai/video-understanding', {
+    input: {
+      video_url: uploaded,
+      prompt: params.prompt.trim() || 'Describe this video in detail.',
+      detailed_analysis: params.detailedAnalysis ?? true,
+    },
+    logs: true,
+  });
+
+  const data = result.data as Record<string, unknown>;
+  const analysis = extractTextFromUnknown(data.output)
+    || extractTextFromUnknown(data.text)
+    || extractTextFromUnknown(data.description)
+    || extractTextFromUnknown(data);
+  if (!analysis.trim()) {
+    throw new Error('Video analysis returned an empty response.');
+  }
+  return analysis.trim();
+}
+
+export async function analyzeImageWithPrompt(params: {
+  apiKey: string;
+  imagePath: string;
+  prompt: string;
+  model?: string;
+}): Promise<string> {
+  if (!params.apiKey) throw new Error('No fal.ai API key provided.');
+
+  const uploaded = await uploadImagePath(params.apiKey, params.imagePath).catch(() => null);
+  if (!uploaded) {
+    throw new Error('Could not upload the image file for analysis.');
+  }
+
+  fal.config({ credentials: params.apiKey });
+  const result = await fal.subscribe('fal-ai/any-llm/vision', {
+    input: {
+      model: params.model?.trim() || DEFAULT_VISION_MODEL,
+      prompt: params.prompt.trim() || 'Describe this image in detail.',
+      image_urls: [uploaded],
+      max_tokens: 900,
+    },
+    logs: true,
+  });
+
+  const data = result.data as Record<string, unknown>;
+  const analysis = extractTextFromUnknown(data.output) || extractTextFromUnknown(data.text) || extractTextFromUnknown(data);
+  if (!analysis.trim()) {
+    throw new Error('Image analysis returned an empty response.');
+  }
+  return analysis.trim();
 }
 
 export async function detectObjectsInImage(params: VisionDetectObjectsParams): Promise<VisionDetectObjectsResult> {

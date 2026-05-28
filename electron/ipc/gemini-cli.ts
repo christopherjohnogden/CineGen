@@ -1,9 +1,15 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  buildGeminiUserMessageWithVisualRefs,
+  cleanupEphemeralVisualRefs,
+  prepareCopilotVisualRefs,
+  type PreparedCopilotVisualRef,
+} from './copilot-visual-media.js';
 import {
   buildGeminiCliEnv,
   buildConversationPrompt,
@@ -21,16 +27,25 @@ import {
 let activeRequest: ActiveCliRequest | null = null;
 
 const FIRST_TOKEN_TIMEOUT_MS = 90_000;
+const VISUAL_FIRST_TOKEN_TIMEOUT_MS = 180_000;
 const PROMPT_STDIN_THRESHOLD = 8_000;
+
+function getGeminiWorkspaceDir(): string {
+  return path.join(app.getPath('userData'), 'gemini-cli-workspace');
+}
+
+function getGeminiVisualWorkspaceDir(): string {
+  return path.join(os.tmpdir(), 'cinegen-gemini-visual-refs');
+}
 
 function buildGeminiPrompt(params: CliCopilotChatParams): string {
   const systemParts: string[] = [];
+
   if (params.injectProjectContext && params.systemPrompt?.trim()) {
     const refreshPrefix = params.contextRefresh
       ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
       : '';
-    const suffix = params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
-    systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}\n\n${suffix}`);
+    systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}\n\n${params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX}`);
   }
 
   const history = (params.messages ?? []).filter((message) => message.content.trim());
@@ -46,7 +61,11 @@ function buildGeminiPrompt(params: CliCopilotChatParams): string {
 }
 
 function buildGeminiResumePrompt(params: CliCopilotChatParams): string {
-  const prefix = [params.systemPrompt?.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join('\n\n');
+  const prefix = [
+    params.systemPrompt?.trim(),
+    COPILOT_RESUME_REMINDER,
+  ].filter(Boolean).join('\n\n');
+
   return prefix
     ? `${prefix}\n\nUser:\n${params.userMessage.trim()}\n\nAssistant:\n`
     : `${params.userMessage.trim()}\n\nAssistant:\n`;
@@ -66,32 +85,42 @@ function parseGeminiUsage(obj: Record<string, unknown>): CliUsageSummary | undef
 
 function formatGeminiToolStatus(toolName: unknown): string {
   if (typeof toolName !== 'string' || !toolName.trim()) return 'Gemini CLI is working…';
-  const label = toolName.replace(/_/g, ' ');
-  return `Gemini CLI: ${label}…`;
+  const normalized = toolName.replace(/_/g, ' ').toLowerCase();
+  if (normalized.includes('read') && normalized.includes('file')) {
+    return 'Gemini CLI: Reading attached video…';
+  }
+  return `Gemini CLI: ${toolName.replace(/_/g, ' ')}…`;
 }
 
 function isFatalGeminiStreamError(message: string): boolean {
   return /malformed tool call|empty response|API Error|INVALID_ARGUMENT/i.test(message);
 }
 
-async function streamGeminiChat(
+function isMissingGeminiSessionError(message: string): boolean {
+  return /no previous sessions found/i.test(message);
+}
+
+async function streamGeminiChatOnce(
   requestId: string,
   params: CliCopilotChatParams,
+  options: {
+    canResume: boolean;
+    hasVisualRefs: boolean;
+    preparedVisualRefs: PreparedCopilotVisualRef[];
+  },
 ): Promise<{ message: string; sessionId?: string; usage?: CliUsageSummary; resumed: boolean }> {
   const binary = await resolveCliBinary('gemini');
   if (!binary) {
     throw new Error('Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli');
   }
 
-  if (!params.userMessage.trim()) {
-    throw new Error('No chat message provided.');
-  }
-
   const model = params.model?.trim() || 'gemini-2.5-flash';
-  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
-  const prompt = canResume ? buildGeminiResumePrompt(params) : buildGeminiPrompt(params);
+  const prompt = options.canResume
+    ? buildGeminiResumePrompt(params)
+    : buildGeminiPrompt(params);
   const useStdin = prompt.length > PROMPT_STDIN_THRESHOLD;
-  const workDir = await mkdtemp(path.join(os.tmpdir(), 'cinegen-gemini-'));
+  const workDir = getGeminiWorkspaceDir();
+  await mkdir(workDir, { recursive: true });
 
   const args = [
     '--skip-trust',
@@ -101,10 +130,18 @@ async function streamGeminiChat(
     '-m',
     model,
     '--approval-mode',
-    'default',
+    options.hasVisualRefs ? 'yolo' : 'default',
   ];
 
-  if (canResume && params.resumeSessionId) {
+  if (options.hasVisualRefs) {
+    args.push('--session-id', crypto.randomUUID());
+    const includeDirs = [...new Set(
+      options.preparedVisualRefs.map((ref) => path.dirname(ref.mediaPath)),
+    )];
+    for (const dir of includeDirs) {
+      args.push('--include-directories', dir);
+    }
+  } else if (options.canResume && params.resumeSessionId) {
     args.push('-r', params.resumeSessionId);
   }
 
@@ -114,6 +151,9 @@ async function streamGeminiChat(
   let sessionId: string | undefined;
   let usage: CliUsageSummary | undefined;
   const chatTimeoutMs = 15 * 60 * 1000;
+  const firstTokenTimeoutMs = options.hasVisualRefs
+    ? VISUAL_FIRST_TOKEN_TIMEOUT_MS
+    : FIRST_TOKEN_TIMEOUT_MS;
 
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
@@ -133,16 +173,12 @@ async function streamGeminiChat(
     let settled = false;
     let firstTokenReceived = false;
 
-    const cleanupWorkDir = () => {
-      void rm(workDir, { recursive: true, force: true }).catch(() => {});
-    };
-
     const finish = (handler: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
       clearTimeout(firstTokenTimeoutId);
-      cleanupWorkDir();
+      cleanupEphemeralVisualRefs(options.preparedVisualRefs);
       handler();
     };
 
@@ -157,9 +193,11 @@ async function streamGeminiChat(
       activeRequest = null;
       child.kill('SIGTERM');
       finish(() => reject(new Error(
-        'Gemini CLI is taking too long to respond. Try gemini-2.5-flash, shorten the question, or start a new chat.',
+        options.hasVisualRefs
+          ? 'Gemini CLI is still reading the attached video. Try again or use a shorter clip.'
+          : 'Gemini CLI is taking too long to respond. Try gemini-2.5-flash, shorten the question, or start a new chat.',
       )));
-    }, FIRST_TOKEN_TIMEOUT_MS);
+    }, firstTokenTimeoutMs);
 
     child.stdout?.on('data', (chunk: Buffer) => {
       lineBuffer += chunk.toString();
@@ -197,11 +235,12 @@ async function streamGeminiChat(
           }
 
           if (obj.type === 'error' && typeof obj.message === 'string') {
-            stderrBuffer += obj.message;
-            if (!fullContent.trim() && isFatalGeminiStreamError(obj.message)) {
+            const errorMessage = obj.message;
+            stderrBuffer += errorMessage;
+            if (!fullContent.trim() && isFatalGeminiStreamError(errorMessage)) {
               activeRequest = null;
               child.kill('SIGTERM');
-              finish(() => reject(new Error(stripAnsiCodes(obj.message))));
+              finish(() => reject(new Error(stripAnsiCodes(errorMessage))));
             }
           }
 
@@ -239,9 +278,63 @@ async function streamGeminiChat(
         return;
       }
 
-      finish(() => resolve({ message: trimmed, sessionId, usage, resumed: canResume }));
+      finish(() => resolve({
+        message: trimmed,
+        sessionId,
+        usage,
+        resumed: options.canResume,
+      }));
     });
   });
+}
+
+async function streamGeminiChat(
+  requestId: string,
+  params: CliCopilotChatParams,
+): Promise<{ message: string; sessionId?: string; usage?: CliUsageSummary; resumed: boolean }> {
+  if (!params.userMessage.trim()) {
+    throw new Error('No chat message provided.');
+  }
+
+  const workDir = getGeminiWorkspaceDir();
+  const visualWorkspaceDir = getGeminiVisualWorkspaceDir();
+  await mkdir(workDir, { recursive: true });
+  await mkdir(visualWorkspaceDir, { recursive: true });
+  const preparedVisualRefs = await prepareCopilotVisualRefs(params.visualRefs ?? [], visualWorkspaceDir);
+  if ((params.visualRefs ?? []).length > 0 && preparedVisualRefs.length === 0) {
+    throw new Error('Could not load the attached /clip or /asset files for Gemini visual analysis. Use local video or image files.');
+  }
+
+  const hasVisualRefs = preparedVisualRefs.length > 0;
+  const effectiveParams: CliCopilotChatParams = {
+    ...params,
+    userMessage: buildGeminiUserMessageWithVisualRefs(params.userMessage, preparedVisualRefs),
+  };
+  const wantsResume = Boolean(params.resumeSessionId) && !params.injectProjectContext && !hasVisualRefs;
+
+  try {
+    return await streamGeminiChatOnce(requestId, effectiveParams, {
+      canResume: wantsResume,
+      hasVisualRefs,
+      preparedVisualRefs,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!wantsResume || !isMissingGeminiSessionError(message)) {
+      throw error;
+    }
+
+    return streamGeminiChatOnce(requestId, {
+      ...effectiveParams,
+      injectProjectContext: !hasVisualRefs,
+      contextRefresh: !hasVisualRefs,
+      resumeSessionId: undefined,
+    }, {
+      canResume: false,
+      hasVisualRefs,
+      preparedVisualRefs,
+    });
+  }
 }
 
 export function registerGeminiCliHandlers(): void {

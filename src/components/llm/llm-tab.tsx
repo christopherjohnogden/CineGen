@@ -35,6 +35,13 @@ import {
 } from '@/lib/llm/claude-code-session';
 import { invokeCliCopilotChat, subscribeCliCopilotStream } from '@/lib/llm/cli-copilot-client';
 import {
+  detectVisualAnalysisIntent,
+  extractSlashReferenceLabels,
+  hasCopilotVisualRefs,
+  isGeminiVideoAnalysisRefusal,
+  resolveCopilotVisualRefsForMessage,
+} from '@/lib/llm/copilot-visual-refs';
+import {
   buildCombinedCutProposal,
   buildTimelineFromCutProposal,
   parseCutProposals,
@@ -1558,6 +1565,42 @@ export function LLMTab({
       return;
     }
 
+    let sendContent = content;
+    const mentionableAssetNames = mediaPoolMentionAssets.map((asset) => asset.name);
+    const mentionableClipNames = clipsList.map((clip) => clip.clipName);
+    const slashRefLabels = extractSlashReferenceLabels(content, [
+      ...mentionableClipNames,
+      ...mentionableAssetNames,
+    ]);
+    const visualRefs = resolveCopilotVisualRefsForMessage({
+      text: content,
+      assets,
+      timelines,
+      activeTimelineId,
+      mentionableAssetNames,
+      mentionableClipNames,
+      conversationContext: messages.slice(-4).map((message) => message.content),
+    });
+    const wantsVisualAnalysis = detectVisualAnalysisIntent(content) || slashRefLabels.length > 0;
+    const hasVisualRefs = hasCopilotVisualRefs(visualRefs);
+
+    if (wantsVisualAnalysis && !hasVisualRefs) {
+      setError(
+        slashRefLabels.length > 0
+          ? 'The /reference could not be loaded for visual analysis. Use a local video or image file on disk.'
+          : 'Visual analysis needs a local video file on disk. Wait for media to finish downloading to media/generated, or use /ClipName.',
+      );
+      return;
+    }
+
+    if (wantsVisualAnalysis && hasVisualRefs) {
+      const isGeminiCliMode = isCliBackendMode(mode) && mode === 'gemini';
+      if (!isGeminiCliMode) {
+        setError('Visual video analysis uses Gemini CLI. Switch the Copilot backend to Gemini and try again.');
+        return;
+      }
+    }
+
     /* ── CLI subscription modes: Claude Code, Codex, Gemini CLI ── */
     if (isCliBackendMode(mode)) {
       const cliProvider = mode;
@@ -1597,15 +1640,17 @@ export function LLMTab({
       });
 
       try {
-        const inferredWorkMode = inferAutoWorkMode(content, messages);
+        const inferredWorkMode = inferAutoWorkMode(sendContent, messages);
         const resolvedWorkMode = workModeOverride === 'auto' ? inferredWorkMode : workModeOverride;
         const chatWorkMode = resolvedWorkMode === 'cut' ? 'ask' : resolvedWorkMode;
 
         const priorUserMessage = [...messages].reverse().find((message) => message.role === 'user');
-        const isRepeatQuestion = isRepeatUserQuestion(content, priorUserMessage?.content);
+        const geminiVisualTurn = cliProvider === 'gemini' && hasVisualRefs;
+        const isRepeatQuestion = !geminiVisualTurn
+          && isRepeatUserQuestion(sendContent, priorUserMessage?.content);
         const apiUserMessage = isRepeatQuestion
-          ? `${REPEAT_CLIP_FORMAT_HINT}\n\n${content}`
-          : content;
+          ? `${REPEAT_CLIP_FORMAT_HINT}\n\n${sendContent}`
+          : sendContent;
 
         const activeSession = cliSession.provider === cliProvider
           ? cliSession
@@ -1636,7 +1681,7 @@ export function LLMTab({
           spaces: workspaceState.spaces,
           activeSpaceId: workspaceState.activeSpaceId,
           mode: chatWorkMode,
-          focusQuery: content,
+          focusQuery: sendContent,
           compact: cliProvider === 'gemini',
         });
 
@@ -1651,6 +1696,11 @@ export function LLMTab({
           turnSkillSystemPrompt,
           projectContext,
         ]);
+
+        const effectiveInject = geminiVisualTurn ? false : inject;
+        if (geminiVisualTurn) {
+          setCliStreamStatus('Reading attached video in Gemini CLI…');
+        }
 
         const runCliTurn = async (
           turnRequestId: string,
@@ -1671,35 +1721,88 @@ export function LLMTab({
           systemPrompt: turnOptions.systemPrompt,
           userMessage: turnUserMessage,
           messages: turnOptions.messages,
+          ...(geminiVisualTurn ? { visualRefs } : {}),
         });
 
         let response;
         try {
           response = await runCliTurn(requestId, apiUserMessage, {
-            injectProjectContext: inject,
-            contextRefresh: refresh,
-            resumeSessionId: inject ? undefined : activeSession.sessionId ?? undefined,
-            systemPrompt: inject ? fullCliSystemPrompt : skillsCatalogPrompt,
-            messages: inject
-              ? contextMessages.map((message) => ({ role: message.role, content: message.content }))
-              : undefined,
+            injectProjectContext: geminiVisualTurn ? false : inject,
+            contextRefresh: geminiVisualTurn ? false : refresh,
+            resumeSessionId: (geminiVisualTurn || inject) ? undefined : activeSession.sessionId ?? undefined,
+            systemPrompt: geminiVisualTurn
+              ? undefined
+              : (inject ? fullCliSystemPrompt : skillsCatalogPrompt),
+            messages: (geminiVisualTurn || !inject)
+              ? undefined
+              : contextMessages.map((message) => ({ role: message.role, content: message.content })),
           });
         } catch (firstTurnError) {
           const firstTurnMessage = firstTurnError instanceof Error ? firstTurnError.message : String(firstTurnError);
-          if (cliProvider !== 'claude-code' || !isClaudeMaxTurnsError(firstTurnMessage)) {
+          if (cliProvider === 'gemini' && /no previous sessions found/i.test(firstTurnMessage)) {
+            response = await runCliTurn(crypto.randomUUID(), apiUserMessage, {
+              injectProjectContext: geminiVisualTurn ? false : true,
+              contextRefresh: geminiVisualTurn ? false : true,
+              resumeSessionId: undefined,
+              systemPrompt: geminiVisualTurn ? undefined : fullCliSystemPrompt,
+              messages: geminiVisualTurn
+                ? undefined
+                : contextMessages.map((message) => ({ role: message.role, content: message.content })),
+            });
+          } else if (cliProvider !== 'claude-code' || !isClaudeMaxTurnsError(firstTurnMessage)) {
             throw firstTurnError;
-          }
+          } else {
+            const maxTurnRetryId = crypto.randomUUID();
+            setMessages((current) => {
+              const last = current[current.length - 1];
+              if (last?.id !== assistantMessage.id) return current;
+              return [...current.slice(0, -1), { ...last, content: '' }];
+            });
 
-          const maxTurnRetryId = crypto.randomUUID();
+            const removeMaxTurnRetryListener = subscribeCliCopilotStream(cliProvider, (data) => {
+              if (data.requestId !== maxTurnRetryId) return;
+              if (data.token) {
+                setMessages((current) => {
+                  const last = current[current.length - 1];
+                  if (last?.id !== assistantMessage.id) return current;
+                  return [...current.slice(0, -1), { ...last, content: last.content + data.token }];
+                });
+              }
+            });
+
+            try {
+              response = await runCliTurn(maxTurnRetryId, content, {
+                injectProjectContext: true,
+                contextRefresh: true,
+                resumeSessionId: undefined,
+                systemPrompt: fullCliSystemPrompt,
+                messages: contextMessages.map((message) => ({ role: message.role, content: message.content })),
+              });
+            } finally {
+              removeMaxTurnRetryListener();
+            }
+          }
+        }
+
+        let finalContent = (response.message?.trim() || '').trim() || 'No response returned.';
+        let normalizedContent = normalizeAssistantCitations(finalContent);
+
+        if (geminiVisualTurn && isGeminiVideoAnalysisRefusal(normalizedContent)) {
+          const visualRetryRequestId = crypto.randomUUID();
+          setCliStreamStatus('Retrying Gemini video analysis…');
           setMessages((current) => {
             const last = current[current.length - 1];
             if (last?.id !== assistantMessage.id) return current;
             return [...current.slice(0, -1), { ...last, content: '' }];
           });
 
-          const removeMaxTurnRetryListener = subscribeCliCopilotStream(cliProvider, (data) => {
-            if (data.requestId !== maxTurnRetryId) return;
+          const removeVisualRetryListener = subscribeCliCopilotStream(cliProvider, (data) => {
+            if (data.requestId !== visualRetryRequestId) return;
+            if (data.status) {
+              setCliStreamStatus(data.status);
+            }
             if (data.token) {
+              setCliStreamStatus('');
               setMessages((current) => {
                 const last = current[current.length - 1];
                 if (last?.id !== assistantMessage.id) return current;
@@ -1709,21 +1812,33 @@ export function LLMTab({
           });
 
           try {
-            response = await runCliTurn(maxTurnRetryId, content, {
-              injectProjectContext: true,
-              contextRefresh: true,
+            const retryPrompt = [
+              'Analyze the attached video file from the @path and answer from the actual visual/audio content.',
+              'Do not answer from metadata, file names, timeline labels, or prior chat context.',
+              `User question: ${sendContent}`,
+            ].join('\n');
+            response = await runCliTurn(visualRetryRequestId, retryPrompt, {
+              injectProjectContext: false,
+              contextRefresh: false,
               resumeSessionId: undefined,
-              systemPrompt: fullCliSystemPrompt,
-              messages: contextMessages.map((message) => ({ role: message.role, content: message.content })),
+              systemPrompt: undefined,
+              messages: undefined,
             });
+            finalContent = (response.message?.trim() || '').trim() || 'No response returned.';
+            normalizedContent = normalizeAssistantCitations(finalContent);
           } finally {
-            removeMaxTurnRetryListener();
+            removeVisualRetryListener();
+          }
+
+          if (isGeminiVideoAnalysisRefusal(normalizedContent)) {
+            setError('Gemini CLI did not analyze the attached video after retry. The clip was re-sent as a fresh @path.');
+            normalizedContent = 'Gemini CLI could not read the attached video after retry. Try a shorter clip or ask about a specific clip by name.';
+            finalContent = normalizedContent;
           }
         }
 
-        let finalContent = (response.message?.trim() || '').trim() || 'No response returned.';
-        let normalizedContent = normalizeAssistantCitations(finalContent);
-        let needsContextRetry = detectContextGapInResponse(normalizedContent) || detectAgenticDeflection(normalizedContent);
+        let needsContextRetry = !geminiVisualTurn
+          && (detectContextGapInResponse(normalizedContent) || detectAgenticDeflection(normalizedContent));
 
         if (needsContextRetry) {
           const retryRequestId = crypto.randomUUID();
@@ -1772,7 +1887,7 @@ export function LLMTab({
           }
         }
 
-        if (!needsContextRetry && detectBadClipListFormatting(normalizedContent)) {
+        if (!geminiVisualTurn && !needsContextRetry && detectBadClipListFormatting(normalizedContent)) {
           const retryRequestId = crypto.randomUUID();
           setMessages((current) => {
             const last = current[current.length - 1];
@@ -1818,7 +1933,7 @@ export function LLMTab({
         setCliSession({
           provider: cliProvider,
           sessionId: needsContextRetry ? null : (response.sessionId ?? activeSession.sessionId),
-          contextFingerprint: inject ? currentFingerprint : activeSession.contextFingerprint,
+          contextFingerprint: effectiveInject ? currentFingerprint : activeSession.contextFingerprint,
           model: activeSession.model,
           forceContextRefresh: needsContextRetry,
         });
@@ -1919,7 +2034,7 @@ export function LLMTab({
     }
 
     /* ── Cloud mode ── */
-    const inferredWorkMode = inferAutoWorkMode(content, messages);
+    const inferredWorkMode = inferAutoWorkMode(sendContent, messages);
     const resolvedWorkMode = workModeOverride === 'auto' ? inferredWorkMode : workModeOverride;
 
     const apiKey = getApiKey();
@@ -1945,7 +2060,7 @@ export function LLMTab({
           apiKey,
           model,
           systemPrompt,
-          request: content,
+          request: sendContent,
           projectId,
           activeTimelineId,
           index: projectInsightIndex,
@@ -1985,7 +2100,7 @@ export function LLMTab({
         spaces: workspaceState.spaces,
         activeSpaceId: workspaceState.activeSpaceId,
         mode: resolvedWorkMode,
-        focusQuery: content,
+        focusQuery: sendContent,
       });
 
       const response = await window.electronAPI.llm.chat({
@@ -1998,7 +2113,10 @@ export function LLMTab({
           skillSystemPrompt,
           projectContext,
         ]),
-        messages: nextMessages.map((message) => ({ role: message.role, content: message.content })),
+        messages: [
+          ...nextMessages.slice(0, -1).map((message) => ({ role: message.role, content: message.content })),
+          { role: 'user' as const, content: sendContent },
+        ],
         maxTokens,
         temperature,
       });

@@ -27,6 +27,16 @@ export interface CliCopilotMessage {
   content: string;
 }
 
+export interface CopilotVisualRefInput {
+  label: string;
+  kind: 'asset' | 'clip';
+  mediaType: 'image' | 'video';
+  fileRef: string;
+  trimStartSec?: number;
+  trimDurationSec?: number;
+  framePaths?: string[];
+}
+
 export interface CliCopilotChatParams {
   requestId?: string;
   model?: string;
@@ -37,6 +47,7 @@ export interface CliCopilotChatParams {
   systemPrompt?: string;
   userMessage: string;
   messages?: CliCopilotMessage[];
+  visualRefs?: CopilotVisualRefInput[];
 }
 
 const PROVIDER_BINARIES: Record<CliLlmProviderId, string[]> = {
@@ -164,6 +175,12 @@ export const CHAT_ONLY_SUFFIX = [
   'Answer immediately from ACTIVE PROJECT CONTEXT and conversation history. Never search files, run commands, or say "let me look at the project".',
   'CineGen SKILLS are listed in the system prompt — answer skill inventory questions from that catalog, never via tools.',
   'Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands.',
+].join(' ');
+
+export const VISUAL_REF_SUFFIX = [
+  'VISUAL REFERENCES are attached above with @file paths.',
+  'Describe what you see in those images or videos directly — composition, action, subjects, setting, and on-screen text.',
+  'Do not search the filesystem for other files. Do not say you cannot see the media when @paths are attached.',
 ].join(' ');
 
 export const COPILOT_RESUME_REMINDER = [

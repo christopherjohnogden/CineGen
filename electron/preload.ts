@@ -73,6 +73,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     indexAsset: (params: unknown) => ipcRenderer.invoke('vision:index-asset', params),
     detectObjects: (params: unknown) => ipcRenderer.invoke('vision:detect-objects', params),
   },
+  copilot: {
+    analyzeVisualRefs: (params: {
+      apiKey: string;
+      prompt: string;
+      visualRefs: Array<{
+        label: string;
+        kind: 'asset' | 'clip';
+        mediaType: 'image' | 'video';
+        fileRef: string;
+        trimStartSec?: number;
+        trimDurationSec?: number;
+        framePaths?: string[];
+      }>;
+    }) => ipcRenderer.invoke('copilot:analyze-visual-refs', params),
+  },
   dialog: {
     showSave: (options?: unknown) => ipcRenderer.invoke('dialog:show-save', options),
     showOpen: (options?: unknown) => ipcRenderer.invoke('dialog:show-open', options),
@@ -102,6 +117,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('media:extract-clip', params),
     downloadRemote: (params: { url: string; projectId: string; assetId: string; ext?: string }) =>
       ipcRenderer.invoke('media:download-remote', params),
+    persistGeneratedAsset: (params: {
+      projectId: string;
+      assetId: string;
+      assetType: 'video' | 'audio' | 'image';
+      remoteUrl?: string;
+      localPathHint?: string;
+      extension?: string;
+    }) => ipcRenderer.invoke('media:persist-generated-asset', params),
     onJobProgress: (cb: (data: unknown) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, d: unknown) => cb(d);
       ipcRenderer.on('media:job-progress', handler);

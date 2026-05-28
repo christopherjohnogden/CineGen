@@ -60,7 +60,10 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - Collapsed model chip shows **`provider: model`** (e.g. `claude: opus`); open menu uses grouped short labels (Claude / Codex / Gemini / Cloud / Local)
 - Sidebar and top bar show **Input / Output / Tokens** for CLI backends (Claude Code, Ollama) instead of API spend; per-message token counts included
 - Gemini CLI model picker uses CLI-native aliases (`auto`, `flash`, `pro`) plus Gemini 3.1/3 preview IDs — not pinned to 2.5 only
-- **Gemini CLI Copilot speed:** default model is **gemini-2.5-flash** (was `auto`); compact project context, isolated temp workspace, headless **default** approval mode (avoids plan-mode filesystem reads), 90s first-token timeout with visible tool status while waiting **(in progress)**
+- **Gemini CLI Copilot speed:** default model is **gemini-2.5-flash** (was `auto`); compact project context, stable Gemini workspace dir (fixes resume errors), headless **default** approval mode, 90s first-token timeout with visible tool status while waiting **(in progress)**
+- **Gemini CLI visual timeline analysis:** questions like “describe the first clip in the timeline” auto-attach the clip via inline `@/path/to/clip.mp4` (same as terminal Gemini CLI), auto-approve `read_many_files`, skip CineGen project metadata on visual turns, and export trimmed clips with **video + audio** via ffmpeg — no fal.ai fallback **(in progress)**
+- **Gemini CLI visual `/` references:** `/asset` or `/clip` mentions attach local image/video files the same way **(in progress)**
+- **Generated media local persist:** AI outputs and remote-only pool assets auto-download/copy into `{project}/media/generated/` on project load and when added; sets `fileRef` + `sourceUrl` and queues metadata/thumbnail/filmstrip jobs **(in progress)**
 - **Enhance Prompt:** works with Cloud, Local (Ollama), and CLI backends; rewrites composer text only (does not answer the question — use Send for that)
 - **Claude Code model picker:** Opus, Sonnet, and Haiku via `--model`
 - **Smart context caching:** full project context injected on first message only; follow-ups use `--resume` session (much lower token use)
@@ -187,10 +190,11 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Nano Banana 2:** Removed unsupported `seed` parameter
 - **Layer Decompose:** `reconstruct_bg` kept as app-only (not sent to SAM 3 API)
 - **KIE Runway:** Quality param no longer stripped before API call **(in progress fix)**
-- **Gemini CLI Copilot hang:** Headless chat no longer runs in your home directory with `--approval-mode plan` (which triggered slow filesystem/image reads). Uses isolated temp cwd, **default** approval mode, compact context, **gemini-2.5-flash** default, stdin for large prompts, 90s first-token timeout, and live tool status while waiting **(in progress)**
+- **Gemini CLI Copilot hang / resume:** Headless chat uses a stable app workspace (fixes `No previous sessions found for this project` on follow-ups); `/clip` and `/asset` refs attach local media for visual Q&A **(in progress)**
 - **Claude Code Copilot exit 1:** Use `--tools ""` (disable all tools) instead of a partial deny list — MCP/plugin tools were still callable, hitting `--max-turns 1` with no reply text; clearer errors from CLI `result.errors` **(in progress)**
 - **Claude Code max turns:** Raise Copilot to `--max-turns 2`, disable slash commands, auto-retry with fresh context on max-turn failures; `#skill-name` in a message loads that skill into the prompt **(in progress)**
 - **Copilot skill inventory:** Inject **CineGen SKILLS** catalog into system context; auto-retry when Claude deflects with “let me check / use Skill tool” instead of listing skills **(in progress)**
+- **Generated media persist spam:** Backfill no longer queues assets with bare filenames or missing remote/local sources; IPC returns `{ error }` instead of throwing so startup logs stay clean **(in progress)**
 
 ---
 

@@ -10,6 +10,7 @@ import os from 'node:os';
 import { getFfmpegPath, getFfprobePath, getFpcalcPath } from '../lib/ffmpeg-paths.js';
 import type { MediaJob, WorkerMessageToMain } from '../workers/media-worker-types.js';
 import { projectDir } from '../db/database.js';
+import { persistGeneratedAsset, queueAssetDerivationPipeline } from './generated-asset-persist.js';
 
 let worker: Worker | null = null;
 const pendingJobs = new Map<string, { resolve: (result: unknown) => void; reject: (err: Error) => void }>();
@@ -268,84 +269,13 @@ export function registerMediaImportHandlers(): void {
     // Start worker processing on next tick so renderer can add imported assets
     // before completion events begin arriving.
     setTimeout(() => {
-      // Pass 1: metadata + thumbnails for every asset so the media pool fills in quickly.
       for (const pipeline of metadataPipelines) {
-        const metadataJob: MediaJob = {
-          id: pipeline.metadataJobId,
-          type: 'extract_metadata',
+        queueAssetDerivationPipeline({
           assetId: pipeline.assetId,
+          projectId,
           inputPath: pipeline.inputPath,
-          outputPath: '', // Not needed for metadata
-          projectDir: pipeline.projectDir,
-        };
-
-        const cacheDir = path.join(pipeline.projectDir, '.cache');
-
-        // Queue fast visual/audio derivations immediately so UI gets thumbnails and previews sooner.
-        if (pipeline.type !== 'audio') {
-          const thumbsDir = path.join(cacheDir, 'thumbnails');
-          fs.mkdirSync(thumbsDir, { recursive: true });
-          submitJob({
-            id: crypto.randomUUID(),
-            type: 'generate_thumbnail',
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(thumbsDir, `${pipeline.assetId}.jpg`),
-            projectDir: pipeline.projectDir,
-          }).catch((err) => console.error('[media-import] Thumbnail failed:', err));
-        }
-        submitJob(metadataJob).catch((err) => console.error('[media-import] Metadata extraction failed:', err));
-      }
-
-      // Pass 2: waveforms for every eligible asset.
-      for (const pipeline of metadataPipelines) {
-        const cacheDir = path.join(pipeline.projectDir, '.cache');
-        if (pipeline.type === 'audio' || pipeline.type === 'video') {
-          const waveformDir = path.join(cacheDir, 'waveforms');
-          fs.mkdirSync(waveformDir, { recursive: true });
-          submitJob({
-            id: crypto.randomUUID(),
-            type: 'compute_waveform',
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(waveformDir, `${pipeline.assetId}.json`),
-            projectDir: pipeline.projectDir,
-          }).catch((err) => console.error('[media-import] Waveform failed:', err));
-        }
-      }
-
-      // Pass 3: filmstrips for video assets.
-      for (const pipeline of metadataPipelines) {
-        const cacheDir = path.join(pipeline.projectDir, '.cache');
-        if (pipeline.type === 'video') {
-          const filmstripDir = path.join(cacheDir, 'filmstrips');
-          fs.mkdirSync(filmstripDir, { recursive: true });
-          submitJob({
-            id: crypto.randomUUID(),
-            type: 'generate_filmstrip',
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(filmstripDir, `${pipeline.assetId}.jpg`),
-            projectDir: pipeline.projectDir,
-          }).catch((err) => console.error('[media-import] Filmstrip failed:', err));
-        }
-      }
-
-      // Pass 4: proxies last so they never block fast UI artifacts for later imports.
-      for (const pipeline of metadataPipelines) {
-        const cacheDir = path.join(pipeline.projectDir, '.cache');
-        if (pipeline.type === 'video') {
-          const proxyDir = path.join(cacheDir, 'proxies');
-          fs.mkdirSync(proxyDir, { recursive: true });
-          submitJob({
-            id: crypto.randomUUID(),
-            type: 'generate_proxy',
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(proxyDir, `${pipeline.assetId}.mp4`),
-            projectDir: pipeline.projectDir,
-          }).catch((err) => console.error('[media-import] Proxy failed:', err));
-        }
+          type: pipeline.type,
+        });
       }
     }, 0);
 
@@ -523,22 +453,34 @@ export function registerMediaImportHandlers(): void {
       const { url, projectId, assetId, ext } = params;
       if (!url || !projectId) throw new Error('url and projectId are required');
 
-      const projDir = projectDir(projectId);
-      const mediaDir = path.join(projDir, 'media', 'generated');
-      await fsPromises.mkdir(mediaDir, { recursive: true });
+      const result = await persistGeneratedAsset({
+        projectId,
+        assetId,
+        assetType: 'video',
+        remoteUrl: url,
+        extension: ext,
+      });
+      if ('error' in result) throw new Error(result.error);
+      return { path: result.path };
+    },
+  );
 
-      const extension = ext || path.extname(new URL(url).pathname) || '.mp4';
-      const destPath = path.join(mediaDir, `${assetId}${extension}`);
-
-      // Download the file
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to download (HTTP ${response.status}). The URL may have expired.`);
+  ipcMain.handle(
+    'media:persist-generated-asset',
+    async (_event, params: {
+      projectId: string;
+      assetId: string;
+      assetType: 'video' | 'audio' | 'image';
+      remoteUrl?: string;
+      localPathHint?: string;
+    }) => {
+      try {
+        return await persistGeneratedAsset(params);
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
-      const arrayBuffer = await response.arrayBuffer();
-      await fsPromises.writeFile(destPath, Buffer.from(arrayBuffer));
-
-      return { path: destPath };
     },
   );
 }

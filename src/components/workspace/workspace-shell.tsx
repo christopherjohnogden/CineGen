@@ -16,6 +16,12 @@ import { CreateTab } from '@/components/create/create-tab';
 import { EditTab } from '@/components/edit/edit-tab';
 import { LLMTab } from '@/components/llm/llm-tab';
 import { notifyCopilotResponseReady } from '@/lib/llm/copilot-notifications';
+import {
+  assetNeedsGeneratedPersist,
+  buildPersistedAssetUpdate,
+  getAssetRemoteUrl,
+  resolveExistingLocalPath,
+} from '@/lib/media/asset-local-storage';
 import { ExportTab } from '@/components/export/export-tab';
 import { SettingsPage } from '@/components/settings/settings-page';
 import { AppToastHost, type AppToast } from '@/components/ui/app-toast';
@@ -799,6 +805,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const pendingMediaEventsRef = useRef(new Map<string, Array<{ jobType?: string; result: unknown }>>());
   const deriveRetryCountsRef = useRef(new Map<string, number>());
   const deriveInFlightRef = useRef(new Set<string>());
+  const persistInFlightRef = useRef(new Set<string>());
   const [llmJumpRequest, setLlmJumpRequest] = useState<LlmJumpRequest | null>(null);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [hydrationComplete, setHydrationComplete] = useState(false);
@@ -1301,6 +1308,74 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
       });
     }
   }, [state.assets, projectId, updateAssetProcessingJobs]);
+
+  const MAX_CONCURRENT_GENERATED_PERSIST = 3;
+
+  // Download or copy AI-generated / remote assets into ~/Documents/CINEGEN/{project}/media/generated.
+  useEffect(() => {
+    if (!hydrationComplete) return;
+
+    let activeCount = persistInFlightRef.current.size;
+    for (const asset of state.assets) {
+      if (activeCount >= MAX_CONCURRENT_GENERATED_PERSIST) break;
+      if (!assetNeedsGeneratedPersist(asset)) continue;
+      if (persistInFlightRef.current.has(asset.id)) continue;
+
+      const remoteUrl = getAssetRemoteUrl(asset);
+      const localPathHint = resolveExistingLocalPath(asset) ?? undefined;
+      if (!remoteUrl && !localPathHint) continue;
+
+      persistInFlightRef.current.add(asset.id);
+      activeCount += 1;
+
+      window.electronAPI.media.persistGeneratedAsset({
+        projectId,
+        assetId: asset.id,
+        assetType: asset.type,
+        remoteUrl,
+        localPathHint,
+      }).then((result) => {
+        if ('error' in result && result.error) {
+          console.warn(`[workspace] Skipped persist for generated asset ${asset.id}:`, result.error);
+          wrappedDispatch({
+            type: 'UPDATE_ASSET',
+            asset: {
+              id: asset.id,
+              metadata: {
+                ...(asset.metadata ?? {}),
+                localPersistStatus: 'failed',
+                localPersistError: result.error,
+              },
+            },
+          });
+          return;
+        }
+        wrappedDispatch({
+          type: 'UPDATE_ASSET',
+          asset: {
+            id: asset.id,
+            ...buildPersistedAssetUpdate(asset, result),
+          },
+        });
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[workspace] Failed to persist generated asset ${asset.id}:`, message);
+        wrappedDispatch({
+          type: 'UPDATE_ASSET',
+          asset: {
+            id: asset.id,
+            metadata: {
+              ...(asset.metadata ?? {}),
+              localPersistStatus: 'failed',
+              localPersistError: message,
+            },
+          },
+        });
+      }).finally(() => {
+        persistInFlightRef.current.delete(asset.id);
+      });
+    }
+  }, [hydrationComplete, projectId, state.assets, wrappedDispatch]);
 
   useEffect(() => {
     const apiKey = getApiKey();

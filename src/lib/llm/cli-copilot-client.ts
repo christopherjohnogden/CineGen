@@ -1,4 +1,5 @@
 import type { CliLlmProviderId } from '@/lib/llm/claude-code-session';
+import type { CopilotVisualRefInput } from '@/lib/llm/copilot-visual-refs';
 
 export interface CliCopilotChatParams {
   requestId?: string;
@@ -10,6 +11,7 @@ export interface CliCopilotChatParams {
   systemPrompt?: string;
   userMessage: string;
   messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  visualRefs?: CopilotVisualRefInput[];
 }
 
 export interface CliCopilotChatResult {

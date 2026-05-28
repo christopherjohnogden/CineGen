@@ -190,6 +190,15 @@ export interface ElectronAPI {
       systemPrompt?: string;
       userMessage: string;
       messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+      visualRefs?: Array<{
+        label: string;
+        kind: 'asset' | 'clip';
+        mediaType: 'image' | 'video';
+        fileRef: string;
+        trimStartSec?: number;
+        trimDurationSec?: number;
+        framePaths?: string[];
+      }>;
     }) => Promise<{
       message: string;
       sessionId?: string;
@@ -228,6 +237,25 @@ export interface ElectronAPI {
       }>;
       error?: string;
     }>;
+  };
+  copilot: {
+    analyzeVisualRefs: (params: {
+      apiKey: string;
+      prompt: string;
+      visualRefs: Array<{
+        label: string;
+        kind: 'asset' | 'clip';
+        mediaType: 'image' | 'video';
+        fileRef: string;
+        trimStartSec?: number;
+        trimDurationSec?: number;
+        framePaths?: string[];
+      }>;
+    }) => Promise<Array<{
+      label: string;
+      mediaType: 'image' | 'video';
+      analysis: string;
+    }>>;
   };
   dialog: {
     showSave: (options?: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
@@ -274,6 +302,14 @@ export interface ElectronAPI {
     extractFrame: (params: { inputPath: string; timeSec: number }) => Promise<{ outputPath: string } | null>;
     extractClip: (params: { inputPath: string; startTimeSec: number; durationSec: number }) => Promise<{ outputPath: string } | null>;
     downloadRemote: (params: { url: string; projectId: string; assetId: string; ext?: string }) => Promise<{ path: string }>;
+    persistGeneratedAsset: (params: {
+      projectId: string;
+      assetId: string;
+      assetType: 'video' | 'audio' | 'image';
+      remoteUrl?: string;
+      localPathHint?: string;
+      extension?: string;
+    }) => Promise<{ path: string; sourceUrl?: string; downloaded: boolean } | { error: string }>;
   };
   transcription: {
     start: (params: {

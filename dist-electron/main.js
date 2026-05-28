@@ -2,7 +2,7 @@ var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { BrowserWindow, screen, ipcMain, app, dialog, shell, protocol, nativeImage, powerMonitor } from "electron";
-import fs$1, { mkdtemp, rm } from "node:fs/promises";
+import fs$1, { mkdir } from "node:fs/promises";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -5150,6 +5150,14 @@ function guessContentType$2(filePath) {
     case ".tif":
     case ".tiff":
       return "image/tiff";
+    case ".mp4":
+      return "video/mp4";
+    case ".mov":
+      return "video/quicktime";
+    case ".webm":
+      return "video/webm";
+    case ".m4v":
+      return "video/x-m4v";
     default:
       return "application/octet-stream";
   }
@@ -5188,6 +5196,9 @@ async function uploadImagePath(apiKey, rawPath) {
   const file = new File([blob], path.basename(fsPath), { type });
   srcExports.fal.config({ credentials: apiKey });
   return srcExports.fal.storage.upload(file);
+}
+async function uploadVideoPath(apiKey, rawPath) {
+  return uploadImagePath(apiKey, rawPath);
 }
 function normalizeDetectedObjects(parsed, maxObjects) {
   const rawObjects = Array.isArray(parsed.objects) ? parsed.objects : Array.isArray(parsed.detections) ? parsed.detections : Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed.regions) ? parsed.regions : Array.isArray(parsed.subjects) ? parsed.subjects : typeof parsed.label === "string" || typeof parsed.name === "string" || typeof parsed.object === "string" ? [parsed] : [];
@@ -5417,6 +5428,52 @@ async function analyzeAssetVisualSummary(params) {
       error: "Vision analysis JSON parse failed."
     };
   }
+}
+async function analyzeVideoWithPrompt(params) {
+  if (!params.apiKey) throw new Error("No fal.ai API key provided.");
+  const uploaded = await uploadVideoPath(params.apiKey, params.videoPath).catch(() => null);
+  if (!uploaded) {
+    throw new Error("Could not upload the video file for analysis.");
+  }
+  srcExports.fal.config({ credentials: params.apiKey });
+  const result = await srcExports.fal.subscribe("fal-ai/video-understanding", {
+    input: {
+      video_url: uploaded,
+      prompt: params.prompt.trim() || "Describe this video in detail.",
+      detailed_analysis: params.detailedAnalysis ?? true
+    },
+    logs: true
+  });
+  const data = result.data;
+  const analysis = extractTextFromUnknown(data.output) || extractTextFromUnknown(data.text) || extractTextFromUnknown(data.description) || extractTextFromUnknown(data);
+  if (!analysis.trim()) {
+    throw new Error("Video analysis returned an empty response.");
+  }
+  return analysis.trim();
+}
+async function analyzeImageWithPrompt(params) {
+  var _a;
+  if (!params.apiKey) throw new Error("No fal.ai API key provided.");
+  const uploaded = await uploadImagePath(params.apiKey, params.imagePath).catch(() => null);
+  if (!uploaded) {
+    throw new Error("Could not upload the image file for analysis.");
+  }
+  srcExports.fal.config({ credentials: params.apiKey });
+  const result = await srcExports.fal.subscribe("fal-ai/any-llm/vision", {
+    input: {
+      model: ((_a = params.model) == null ? void 0 : _a.trim()) || DEFAULT_VISION_MODEL,
+      prompt: params.prompt.trim() || "Describe this image in detail.",
+      image_urls: [uploaded],
+      max_tokens: 900
+    },
+    logs: true
+  });
+  const data = result.data;
+  const analysis = extractTextFromUnknown(data.output) || extractTextFromUnknown(data.text) || extractTextFromUnknown(data);
+  if (!analysis.trim()) {
+    throw new Error("Image analysis returned an empty response.");
+  }
+  return analysis.trim();
 }
 async function detectObjectsInImage(params) {
   var _a, _b;
@@ -6318,7 +6375,7 @@ function registerLLMChatHandlers() {
   });
   ipcMain.handle("llm:run-cut-workflow", async (_event, params) => runCutWorkflow(params));
 }
-const execFileAsync$1 = promisify(execFile);
+const execFileAsync$2 = promisify(execFile);
 const CLAUDE_CANDIDATES = [
   path.join(os.homedir(), ".local/bin/claude"),
   "/opt/homebrew/bin/claude",
@@ -6366,7 +6423,7 @@ async function resolveClaudeBinary() {
   if (cachedBinary !== void 0) return cachedBinary;
   for (const candidate of CLAUDE_CANDIDATES) {
     try {
-      const { stdout } = await execFileAsync$1(candidate, ["--version"], {
+      const { stdout } = await execFileAsync$2(candidate, ["--version"], {
         env: buildPathEnv(),
         timeout: 8e3
       });
@@ -6576,7 +6633,7 @@ function registerClaudeCodeHandlers() {
       return { installed: false };
     }
     try {
-      const { stdout } = await execFileAsync$1(binary, ["--version"], {
+      const { stdout } = await execFileAsync$2(binary, ["--version"], {
         env: buildPathEnv(),
         timeout: 8e3
       });
@@ -6605,7 +6662,7 @@ function registerClaudeCodeHandlers() {
     activeRequest$2 = null;
   });
 }
-const execFileAsync = promisify(execFile);
+const execFileAsync$1 = promisify(execFile);
 const PROVIDER_BINARIES = {
   "claude-code": [
     path.join(os.homedir(), ".local/bin/claude"),
@@ -6660,7 +6717,7 @@ async function resolveCliBinary(provider) {
   }
   for (const candidate of PROVIDER_BINARIES[provider]) {
     try {
-      const { stdout } = await execFileAsync(candidate, ["--version"], {
+      const { stdout } = await execFileAsync$1(candidate, ["--version"], {
         env: buildCliPathEnv(),
         timeout: 8e3
       });
@@ -6680,7 +6737,7 @@ async function detectCliProvider(provider) {
     return { id: provider, installed: false };
   }
   try {
-    const { stdout } = await execFileAsync(binary, ["--version"], {
+    const { stdout } = await execFileAsync$1(binary, ["--version"], {
       env: buildCliPathEnv(),
       timeout: 8e3
     });
@@ -6877,18 +6934,230 @@ function registerCodexCliHandlers() {
     activeRequest$1 = null;
   });
 }
+const execFileAsync = promisify(execFile);
+const MAX_CLIP_SECONDS = 90;
+function resolveExistingPath(fileRef) {
+  const trimmed = fileRef.trim();
+  if (!trimmed) return null;
+  const candidates = [
+    trimmed,
+    path.resolve(trimmed)
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+async function extractClipSegment(inputPath, startTimeSec, durationSec, outputPath) {
+  const ffmpegPath = getFfmpegPath();
+  const safeStart = Math.max(0, startTimeSec);
+  const safeDuration = Math.max(0.1, Math.min(durationSec, MAX_CLIP_SECONDS));
+  try {
+    await execFileAsync(ffmpegPath, [
+      "-y",
+      "-ss",
+      `${safeStart}`,
+      "-i",
+      inputPath,
+      "-t",
+      `${safeDuration}`,
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0?",
+      "-c:v",
+      "libx264",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "20",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      outputPath
+    ], { timeout: Math.max(12e4, Math.ceil(safeDuration * 4e3)) });
+    return fs.existsSync(outputPath) ? outputPath : null;
+  } catch {
+    return null;
+  }
+}
+async function extractFrame(inputPath, timeSec, outputPath) {
+  const ffmpegPath = getFfmpegPath();
+  try {
+    await execFileAsync(ffmpegPath, [
+      "-y",
+      "-ss",
+      `${Math.max(0, timeSec)}`,
+      "-i",
+      inputPath,
+      "-frames:v",
+      "1",
+      "-q:v",
+      "2",
+      outputPath
+    ], { timeout: 15e3 });
+    return fs.existsSync(outputPath) ? outputPath : null;
+  } catch {
+    return null;
+  }
+}
+function hashRef(ref) {
+  return crypto$1.createHash("sha1").update(JSON.stringify({
+    label: ref.label,
+    fileRef: ref.fileRef,
+    trimStartSec: ref.trimStartSec,
+    trimDurationSec: ref.trimDurationSec
+  })).digest("hex").slice(0, 12);
+}
+function hasWhitespace(value) {
+  return /\s/.test(value);
+}
+function stagePathForGeminiAtReference(sourcePath, outputPath) {
+  try {
+    if (fs.existsSync(outputPath)) return outputPath;
+    try {
+      fs.linkSync(sourcePath, outputPath);
+    } catch {
+      fs.copyFileSync(sourcePath, outputPath);
+    }
+    return fs.existsSync(outputPath) ? outputPath : null;
+  } catch {
+    return null;
+  }
+}
+function stageIfNeededForGeminiAtReference(sourcePath, ref, visualDir) {
+  if (!hasWhitespace(sourcePath)) {
+    return { mediaPath: sourcePath, ephemeral: false };
+  }
+  const ext = path.extname(sourcePath) || (ref.mediaType === "image" ? ".jpg" : ".mp4");
+  const outputPath = path.join(visualDir, `${hashRef(ref)}-source${ext}`);
+  const stagedPath = stagePathForGeminiAtReference(sourcePath, outputPath);
+  return stagedPath ? { mediaPath: stagedPath, ephemeral: true } : null;
+}
+async function prepareCopilotVisualRefs(refs, workspaceDir) {
+  const visualDir = path.join(workspaceDir, "visual-refs");
+  fs.mkdirSync(visualDir, { recursive: true });
+  const prepared = [];
+  for (const ref of refs) {
+    const sourcePath = resolveExistingPath(ref.fileRef);
+    if (!sourcePath) continue;
+    if (ref.mediaType === "image") {
+      const staged = stageIfNeededForGeminiAtReference(sourcePath, ref, visualDir);
+      if (!staged) continue;
+      prepared.push({
+        label: ref.label,
+        kind: ref.kind,
+        mediaType: "image",
+        mediaPath: staged.mediaPath,
+        ephemeral: staged.ephemeral
+      });
+      continue;
+    }
+    if (ref.trimStartSec !== void 0 && ref.trimDurationSec !== void 0) {
+      const outPath = path.join(visualDir, `${hashRef(ref)}.mp4`);
+      const extracted = await extractClipSegment(
+        sourcePath,
+        ref.trimStartSec,
+        ref.trimDurationSec,
+        outPath
+      );
+      if (extracted) {
+        prepared.push({
+          label: ref.label,
+          kind: ref.kind,
+          mediaType: "video",
+          mediaPath: extracted,
+          ephemeral: true
+        });
+        continue;
+      }
+    }
+    const ext = path.extname(sourcePath).toLowerCase();
+    if ([".mp4", ".mov", ".webm", ".m4v", ".avi"].includes(ext)) {
+      const staged = stageIfNeededForGeminiAtReference(sourcePath, ref, visualDir);
+      if (!staged) continue;
+      prepared.push({
+        label: ref.label,
+        kind: ref.kind,
+        mediaType: "video",
+        mediaPath: staged.mediaPath,
+        ephemeral: staged.ephemeral
+      });
+      continue;
+    }
+    const frameFromMeta = (ref.framePaths ?? []).map((framePath) => resolveExistingPath(framePath)).find(Boolean);
+    if (frameFromMeta) {
+      const staged = stageIfNeededForGeminiAtReference(frameFromMeta, {
+        ...ref,
+        mediaType: "image",
+        fileRef: frameFromMeta
+      }, visualDir);
+      if (!staged) continue;
+      prepared.push({
+        label: ref.label,
+        kind: ref.kind,
+        mediaType: "image",
+        mediaPath: staged.mediaPath,
+        ephemeral: staged.ephemeral
+      });
+      continue;
+    }
+    const fallbackFrame = path.join(visualDir, `${hashRef(ref)}.jpg`);
+    const extractedFrame = await extractFrame(sourcePath, ref.trimStartSec ?? 0, fallbackFrame);
+    if (extractedFrame) {
+      prepared.push({
+        label: ref.label,
+        kind: ref.kind,
+        mediaType: "image",
+        mediaPath: extractedFrame,
+        ephemeral: true
+      });
+    }
+  }
+  return prepared;
+}
+function buildGeminiUserMessageWithVisualRefs(userMessage, prepared) {
+  if (prepared.length === 0) return userMessage.trim();
+  const attachments = prepared.map((ref) => `@${ref.mediaPath}`).join(" ");
+  const question = userMessage.trim();
+  const hasVideo = prepared.some((ref) => ref.mediaType === "video");
+  if (hasVideo) {
+    return question ? `${attachments} ${question}` : `${attachments} describe this video in detail. Include what you see on screen, the setting, actions, and any spoken audio.`;
+  }
+  return question ? `${attachments} ${question}` : `${attachments} describe this image in detail.`;
+}
+function cleanupEphemeralVisualRefs(prepared) {
+  for (const ref of prepared) {
+    if (!ref.ephemeral) continue;
+    try {
+      fs.unlinkSync(ref.mediaPath);
+    } catch {
+    }
+  }
+}
 let activeRequest = null;
 const FIRST_TOKEN_TIMEOUT_MS = 9e4;
+const VISUAL_FIRST_TOKEN_TIMEOUT_MS = 18e4;
 const PROMPT_STDIN_THRESHOLD = 8e3;
+function getGeminiWorkspaceDir() {
+  return path.join(app.getPath("userData"), "gemini-cli-workspace");
+}
+function getGeminiVisualWorkspaceDir() {
+  return path.join(os.tmpdir(), "cinegen-gemini-visual-refs");
+}
 function buildGeminiPrompt(params) {
   var _a;
   const systemParts = [];
   if (params.injectProjectContext && ((_a = params.systemPrompt) == null ? void 0 : _a.trim())) {
     const refreshPrefix = params.contextRefresh ? "The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n" : "";
-    const suffix = params.purpose === "enhance-prompt" ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
     systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}
 
-${suffix}`);
+${params.purpose === "enhance-prompt" ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX}`);
   }
   const history = (params.messages ?? []).filter((message) => message.content.trim());
   if (history.length > 0) {
@@ -6906,7 +7175,10 @@ Assistant:
 }
 function buildGeminiResumePrompt(params) {
   var _a;
-  const prefix = [(_a = params.systemPrompt) == null ? void 0 : _a.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join("\n\n");
+  const prefix = [
+    (_a = params.systemPrompt) == null ? void 0 : _a.trim(),
+    COPILOT_RESUME_REMINDER
+  ].filter(Boolean).join("\n\n");
   return prefix ? `${prefix}
 
 User:
@@ -6929,26 +7201,29 @@ function parseGeminiUsage(obj) {
 }
 function formatGeminiToolStatus(toolName) {
   if (typeof toolName !== "string" || !toolName.trim()) return "Gemini CLI is working…";
-  const label = toolName.replace(/_/g, " ");
-  return `Gemini CLI: ${label}…`;
+  const normalized = toolName.replace(/_/g, " ").toLowerCase();
+  if (normalized.includes("read") && normalized.includes("file")) {
+    return "Gemini CLI: Reading attached video…";
+  }
+  return `Gemini CLI: ${toolName.replace(/_/g, " ")}…`;
 }
 function isFatalGeminiStreamError(message) {
   return /malformed tool call|empty response|API Error|INVALID_ARGUMENT/i.test(message);
 }
-async function streamGeminiChat(requestId, params) {
+function isMissingGeminiSessionError(message) {
+  return /no previous sessions found/i.test(message);
+}
+async function streamGeminiChatOnce(requestId, params, options) {
   var _a;
   const binary = await resolveCliBinary("gemini");
   if (!binary) {
     throw new Error("Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli");
   }
-  if (!params.userMessage.trim()) {
-    throw new Error("No chat message provided.");
-  }
   const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "gemini-2.5-flash";
-  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
-  const prompt = canResume ? buildGeminiResumePrompt(params) : buildGeminiPrompt(params);
+  const prompt = options.canResume ? buildGeminiResumePrompt(params) : buildGeminiPrompt(params);
   const useStdin = prompt.length > PROMPT_STDIN_THRESHOLD;
-  const workDir = await mkdtemp(path.join(os.tmpdir(), "cinegen-gemini-"));
+  const workDir = getGeminiWorkspaceDir();
+  await mkdir(workDir, { recursive: true });
   const args = [
     "--skip-trust",
     ...useStdin ? ["-p", ""] : ["-p", prompt],
@@ -6957,9 +7232,17 @@ async function streamGeminiChat(requestId, params) {
     "-m",
     model,
     "--approval-mode",
-    "default"
+    options.hasVisualRefs ? "yolo" : "default"
   ];
-  if (canResume && params.resumeSessionId) {
+  if (options.hasVisualRefs) {
+    args.push("--session-id", crypto$1.randomUUID());
+    const includeDirs = [...new Set(
+      options.preparedVisualRefs.map((ref) => path.dirname(ref.mediaPath))
+    )];
+    for (const dir of includeDirs) {
+      args.push("--include-directories", dir);
+    }
+  } else if (options.canResume && params.resumeSessionId) {
     args.push("-r", params.resumeSessionId);
   }
   const win = getMainWindow$2();
@@ -6968,6 +7251,7 @@ async function streamGeminiChat(requestId, params) {
   let sessionId;
   let usage;
   const chatTimeoutMs = 15 * 60 * 1e3;
+  const firstTokenTimeoutMs = options.hasVisualRefs ? VISUAL_FIRST_TOKEN_TIMEOUT_MS : FIRST_TOKEN_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     var _a2, _b, _c, _d;
     const child = spawn(binary, args, {
@@ -6983,16 +7267,12 @@ async function streamGeminiChat(requestId, params) {
     let lineBuffer = "";
     let settled = false;
     let firstTokenReceived = false;
-    const cleanupWorkDir = () => {
-      void rm(workDir, { recursive: true, force: true }).catch(() => {
-      });
-    };
     const finish = (handler) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
       clearTimeout(firstTokenTimeoutId);
-      cleanupWorkDir();
+      cleanupEphemeralVisualRefs(options.preparedVisualRefs);
       handler();
     };
     const timeoutId = setTimeout(() => {
@@ -7005,9 +7285,9 @@ async function streamGeminiChat(requestId, params) {
       activeRequest = null;
       child.kill("SIGTERM");
       finish(() => reject(new Error(
-        "Gemini CLI is taking too long to respond. Try gemini-2.5-flash, shorten the question, or start a new chat."
+        options.hasVisualRefs ? "Gemini CLI is still reading the attached video. Try again or use a shorter clip." : "Gemini CLI is taking too long to respond. Try gemini-2.5-flash, shorten the question, or start a new chat."
       )));
-    }, FIRST_TOKEN_TIMEOUT_MS);
+    }, firstTokenTimeoutMs);
     (_c = child.stdout) == null ? void 0 : _c.on("data", (chunk) => {
       lineBuffer += chunk.toString();
       let newlineIdx;
@@ -7037,11 +7317,12 @@ async function streamGeminiChat(requestId, params) {
             }
           }
           if (obj.type === "error" && typeof obj.message === "string") {
-            stderrBuffer += obj.message;
-            if (!fullContent.trim() && isFatalGeminiStreamError(obj.message)) {
+            const errorMessage = obj.message;
+            stderrBuffer += errorMessage;
+            if (!fullContent.trim() && isFatalGeminiStreamError(errorMessage)) {
               activeRequest = null;
               child.kill("SIGTERM");
-              finish(() => reject(new Error(stripAnsiCodes(obj.message))));
+              finish(() => reject(new Error(stripAnsiCodes(errorMessage))));
             }
           }
           if (obj.type === "result" && obj.status === "error") {
@@ -7068,9 +7349,55 @@ async function streamGeminiChat(requestId, params) {
         finish(() => reject(new Error(errorMessage)));
         return;
       }
-      finish(() => resolve({ message: trimmed, sessionId, usage, resumed: canResume }));
+      finish(() => resolve({
+        message: trimmed,
+        sessionId,
+        usage,
+        resumed: options.canResume
+      }));
     });
   });
+}
+async function streamGeminiChat(requestId, params) {
+  if (!params.userMessage.trim()) {
+    throw new Error("No chat message provided.");
+  }
+  const workDir = getGeminiWorkspaceDir();
+  const visualWorkspaceDir = getGeminiVisualWorkspaceDir();
+  await mkdir(workDir, { recursive: true });
+  await mkdir(visualWorkspaceDir, { recursive: true });
+  const preparedVisualRefs = await prepareCopilotVisualRefs(params.visualRefs ?? [], visualWorkspaceDir);
+  if ((params.visualRefs ?? []).length > 0 && preparedVisualRefs.length === 0) {
+    throw new Error("Could not load the attached /clip or /asset files for Gemini visual analysis. Use local video or image files.");
+  }
+  const hasVisualRefs = preparedVisualRefs.length > 0;
+  const effectiveParams = {
+    ...params,
+    userMessage: buildGeminiUserMessageWithVisualRefs(params.userMessage, preparedVisualRefs)
+  };
+  const wantsResume = Boolean(params.resumeSessionId) && !params.injectProjectContext && !hasVisualRefs;
+  try {
+    return await streamGeminiChatOnce(requestId, effectiveParams, {
+      canResume: wantsResume,
+      hasVisualRefs,
+      preparedVisualRefs
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!wantsResume || !isMissingGeminiSessionError(message)) {
+      throw error;
+    }
+    return streamGeminiChatOnce(requestId, {
+      ...effectiveParams,
+      injectProjectContext: !hasVisualRefs,
+      contextRefresh: !hasVisualRefs,
+      resumeSessionId: void 0
+    }, {
+      canResume: false,
+      hasVisualRefs,
+      preparedVisualRefs
+    });
+  }
 }
 function registerGeminiCliHandlers() {
   ipcMain.handle("llm:gemini-chat", async (_event, params) => {
@@ -8132,6 +8459,181 @@ function closeAllDbs() {
   }
   dbCache.clear();
 }
+const VIDEO_EXTS = /* @__PURE__ */ new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".mxf", ".m4v"]);
+const AUDIO_EXTS = /* @__PURE__ */ new Set([".wav", ".mp3", ".aac", ".flac", ".ogg", ".m4a"]);
+function detectAssetType$1(filePath, fallback) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (VIDEO_EXTS.has(ext)) return "video";
+  if (AUDIO_EXTS.has(ext)) return "audio";
+  if (ext) return "image";
+  return fallback;
+}
+function extensionForAsset(url, assetType) {
+  if (url) {
+    try {
+      const ext = path.extname(new URL(url).pathname);
+      if (ext && ext.length <= 8) return ext;
+    } catch {
+      const ext = path.extname(url);
+      if (ext && ext.length <= 8) return ext;
+    }
+  }
+  switch (assetType) {
+    case "video":
+      return ".mp4";
+    case "audio":
+      return ".mp3";
+    default:
+      return ".jpg";
+  }
+}
+async function findExistingGeneratedAsset(mediaDir, assetId) {
+  let entries = [];
+  try {
+    entries = await fs$1.readdir(mediaDir);
+  } catch {
+    return null;
+  }
+  const match = entries.find((entry) => entry === assetId || entry.startsWith(`${assetId}.`));
+  return match ? path.join(mediaDir, match) : null;
+}
+function decodeLocalMediaUrl(url) {
+  if (!url.startsWith("local-media://file")) return null;
+  return decodeURIComponent(url.replace(/^local-media:\/\/file/, ""));
+}
+function resolveLocalPathHint(hint) {
+  if (!(hint == null ? void 0 : hint.trim())) return null;
+  const trimmed = hint.trim();
+  const decoded = decodeLocalMediaUrl(trimmed) ?? trimmed;
+  return fs.existsSync(decoded) ? decoded : null;
+}
+async function copyIntoGenerated(sourcePath, destPath) {
+  await fs$1.mkdir(path.dirname(destPath), { recursive: true });
+  await fs$1.copyFile(sourcePath, destPath);
+}
+function queueAssetDerivationPipeline(params) {
+  const projDir = projectDir(params.projectId);
+  const cacheDir = path.join(projDir, ".cache");
+  const metadataJobId = crypto$1.randomUUID();
+  const metadataJob = {
+    id: metadataJobId,
+    type: "extract_metadata",
+    assetId: params.assetId,
+    inputPath: params.inputPath,
+    outputPath: "",
+    projectDir: projDir
+  };
+  if (params.type !== "audio") {
+    const thumbsDir = path.join(cacheDir, "thumbnails");
+    fs.mkdirSync(thumbsDir, { recursive: true });
+    submitJob({
+      id: crypto$1.randomUUID(),
+      type: "generate_thumbnail",
+      assetId: params.assetId,
+      inputPath: params.inputPath,
+      outputPath: path.join(thumbsDir, `${params.assetId}.jpg`),
+      projectDir: projDir
+    }).catch((err) => console.error("[generated-asset-persist] Thumbnail failed:", err));
+  }
+  submitJob(metadataJob).catch((err) => console.error("[generated-asset-persist] Metadata failed:", err));
+  if (params.type === "audio" || params.type === "video") {
+    const waveformDir = path.join(cacheDir, "waveforms");
+    fs.mkdirSync(waveformDir, { recursive: true });
+    submitJob({
+      id: crypto$1.randomUUID(),
+      type: "compute_waveform",
+      assetId: params.assetId,
+      inputPath: params.inputPath,
+      outputPath: path.join(waveformDir, `${params.assetId}.json`),
+      projectDir: projDir
+    }).catch((err) => console.error("[generated-asset-persist] Waveform failed:", err));
+  }
+  if (params.type === "video") {
+    const filmstripDir = path.join(cacheDir, "filmstrips");
+    fs.mkdirSync(filmstripDir, { recursive: true });
+    submitJob({
+      id: crypto$1.randomUUID(),
+      type: "generate_filmstrip",
+      assetId: params.assetId,
+      inputPath: params.inputPath,
+      outputPath: path.join(filmstripDir, `${params.assetId}.jpg`),
+      projectDir: projDir
+    }).catch((err) => console.error("[generated-asset-persist] Filmstrip failed:", err));
+    const proxyDir = path.join(cacheDir, "proxies");
+    fs.mkdirSync(proxyDir, { recursive: true });
+    submitJob({
+      id: crypto$1.randomUUID(),
+      type: "generate_proxy",
+      assetId: params.assetId,
+      inputPath: params.inputPath,
+      outputPath: path.join(proxyDir, `${params.assetId}.mp4`),
+      projectDir: projDir
+    }).catch((err) => console.error("[generated-asset-persist] Proxy failed:", err));
+  }
+  return metadataJobId;
+}
+async function persistGeneratedAsset(params) {
+  var _a;
+  const { projectId, assetId, assetType } = params;
+  if (!projectId || !assetId) {
+    throw new Error("projectId and assetId are required.");
+  }
+  const projDir = projectDir(projectId);
+  const mediaDir = path.join(projDir, "media", "generated");
+  await fs$1.mkdir(mediaDir, { recursive: true });
+  const existing = await findExistingGeneratedAsset(mediaDir, assetId);
+  if (existing) {
+    queueAssetDerivationPipeline({
+      assetId,
+      projectId,
+      inputPath: existing,
+      type: detectAssetType$1(existing, assetType)
+    });
+    return {
+      path: existing,
+      sourceUrl: params.remoteUrl,
+      downloaded: false
+    };
+  }
+  const extension = params.extension || extensionForAsset(params.remoteUrl ?? params.localPathHint, assetType);
+  const destPath = path.join(mediaDir, `${assetId}${extension}`);
+  const localSource = resolveLocalPathHint(params.localPathHint);
+  if (localSource) {
+    await copyIntoGenerated(localSource, destPath);
+    queueAssetDerivationPipeline({
+      assetId,
+      projectId,
+      inputPath: destPath,
+      type: detectAssetType$1(destPath, assetType)
+    });
+    return {
+      path: destPath,
+      sourceUrl: params.remoteUrl,
+      downloaded: false
+    };
+  }
+  const remoteUrl = (_a = params.remoteUrl) == null ? void 0 : _a.trim();
+  if (!remoteUrl) {
+    return { error: "No downloadable URL or local file path for this asset." };
+  }
+  const response2 = await fetch(remoteUrl);
+  if (!response2.ok) {
+    throw new Error(`Failed to download (HTTP ${response2.status}). The URL may have expired.`);
+  }
+  const arrayBuffer = await response2.arrayBuffer();
+  await fs$1.writeFile(destPath, Buffer.from(arrayBuffer));
+  queueAssetDerivationPipeline({
+    assetId,
+    projectId,
+    inputPath: destPath,
+    type: detectAssetType$1(destPath, assetType)
+  });
+  return {
+    path: destPath,
+    sourceUrl: remoteUrl,
+    downloaded: true
+  };
+}
 let worker = null;
 const pendingJobs = /* @__PURE__ */ new Map();
 const jobMeta = /* @__PURE__ */ new Map();
@@ -8302,10 +8804,10 @@ function submitDedicatedSyncJob(job) {
 }
 function detectAssetType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
-  const VIDEO_EXTS = /* @__PURE__ */ new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".mxf", ".m4v"]);
-  const AUDIO_EXTS = /* @__PURE__ */ new Set([".wav", ".mp3", ".aac", ".flac", ".ogg", ".m4a"]);
-  if (VIDEO_EXTS.has(ext)) return "video";
-  if (AUDIO_EXTS.has(ext)) return "audio";
+  const VIDEO_EXTS2 = /* @__PURE__ */ new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".mxf", ".m4v"]);
+  const AUDIO_EXTS2 = /* @__PURE__ */ new Set([".wav", ".mp3", ".aac", ".flac", ".ogg", ".m4a"]);
+  if (VIDEO_EXTS2.has(ext)) return "video";
+  if (AUDIO_EXTS2.has(ext)) return "audio";
   return "image";
 }
 function registerMediaImportHandlers() {
@@ -8338,74 +8840,12 @@ function registerMediaImportHandlers() {
     }
     setTimeout(() => {
       for (const pipeline of metadataPipelines) {
-        const metadataJob = {
-          id: pipeline.metadataJobId,
-          type: "extract_metadata",
+        queueAssetDerivationPipeline({
           assetId: pipeline.assetId,
+          projectId,
           inputPath: pipeline.inputPath,
-          outputPath: "",
-          // Not needed for metadata
-          projectDir: pipeline.projectDir
-        };
-        const cacheDir = path.join(pipeline.projectDir, ".cache");
-        if (pipeline.type !== "audio") {
-          const thumbsDir = path.join(cacheDir, "thumbnails");
-          fs.mkdirSync(thumbsDir, { recursive: true });
-          submitJob({
-            id: crypto$1.randomUUID(),
-            type: "generate_thumbnail",
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(thumbsDir, `${pipeline.assetId}.jpg`),
-            projectDir: pipeline.projectDir
-          }).catch((err) => console.error("[media-import] Thumbnail failed:", err));
-        }
-        submitJob(metadataJob).catch((err) => console.error("[media-import] Metadata extraction failed:", err));
-      }
-      for (const pipeline of metadataPipelines) {
-        const cacheDir = path.join(pipeline.projectDir, ".cache");
-        if (pipeline.type === "audio" || pipeline.type === "video") {
-          const waveformDir = path.join(cacheDir, "waveforms");
-          fs.mkdirSync(waveformDir, { recursive: true });
-          submitJob({
-            id: crypto$1.randomUUID(),
-            type: "compute_waveform",
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(waveformDir, `${pipeline.assetId}.json`),
-            projectDir: pipeline.projectDir
-          }).catch((err) => console.error("[media-import] Waveform failed:", err));
-        }
-      }
-      for (const pipeline of metadataPipelines) {
-        const cacheDir = path.join(pipeline.projectDir, ".cache");
-        if (pipeline.type === "video") {
-          const filmstripDir = path.join(cacheDir, "filmstrips");
-          fs.mkdirSync(filmstripDir, { recursive: true });
-          submitJob({
-            id: crypto$1.randomUUID(),
-            type: "generate_filmstrip",
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(filmstripDir, `${pipeline.assetId}.jpg`),
-            projectDir: pipeline.projectDir
-          }).catch((err) => console.error("[media-import] Filmstrip failed:", err));
-        }
-      }
-      for (const pipeline of metadataPipelines) {
-        const cacheDir = path.join(pipeline.projectDir, ".cache");
-        if (pipeline.type === "video") {
-          const proxyDir = path.join(cacheDir, "proxies");
-          fs.mkdirSync(proxyDir, { recursive: true });
-          submitJob({
-            id: crypto$1.randomUUID(),
-            type: "generate_proxy",
-            assetId: pipeline.assetId,
-            inputPath: pipeline.inputPath,
-            outputPath: path.join(proxyDir, `${pipeline.assetId}.mp4`),
-            projectDir: pipeline.projectDir
-          }).catch((err) => console.error("[media-import] Proxy failed:", err));
-        }
+          type: pipeline.type
+        });
       }
     }, 0);
     return results;
@@ -8557,18 +8997,27 @@ function registerMediaImportHandlers() {
     async (_event, params) => {
       const { url, projectId, assetId, ext } = params;
       if (!url || !projectId) throw new Error("url and projectId are required");
-      const projDir = projectDir(projectId);
-      const mediaDir = path.join(projDir, "media", "generated");
-      await fs$1.mkdir(mediaDir, { recursive: true });
-      const extension = ext || path.extname(new URL(url).pathname) || ".mp4";
-      const destPath = path.join(mediaDir, `${assetId}${extension}`);
-      const response2 = await fetch(url);
-      if (!response2.ok) {
-        throw new Error(`Failed to download (HTTP ${response2.status}). The URL may have expired.`);
+      const result = await persistGeneratedAsset({
+        projectId,
+        assetId,
+        assetType: "video",
+        remoteUrl: url,
+        extension: ext
+      });
+      if ("error" in result) throw new Error(result.error);
+      return { path: result.path };
+    }
+  );
+  ipcMain.handle(
+    "media:persist-generated-asset",
+    async (_event, params) => {
+      try {
+        return await persistGeneratedAsset(params);
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : String(error)
+        };
       }
-      const arrayBuffer = await response2.arrayBuffer();
-      await fs$1.writeFile(destPath, Buffer.from(arrayBuffer));
-      return { path: destPath };
     }
   );
 }
@@ -9602,6 +10051,49 @@ function registerSam3Handlers() {
 function stopSam3Server() {
   manager.stop();
 }
+function buildAnalysisPrompt(userPrompt, label, mediaType) {
+  const mediaLabel = mediaType === "video" ? "video clip" : "image";
+  return [
+    userPrompt.trim() || `Describe this ${mediaLabel} in detail.`,
+    `Attached ${mediaLabel}: "${label}".`,
+    "Describe what you actually see and hear — specific subjects, actions, setting, camera movement, on-screen text, and spoken dialogue.",
+    "Do not answer from clip names, storyboard labels, or generic production terminology alone."
+  ].join("\n");
+}
+async function analyzeCopilotVisualRefs(params) {
+  const workspaceDir = params.workspaceDir ?? path.join(app.getPath("userData"), "gemini-cli-workspace");
+  const prepared = await prepareCopilotVisualRefs(params.visualRefs, workspaceDir);
+  if (prepared.length === 0) {
+    throw new Error("Could not load the attached clip or asset files for visual analysis.");
+  }
+  try {
+    const results = [];
+    for (const ref of prepared) {
+      const analysisPrompt = buildAnalysisPrompt(params.prompt, ref.label, ref.mediaType);
+      const analysis = ref.mediaType === "video" ? await analyzeVideoWithPrompt({
+        apiKey: params.apiKey,
+        videoPath: ref.mediaPath,
+        prompt: analysisPrompt,
+        detailedAnalysis: true
+      }) : await analyzeImageWithPrompt({
+        apiKey: params.apiKey,
+        imagePath: ref.mediaPath,
+        prompt: analysisPrompt
+      });
+      results.push({
+        label: ref.label,
+        mediaType: ref.mediaType,
+        analysis
+      });
+    }
+    return results;
+  } finally {
+    cleanupEphemeralVisualRefs(prepared);
+  }
+}
+function registerCopilotVideoAnalysisHandlers() {
+  ipcMain.handle("copilot:analyze-visual-refs", async (_event, params) => analyzeCopilotVisualRefs(params));
+}
 const SHOULD_DISABLE_GPU_FOR_DEV_WAKE = process.platform === "darwin" && !app.isPackaged;
 if (SHOULD_DISABLE_GPU_FOR_DEV_WAKE) {
   app.disableHardwareAcceleration();
@@ -9917,6 +10409,7 @@ app.whenReady().then(async () => {
   registerMediaImportHandlers();
   registerAudioSyncHandlers(submitJob);
   registerVisionHandlers();
+  registerCopilotVideoAnalysisHandlers();
   registerNativeVideoHandlers();
   registerTranscriptionHandlers();
   registerLocalModelHandlers();
