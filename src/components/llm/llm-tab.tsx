@@ -52,6 +52,12 @@ import {
   loadSkills,
   type LLMSkill,
 } from '@/lib/llm/skills';
+import {
+  findSkillIdInText,
+  insertSkillTokenInDraft,
+  removeSkillTokens,
+  splitComposerHighlightParts,
+} from '@/lib/llm/composer-tokens';
 import { SkillBuilder } from '@/components/llm/skill-builder';
 import {
   detectSkillAuthoringCancel,
@@ -847,8 +853,12 @@ export function LLMTab({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionTrigger, setMentionTrigger] = useState<MentionTrigger | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [skillPickerQuery, setSkillPickerQuery] = useState('');
+  const [skillPickerIndex, setSkillPickerIndex] = useState(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const hadSkillTokenRef = useRef(false);
   const workModeMenuRef = useRef<HTMLDivElement>(null);
 
   const transcriptReadyCount = useMemo(() => (
@@ -904,6 +914,20 @@ export function LLMTab({
       }];
     }),
   ), [assets, timelines]);
+
+  const composerTokenLookup = useMemo(() => ({
+    elementNames: new Set(elements.map((element) => element.name)),
+    assetNames: new Set([
+      ...mediaPoolMentionAssets.map((asset) => asset.name),
+      ...clipsList.map((clip) => clip.clipName),
+    ]),
+    skillNames: new Set(skills.map((skill) => skill.name)),
+  }), [clipsList, elements, mediaPoolMentionAssets, skills]);
+
+  const composerHighlightParts = useMemo(
+    () => splitComposerHighlightParts(draft, composerTokenLookup),
+    [composerTokenLookup, draft],
+  );
 
   const assetNameById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset.name])), [assets]);
   const assetIdByName = useMemo(() => new Map(assets.map((asset) => [asset.name.toLowerCase(), asset.id])), [assets]);
@@ -2214,13 +2238,38 @@ export function LLMTab({
     onNavigateToTimelineCitation(timelineId, resolvedCitation.seconds);
   }, [assetIdByName, onNavigateToAssetCitation, onNavigateToTimelineCitation, resolveCitation, timelineIdByName]);
 
+  const renderComposerTokenText = useCallback((text: string) => {
+    const parts = splitComposerHighlightParts(text, composerTokenLookup);
+    if (parts.length === 1 && !parts[0].kind) return text;
+    return parts.map((part, index) => (
+      part.kind
+        ? (
+          <span
+            key={`token-${index}`}
+            className={`copilot__msg-token copilot__msg-token--${part.kind}`}
+          >
+            {part.text}
+          </span>
+        )
+        : <span key={`text-${index}`}>{part.text}</span>
+    ));
+  }, [composerTokenLookup]);
+
   const renderCitationText = useCallback((text: string) => {
     const parts = parseCitationParts(text);
-    if (parts.length === 1 && typeof parts[0] === 'string') return <>{text}</>;
+    if (parts.length === 1 && typeof parts[0] === 'string') {
+      const tokenized = renderComposerTokenText(parts[0]);
+      return typeof tokenized === 'string' ? <>{tokenized}</> : <>{tokenized}</>;
+    }
     return (
       <>
         {parts.map((part, index) => {
-          if (typeof part === 'string') return <span key={`t-${index}`}>{part}</span>;
+          if (typeof part === 'string') {
+            const tokenized = renderComposerTokenText(part);
+            return typeof tokenized === 'string'
+              ? <span key={`t-${index}`}>{tokenized}</span>
+              : <span key={`t-${index}`}>{tokenized}</span>;
+          }
           const resolvedPart = resolveCitation(part);
           const timelineLabel = resolvedPart.label.split('/ clip:')[0]?.trim() ?? resolvedPart.label.trim();
           const resolvable = resolvedPart.kind === 'asset'
@@ -2241,7 +2290,7 @@ export function LLMTab({
         })}
       </>
     );
-  }, [assetIdByName, handleCitationClick, resolveCitation, timelineIdByName]);
+  }, [assetIdByName, handleCitationClick, renderComposerTokenText, resolveCitation, timelineIdByName]);
 
   const markdownComponents = useMemo(() => ({
     p: ({ children }: { children?: React.ReactNode }) => <p className="copilot__md-p">{children}</p>,
@@ -2349,11 +2398,30 @@ export function LLMTab({
     }))
   ), [elements]);
 
+  const skillMentionItems = useMemo(() => {
+    const items: Array<{ id: string; label: string; type: string }> = [
+      { id: '', label: 'No skill', type: 'clear' },
+    ];
+    for (const skill of skills) {
+      items.push({ id: skill.id, label: skill.name, type: 'skill' });
+    }
+    return items;
+  }, [skills]);
+
   const mentionItems = useMemo(() => {
     if (mentionTrigger === '@') return elementMentionItems;
     if (mentionTrigger === '/') return slashMentionItems;
     return [];
   }, [elementMentionItems, mentionTrigger, slashMentionItems]);
+
+  const deferredSkillPickerQuery = useDeferredValue(skillPickerQuery);
+
+  const skillPickerResults = useMemo(() => {
+    if (!skillPickerOpen) return [];
+    const q = deferredSkillPickerQuery.toLowerCase();
+    if (!q) return skillMentionItems;
+    return skillMentionItems.filter((item) => item.label.toLowerCase().includes(q));
+  }, [deferredSkillPickerQuery, skillMentionItems, skillPickerOpen]);
 
   const deferredMentionQuery = useDeferredValue(mentionQuery);
 
@@ -2369,6 +2437,21 @@ export function LLMTab({
     setMentionTrigger(null);
     setMentionIndex(0);
   }, []);
+
+  const clearSkillPicker = useCallback(() => {
+    setSkillPickerOpen(false);
+    setSkillPickerQuery('');
+    setSkillPickerIndex(0);
+  }, []);
+
+  const dismissComposerPickers = useCallback(() => {
+    clearMention();
+    clearSkillPicker();
+  }, [clearMention, clearSkillPicker]);
+
+  useEffect(() => {
+    setSkillPickerIndex(0);
+  }, [skillPickerQuery]);
 
   const resizeComposerTextarea = useCallback(() => {
     const el = composerRef.current;
@@ -2517,9 +2600,44 @@ export function LLMTab({
       }
     }
     clearMention();
-  }, [clearMention]);
 
-  const applyMention = useCallback((label: string) => {
+    const skillIdInDraft = findSkillIdInText(el.value, skills);
+    const hasSkillToken = skillIdInDraft !== null;
+    if (skillIdInDraft) {
+      setActiveSkillId(skillIdInDraft);
+    } else if (hadSkillTokenRef.current && !hasSkillToken) {
+      setActiveSkillId(null);
+    }
+    hadSkillTokenRef.current = hasSkillToken;
+  }, [clearMention, skills]);
+
+  const applySkillSelection = useCallback((item: { id: string; label: string; type: string }) => {
+    clearSkillPicker();
+    const skillNames = skills.map((skill) => skill.name);
+
+    if (!item.id) {
+      setActiveSkillId(null);
+      hadSkillTokenRef.current = false;
+      setDraft((current) => removeSkillTokens(current, skillNames));
+      requestAnimationFrame(() => composerRef.current?.focus());
+      return;
+    }
+
+    setActiveSkillId(item.id);
+    const el = composerRef.current;
+    const cursor = el?.selectionStart ?? draft.length;
+    const next = insertSkillTokenInDraft(draft, cursor, item.label, skillNames);
+    hadSkillTokenRef.current = true;
+    setDraft(next.text);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.setSelectionRange(next.cursor, next.cursor);
+      el.focus();
+      resizeComposerTextarea();
+    });
+  }, [clearSkillPicker, draft, resizeComposerTextarea, skills]);
+
+  const applyMention = useCallback((item: { id: string; label: string; type: string }) => {
     const el = composerRef.current;
     if (!el || !mentionTrigger) return;
     const pos = el.selectionStart;
@@ -2527,11 +2645,12 @@ export function LLMTab({
     const before = text.slice(0, pos);
     const triggerIndex = before.lastIndexOf(mentionTrigger);
     if (triggerIndex < 0) return;
-    const newText = text.slice(0, triggerIndex) + mentionTrigger + label + ' ' + text.slice(pos);
+
+    const newText = text.slice(0, triggerIndex) + mentionTrigger + item.label + ' ' + text.slice(pos);
     setDraft(newText);
     clearMention();
     requestAnimationFrame(() => {
-      const newPos = triggerIndex + label.length + 2;
+      const newPos = triggerIndex + item.label.length + 2;
       el.setSelectionRange(newPos, newPos);
       el.focus();
     });
@@ -3127,15 +3246,82 @@ export function LLMTab({
   const composerBar = (
     <div className={`copilot__composer${hasMessages ? '' : ' copilot__composer--hero'}`}>
       <div className={`copilot__composer-surface${isEnhancingPrompt ? ' copilot__composer-surface--enhancing' : ''}`}>
-        <textarea
-          ref={composerRef}
-          className="copilot__composer-input"
-          value={draft}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            handleComposerInput(event.currentTarget);
-          }}
+        <div className="copilot__composer-input-wrap">
+          <div className="copilot__composer-input-backdrop" aria-hidden>
+            {composerHighlightParts.map((part, index) => (
+              part.kind
+                ? (
+                  <mark
+                    key={`composer-token-${index}`}
+                    className={`copilot__composer-token copilot__composer-token--${part.kind}`}
+                  >
+                    {part.text}
+                  </mark>
+                )
+                : <span key={`composer-text-${index}`}>{part.text}</span>
+            ))}
+          </div>
+          <textarea
+            ref={composerRef}
+            className="copilot__composer-input"
+            value={draft}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              handleComposerInput(event.currentTarget);
+            }}
           onKeyDown={(event) => {
+            if (skillPickerOpen && skillPickerResults.length > 0) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setSkillPickerIndex((i) => Math.min(i + 1, skillPickerResults.length - 1));
+                return;
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setSkillPickerIndex((i) => Math.max(i - 1, 0));
+                return;
+              }
+              if (event.key === 'Enter' || event.key === 'Tab') {
+                event.preventDefault();
+                applySkillSelection(skillPickerResults[skillPickerIndex]);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                clearSkillPicker();
+                return;
+              }
+              if (event.key === 'Backspace') {
+                event.preventDefault();
+                if (skillPickerQuery) {
+                  setSkillPickerQuery((query) => query.slice(0, -1));
+                } else {
+                  clearSkillPicker();
+                }
+                return;
+              }
+              if (
+                event.key.length === 1
+                && !event.metaKey
+                && !event.ctrlKey
+                && !event.altKey
+                && event.key !== ' '
+              ) {
+                event.preventDefault();
+                setSkillPickerQuery((query) => query + event.key);
+                return;
+              }
+            }
+
+            if (event.key === ' ' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+              event.preventDefault();
+              clearMention();
+              setSkillPickerOpen(true);
+              setSkillPickerQuery('');
+              setSkillPickerIndex(0);
+              return;
+            }
+
             // Mention dropdown keyboard nav
             if (mentionQuery !== null && mentionResults.length > 0) {
               if (event.key === 'ArrowDown') {
@@ -3150,7 +3336,7 @@ export function LLMTab({
               }
               if (event.key === 'Enter' || event.key === 'Tab') {
                 event.preventDefault();
-                applyMention(mentionResults[mentionIndex].label);
+                applyMention(mentionResults[mentionIndex]);
                 return;
               }
               if (event.key === 'Escape') {
@@ -3161,51 +3347,36 @@ export function LLMTab({
             }
             handleComposerKeyDown(event);
           }}
-          onBlur={() => { setTimeout(clearMention, 150); }}
+          onBlur={() => { setTimeout(dismissComposerPickers, 150); }}
           placeholder={hasMessages ? 'Reply\u2026' : 'How can I help you today?'}
           disabled={isSending || isEnhancingPrompt}
           rows={1}
         />
-        {mentionQuery !== null && mentionResults.length > 0 && (
+        </div>
+        {(mentionQuery !== null && mentionResults.length > 0) || (skillPickerOpen && skillPickerResults.length > 0) ? (
           <div className="copilot__mention-dropdown">
-            {mentionResults.map((item, i) => (
+            {(skillPickerOpen ? skillPickerResults : mentionResults).map((item, i) => (
               <button
-                key={`${item.type}-${item.id}`}
-                className={`copilot__mention-item${i === mentionIndex ? ' copilot__mention-item--active' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); applyMention(item.label); }}
-                onMouseEnter={() => setMentionIndex(i)}
+                key={`${item.type}-${item.id || item.label}`}
+                className={`copilot__mention-item${i === (skillPickerOpen ? skillPickerIndex : mentionIndex) ? ' copilot__mention-item--active' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (skillPickerOpen) applySkillSelection(item);
+                  else applyMention(item);
+                }}
+                onMouseEnter={() => {
+                  if (skillPickerOpen) setSkillPickerIndex(i);
+                  else setMentionIndex(i);
+                }}
               >
                 <span className="copilot__mention-name">{item.label}</span>
                 <span className="copilot__mention-type">{item.type}</span>
               </button>
             ))}
           </div>
-        )}
+        ) : null}
         <div className="copilot__composer-footer">
           <div className="copilot__composer-actions">
-            <div className="copilot__skill-select-wrap">
-              <select
-                className="copilot__skill-select"
-                value={activeSkillId ?? ''}
-                onChange={(event) => setActiveSkillId(event.target.value || null)}
-                disabled={isSending || isEnhancingPrompt}
-                title="Active Copilot skill"
-              >
-                <option value="">No skill</option>
-                {skills.map((skill) => (
-                  <option key={skill.id} value={skill.id}>{skill.name}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="copilot__skill-edit-btn"
-                onClick={() => setShowSkillBuilder(true)}
-                title="Open skill builder"
-                disabled={isSending || isEnhancingPrompt}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-              </button>
-            </div>
             <button
               type="button"
               className={`copilot__composer-enhance${canEnhancePrompt ? ' copilot__composer-enhance--ready' : ''}`}
@@ -3244,6 +3415,14 @@ export function LLMTab({
             <span className="copilot__composer-shortcut-sep">•</span>
           </>
         )}
+        <span className="copilot__composer-shortcut">
+          <kbd className="copilot__composer-kbd">shift + space</kbd>
+          <span>
+            skills
+            {activeSkill ? ` · ${activeSkill.name}` : ''}
+          </span>
+        </span>
+        <span className="copilot__composer-shortcut-sep">•</span>
         <span className="copilot__composer-shortcut">
           <kbd className="copilot__composer-kbd">@</kbd>
           <span>elements</span>
@@ -3339,14 +3518,6 @@ export function LLMTab({
             )}
           </div>
           <div className="copilot__sidebar-footer-actions">
-            <button
-              className={`copilot__sidebar-settings-btn copilot__sidebar-settings-btn--compact${activeSkill ? ' copilot__sidebar-settings-btn--active-skill' : ''}`}
-              onClick={() => setShowSkillBuilder(true)}
-              title={activeSkill ? `Active skill: ${activeSkill.name}` : 'Open skill builder'}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z"/><path d="M19 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"/></svg>
-              Skills
-            </button>
             <button
               className="copilot__sidebar-settings-btn copilot__sidebar-settings-btn--compact"
               onClick={() => setShowSettings(!showSettings)}

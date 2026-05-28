@@ -13,6 +13,7 @@ import {
   serializeSkillToMarkdown,
   SKILL_TEMPLATES,
   updateSkillRecord,
+  formatSkillSurfaces,
   type LLMSkill,
 } from '@/lib/llm/skills';
 
@@ -191,6 +192,12 @@ export function SkillBuilder({
 
   const handleDelete = useCallback(() => {
     if (!draft) return;
+    if (draft.builtIn) {
+      const ok = window.confirm(
+        `"${draft.name}" is a built-in skill. Delete it anyway? It will be restored the next time skills load unless you create a custom skill with the same name.`,
+      );
+      if (!ok) return;
+    }
     const next = skills.filter((skill) => skill.id !== draft.id);
     persistSkills(next);
     if (activeSkillId === draft.id) onActiveSkillChange(null);
@@ -278,7 +285,7 @@ export function SkillBuilder({
 
             <div className="copilot__skills-list">
               {skills.length === 0 && (
-                <div className="copilot__skills-list-empty">No skills yet. Start from a template or create a blank skill.</div>
+                <div className="copilot__skills-list-empty">No skills yet. Built-in defaults load automatically — or start from a template.</div>
               )}
               {skills.map((skill) => (
                 <button
@@ -287,8 +294,14 @@ export function SkillBuilder({
                   className={`copilot__skills-list-item${selectedId === skill.id ? ' copilot__skills-list-item--active' : ''}${activeSkillId === skill.id ? ' copilot__skills-list-item--in-use' : ''}`}
                   onClick={() => handleSelect(skill)}
                 >
-                  <span className="copilot__skills-list-name">{skill.name}</span>
+                  <span className="copilot__skills-list-name">
+                    {skill.name}
+                    {skill.builtIn && <span className="copilot__skills-list-tag">Built-in</span>}
+                  </span>
                   <span className="copilot__skills-list-desc">{skill.description}</span>
+                  {skill.surfaces?.length ? (
+                    <span className="copilot__skills-list-surfaces">{formatSkillSurfaces(skill.surfaces)}</span>
+                  ) : null}
                   {activeSkillId === skill.id && <span className="copilot__skills-list-badge">Active</span>}
                 </button>
               ))}

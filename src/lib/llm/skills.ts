@@ -1,3 +1,11 @@
+import {
+  DEFAULT_SKILL_TEMPLATES,
+  type SkillSurface,
+  type SkillTemplate,
+} from '@/lib/llm/default-skill-templates';
+
+export type { SkillSurface, SkillTemplate };
+
 export interface LLMSkill {
   id: string;
   name: string;
@@ -5,100 +13,18 @@ export interface LLMSkill {
   instructions: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface SkillTemplate {
-  name: string;
-  description: string;
-  instructions: string;
+  /** Shipped default skill — re-seeded on load if missing; instructions refresh when revision bumps. */
+  builtIn?: boolean;
+  surfaces?: SkillSurface[];
+  templateRevision?: number;
 }
 
 const SKILLS_STORAGE_KEY = 'cinegen_llm_skills';
 
-export const SKILL_TEMPLATES: SkillTemplate[] = [
-  {
-    name: 'shot-list',
-    description:
-      'Builds structured shot lists from scripts, briefs, or transcripts. Use when the user asks for a shot list, coverage plan, scene breakdown, or shooting schedule.',
-    instructions: `# Shot List
+/** Bump when built-in skill copy changes so existing installs pick up updates. */
+export const BUILTIN_SKILLS_REVISION = 1;
 
-When the user asks for a shot list:
-
-1. Clarify scene count, runtime target, and style if missing.
-2. Use project assets, transcripts, and elements when available.
-3. Output a numbered shot list with this structure for each shot:
-
-\`\`\`
-### Shot [N] — [Scene / Beat name]
-- **Type:** Wide | Medium | Close | Insert | POV | Drone | etc.
-- **Subject:** Who or what is on screen
-- **Action:** What happens in the shot
-- **Camera:** Movement, lens feel, framing notes
-- **Audio:** Dialogue, VO, ambience, music cue
-- **Duration:** Estimated seconds
-- **Notes:** Props, wardrobe, VFX, continuity
-\`\`\`
-
-4. Group shots by scene or location.
-5. End with a brief coverage summary (total shots, est. runtime, priority setups).
-6. Keep language production-ready — no filler.`,
-  },
-  {
-    name: 'editorial-brief',
-    description:
-      'Drafts editorial briefs from transcripts and project context. Use when the user wants a creative brief, edit direction, story outline, or narrative plan before cutting.',
-    instructions: `# Editorial Brief
-
-When drafting an editorial brief:
-
-1. Read available transcripts, visual summaries, and timeline context.
-2. Structure the brief as:
-
-\`\`\`
-## Objective
-[One paragraph — what this edit should achieve]
-
-## Audience & Tone
-[Who it's for, emotional register, pacing feel]
-
-## Story Arc
-[Beginning → middle → end beats]
-
-## Key Moments
-[Bullet list of must-include moments with source citations when possible]
-
-## Structure Notes
-[Act breaks, chapter markers, B-roll strategy]
-
-## Open Questions
-[What still needs a creative decision]
-\`\`\`
-
-3. Cite sources with \`[asset:Name @ time]\` or \`[timeline:Name / clip:Clip @ time]\` when referencing specific moments.
-4. Stay concise — this is a working brief, not a treatment.`,
-  },
-  {
-    name: 'prompt-writer',
-    description:
-      'Writes image and video generation prompts from project context. Use when the user wants prompts for AI generation nodes, storyboards, or visual references.',
-    instructions: `# Prompt Writer
-
-When writing generation prompts:
-
-1. Match the user's target model style (cinematic, photoreal, stylized, etc.).
-2. Structure each prompt as:
-   - **Subject** — who/what is in frame
-   - **Action** — movement or moment
-   - **Environment** — location, time of day, weather
-   - **Camera** — angle, lens, depth of field, movement
-   - **Lighting** — key light direction, mood, color grade feel
-   - **Style** — film stock, reference aesthetic, aspect ratio hint
-
-3. Output prompts ready to paste into CineGen Spaces nodes.
-4. Offer 2–3 variants when useful (safe, bold, minimal).
-5. Keep each prompt under 200 words unless the user asks for detail.`,
-  },
-];
+export const SKILL_TEMPLATES: SkillTemplate[] = DEFAULT_SKILL_TEMPLATES;
 
 function slugifySkillName(value: string): string {
   return value
@@ -113,27 +39,28 @@ export function normalizeSkillName(value: string): string {
   return slug || 'untitled-skill';
 }
 
-function parseFrontmatterBlock(raw: string): { meta: Record<string, string>; body: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
-  if (!match) return { meta: {}, body: raw.trim() };
-
-  const meta: Record<string, string> = {};
-  for (const line of match[1].split('\n')) {
-    const colon = line.indexOf(':');
-    if (colon <= 0) continue;
-    const key = line.slice(0, colon).trim();
-    const value = line.slice(colon + 1).trim();
-    if (key) meta[key] = value;
-  }
-
-  return { meta, body: match[2].trim() };
+export function builtinSkillId(name: string): string {
+  return `cinegen-builtin-${normalizeSkillName(name)}`;
 }
 
-export function loadSkills(): LLMSkill[] {
-  if (typeof window === 'undefined') return [];
+export function createBuiltinSkill(template: SkillTemplate): LLMSkill {
+  const now = new Date().toISOString();
+  return {
+    id: builtinSkillId(template.name),
+    name: normalizeSkillName(template.name),
+    description: template.description.trim(),
+    instructions: template.instructions.trim(),
+    createdAt: now,
+    updatedAt: now,
+    builtIn: true,
+    surfaces: template.surfaces,
+    templateRevision: BUILTIN_SKILLS_REVISION,
+  };
+}
+
+function parseStoredSkills(raw: string | null): LLMSkill[] {
+  if (!raw) return [];
   try {
-    const raw = localStorage.getItem(SKILLS_STORAGE_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed
@@ -154,10 +81,85 @@ export function loadSkills(): LLMSkill[] {
   }
 }
 
+export function sortSkills(skills: LLMSkill[]): LLMSkill[] {
+  return [...skills].sort((a, b) => {
+    if (Boolean(a.builtIn) !== Boolean(b.builtIn)) {
+      return a.builtIn ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/** Ensures all 10 default skills exist; refreshes built-in copy when revision bumps. */
+export function mergeBuiltinSkills(stored: LLMSkill[]): { skills: LLMSkill[]; changed: boolean } {
+  const next = [...stored];
+  const byId = new Map(next.map((skill) => [skill.id, skill]));
+  const byName = new Map(next.map((skill) => [skill.name, skill]));
+  let changed = false;
+
+  for (const template of DEFAULT_SKILL_TEMPLATES) {
+    const id = builtinSkillId(template.name);
+    const name = normalizeSkillName(template.name);
+    const existingById = byId.get(id);
+
+    if (existingById?.builtIn) {
+      if ((existingById.templateRevision ?? 0) < BUILTIN_SKILLS_REVISION) {
+        const index = next.findIndex((skill) => skill.id === id);
+        if (index >= 0) {
+          next[index] = {
+            ...existingById,
+            description: template.description.trim(),
+            instructions: template.instructions.trim(),
+            surfaces: template.surfaces,
+            templateRevision: BUILTIN_SKILLS_REVISION,
+            updatedAt: new Date().toISOString(),
+          };
+          changed = true;
+        }
+      }
+      continue;
+    }
+
+    if (byName.has(name)) continue;
+
+    const skill = createBuiltinSkill(template);
+    next.push(skill);
+    byId.set(skill.id, skill);
+    byName.set(skill.name, skill);
+    changed = true;
+  }
+
+  return { skills: sortSkills(next), changed };
+}
+
+function parseFrontmatterBlock(raw: string): { meta: Record<string, string>; body: string } {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!match) return { meta: {}, body: raw.trim() };
+
+  const meta: Record<string, string> = {};
+  for (const line of match[1].split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon <= 0) continue;
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim();
+    if (key) meta[key] = value;
+  }
+
+  return { meta, body: match[2].trim() };
+}
+
+export function loadSkills(): LLMSkill[] {
+  if (typeof window === 'undefined') return [];
+  const stored = parseStoredSkills(localStorage.getItem(SKILLS_STORAGE_KEY));
+  const { skills, changed } = mergeBuiltinSkills(stored);
+  if (changed) saveSkills(skills);
+  return skills;
+}
+
 export function saveSkills(skills: LLMSkill[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(SKILLS_STORAGE_KEY, JSON.stringify(skills));
+    localStorage.setItem(SKILLS_STORAGE_KEY, JSON.stringify(sortSkills(skills)));
     window.dispatchEvent(new CustomEvent('cinegen:skills-changed'));
   } catch {
     // ignore quota errors
@@ -173,6 +175,7 @@ export function createSkillFromTemplate(template: SkillTemplate): LLMSkill {
     instructions: template.instructions.trim(),
     createdAt: now,
     updatedAt: now,
+    surfaces: template.surfaces,
   };
 }
 
@@ -200,10 +203,15 @@ export function updateSkillRecord(skill: LLMSkill, patch: Partial<Pick<LLMSkill,
 }
 
 export function formatSkillForPrompt(skill: LLMSkill): string {
+  const surfacesLine = skill.surfaces?.length
+    ? `Surfaces: ${skill.surfaces.join(', ')}`
+    : '';
+
   return [
     `## Skill: ${skill.name}`,
     '',
     skill.description.trim(),
+    surfacesLine,
     '',
     skill.instructions.trim(),
   ].filter(Boolean).join('\n');
@@ -217,10 +225,12 @@ export function buildSkillSystemPromptAddition(activeSkillId: string | null | un
 }
 
 export function serializeSkillToMarkdown(skill: LLMSkill): string {
+  const surfaces = skill.surfaces?.length ? skill.surfaces.join(', ') : undefined;
   return [
     '---',
     `name: ${skill.name}`,
     `description: ${skill.description.replace(/\n/g, ' ')}`,
+    ...(surfaces ? [`surfaces: ${surfaces}`] : []),
     '---',
     '',
     skill.instructions,
@@ -233,10 +243,18 @@ export function parseSkillFromMarkdown(raw: string, fallbackName?: string): Omit
   const name = normalizeSkillName(meta.name || fallbackName || 'imported-skill');
   const description = (meta.description || 'Imported skill.').trim();
   const instructions = body || '# Imported Skill\n\nAdd instructions.';
-  return { name, description, instructions };
+  const surfaces = meta.surfaces
+    ? meta.surfaces.split(',').map((entry) => entry.trim()).filter(Boolean) as SkillSurface[]
+    : undefined;
+  return { name, description, instructions, surfaces };
 }
 
 export function isSkillNameTaken(name: string, skills: LLMSkill[], excludeId?: string): boolean {
   const normalized = normalizeSkillName(name);
   return skills.some((skill) => skill.id !== excludeId && skill.name === normalized);
+}
+
+export function formatSkillSurfaces(surfaces: SkillSurface[] | undefined): string {
+  if (!surfaces?.length) return '';
+  return surfaces.join(' · ');
 }

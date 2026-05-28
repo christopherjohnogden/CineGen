@@ -23,8 +23,8 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 - **Skill Builder** sparkle button in the **main top nav**, immediately left of Settings (LLM tab only)
 - Each skill has a **name**, **description** (when Copilot should use it), and **markdown instructions** injected into the system prompt when active
-- **Skill selector** in the composer — pick an active skill per chat session (`No skill` / `shot-list` / custom)
-- Built-in templates: **shot-list**, **editorial-brief**, **prompt-writer**
+- **Skill selector** in the composer — **Shift+Space** opens the skill picker; selected skills insert as `#skill-name` tags in the reply field (same highlight treatment as `@` elements and `/` assets)
+- **10 built-in default skills** auto-seed on first load: **shot-list**, **storyboard**, **editorial-brief**, **rough-cut**, **remove-dead-space**, **prompt-writer**, **selects-highlights**, **b-roll-planner**, **delivery-prep**, **character-look-bible** — each tagged with surfaces (`llm`, `spaces`, `edit`, `elements`, `export`) and action instructions for cross-tab workflows
 - **Import / export** via SKILL.md (YAML frontmatter + markdown body); skills stored app-wide in localStorage
 - Active skill highlighted in main nav, sidebar, and skill list
 - **AI skill authoring:** **New skill → Build with AI** opens a guided Q&A; uses installed CLI first (Claude Code / Codex / Gemini), then Cloud or Local
