@@ -35,12 +35,15 @@ const CHAT_ONLY_SUFFIX = [
   'CineGen Copilot chat mode: you are NOT exploring the CineGen source codebase.',
   'The user\'s video-editing project (timelines, clips, transcripts, assets) is provided in ACTIVE PROJECT CONTEXT above — not on disk and not in repo files.',
   'Answer immediately from ACTIVE PROJECT CONTEXT and conversation history. Never search files, run commands, or say "let me look at the project".',
+  'CineGen SKILLS are listed in the system prompt — answer skill inventory questions from that catalog, never via tools.',
+  'When an ACTIVE SKILL section is present, follow it directly in chat — never invoke Skill tool or slash commands.',
   'Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands.',
 ].join(' ');
 
 const COPILOT_RESUME_REMINDER = [
   'CineGen Copilot follow-up: answer from project context already established in this conversation.',
   'Do not search the filesystem or CineGen source code. Timelines and clips are in the prior context, not in repo files.',
+  'CineGen SKILLS are in the system prompt — list them directly; never use Skill tool or say you will check.',
   'For clip/timeline lists: numbered list + [timeline:Name / clip:ClipName @ time] citations only — never markdown tables, even when repeating an earlier answer.',
 ].join(' ');
 
@@ -51,19 +54,10 @@ const ENHANCE_PROMPT_SUFFIX = [
   'Return only the rewritten prompt text.',
 ].join(' ');
 
-const CHAT_DISALLOWED_TOOLS = [
-  'Bash',
-  'Edit',
-  'Read',
-  'Write',
-  'Glob',
-  'Grep',
-  'Skill',
-  'WebFetch',
-  'WebSearch',
-  'Task',
-  'NotebookEdit',
-].join(',');
+/** Copilot chat must not invoke tools — partial deny lists miss MCP/plugin tools and cause max-turn exits. */
+const COPILOT_CHAT_TOOLS = '';
+/** Allow one recovery turn when the model attempts a blocked tool call before answering in text. */
+const COPILOT_MAX_TURNS = '2';
 
 let cachedBinary: string | null | undefined;
 let activeRequest: { child: ChildProcess; requestId: string } | null = null;
@@ -142,6 +136,32 @@ function parseClaudeCodeUsage(obj: Record<string, unknown>): ClaudeCodeUsageSumm
   return { promptTokens, completionTokens, totalTokens, cost };
 }
 
+function formatClaudeCodeFailure(
+  code: number | null,
+  stderrBuffer: string,
+  lastResultPayload?: Record<string, unknown>,
+): string {
+  const resultErrors = Array.isArray(lastResultPayload?.errors)
+    ? (lastResultPayload.errors as unknown[]).filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  if (resultErrors.length > 0) {
+    return resultErrors.join(' ');
+  }
+
+  if (typeof lastResultPayload?.result === 'string' && lastResultPayload.result.trim()) {
+    return lastResultPayload.result.trim();
+  }
+
+  if (lastResultPayload?.subtype === 'error_max_turns') {
+    return 'Claude Code hit its turn limit before finishing a reply. Retry your message — Copilot answers in chat only, without tools.';
+  }
+
+  const stderr = stderrBuffer.trim();
+  if (stderr) return stderr;
+
+  return `Claude Code exited with code ${code ?? 'unknown'}`;
+}
+
 function extractStreamToken(obj: Record<string, unknown>): string {
   if (obj.type === 'stream_event') {
     const event = obj.event as Record<string, unknown> | undefined;
@@ -200,16 +220,18 @@ async function streamClaudeCodeChat(
     '--verbose',
     '--include-partial-messages',
     '--max-turns',
-    '1',
+    COPILOT_MAX_TURNS,
     '--model',
     model,
-    '--disallowed-tools',
-    CHAT_DISALLOWED_TOOLS,
+    '--tools',
+    COPILOT_CHAT_TOOLS,
+    '--disable-slash-commands',
   ];
 
   if (canResume && params.resumeSessionId) {
     args.push('--resume', params.resumeSessionId);
-    args.push('--append-system-prompt', COPILOT_RESUME_REMINDER);
+    const resumeAppend = [params.systemPrompt?.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join('\n\n');
+    args.push('--append-system-prompt', resumeAppend);
   } else if (params.injectProjectContext && params.systemPrompt?.trim()) {
     const refreshPrefix = params.contextRefresh
       ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
@@ -225,6 +247,7 @@ async function streamClaudeCodeChat(
   let authFailed = false;
   let sawStreamDelta = false;
   let usage: ClaudeCodeUsageSummary | undefined;
+  let lastResultPayload: Record<string, unknown> | undefined;
 
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
@@ -254,6 +277,10 @@ async function streamClaudeCodeChat(
 
           if (obj.type === 'assistant' && obj.error === 'authentication_failed') {
             authFailed = true;
+          }
+
+          if (obj.type === 'result') {
+            lastResultPayload = obj;
           }
 
           const parsedUsage = parseClaudeCodeUsage(obj);
@@ -309,12 +336,12 @@ async function streamClaudeCodeChat(
         return;
       }
 
-      if (!trimmed) {
-        reject(new Error(stderrBuffer.trim() || `Claude Code exited with code ${code ?? 'unknown'}`));
+      if (trimmed) {
+        resolve({ message: trimmed, sessionId, usage, resumed: canResume });
         return;
       }
 
-      resolve({ message: trimmed, sessionId, usage, resumed: canResume });
+      reject(new Error(formatClaudeCodeFailure(code, stderrBuffer, lastResultPayload)));
     });
   });
 }

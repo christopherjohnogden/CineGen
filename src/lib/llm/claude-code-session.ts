@@ -147,10 +147,24 @@ export function detectContextGapInResponse(content: string): boolean {
 export function detectAgenticDeflection(content: string): boolean {
   const trimmed = content.trim();
   if (!trimmed) return false;
-  return /let me (look|check|search|find|explore)/i.test(trimmed)
+  return /let me (look|check|search|find|explore|invoke|load|run|use)/i.test(trimmed)
+    || /\busing the (skill tool|Skill tool)\b/i.test(trimmed)
+    || /\b(use|invoke|call) (the )?(skill tool|Skill tool)\b/i.test(trimmed)
+    || /\b(i don't have|don't have) (a )?`?Skill`? tool\b/i.test(trimmed)
     || /where (timeline|project) (data )?is stored/i.test(trimmed)
     || /search (the )?(project|codebase|filesystem)/i.test(trimmed);
 }
+
+export function isClaudeMaxTurnsError(message: string): boolean {
+  return /maximum number of turns/i.test(message);
+}
+
+export const AGENTIC_DEFLECTION_RETRY_PROMPT = [
+  'Your previous reply said you would look something up, load a skill, or use a tool.',
+  'Do NOT. Follow any ACTIVE SKILL instructions directly in chat and answer from ACTIVE PROJECT CONTEXT and the CineGen SKILLS catalog.',
+  'Never mention tools, Skill tool, slash commands, or searching.',
+  'Original question:',
+].join(' ');
 
 export function detectBadClipListFormatting(content: string): boolean {
   const trimmed = content.trim();

@@ -2,6 +2,11 @@
 
 import type { ProjectTab } from '@/types/workspace';
 
+export interface LlmCopilotNavStatus {
+  isThinking: boolean;
+  hasUnreadResponse: boolean;
+}
+
 const TABS: { id: ProjectTab; label: string }[] = [
   { id: 'elements', label: 'Elements' },
   { id: 'create', label: 'Spaces' },
@@ -17,6 +22,7 @@ interface TopTabsProps {
   showSkillsButton?: boolean;
   onOpenSkills?: () => void;
   hasActiveSkill?: boolean;
+  llmCopilotStatus?: LlmCopilotNavStatus;
 }
 
 export function TopTabs({
@@ -26,6 +32,7 @@ export function TopTabs({
   showSkillsButton = false,
   onOpenSkills,
   hasActiveSkill = false,
+  llmCopilotStatus,
 }: TopTabsProps) {
   const isSettingsActive = activeTab === 'settings';
 
@@ -41,15 +48,35 @@ export function TopTabs({
       </div>
 
       <div className="top-nav__tabs">
-        {TABS.map(({ id, label }) => (
-          <button
-            key={id}
-            className={`top-nav__tab ${id === activeTab ? 'top-nav__tab--active' : ''}`}
-            onClick={() => onTabChange(id)}
-          >
-            {label}
-          </button>
-        ))}
+        {TABS.map(({ id, label }) => {
+          const isLlm = id === 'llm';
+          const showThinking = isLlm && llmCopilotStatus?.isThinking;
+          const showReady = isLlm && !showThinking && llmCopilotStatus?.hasUnreadResponse;
+
+          return (
+            <button
+              key={id}
+              className={`top-nav__tab${id === activeTab ? ' top-nav__tab--active' : ''}${showReady ? ' top-nav__tab--unread' : ''}`}
+              onClick={() => onTabChange(id)}
+            >
+              <span className="top-nav__tab-label">{label}</span>
+              {showThinking && (
+                <span
+                  className="top-nav__tab-indicator top-nav__tab-indicator--thinking"
+                  aria-label="Copilot is thinking"
+                  title="Copilot is thinking"
+                />
+              )}
+              {showReady && (
+                <span
+                  className="top-nav__tab-indicator top-nav__tab-indicator--ready"
+                  aria-label="Copilot response ready"
+                  title="Response ready"
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="top-nav__actions">

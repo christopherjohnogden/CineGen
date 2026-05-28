@@ -208,7 +208,10 @@ export function formatSkillForPrompt(skill: LLMSkill): string {
     : '';
 
   return [
-    `## Skill: ${skill.name}`,
+    `## ACTIVE SKILL: ${skill.name}`,
+    '',
+    'Follow these instructions directly in your chat reply.',
+    'Do NOT invoke Skill tool, slash commands, or say you will load the skill.',
     '',
     skill.description.trim(),
     surfacesLine,
@@ -222,6 +225,32 @@ export function buildSkillSystemPromptAddition(activeSkillId: string | null | un
   const skill = skills.find((entry) => entry.id === activeSkillId);
   if (!skill) return '';
   return formatSkillForPrompt(skill);
+}
+
+export function buildSkillsCatalogPromptAddition(skills: LLMSkill[]): string {
+  const sorted = sortSkills(skills);
+  const lines = [
+    'CineGen SKILLS',
+    'Saved skills for this project. When the user asks what skills exist, list these directly from this catalog.',
+    'Do NOT invoke tools, the Skill tool, or say you will look skills up — they are already listed below.',
+    'Users activate a skill in Copilot with Shift+Space or #skill-name in the composer.',
+    '',
+  ];
+
+  if (sorted.length === 0) {
+    lines.push('- No saved skills yet.');
+    return lines.join('\n');
+  }
+
+  for (const skill of sorted) {
+    const surfaces = formatSkillSurfaces(skill.surfaces);
+    const builtInLabel = skill.builtIn ? ' (built-in)' : '';
+    const surfaceLabel = surfaces ? ` · surfaces: ${surfaces}` : '';
+    lines.push(`- **${skill.name}**${builtInLabel}${surfaceLabel}`);
+    lines.push(`  ${skill.description.trim()}`);
+  }
+
+  return lines.join('\n');
 }
 
 export function serializeSkillToMarkdown(skill: LLMSkill): string {

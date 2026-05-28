@@ -10,13 +10,15 @@ import type { ExportJob } from '@/types/export';
 import type { Element } from '@/types/elements';
 import { createDefaultTimeline } from '@/lib/editor/timeline-operations';
 import { migrateSequenceToTimelines } from '@/lib/editor/timeline-migration';
-import { TopTabs } from './top-tabs';
+import { TopTabs, type LlmCopilotNavStatus } from './top-tabs';
 import { ElementsTab } from '@/components/elements/elements-tab';
 import { CreateTab } from '@/components/create/create-tab';
 import { EditTab } from '@/components/edit/edit-tab';
 import { LLMTab } from '@/components/llm/llm-tab';
+import { notifyCopilotResponseReady } from '@/lib/llm/copilot-notifications';
 import { ExportTab } from '@/components/export/export-tab';
 import { SettingsPage } from '@/components/settings/settings-page';
+import { AppToastHost, type AppToast } from '@/components/ui/app-toast';
 import {
   assetFromRow,
   folderFromRow,
@@ -802,10 +804,46 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const [hydrationComplete, setHydrationComplete] = useState(false);
   const [openSkillBuilderSignal, setOpenSkillBuilderSignal] = useState(0);
   const [llmHasActiveSkill, setLlmHasActiveSkill] = useState(false);
+  const [llmCopilotStatus, setLlmCopilotStatus] = useState<LlmCopilotNavStatus>({
+    isThinking: false,
+    hasUnreadResponse: false,
+  });
+  const [copilotReadyToast, setCopilotReadyToast] = useState<AppToast | null>(null);
 
   const wrappedDispatch = useCallback((action: WorkspaceAction) => {
     lastActionRef.current = action.type;
     historyDispatch(action);
+  }, []);
+
+  const handleTabChange = useCallback((tab: ProjectTab) => {
+    if (tab === 'llm') {
+      setLlmCopilotStatus((current) => ({ ...current, hasUnreadResponse: false }));
+    }
+    wrappedDispatch({ type: 'SET_TAB', tab });
+  }, [wrappedDispatch]);
+
+  const handleCopilotThinkingChange = useCallback((isThinking: boolean) => {
+    setLlmCopilotStatus((current) => ({ ...current, isThinking }));
+  }, []);
+
+  const handleCopilotResponseReady = useCallback(() => {
+    setLlmCopilotStatus((current) => ({ ...current, hasUnreadResponse: true }));
+    setCopilotReadyToast({
+      id: crypto.randomUUID(),
+      title: 'Copilot',
+      message: 'Your response is ready in the LLM tab.',
+      actionLabel: 'View',
+    });
+    notifyCopilotResponseReady();
+  }, []);
+
+  const handleCopilotToastAction = useCallback(() => {
+    setCopilotReadyToast(null);
+    handleTabChange('llm');
+  }, [handleTabChange]);
+
+  const dismissCopilotToast = useCallback(() => {
+    setCopilotReadyToast(null);
   }, []);
 
   useEffect(() => {
@@ -1600,17 +1638,18 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     <WorkspaceContext.Provider value={{ state, dispatch: wrappedDispatch, projectId }}>
       <TopTabs
         activeTab={state.activeTab}
-        onTabChange={(tab) => wrappedDispatch({ type: 'SET_TAB', tab })}
+        onTabChange={handleTabChange}
         onBackToHome={onBackToHome}
         showSkillsButton={state.activeTab === 'llm'}
         onOpenSkills={() => setOpenSkillBuilderSignal((value) => value + 1)}
         hasActiveSkill={llmHasActiveSkill}
+        llmCopilotStatus={llmCopilotStatus}
       />
       <main className="workspace-content">
         {state.activeTab === 'elements' && <ElementsTab />}
         {state.activeTab === 'create' && <CreateTab />}
         {state.activeTab === 'edit' && <EditTab llmJumpRequest={llmJumpRequest} />}
-        {state.activeTab === 'llm' && (
+        <div className={`workspace-tab-panel${state.activeTab === 'llm' ? ' workspace-tab-panel--active' : ''}`}>
           <LLMTab
             projectId={projectId}
             assets={state.assets}
@@ -1625,13 +1664,21 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             onUpdateAssetAnalysis={handleUpdateAssetAnalysis}
             openSkillBuilderSignal={openSkillBuilderSignal}
             onActiveSkillPresenceChange={setLlmHasActiveSkill}
+            isTabActive={state.activeTab === 'llm'}
+            onCopilotThinkingChange={handleCopilotThinkingChange}
+            onCopilotResponseReadyWhileBackgrounded={handleCopilotResponseReady}
           />
-        )}
+        </div>
         {state.activeTab === 'export' && <ExportTab />}
         {state.activeTab === 'settings' && (
           <SettingsPage onBack={() => wrappedDispatch({ type: 'SET_TAB', tab: 'create' })} />
         )}
       </main>
+      <AppToastHost
+        toast={copilotReadyToast}
+        onDismiss={dismissCopilotToast}
+        onAction={handleCopilotToastAction}
+      />
     </WorkspaceContext.Provider>
   );
 }

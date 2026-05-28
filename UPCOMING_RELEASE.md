@@ -30,6 +30,14 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - **AI skill authoring:** **New skill → Build with AI** opens a guided Q&A; uses installed CLI first (Claude Code / Codex / Gemini), then Cloud or Local
 - **Chat skill authoring:** ask Copilot to “create a skill for …” — same guided flow in chat with a **Save skill** button when the draft is ready
 
+### LLM tab: Background Copilot **(in progress)**
+
+- Copilot **keeps running when you switch tabs** — LLM tab stays mounted in the background so streaming and in-flight requests continue while you work in Spaces, Edit, or Export
+- **LLM nav indicator** while Copilot is thinking (pulsing dot) and when a response is **ready** (green dot) after you navigate away
+- **In-app toast** (bottom-right) when a background reply finishes — **View** opens the LLM tab; auto-dismisses after 8s; **skipped on errors** (e.g. CLI exit failures)
+- **Desktop notification** when a background reply finishes (macOS/Windows system notification, if allowed)
+- Unread indicator clears when you return to the LLM tab
+
 ---
 
 ### LLM tab: CLI LLM detection (Claude Code, Codex, Gemini CLI) **(in progress)**
@@ -48,7 +56,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - **Claude Code model picker:** Opus, Sonnet, and Haiku via `--model`
 - **Smart context caching:** full project context injected on first message only; follow-ups use `--resume` session (much lower token use)
 - **Auto context refresh** when assets/timelines/transcripts change, or when Claude indicates missing project info
-- **Copilot chat guardrails:** Claude Code runs with tools disabled so it answers from injected project context instead of searching the CineGen repo on disk
+- **Copilot chat guardrails:** Claude Code runs with **all tools disabled** (`--tools ""`) so it answers from injected project context instead of invoking MCP/plugin tools or searching the CineGen repo on disk
 - **Timeline clip list formatting:** chronological numbered list with clickable `[timeline:…]` citations; repeat questions stay in list format with auto-retry if a table slips through
 - **GFM markdown tables:** Copilot chat renders GitHub-flavored markdown tables (via `remark-gfm`) with scrollable styled table blocks
 
@@ -171,6 +179,9 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Layer Decompose:** `reconstruct_bg` kept as app-only (not sent to SAM 3 API)
 - **KIE Runway:** Quality param no longer stripped before API call **(in progress fix)**
 - **Gemini CLI Copilot:** Pass `--skip-trust` and `GEMINI_CLI_TRUST_WORKSPACE=true` so headless Electron chat works outside a trusted folder; use `-p` headless mode (positional prompt + `-s` sandbox hung forever); `--approval-mode plan` for chat-only; 15-minute timeout; strip ANSI codes from CLI error text **(in progress)**
+- **Claude Code Copilot exit 1:** Use `--tools ""` (disable all tools) instead of a partial deny list — MCP/plugin tools were still callable, hitting `--max-turns 1` with no reply text; clearer errors from CLI `result.errors` **(in progress)**
+- **Claude Code max turns:** Raise Copilot to `--max-turns 2`, disable slash commands, auto-retry with fresh context on max-turn failures; `#skill-name` in a message loads that skill into the prompt **(in progress)**
+- **Copilot skill inventory:** Inject **CineGen SKILLS** catalog into system context; auto-retry when Claude deflects with “let me check / use Skill tool” instead of listing skills **(in progress)**
 
 ---
 

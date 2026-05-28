@@ -6329,11 +6329,14 @@ const CHAT_ONLY_SUFFIX$1 = [
   "CineGen Copilot chat mode: you are NOT exploring the CineGen source codebase.",
   "The user's video-editing project (timelines, clips, transcripts, assets) is provided in ACTIVE PROJECT CONTEXT above — not on disk and not in repo files.",
   'Answer immediately from ACTIVE PROJECT CONTEXT and conversation history. Never search files, run commands, or say "let me look at the project".',
+  "CineGen SKILLS are listed in the system prompt — answer skill inventory questions from that catalog, never via tools.",
+  "When an ACTIVE SKILL section is present, follow it directly in chat — never invoke Skill tool or slash commands.",
   "Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands."
 ].join(" ");
 const COPILOT_RESUME_REMINDER = [
   "CineGen Copilot follow-up: answer from project context already established in this conversation.",
   "Do not search the filesystem or CineGen source code. Timelines and clips are in the prior context, not in repo files.",
+  "CineGen SKILLS are in the system prompt — list them directly; never use Skill tool or say you will check.",
   "For clip/timeline lists: numbered list + [timeline:Name / clip:ClipName @ time] citations only — never markdown tables, even when repeating an earlier answer."
 ].join(" ");
 const ENHANCE_PROMPT_SUFFIX$1 = [
@@ -6342,19 +6345,8 @@ const ENHANCE_PROMPT_SUFFIX$1 = [
   "Do not search files or invoke tools.",
   "Return only the rewritten prompt text."
 ].join(" ");
-const CHAT_DISALLOWED_TOOLS = [
-  "Bash",
-  "Edit",
-  "Read",
-  "Write",
-  "Glob",
-  "Grep",
-  "Skill",
-  "WebFetch",
-  "WebSearch",
-  "Task",
-  "NotebookEdit"
-].join(",");
+const COPILOT_CHAT_TOOLS = "";
+const COPILOT_MAX_TURNS = "2";
 let cachedBinary;
 let activeRequest$2 = null;
 function buildPathEnv() {
@@ -6410,6 +6402,21 @@ function parseClaudeCodeUsage(obj) {
   }
   return { promptTokens, completionTokens, totalTokens, cost };
 }
+function formatClaudeCodeFailure(code, stderrBuffer, lastResultPayload) {
+  const resultErrors = Array.isArray(lastResultPayload == null ? void 0 : lastResultPayload.errors) ? lastResultPayload.errors.filter((entry) => typeof entry === "string") : [];
+  if (resultErrors.length > 0) {
+    return resultErrors.join(" ");
+  }
+  if (typeof (lastResultPayload == null ? void 0 : lastResultPayload.result) === "string" && lastResultPayload.result.trim()) {
+    return lastResultPayload.result.trim();
+  }
+  if ((lastResultPayload == null ? void 0 : lastResultPayload.subtype) === "error_max_turns") {
+    return "Claude Code hit its turn limit before finishing a reply. Retry your message — Copilot answers in chat only, without tools.";
+  }
+  const stderr = stderrBuffer.trim();
+  if (stderr) return stderr;
+  return `Claude Code exited with code ${code ?? "unknown"}`;
+}
 function extractStreamToken(obj) {
   if (obj.type === "stream_event") {
     const event = obj.event;
@@ -6440,7 +6447,7 @@ Assistant:
 `;
 }
 async function streamClaudeCodeChat(requestId, params) {
-  var _a, _b;
+  var _a, _b, _c;
   const binary = await resolveClaudeBinary();
   if (!binary) {
     throw new Error("Claude Code is not installed. Install it from https://code.claude.com");
@@ -6458,16 +6465,18 @@ async function streamClaudeCodeChat(requestId, params) {
     "--verbose",
     "--include-partial-messages",
     "--max-turns",
-    "1",
+    COPILOT_MAX_TURNS,
     "--model",
     model,
-    "--disallowed-tools",
-    CHAT_DISALLOWED_TOOLS
+    "--tools",
+    COPILOT_CHAT_TOOLS,
+    "--disable-slash-commands"
   ];
   if (canResume && params.resumeSessionId) {
     args.push("--resume", params.resumeSessionId);
-    args.push("--append-system-prompt", COPILOT_RESUME_REMINDER);
-  } else if (params.injectProjectContext && ((_b = params.systemPrompt) == null ? void 0 : _b.trim())) {
+    const resumeAppend = [(_b = params.systemPrompt) == null ? void 0 : _b.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join("\n\n");
+    args.push("--append-system-prompt", resumeAppend);
+  } else if (params.injectProjectContext && ((_c = params.systemPrompt) == null ? void 0 : _c.trim())) {
     const refreshPrefix = params.contextRefresh ? "The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n" : "";
     const suffix = params.purpose === "enhance-prompt" ? ENHANCE_PROMPT_SUFFIX$1 : CHAT_ONLY_SUFFIX$1;
     args.push("--append-system-prompt", `${refreshPrefix}${params.systemPrompt.trim()}
@@ -6481,6 +6490,7 @@ ${suffix}`);
   let authFailed = false;
   let sawStreamDelta = false;
   let usage;
+  let lastResultPayload;
   return new Promise((resolve, reject) => {
     var _a2, _b2;
     const child = spawn(binary, args, {
@@ -6503,6 +6513,9 @@ ${suffix}`);
           }
           if (obj.type === "assistant" && obj.error === "authentication_failed") {
             authFailed = true;
+          }
+          if (obj.type === "result") {
+            lastResultPayload = obj;
           }
           const parsedUsage = parseClaudeCodeUsage(obj);
           if (parsedUsage) {
@@ -6548,11 +6561,11 @@ ${suffix}`);
         reject(new Error("Claude Code is not logged in. Open Terminal, run `claude`, and sign in with your subscription."));
         return;
       }
-      if (!trimmed) {
-        reject(new Error(stderrBuffer.trim() || `Claude Code exited with code ${code ?? "unknown"}`));
+      if (trimmed) {
+        resolve({ message: trimmed, sessionId, usage, resumed: canResume });
         return;
       }
-      resolve({ message: trimmed, sessionId, usage, resumed: canResume });
+      reject(new Error(formatClaudeCodeFailure(code, stderrBuffer, lastResultPayload)));
     });
   });
 }
@@ -6699,6 +6712,7 @@ const CHAT_ONLY_SUFFIX = [
   "CineGen Copilot chat mode: you are NOT exploring the CineGen source codebase.",
   "The user's video-editing project (timelines, clips, transcripts, assets) is provided in ACTIVE PROJECT CONTEXT above — not on disk and not in repo files.",
   'Answer immediately from ACTIVE PROJECT CONTEXT and conversation history. Never search files, run commands, or say "let me look at the project".',
+  "CineGen SKILLS are listed in the system prompt — answer skill inventory questions from that catalog, never via tools.",
   "Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands."
 ].join(" ");
 const ENHANCE_PROMPT_SUFFIX = [

@@ -162,6 +162,7 @@ export const CHAT_ONLY_SUFFIX = [
   'CineGen Copilot chat mode: you are NOT exploring the CineGen source codebase.',
   'The user\'s video-editing project (timelines, clips, transcripts, assets) is provided in ACTIVE PROJECT CONTEXT above — not on disk and not in repo files.',
   'Answer immediately from ACTIVE PROJECT CONTEXT and conversation history. Never search files, run commands, or say "let me look at the project".',
+  'CineGen SKILLS are listed in the system prompt — answer skill inventory questions from that catalog, never via tools.',
   'Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands.',
 ].join(' ');
 

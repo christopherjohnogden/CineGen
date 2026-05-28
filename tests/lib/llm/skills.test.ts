@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUILTIN_SKILLS_REVISION,
+  buildSkillsCatalogPromptAddition,
   builtinSkillId,
   createBuiltinSkill,
   mergeBuiltinSkills,
@@ -45,5 +46,27 @@ describe('mergeBuiltinSkills', () => {
     const updated = skills.find((skill) => skill.id === builtinSkillId('shot-list'));
     expect(updated?.description).toBe(DEFAULT_SKILL_TEMPLATES[0].description);
     expect(updated?.templateRevision).toBe(BUILTIN_SKILLS_REVISION);
+  });
+});
+
+describe('buildSkillsCatalogPromptAddition', () => {
+  it('lists skill names and descriptions for Copilot context', () => {
+    const catalog = buildSkillsCatalogPromptAddition([
+      {
+        id: 'builtin-shot-list',
+        name: 'shot-list',
+        description: 'Builds structured shot lists.',
+        instructions: '# Shot List',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        builtIn: true,
+        surfaces: ['llm', 'spaces'],
+      },
+    ]);
+
+    expect(catalog).toContain('CineGen SKILLS');
+    expect(catalog).toContain('**shot-list**');
+    expect(catalog).toContain('Builds structured shot lists.');
+    expect(catalog).toContain('Do NOT invoke tools');
   });
 });

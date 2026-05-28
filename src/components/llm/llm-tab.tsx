@@ -27,6 +27,8 @@ import {
   isRepeatUserQuestion,
   REPEAT_CLIP_FORMAT_HINT,
   CLIP_FORMAT_RETRY_PROMPT,
+  AGENTIC_DEFLECTION_RETRY_PROMPT,
+  isClaudeMaxTurnsError,
   shouldInjectProjectContext,
   type CliLlmProviderId,
   type CliLlmSessionState,
@@ -49,6 +51,7 @@ import {
 } from '@/lib/llm/editorial-workflow';
 import {
   buildSkillSystemPromptAddition,
+  buildSkillsCatalogPromptAddition,
   loadSkills,
   type LLMSkill,
 } from '@/lib/llm/skills';
@@ -387,6 +390,9 @@ interface LLMTabProps {
   onUpdateAssetAnalysis: (assetId: string, metadata: Record<string, unknown>) => void;
   openSkillBuilderSignal?: number;
   onActiveSkillPresenceChange?: (active: boolean) => void;
+  isTabActive?: boolean;
+  onCopilotThinkingChange?: (isThinking: boolean) => void;
+  onCopilotResponseReadyWhileBackgrounded?: () => void;
 }
 
 const MODEL_SUGGESTIONS = [
@@ -818,6 +824,9 @@ export function LLMTab({
   onUpdateAssetAnalysis,
   openSkillBuilderSignal = 0,
   onActiveSkillPresenceChange,
+  isTabActive = true,
+  onCopilotThinkingChange,
+  onCopilotResponseReadyWhileBackgrounded,
 }: LLMTabProps) {
   const initialState = useMemo(() => loadStoredState(projectId), [projectId]);
   const [mode, setMode] = useState<LLMMode>(initialState.mode);
@@ -859,6 +868,8 @@ export function LLMTab({
   const threadRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const hadSkillTokenRef = useRef(false);
+  const prevIsSendingRef = useRef(false);
+  const sendingAssistantIdRef = useRef<string | null>(null);
   const workModeMenuRef = useRef<HTMLDivElement>(null);
 
   const transcriptReadyCount = useMemo(() => (
@@ -886,6 +897,11 @@ export function LLMTab({
   const skillSystemPrompt = useMemo(
     () => buildSkillSystemPromptAddition(activeSkillId, skills),
     [activeSkillId, skills],
+  );
+
+  const skillsCatalogPrompt = useMemo(
+    () => buildSkillsCatalogPromptAddition(skills),
+    [skills],
   );
 
   const transcriptAssets = useMemo(() => assets.filter((asset) => {
@@ -955,6 +971,13 @@ export function LLMTab({
     requestCount: sessionUsage.requestCount + (sideUsage?.requestCount ?? 0),
   }), [sessionUsage, sideUsage]);
   const isCliLlmMode = mode === 'local' || isCliBackendMode(mode);
+
+  const cliContextStatus = useMemo(() => {
+    if (!isCliBackendMode(mode) || cliSession.provider !== mode) return null;
+    if (cliSession.forceContextRefresh) return 'Project context will refresh on next message';
+    if (cliSession.sessionId) return 'Project context cached in session';
+    return null;
+  }, [cliSession, mode]);
 
   const resolveTimelineCitationForAsset = useCallback((assetId: string, sourceSeconds: number): TimelineCitationMatch | null => {
     const epsilon = 0.05;
@@ -1047,6 +1070,36 @@ export function LLMTab({
   useEffect(() => {
     onActiveSkillPresenceChange?.(Boolean(activeSkill));
   }, [activeSkill, onActiveSkillPresenceChange]);
+
+  const isCopilotThinking = isSending || isEnhancingPrompt;
+
+  useEffect(() => {
+    onCopilotThinkingChange?.(isCopilotThinking);
+  }, [isCopilotThinking, onCopilotThinkingChange]);
+
+  useEffect(() => {
+    if (isSending && !prevIsSendingRef.current) {
+      const lastMessage = messages[messages.length - 1];
+      sendingAssistantIdRef.current = lastMessage?.role === 'assistant' ? lastMessage.id : null;
+    }
+
+    if (prevIsSendingRef.current && !isSending && !isTabActive && !error) {
+      const assistantId = sendingAssistantIdRef.current;
+      if (assistantId) {
+        const lastMessage = messages[messages.length - 1];
+        if (
+          lastMessage?.id === assistantId
+          && lastMessage.role === 'assistant'
+          && lastMessage.content.trim()
+        ) {
+          onCopilotResponseReadyWhileBackgrounded?.();
+        }
+      }
+      sendingAssistantIdRef.current = null;
+    }
+
+    prevIsSendingRef.current = isSending;
+  }, [error, isSending, isTabActive, messages, onCopilotResponseReadyWhileBackgrounded]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1469,6 +1522,10 @@ export function LLMTab({
       const nextMessages = [...messages, userMessage];
       const requestId = crypto.randomUUID();
       const assistantMessage = createMessage('assistant', '');
+      const skillIdFromMessage = findSkillIdInText(content, skills);
+      const effectiveSkillId = skillIdFromMessage ?? activeSkillId;
+      if (skillIdFromMessage) setActiveSkillId(skillIdFromMessage);
+      const turnSkillSystemPrompt = buildSkillSystemPromptAddition(effectiveSkillId, skills);
 
       setMessages([...nextMessages, assistantMessage]);
       setDraft('');
@@ -1531,6 +1588,14 @@ export function LLMTab({
           ? [...messages.slice(-8), userMessage]
           : [userMessage];
 
+        const fullCliSystemPrompt = joinCopilotSystemPrompt([
+          buildModeSystemPrompt(chatWorkMode),
+          systemPrompt,
+          skillsCatalogPrompt,
+          turnSkillSystemPrompt,
+          projectContext,
+        ]);
+
         const runCliTurn = async (
           turnRequestId: string,
           turnUserMessage: string,
@@ -1552,26 +1617,104 @@ export function LLMTab({
           messages: turnOptions.messages,
         });
 
-        let response = await runCliTurn(requestId, apiUserMessage, {
-          injectProjectContext: inject,
-          contextRefresh: refresh,
-          resumeSessionId: inject ? undefined : activeSession.sessionId ?? undefined,
-          systemPrompt: inject
-            ? joinCopilotSystemPrompt([
-                buildModeSystemPrompt(chatWorkMode),
-                systemPrompt,
-                skillSystemPrompt,
-                projectContext,
-              ])
-            : undefined,
-          messages: inject
-            ? contextMessages.map((message) => ({ role: message.role, content: message.content }))
-            : undefined,
-        });
+        let response;
+        try {
+          response = await runCliTurn(requestId, apiUserMessage, {
+            injectProjectContext: inject,
+            contextRefresh: refresh,
+            resumeSessionId: inject ? undefined : activeSession.sessionId ?? undefined,
+            systemPrompt: inject ? fullCliSystemPrompt : skillsCatalogPrompt,
+            messages: inject
+              ? contextMessages.map((message) => ({ role: message.role, content: message.content }))
+              : undefined,
+          });
+        } catch (firstTurnError) {
+          const firstTurnMessage = firstTurnError instanceof Error ? firstTurnError.message : String(firstTurnError);
+          if (cliProvider !== 'claude-code' || !isClaudeMaxTurnsError(firstTurnMessage)) {
+            throw firstTurnError;
+          }
+
+          const maxTurnRetryId = crypto.randomUUID();
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (last?.id !== assistantMessage.id) return current;
+            return [...current.slice(0, -1), { ...last, content: '' }];
+          });
+
+          const removeMaxTurnRetryListener = subscribeCliCopilotStream(cliProvider, (data) => {
+            if (data.requestId !== maxTurnRetryId) return;
+            if (data.token) {
+              setMessages((current) => {
+                const last = current[current.length - 1];
+                if (last?.id !== assistantMessage.id) return current;
+                return [...current.slice(0, -1), { ...last, content: last.content + data.token }];
+              });
+            }
+          });
+
+          try {
+            response = await runCliTurn(maxTurnRetryId, content, {
+              injectProjectContext: true,
+              contextRefresh: true,
+              resumeSessionId: undefined,
+              systemPrompt: fullCliSystemPrompt,
+              messages: contextMessages.map((message) => ({ role: message.role, content: message.content })),
+            });
+          } finally {
+            removeMaxTurnRetryListener();
+          }
+        }
 
         let finalContent = (response.message?.trim() || '').trim() || 'No response returned.';
         let normalizedContent = normalizeAssistantCitations(finalContent);
         let needsContextRetry = detectContextGapInResponse(normalizedContent) || detectAgenticDeflection(normalizedContent);
+
+        if (needsContextRetry) {
+          const retryRequestId = crypto.randomUUID();
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (last?.id !== assistantMessage.id) return current;
+            return [...current.slice(0, -1), { ...last, content: '' }];
+          });
+
+          const removeContextRetryListener = subscribeCliCopilotStream(cliProvider, (data) => {
+            if (data.requestId !== retryRequestId) return;
+            if (data.token) {
+              setMessages((current) => {
+                const last = current[current.length - 1];
+                if (last?.id !== assistantMessage.id) return current;
+                return [...current.slice(0, -1), { ...last, content: last.content + data.token }];
+              });
+            }
+          });
+
+          try {
+            const retryResponse = await runCliTurn(
+              retryRequestId,
+              `${AGENTIC_DEFLECTION_RETRY_PROMPT} ${content}`,
+              {
+                injectProjectContext: true,
+                contextRefresh: true,
+                resumeSessionId: undefined,
+                systemPrompt: fullCliSystemPrompt,
+                messages: contextMessages.map((message) => ({ role: message.role, content: message.content })),
+              },
+            );
+            const retryContent = normalizeAssistantCitations((retryResponse.message?.trim() || '').trim());
+            if (
+              retryContent
+              && !detectContextGapInResponse(retryContent)
+              && !detectAgenticDeflection(retryContent)
+            ) {
+              response = retryResponse;
+              finalContent = retryContent;
+              normalizedContent = retryContent;
+              needsContextRetry = false;
+            }
+          } finally {
+            removeContextRetryListener();
+          }
+        }
 
         if (!needsContextRetry && detectBadClipListFormatting(normalizedContent)) {
           const retryRequestId = crypto.randomUUID();
@@ -1600,6 +1743,7 @@ export function LLMTab({
                 injectProjectContext: false,
                 contextRefresh: false,
                 resumeSessionId: response.sessionId ?? activeSession.sessionId ?? undefined,
+                systemPrompt: skillsCatalogPrompt,
               },
             );
             const retryContent = normalizeAssistantCitations((retryResponse.message?.trim() || '').trim());
@@ -1687,6 +1831,7 @@ export function LLMTab({
           systemPrompt: joinCopilotSystemPrompt([
             buildModeSystemPrompt('ask'),
             systemPrompt,
+            skillsCatalogPrompt,
             skillSystemPrompt,
             projectContext,
           ]),
@@ -1788,6 +1933,7 @@ export function LLMTab({
         systemPrompt: joinCopilotSystemPrompt([
           buildModeSystemPrompt(resolvedWorkMode),
           systemPrompt,
+          skillsCatalogPrompt,
           skillSystemPrompt,
           projectContext,
         ]),
@@ -1819,7 +1965,7 @@ export function LLMTab({
     } finally {
       setIsSending(false);
     }
-  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, handleSkillAuthoringTurn, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, skillAuthoringActive, skillSystemPrompt, systemPrompt, temperature, timelines, workModeOverride]);
+  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, handleSkillAuthoringTurn, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, skillAuthoringActive, skillSystemPrompt, skillsCatalogPrompt, systemPrompt, temperature, timelines, workModeOverride]);
 
   const handleComposerKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
@@ -3403,18 +3549,6 @@ export function LLMTab({
         </div>
       </div>
       <div className="copilot__composer-shortcuts" aria-hidden>
-        {isCliBackendMode(mode) && cliSession.provider === mode && cliSession.sessionId && !cliSession.forceContextRefresh && (
-          <>
-            <span className="copilot__composer-shortcut copilot__composer-shortcut--status">Project context cached in session</span>
-            <span className="copilot__composer-shortcut-sep">•</span>
-          </>
-        )}
-        {isCliBackendMode(mode) && cliSession.provider === mode && cliSession.forceContextRefresh && (
-          <>
-            <span className="copilot__composer-shortcut copilot__composer-shortcut--status">Project context will refresh on next message</span>
-            <span className="copilot__composer-shortcut-sep">•</span>
-          </>
-        )}
         <span className="copilot__composer-shortcut">
           <kbd className="copilot__composer-kbd">shift + space</kbd>
           <span>
@@ -3480,6 +3614,11 @@ export function LLMTab({
         </nav>
 
         <div className="copilot__sidebar-footer">
+          {cliContextStatus && (
+            <div className="copilot__sidebar-context-status" title={cliContextStatus}>
+              {cliContextStatus}
+            </div>
+          )}
           <div className="copilot__sidebar-usage">
             {isCliLlmMode ? (
               <>

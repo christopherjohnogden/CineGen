@@ -293,6 +293,7 @@ input[type='range']::-moz-range-track {
 .top-nav__tab {
   display: flex;
   align-items: center;
+  gap: 6px;
   height: 100%;
   padding: 0 16px;
   font-size: 12px;
@@ -302,6 +303,36 @@ input[type='range']::-moz-range-track {
   color: var(--text-secondary);
   border-bottom: 2px solid transparent;
   transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.top-nav__tab-label {
+  line-height: 1;
+}
+
+.top-nav__tab--unread:not(.top-nav__tab--active) {
+  color: var(--text-primary);
+}
+
+.top-nav__tab-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.top-nav__tab-indicator--thinking {
+  background: var(--accent);
+  animation: copilot-nav-pulse 1.2s ease-in-out infinite;
+}
+
+.top-nav__tab-indicator--ready {
+  background: #67ffbb;
+  box-shadow: 0 0 8px rgba(103, 255, 187, 0.45);
+}
+
+@keyframes copilot-nav-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 .top-nav__tab:hover {
@@ -398,9 +429,43 @@ input[type='range']::-moz-range-track {
 }
 
 .workspace-content {
+  position: relative;
   height: calc(100vh - 52px);
   width: 100%;
   overflow: hidden;
+}
+
+/* Foreground tabs sit above the always-mounted LLM panel */
+.workspace-content > :not(.workspace-tab-panel) {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+}
+
+.workspace-tab-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.workspace-tab-panel--active {
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.workspace-tab-panel > .copilot {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
 }
 
 .tab-placeholder {
@@ -4728,6 +4793,15 @@ input[type='range']::-moz-range-track {
   padding: 10px 12px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   overflow: hidden;
+}
+
+.copilot__sidebar-context-status {
+  padding: 0 2px;
+  font-size: 10px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  opacity: 0.85;
 }
 
 .copilot__sidebar-usage {
@@ -11959,4 +12033,109 @@ input[type='range']::-moz-range-track {
 }
 .storyboarder-node__timeline-duration:hover {
   color: var(--accent);
+}
+
+/* ── App toast ── */
+
+.app-toast-host {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.app-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 280px;
+  max-width: 360px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 140, 60, 0.22);
+  background: rgba(16, 19, 26, 0.96);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  pointer-events: auto;
+  animation: app-toast-in 0.28s ease-out;
+  backdrop-filter: blur(12px);
+}
+
+.app-toast__copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-toast__title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.app-toast__message {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.app-toast__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.app-toast__action {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: rgba(255, 140, 60, 0.14);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.app-toast__action:hover {
+  background: rgba(255, 140, 60, 0.24);
+  color: #ffc299;
+}
+
+.app-toast__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.app-toast__dismiss:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+@keyframes app-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
