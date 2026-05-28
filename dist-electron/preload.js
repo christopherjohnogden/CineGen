@@ -141,6 +141,9 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
       return () => electron.ipcRenderer.removeListener("app:power-event", handler);
     }
   },
+  file: {
+    getPathForFile: (file) => electron.webUtils.getPathForFile(file)
+  },
   nativeVideo: {
     isAvailable: () => electron.ipcRenderer.invoke("native-video:is-available"),
     resetSurfaces: (surfaceIds) => electron.ipcRenderer.invoke("native-video:reset-surfaces", surfaceIds),

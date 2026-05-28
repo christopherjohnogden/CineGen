@@ -3,19 +3,15 @@
 import { memo, useCallback, useRef, useState, useEffect } from 'react';
 import { type NodeProps, useReactFlow } from '@xyflow/react';
 import { BaseNode } from './base-node';
-import { getApiKey } from '@/lib/utils/api-key';
+import {
+  detectMediaType,
+  detectMediaTypeFromExt,
+  resolveMediaFileUrl,
+  type FileMediaType,
+} from '@/lib/utils/media-file';
 import type { WorkflowNodeData } from '@/types/workflow';
 
 type FilePickerNodeProps = NodeProps & { data: WorkflowNodeData };
-
-type FileMediaType = 'image' | 'video' | 'audio' | '';
-
-function detectMediaType(file: File): FileMediaType {
-  if (file.type.startsWith('image/')) return 'image';
-  if (file.type.startsWith('video/')) return 'video';
-  if (file.type.startsWith('audio/')) return 'audio';
-  return '';
-}
 
 const ACCEPT = 'image/*,video/*,audio/*';
 
@@ -64,17 +60,6 @@ function FilePickerNodeInner({ id, data, selected }: FilePickerNodeProps) {
 
   const thumbSrc = configThumb || videoThumb;
 
-  const detectMediaTypeFromExt = useCallback((filePath: string): FileMediaType => {
-    const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'svg'];
-    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'];
-    const audioExts = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'aiff'];
-    if (imageExts.includes(ext)) return 'image';
-    if (videoExts.includes(ext)) return 'video';
-    if (audioExts.includes(ext)) return 'audio';
-    return '';
-  }, []);
-
   const openNativeFilePicker = useCallback(async () => {
     if (uploading) return;
     setError('');
@@ -106,11 +91,11 @@ function FilePickerNodeInner({ id, data, selected }: FilePickerNodeProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open file');
     }
-  }, [id, data.config, updateNodeData, uploading, detectMediaTypeFromExt]);
+  }, [id, data.config, updateNodeData, uploading]);
 
   const uploadFile = useCallback(
     async (file: File) => {
-      const mediaType = detectMediaType(file);
+      const mediaType = detectMediaType(file) || detectMediaTypeFromExt(file.name);
       if (!mediaType) {
         setError('Unsupported file type');
         return;
@@ -120,21 +105,7 @@ function FilePickerNodeInner({ id, data, selected }: FilePickerNodeProps) {
       setError('');
 
       try {
-        const localPath = (file as any).path as string | undefined;
-        let url: string;
-
-        if (localPath) {
-          url = `local-media://file${localPath}`;
-        } else {
-          const apiKey = getApiKey();
-          const buffer = await file.arrayBuffer();
-          const result = await window.electronAPI.elements.upload(
-            { buffer, name: file.name, type: file.type },
-            apiKey,
-          );
-          url = result.url;
-        }
-
+        const url = await resolveMediaFileUrl(file);
         updateNodeData(id, {
           config: { ...data.config, fileUrl: url, fileType: mediaType, fileName: file.name },
         });

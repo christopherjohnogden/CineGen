@@ -2142,6 +2142,16 @@ input[type='range']::-moz-range-track {
   position: relative;
 }
 
+.workflow-canvas-wrapper--file-drag::after {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 2px dashed rgba(99, 102, 241, 0.55);
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+
 .create-tab--timeline-open .react-flow__panel.bottom {
   bottom: 200px;
 }

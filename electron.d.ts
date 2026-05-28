@@ -167,6 +167,9 @@ export interface ElectronAPI {
     showSave: (options?: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
     showOpen: (options?: { filters?: { name: string; extensions: string[] }[]; properties?: string[] }) => Promise<string[] | string | null>;
   };
+  file: {
+    getPathForFile: (file: File) => string;
+  };
   shell: {
     openPath: (path: string) => Promise<string>;
   };

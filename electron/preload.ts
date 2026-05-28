@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   project: {
@@ -143,6 +143,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('app:power-event', handler);
       return () => ipcRenderer.removeListener('app:power-event', handler);
     },
+  },
+  file: {
+    getPathForFile: (file: File) => webUtils.getPathForFile(file),
   },
   nativeVideo: {
     isAvailable: () => ipcRenderer.invoke('native-video:is-available'),

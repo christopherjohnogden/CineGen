@@ -19,6 +19,17 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## New Features
 
+### Spaces canvas file drop **(in progress)**
+
+- Drag image, video, or audio files from your desktop onto the Spaces canvas to create **File Upload** nodes at the drop position
+- Supports multi-file drop (each file becomes its own node, slightly offset)
+- Uses local file paths in Electron via `webUtils.getPathForFile` (no cloud upload needed for desktop files)
+- Dashed highlight appears while dragging files over the canvas
+
+**Bug fix:** Dropped files no longer fall back to fal.ai upload when a local path is available (fixes failures when fal balance is exhausted).
+
+---
+
 ### Seedance 2.0 (fal.ai) **(committed)**
 
 Two new Spaces video nodes:

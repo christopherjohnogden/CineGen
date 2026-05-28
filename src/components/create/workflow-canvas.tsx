@@ -28,6 +28,7 @@ import { HelperLines, getHelperLines } from './helper-lines';
 import { NODE_REGISTRY } from '@/lib/workflows/node-registry';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import { generateId } from '@/lib/utils/ids';
+import { getMediaTypeForFile, isMediaDragEvent, resolveMediaFileUrl } from '@/lib/utils/media-file';
 import { executeFromNode } from '@/lib/workflows/execute';
 import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
@@ -48,6 +49,7 @@ function WorkflowCanvasInner() {
   const [isPanning, setIsPanning] = useState(false);
   const [typeWarning, setTypeWarning] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isFileDragging, setIsFileDragging] = useState(false);
   const mouseRef = useRef({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
@@ -409,37 +411,103 @@ function WorkflowCanvasInner() {
     }
   }, [state.nodes, state.edges, workflowDispatch]);
 
-  const handleCanvasDrop = useCallback(
-    (e: React.DragEvent) => {
-      const shotData = e.dataTransfer.getData('application/cinegen-shot');
-      if (!shotData) return;
-      e.preventDefault();
-      try {
-        const { url, label } = JSON.parse(shotData) as { url: string; label: string };
-        if (!url) return;
-        const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-        const definition = NODE_REGISTRY['filePicker'];
-        if (!definition) return;
-        const newNode = {
-          id: generateId(),
+  const createFilePickerNode = useCallback(
+    (
+      position: { x: number; y: number },
+      config: { fileUrl: string; fileType: 'image' | 'video' | 'audio'; fileName: string; label?: string },
+    ) => {
+      const definition = NODE_REGISTRY['filePicker'];
+      if (!definition) return null;
+
+      return {
+        id: generateId(),
+        type: 'filePicker',
+        position,
+        data: {
           type: 'filePicker',
-          position,
-          data: {
-            type: 'filePicker',
-            label: `Shot: ${label}`,
-            config: { ...definition.defaultData, fileUrl: url, fileType: 'image', fileName: `${label}.png` },
-          } as WorkflowNodeData,
-        };
-        dispatch({ type: 'SET_NODES', nodes: [...state.nodes, newNode] });
-      } catch {}
+          label: config.label ?? config.fileName,
+          config: { ...definition.defaultData, fileUrl: config.fileUrl, fileType: config.fileType, fileName: config.fileName },
+        } as WorkflowNodeData,
+      };
     },
-    [screenToFlowPosition, state.nodes, dispatch],
+    [],
+  );
+
+  const handleCanvasDrop = useCallback(
+    async (e: React.DragEvent) => {
+      if (!isMediaDragEvent(e)) return;
+      e.preventDefault();
+      setIsFileDragging(false);
+
+      const shotData = e.dataTransfer.getData('application/cinegen-shot');
+      if (shotData) {
+        try {
+          const { url, label } = JSON.parse(shotData) as { url: string; label: string };
+          if (!url) return;
+          const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+          const newNode = createFilePickerNode(position, {
+            fileUrl: url,
+            fileType: 'image',
+            fileName: `${label}.png`,
+            label: `Shot: ${label}`,
+          });
+          if (newNode) {
+            dispatch({ type: 'SET_NODES', nodes: [...state.nodes, newNode] });
+          }
+        } catch {}
+        return;
+      }
+
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length === 0) return;
+
+      const basePosition = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const newNodes: Node<WorkflowNodeData>[] = [];
+      let failedCount = 0;
+
+      await Promise.all(
+        files.map(async (file, index) => {
+          const mediaType = getMediaTypeForFile(file);
+          if (!mediaType) {
+            failedCount += 1;
+            return;
+          }
+
+          try {
+            const url = await resolveMediaFileUrl(file);
+            const node = createFilePickerNode(
+              { x: basePosition.x + index * 32, y: basePosition.y + index * 32 },
+              { fileUrl: url, fileType: mediaType, fileName: file.name },
+            );
+            if (node) newNodes.push(node);
+          } catch (err) {
+            failedCount += 1;
+            console.error('Failed to add dropped file:', file.name, err);
+          }
+        }),
+      );
+
+      if (newNodes.length > 0) {
+        dispatch({ type: 'SET_NODES', nodes: [...state.nodes, ...newNodes] });
+      } else if (failedCount > 0) {
+        setTypeWarning(
+          'Could not add dropped file(s). Local files should work without upload; cloud upload failed or file type is unsupported.',
+        );
+      }
+    },
+    [screenToFlowPosition, state.nodes, dispatch, createFilePickerNode],
   );
 
   const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/cinegen-shot')) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
+    if (!isMediaDragEvent(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsFileDragging(true);
+  }, []);
+
+  const handleCanvasDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) {
+      setIsFileDragging(false);
     }
   }, []);
 
@@ -473,12 +541,13 @@ function WorkflowCanvasInner() {
   return (
     <RunNodeContext.Provider value={handleRunNode}>
     <div
-      className="workflow-canvas-wrapper"
+      className={`workflow-canvas-wrapper${isFileDragging ? ' workflow-canvas-wrapper--file-drag' : ''}`}
       onMouseMove={(e) => {
         mouseRef.current = { x: e.clientX, y: e.clientY };
       }}
       onDrop={handleCanvasDrop}
       onDragOver={handleCanvasDragOver}
+      onDragLeave={handleCanvasDragLeave}
       style={{ width: '100%', height: '100%', position: 'relative', outline: 'none' }}
     >
       <ReactFlow
