@@ -19,6 +19,17 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## New Features
 
+### LLM tab: Skill Builder **(in progress)**
+
+- **Skill Builder** sparkle button in the **main top nav**, immediately left of Settings (LLM tab only)
+- Each skill has a **name**, **description** (when Copilot should use it), and **markdown instructions** injected into the system prompt when active
+- **Skill selector** in the composer — pick an active skill per chat session (`No skill` / `shot-list` / custom)
+- Built-in templates: **shot-list**, **editorial-brief**, **prompt-writer**
+- **Import / export** via SKILL.md (YAML frontmatter + markdown body); skills stored app-wide in localStorage
+- Active skill highlighted in main nav, sidebar, and skill list
+
+---
+
 ### LLM tab: CLI LLM detection (Claude Code, Codex, Gemini CLI) **(in progress)**
 
 - Copilot scans for **Claude Code**, **Codex**, and **Gemini CLI** on startup (`~/.local/bin`, `~/.npm-global/bin`, Homebrew, PATH)

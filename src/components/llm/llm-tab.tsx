@@ -47,6 +47,12 @@ import {
   type ProjectInsightIndex,
   type RetrievalSummary,
 } from '@/lib/llm/editorial-workflow';
+import {
+  buildSkillSystemPromptAddition,
+  loadSkills,
+  type LLMSkill,
+} from '@/lib/llm/skills';
+import { SkillBuilder } from '@/components/llm/skill-builder';
 
 type LLMMode = 'cloud' | 'local' | CliLlmProviderId;
 
@@ -132,6 +138,7 @@ interface StoredLLMState {
   workModeOverride: WorkModeSelection;
   maxTokens: number;
   temperature: number;
+  activeSkillId?: string | null;
   sideUsage?: SessionSideUsage;
 }
 
@@ -359,6 +366,8 @@ interface LLMTabProps {
   onNavigateToAssetCitation: (assetId: string, time: number) => void;
   onNavigateToTimelineCitation: (timelineId: string, time: number) => void;
   onUpdateAssetAnalysis: (assetId: string, metadata: Record<string, unknown>) => void;
+  openSkillBuilderSignal?: number;
+  onActiveSkillPresenceChange?: (active: boolean) => void;
 }
 
 const MODEL_SUGGESTIONS = [
@@ -496,6 +505,10 @@ function buildUnifiedModelOptions(params: {
 }
 
 const DEFAULT_SYSTEM_PROMPT = 'You are CineGen\u2019s production copilot. Help with prompts, scripts, shot plans, edit decisions, transcript analysis, and practical creative workflows. Keep answers concise, concrete, and production-minded. When listing timeline clips, use a single chronological numbered list with inline [timeline:Name / clip:ClipName @ time] citations — never markdown tables. If the user repeats a question, answer again in the same list format; do not switch to tables or say you already answered.';
+
+function joinCopilotSystemPrompt(parts: Array<string | undefined | null>): string {
+  return parts.map((part) => part?.trim()).filter(Boolean).join('\n\n');
+}
 
 const ENHANCE_PROMPT_INSTRUCTIONS = [
   'You rewrite rough user requests into stronger CineGen Copilot prompts.',
@@ -645,6 +658,7 @@ function loadStoredState(projectId: string): StoredLLMState {
         || parsed.workModeOverride === 'timeline'
         ? parsed.workModeOverride
         : 'auto',
+      activeSkillId: typeof parsed.activeSkillId === 'string' ? parsed.activeSkillId : null,
     };
   } catch {
     return fallback;
@@ -783,6 +797,8 @@ export function LLMTab({
   onNavigateToAssetCitation,
   onNavigateToTimelineCitation,
   onUpdateAssetAnalysis,
+  openSkillBuilderSignal = 0,
+  onActiveSkillPresenceChange,
 }: LLMTabProps) {
   const initialState = useMemo(() => loadStoredState(projectId), [projectId]);
   const [mode, setMode] = useState<LLMMode>(initialState.mode);
@@ -805,6 +821,9 @@ export function LLMTab({
   const [cliProviders, setCliProviders] = useState<Record<CliLlmProviderId, CliProviderInfo>>(EMPTY_CLI_PROVIDERS);
   const [cliSession, setCliSession] = useState<CliLlmSessionState>(DEFAULT_CLI_LLM_SESSION);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSkillBuilder, setShowSkillBuilder] = useState(false);
+  const [skills, setSkills] = useState<LLMSkill[]>(() => loadSkills());
+  const [activeSkillId, setActiveSkillId] = useState<string | null>(initialState.activeSkillId ?? null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [indexPopover, setIndexPopover] = useState<'assets' | 'transcripts' | 'clips' | null>(null);
   const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
@@ -833,6 +852,16 @@ export function LLMTab({
     timelines,
     activeTimelineId,
   }), [activeTimelineId, assets, projectId, timelines]);
+
+  const activeSkill = useMemo(
+    () => skills.find((skill) => skill.id === activeSkillId) ?? null,
+    [activeSkillId, skills],
+  );
+
+  const skillSystemPrompt = useMemo(
+    () => buildSkillSystemPromptAddition(activeSkillId, skills),
+    [activeSkillId, skills],
+  );
 
   const transcriptAssets = useMemo(() => assets.filter((asset) => {
     const metadata = (asset.metadata ?? {}) as Record<string, unknown>;
@@ -958,10 +987,25 @@ export function LLMTab({
     setWorkModeOverride(next.workModeOverride);
     setMaxTokens(next.maxTokens);
     setTemperature(next.temperature);
+    setActiveSkillId(next.activeSkillId ?? null);
     setSideUsage(next.sideUsage);
     setError('');
     setIsSending(false);
   }, [projectId]);
+
+  useEffect(() => {
+    const refreshSkills = () => setSkills(loadSkills());
+    window.addEventListener('cinegen:skills-changed', refreshSkills);
+    return () => window.removeEventListener('cinegen:skills-changed', refreshSkills);
+  }, []);
+
+  useEffect(() => {
+    if (openSkillBuilderSignal > 0) setShowSkillBuilder(true);
+  }, [openSkillBuilderSignal]);
+
+  useEffect(() => {
+    onActiveSkillPresenceChange?.(Boolean(activeSkill));
+  }, [activeSkill, onActiveSkillPresenceChange]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -977,12 +1021,13 @@ export function LLMTab({
           workModeOverride,
           maxTokens,
           temperature,
+          activeSkillId,
           sideUsage,
         } satisfies StoredLLMState));
       } catch {}
     }, 180);
     return () => window.clearTimeout(timeout);
-  }, [projectId, mode, messages, draft, systemPrompt, model, workMode, workModeOverride, maxTokens, temperature, sideUsage]);
+  }, [activeSkillId, projectId, mode, messages, draft, systemPrompt, model, workMode, workModeOverride, maxTokens, temperature, sideUsage]);
 
   useEffect(() => {
     if (!threadRef.current) return;
@@ -1355,11 +1400,12 @@ export function LLMTab({
           contextRefresh: refresh,
           resumeSessionId: inject ? undefined : activeSession.sessionId ?? undefined,
           systemPrompt: inject
-            ? [
+            ? joinCopilotSystemPrompt([
                 buildModeSystemPrompt(chatWorkMode),
-                systemPrompt.trim(),
+                systemPrompt,
+                skillSystemPrompt,
                 projectContext,
-              ].filter(Boolean).join('\n\n')
+              ])
             : undefined,
           messages: inject
             ? contextMessages.map((message) => ({ role: message.role, content: message.content }))
@@ -1481,11 +1527,12 @@ export function LLMTab({
         const response = await window.electronAPI.llm.localChat({
           requestId,
           model: localModel,
-          systemPrompt: [
+          systemPrompt: joinCopilotSystemPrompt([
             buildModeSystemPrompt('ask'),
-            systemPrompt.trim(),
+            systemPrompt,
+            skillSystemPrompt,
             projectContext,
-          ].filter(Boolean).join('\n\n'),
+          ]),
           messages: nextMessages.map((message) => ({ role: message.role, content: message.content })),
           maxTokens,
           temperature,
@@ -1581,11 +1628,12 @@ export function LLMTab({
       const response = await window.electronAPI.llm.chat({
         apiKey,
         model,
-        systemPrompt: [
+        systemPrompt: joinCopilotSystemPrompt([
           buildModeSystemPrompt(resolvedWorkMode),
-          systemPrompt.trim(),
+          systemPrompt,
+          skillSystemPrompt,
           projectContext,
-        ].filter(Boolean).join('\n\n'),
+        ]),
         messages: nextMessages.map((message) => ({ role: message.role, content: message.content })),
         maxTokens,
         temperature,
@@ -1614,7 +1662,7 @@ export function LLMTab({
     } finally {
       setIsSending(false);
     }
-  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, systemPrompt, temperature, timelines, workModeOverride]);
+  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, skillSystemPrompt, systemPrompt, temperature, timelines, workModeOverride]);
 
   const handleComposerKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
@@ -1642,6 +1690,7 @@ export function LLMTab({
             systemPrompt,
             maxTokens,
             temperature,
+            activeSkillId,
             sideUsage,
             cliSession,
           }),
@@ -1667,7 +1716,7 @@ export function LLMTab({
     });
 
     if (!activeSessionId) setActiveSessionId(sessionId);
-  }, [activeSessionId, cliSession, maxTokens, messages, model, projectId, sideUsage, systemPrompt, temperature, workMode, workModeOverride]);
+  }, [activeSessionId, activeSkillId, cliSession, maxTokens, messages, model, projectId, sideUsage, systemPrompt, temperature, workMode, workModeOverride]);
 
   // Auto-save session when messages change
   useEffect(() => {
@@ -1681,6 +1730,7 @@ export function LLMTab({
     setError('');
     setSideUsage(undefined);
     setActiveSessionId(null);
+    setActiveSkillId(null);
     setCliSession(DEFAULT_CLI_LLM_SESSION);
   }, [saveCurrentSession]);
 
@@ -1702,6 +1752,7 @@ export function LLMTab({
         setWorkModeOverride('auto');
       }
       if (parsed.systemPrompt) setSystemPrompt(parsed.systemPrompt);
+      setActiveSkillId(typeof parsed.activeSkillId === 'string' ? parsed.activeSkillId : null);
       setSideUsage(parsed.sideUsage);
       const savedCliSession = parsed.cliSession ?? parsed.claudeCodeSession;
       if (savedCliSession && typeof savedCliSession === 'object') {
@@ -2968,6 +3019,29 @@ export function LLMTab({
         )}
         <div className="copilot__composer-footer">
           <div className="copilot__composer-actions">
+            <div className="copilot__skill-select-wrap">
+              <select
+                className="copilot__skill-select"
+                value={activeSkillId ?? ''}
+                onChange={(event) => setActiveSkillId(event.target.value || null)}
+                disabled={isSending || isEnhancingPrompt}
+                title="Active Copilot skill"
+              >
+                <option value="">No skill</option>
+                {skills.map((skill) => (
+                  <option key={skill.id} value={skill.id}>{skill.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="copilot__skill-edit-btn"
+                onClick={() => setShowSkillBuilder(true)}
+                title="Open skill builder"
+                disabled={isSending || isEnhancingPrompt}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+              </button>
+            </div>
             <button
               type="button"
               className={`copilot__composer-enhance${canEnhancePrompt ? ' copilot__composer-enhance--ready' : ''}`}
@@ -3100,13 +3174,23 @@ export function LLMTab({
               </>
             )}
           </div>
-          <button
-            className="copilot__sidebar-settings-btn"
-            onClick={() => setShowSettings(!showSettings)}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            Settings
-          </button>
+          <div className="copilot__sidebar-footer-actions">
+            <button
+              className={`copilot__sidebar-settings-btn copilot__sidebar-settings-btn--compact${activeSkill ? ' copilot__sidebar-settings-btn--active-skill' : ''}`}
+              onClick={() => setShowSkillBuilder(true)}
+              title={activeSkill ? `Active skill: ${activeSkill.name}` : 'Open skill builder'}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z"/><path d="M19 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"/></svg>
+              Skills
+            </button>
+            <button
+              className="copilot__sidebar-settings-btn copilot__sidebar-settings-btn--compact"
+              onClick={() => setShowSettings(!showSettings)}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              Settings
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -3419,6 +3503,13 @@ export function LLMTab({
             </div>
           </div>
         )}
+
+        <SkillBuilder
+          open={showSkillBuilder}
+          onClose={() => setShowSkillBuilder(false)}
+          activeSkillId={activeSkillId}
+          onActiveSkillChange={setActiveSkillId}
+        />
 
         {/* Backend toggle (visible on landing) */}
         {!hasMessages && (

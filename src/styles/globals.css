@@ -344,6 +344,44 @@ input[type='range']::-moz-range-track {
   -webkit-app-region: no-drag;
 }
 
+.top-nav__skills {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.top-nav__skills-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: inherit;
+}
+
+.top-nav__skills:hover {
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+}
+
+.top-nav__skills--active {
+  color: var(--accent);
+}
+
+.top-nav__skills:focus-visible {
+  outline: 2px solid rgba(214, 168, 92, 0.65);
+  outline-offset: 2px;
+  -webkit-app-region: no-drag;
+}
+
 .top-nav__settings:hover {
   background: var(--accent-dim);
   color: var(--accent-hover);
@@ -4745,6 +4783,73 @@ input[type='range']::-moz-range-track {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
+.copilot__sidebar-footer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.copilot__sidebar-settings-btn--compact {
+  justify-content: center;
+  padding: 8px 6px;
+  font-size: 11px;
+}
+
+.copilot__sidebar-settings-btn--active-skill {
+  border-color: rgba(255, 140, 60, 0.35);
+  color: var(--accent);
+  background: rgba(255, 140, 60, 0.06);
+}
+
+.copilot__skill-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.copilot__skill-select {
+  max-width: 140px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.copilot__skill-select:focus {
+  outline: none;
+  border-color: rgba(255, 140, 60, 0.35);
+}
+
+.copilot__skill-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.copilot__skill-edit-btn:hover:not(:disabled) {
+  color: var(--text-secondary);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.copilot__skill-edit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* Sidebar open button (when collapsed) */
 
 /* Landing sidebar toggle (top-left, non-overlapping) */
@@ -6711,6 +6816,323 @@ input[type='range']::-moz-range-track {
   color: var(--text-tertiary);
 }
 
+/* ══════════════════════════════════════
+   SKILL BUILDER OVERLAY
+   ══════════════════════════════════════ */
+
+.copilot__skills {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  animation: copilot-fadein 0.15s ease;
+}
+
+.copilot__skills-panel {
+  flex-shrink: 0;
+  width: clamp(720px, 94vw, 920px);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--bg-raised);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.copilot__skills-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.copilot__skills-header-copy {
+  flex: 1;
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.copilot__skills-header .copilot__settings-close {
+  flex-shrink: 0;
+}
+
+.copilot__skills-title {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.copilot__skills-subtitle {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.copilot__skills-body {
+  display: flex;
+  flex: 1;
+  min-height: 420px;
+  max-height: calc(84vh - 88px);
+  overflow: hidden;
+}
+
+.copilot__skills-list-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 280px;
+  width: 280px;
+  min-width: 280px;
+  max-width: 280px;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.copilot__skills-list-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.copilot__skills-template-wrap {
+  min-width: 0;
+  width: 100%;
+}
+
+.copilot__skills-action,
+.copilot__skills-template-select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.copilot__skills-template-select {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot__skills-action:hover,
+.copilot__skills-template-select:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
+}
+
+.copilot__skills-list {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.copilot__skills-list-empty {
+  padding: 12px 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.copilot__skills-list-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: all var(--transition-fast);
+}
+
+.copilot__skills-list-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.copilot__skills-list-item--active {
+  background: rgba(255, 140, 60, 0.08);
+  border-color: rgba(255, 140, 60, 0.22);
+}
+
+.copilot__skills-list-item--in-use .copilot__skills-list-name {
+  color: var(--accent);
+}
+
+.copilot__skills-list-name {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.copilot__skills-list-desc {
+  width: 100%;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+.copilot__skills-list-badge {
+  margin-top: 2px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 140, 60, 0.12);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.copilot__skills-list-footer {
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 10px 16px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.copilot__skills-link {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.copilot__skills-link:hover {
+  color: var(--text-secondary);
+}
+
+.copilot__skills-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  padding: 20px 28px 24px 22px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.copilot__skills-editor-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.copilot__skills-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.copilot__skills-field .copilot__settings-input,
+.copilot__skills-field .copilot__settings-textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.copilot__skills-field--grow {
+  flex: 1;
+  min-height: 220px;
+}
+
+.copilot__skills-instructions {
+  flex: 1;
+  min-height: 220px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.copilot__skills-hint {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.copilot__skills-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  margin-top: auto;
+  padding-top: 8px;
+  padding-right: 2px;
+}
+
+.copilot__skills-editor-left,
+.copilot__skills-editor-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.copilot__btn--danger {
+  color: #ff8a8a;
+}
+
+.copilot__btn--danger:hover {
+  border-color: rgba(255, 120, 120, 0.25);
+  background: rgba(255, 80, 80, 0.08);
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {
@@ -6726,6 +7148,17 @@ input[type='range']::-moz-range-track {
   .copilot__topbar { padding: 0 14px; }
   .copilot__topbar-index { display: none; }
   .copilot__settings-grid { grid-template-columns: 1fr; }
+  .copilot__skills-panel { min-width: 0; width: 94vw; }
+  .copilot__skills-body { flex-direction: column; max-height: none; }
+  .copilot__skills-list-pane {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: 220px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
 }
 
 .render-progress { display: flex; flex-direction: column; gap: 8px; padding: 16px; background: var(--bg-raised); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); }

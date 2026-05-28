@@ -14,9 +14,19 @@ interface TopTabsProps {
   activeTab: ProjectTab;
   onTabChange: (tab: ProjectTab) => void;
   onBackToHome?: () => void;
+  showSkillsButton?: boolean;
+  onOpenSkills?: () => void;
+  hasActiveSkill?: boolean;
 }
 
-export function TopTabs({ activeTab, onTabChange, onBackToHome }: TopTabsProps) {
+export function TopTabs({
+  activeTab,
+  onTabChange,
+  onBackToHome,
+  showSkillsButton = false,
+  onOpenSkills,
+  hasActiveSkill = false,
+}: TopTabsProps) {
   const isSettingsActive = activeTab === 'settings';
 
   return (
@@ -43,6 +53,20 @@ export function TopTabs({ activeTab, onTabChange, onBackToHome }: TopTabsProps) 
       </div>
 
       <div className="top-nav__actions">
+        {showSkillsButton && onOpenSkills && (
+          <button
+            className={`top-nav__skills${hasActiveSkill ? ' top-nav__skills--active' : ''}`}
+            onClick={onOpenSkills}
+            title={hasActiveSkill ? 'Skill builder (skill active)' : 'Skill builder'}
+            aria-label="Open skill builder"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2z" />
+              <path d="M19 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
+            </svg>
+            <span className="top-nav__skills-label">Skills</span>
+          </button>
+        )}
         <button
           className={`top-nav__settings${isSettingsActive ? ' top-nav__settings--active' : ''}`}
           onClick={() => onTabChange(isSettingsActive ? 'create' : 'settings')}

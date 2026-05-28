@@ -800,6 +800,8 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const [llmJumpRequest, setLlmJumpRequest] = useState<LlmJumpRequest | null>(null);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [hydrationComplete, setHydrationComplete] = useState(false);
+  const [openSkillBuilderSignal, setOpenSkillBuilderSignal] = useState(0);
+  const [llmHasActiveSkill, setLlmHasActiveSkill] = useState(false);
 
   const wrappedDispatch = useCallback((action: WorkspaceAction) => {
     lastActionRef.current = action.type;
@@ -1600,6 +1602,9 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         activeTab={state.activeTab}
         onTabChange={(tab) => wrappedDispatch({ type: 'SET_TAB', tab })}
         onBackToHome={onBackToHome}
+        showSkillsButton={state.activeTab === 'llm'}
+        onOpenSkills={() => setOpenSkillBuilderSignal((value) => value + 1)}
+        hasActiveSkill={llmHasActiveSkill}
       />
       <main className="workspace-content">
         {state.activeTab === 'elements' && <ElementsTab />}
@@ -1618,6 +1623,8 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             onNavigateToAssetCitation={handleNavigateToAssetCitation}
             onNavigateToTimelineCitation={handleNavigateToTimelineCitation}
             onUpdateAssetAnalysis={handleUpdateAssetAnalysis}
+            openSkillBuilderSignal={openSkillBuilderSignal}
+            onActiveSkillPresenceChange={setLlmHasActiveSkill}
           />
         )}
         {state.activeTab === 'export' && <ExportTab />}
