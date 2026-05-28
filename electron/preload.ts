@@ -45,6 +45,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('llm:local-stream', handler);
     },
     runCutWorkflow: (params: unknown) => ipcRenderer.invoke('llm:run-cut-workflow', params),
+    claudeCodeDetect: () => ipcRenderer.invoke('llm:claude-code-detect'),
+    cliDetect: () => ipcRenderer.invoke('llm:cli-detect'),
+    claudeCodeChat: (params: unknown) => ipcRenderer.invoke('llm:claude-code-chat', params),
+    codexChat: (params: unknown) => ipcRenderer.invoke('llm:codex-chat', params),
+    geminiChat: (params: unknown) => ipcRenderer.invoke('llm:gemini-chat', params),
+    claudeCodeCancel: (requestId: string) => ipcRenderer.invoke('llm:claude-code-cancel', requestId),
+    codexCancel: (requestId: string) => ipcRenderer.invoke('llm:codex-cancel', requestId),
+    geminiCancel: (requestId: string) => ipcRenderer.invoke('llm:gemini-cancel', requestId),
+    onClaudeCodeStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, d: { requestId: string; token?: string; done?: boolean }) => cb(d);
+      ipcRenderer.on('llm:claude-code-stream', handler);
+      return () => ipcRenderer.removeListener('llm:claude-code-stream', handler);
+    },
+    onCodexStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, d: { requestId: string; token?: string; done?: boolean }) => cb(d);
+      ipcRenderer.on('llm:codex-stream', handler);
+      return () => ipcRenderer.removeListener('llm:codex-stream', handler);
+    },
+    onGeminiStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, d: { requestId: string; token?: string; done?: boolean }) => cb(d);
+      ipcRenderer.on('llm:gemini-stream', handler);
+      return () => ipcRenderer.removeListener('llm:gemini-stream', handler);
+    },
   },
   vision: {
     indexAsset: (params: unknown) => ipcRenderer.invoke('vision:index-asset', params),

@@ -136,6 +136,72 @@ export interface ElectronAPI {
       questionAnswers?: Record<string, string>;
       visionModel?: string;
     }) => Promise<CutWorkflowResult>;
+    claudeCodeDetect: () => Promise<
+      | { installed: false }
+      | { installed: true; path: string; version: string }
+    >;
+    cliDetect: () => Promise<{
+      providers: Array<{
+        id: 'claude-code' | 'codex' | 'gemini';
+        installed: boolean;
+        path?: string;
+        version?: string;
+      }>;
+    }>;
+    claudeCodeChat: (params: {
+      requestId?: string;
+      model?: string;
+      resumeSessionId?: string;
+      injectProjectContext?: boolean;
+      contextRefresh?: boolean;
+      purpose?: 'copilot' | 'enhance-prompt';
+      systemPrompt?: string;
+      userMessage: string;
+      messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+    }) => Promise<{
+      message: string;
+      sessionId?: string;
+      resumed?: boolean;
+      usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cost: number };
+    }>;
+    codexChat: (params: {
+      requestId?: string;
+      model?: string;
+      resumeSessionId?: string;
+      injectProjectContext?: boolean;
+      contextRefresh?: boolean;
+      purpose?: 'copilot' | 'enhance-prompt';
+      systemPrompt?: string;
+      userMessage: string;
+      messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+    }) => Promise<{
+      message: string;
+      sessionId?: string;
+      resumed?: boolean;
+      usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cost: number };
+    }>;
+    geminiChat: (params: {
+      requestId?: string;
+      model?: string;
+      resumeSessionId?: string;
+      injectProjectContext?: boolean;
+      contextRefresh?: boolean;
+      purpose?: 'copilot' | 'enhance-prompt';
+      systemPrompt?: string;
+      userMessage: string;
+      messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+    }) => Promise<{
+      message: string;
+      sessionId?: string;
+      resumed?: boolean;
+      usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cost: number };
+    }>;
+    claudeCodeCancel: (requestId: string) => Promise<void>;
+    codexCancel: (requestId: string) => Promise<void>;
+    geminiCancel: (requestId: string) => Promise<void>;
+    onClaudeCodeStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => (() => void);
+    onCodexStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => (() => void);
+    onGeminiStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => (() => void);
   };
   vision: {
     indexAsset: (params: {

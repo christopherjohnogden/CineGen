@@ -44,7 +44,30 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
       electron.ipcRenderer.on("llm:local-stream", handler);
       return () => electron.ipcRenderer.removeListener("llm:local-stream", handler);
     },
-    runCutWorkflow: (params) => electron.ipcRenderer.invoke("llm:run-cut-workflow", params)
+    runCutWorkflow: (params) => electron.ipcRenderer.invoke("llm:run-cut-workflow", params),
+    claudeCodeDetect: () => electron.ipcRenderer.invoke("llm:claude-code-detect"),
+    cliDetect: () => electron.ipcRenderer.invoke("llm:cli-detect"),
+    claudeCodeChat: (params) => electron.ipcRenderer.invoke("llm:claude-code-chat", params),
+    codexChat: (params) => electron.ipcRenderer.invoke("llm:codex-chat", params),
+    geminiChat: (params) => electron.ipcRenderer.invoke("llm:gemini-chat", params),
+    claudeCodeCancel: (requestId) => electron.ipcRenderer.invoke("llm:claude-code-cancel", requestId),
+    codexCancel: (requestId) => electron.ipcRenderer.invoke("llm:codex-cancel", requestId),
+    geminiCancel: (requestId) => electron.ipcRenderer.invoke("llm:gemini-cancel", requestId),
+    onClaudeCodeStream: (cb) => {
+      const handler = (_e, d) => cb(d);
+      electron.ipcRenderer.on("llm:claude-code-stream", handler);
+      return () => electron.ipcRenderer.removeListener("llm:claude-code-stream", handler);
+    },
+    onCodexStream: (cb) => {
+      const handler = (_e, d) => cb(d);
+      electron.ipcRenderer.on("llm:codex-stream", handler);
+      return () => electron.ipcRenderer.removeListener("llm:codex-stream", handler);
+    },
+    onGeminiStream: (cb) => {
+      const handler = (_e, d) => cb(d);
+      electron.ipcRenderer.on("llm:gemini-stream", handler);
+      return () => electron.ipcRenderer.removeListener("llm:gemini-stream", handler);
+    }
   },
   vision: {
     indexAsset: (params) => electron.ipcRenderer.invoke("vision:index-asset", params),

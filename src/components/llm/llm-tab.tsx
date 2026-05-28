@@ -1,5 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getApiKey, getCutVisionModel } from '@/lib/utils/api-key';
 import type { Asset, MediaFolder } from '@/types/project';
 import type { Timeline } from '@/types/timeline';
@@ -10,6 +11,27 @@ import {
   LLM_MODE_LABELS,
   type LLMWorkMode,
 } from '@/lib/llm/project-context';
+import {
+  CLAUDE_CODE_MODELS,
+  CODEX_MODELS,
+  GEMINI_MODELS,
+  CLI_LLM_PROVIDER_IDS,
+  computeProjectContextFingerprint,
+  DEFAULT_CLI_LLM_SESSION,
+  detectContextGapInResponse,
+  detectAgenticDeflection,
+  detectBadClipListFormatting,
+  getCliProviderLabel,
+  getDefaultModelForCliProvider,
+  isCliCopilotProvider,
+  isRepeatUserQuestion,
+  REPEAT_CLIP_FORMAT_HINT,
+  CLIP_FORMAT_RETRY_PROMPT,
+  shouldInjectProjectContext,
+  type CliLlmProviderId,
+  type CliLlmSessionState,
+} from '@/lib/llm/claude-code-session';
+import { invokeCliCopilotChat, subscribeCliCopilotStream } from '@/lib/llm/cli-copilot-client';
 import {
   buildCombinedCutProposal,
   buildTimelineFromCutProposal,
@@ -26,7 +48,20 @@ import {
   type RetrievalSummary,
 } from '@/lib/llm/editorial-workflow';
 
-type LLMMode = 'cloud' | 'local';
+type LLMMode = 'cloud' | 'local' | CliLlmProviderId;
+
+interface CliProviderInfo {
+  id: CliLlmProviderId;
+  installed: boolean;
+  path?: string;
+  version?: string;
+}
+
+const EMPTY_CLI_PROVIDERS: Record<CliLlmProviderId, CliProviderInfo> = {
+  'claude-code': { id: 'claude-code', installed: false },
+  codex: { id: 'codex', installed: false },
+  gemini: { id: 'gemini', installed: false },
+};
 type ChatRole = 'user' | 'assistant';
 type CitationKind = 'asset' | 'timeline';
 type MentionTrigger = '/' | '@';
@@ -338,7 +373,161 @@ const MODEL_SUGGESTIONS = [
 
 const LOCAL_MODEL_DEFAULT = 'qwen3.5:latest';
 
-const DEFAULT_SYSTEM_PROMPT = 'You are CineGen\u2019s production copilot. Help with prompts, scripts, shot plans, edit decisions, transcript analysis, and practical creative workflows. Keep answers concise, concrete, and production-minded.';
+interface UnifiedModelOption {
+  key: string;
+  backend: LLMMode;
+  modelId: string;
+  label: string;
+  group: 'Cloud' | 'Local' | 'Claude' | 'Codex' | 'Gemini';
+}
+
+function getModelProviderSlug(backend: LLMMode): string {
+  if (backend === 'claude-code') return 'claude';
+  if (backend === 'codex') return 'codex';
+  if (backend === 'gemini') return 'gemini';
+  if (backend === 'cloud') return 'cloud';
+  return 'local';
+}
+
+function formatUnifiedModelLabel(backend: LLMMode, modelName: string): string {
+  return `${getModelProviderSlug(backend)}: ${modelName}`;
+}
+
+function isCliBackendMode(mode: LLMMode): mode is CliLlmProviderId {
+  return isCliCopilotProvider(mode);
+}
+
+function getUnifiedModelKey(backend: LLMMode, modelId: string): string {
+  return `${backend}:${modelId}`;
+}
+
+function parseUnifiedModelKey(key: string): { backend: LLMMode; modelId: string } | null {
+  const separator = key.indexOf(':');
+  if (separator <= 0) return null;
+  const backend = key.slice(0, separator);
+  const modelId = key.slice(separator + 1);
+  if (backend !== 'cloud' && backend !== 'local' && !isCliCopilotProvider(backend)) return null;
+  if (!modelId) return null;
+  return { backend, modelId };
+}
+
+function formatCloudModelLabel(modelId: string): string {
+  return modelId.includes('/') ? modelId.split('/').pop() ?? modelId : modelId;
+}
+
+function getSelectedModelDisplayLabel(selectedModelKey: string): string {
+  const parsed = parseUnifiedModelKey(selectedModelKey);
+  if (!parsed) return selectedModelKey;
+  const modelName = parsed.backend === 'cloud'
+    ? formatCloudModelLabel(parsed.modelId)
+    : parsed.modelId;
+  return formatUnifiedModelLabel(parsed.backend, modelName);
+}
+
+function buildUnifiedModelOptions(params: {
+  cloudModel: string;
+  localModels: string[];
+  cliProviders: Record<CliLlmProviderId, CliProviderInfo>;
+}): UnifiedModelOption[] {
+  const options: UnifiedModelOption[] = [];
+
+  if (params.cliProviders['claude-code'].installed) {
+    for (const claudeModel of CLAUDE_CODE_MODELS) {
+      options.push({
+        key: getUnifiedModelKey('claude-code', claudeModel.id),
+        backend: 'claude-code',
+        modelId: claudeModel.id,
+        label: claudeModel.label,
+        group: 'Claude',
+      });
+    }
+  }
+
+  if (params.cliProviders.codex.installed) {
+    for (const codexModel of CODEX_MODELS) {
+      options.push({
+        key: getUnifiedModelKey('codex', codexModel.id),
+        backend: 'codex',
+        modelId: codexModel.id,
+        label: codexModel.label,
+        group: 'Codex',
+      });
+    }
+  }
+
+  if (params.cliProviders.gemini.installed) {
+    for (const geminiModel of GEMINI_MODELS) {
+      options.push({
+        key: getUnifiedModelKey('gemini', geminiModel.id),
+        backend: 'gemini',
+        modelId: geminiModel.id,
+        label: geminiModel.label,
+        group: 'Gemini',
+      });
+    }
+  }
+
+  const cloudModels = params.cloudModel && !MODEL_SUGGESTIONS.includes(params.cloudModel)
+    ? [...MODEL_SUGGESTIONS, params.cloudModel]
+    : [...MODEL_SUGGESTIONS];
+
+  for (const modelId of cloudModels) {
+    options.push({
+      key: getUnifiedModelKey('cloud', modelId),
+      backend: 'cloud',
+      modelId,
+      label: formatCloudModelLabel(modelId),
+      group: 'Cloud',
+    });
+  }
+
+  const localModels = params.localModels.length > 0 ? params.localModels : [LOCAL_MODEL_DEFAULT];
+  for (const modelId of localModels) {
+    options.push({
+      key: getUnifiedModelKey('local', modelId),
+      backend: 'local',
+      modelId,
+      label: modelId,
+      group: 'Local',
+    });
+  }
+
+  return options;
+}
+
+const DEFAULT_SYSTEM_PROMPT = 'You are CineGen\u2019s production copilot. Help with prompts, scripts, shot plans, edit decisions, transcript analysis, and practical creative workflows. Keep answers concise, concrete, and production-minded. When listing timeline clips, use a single chronological numbered list with inline [timeline:Name / clip:ClipName @ time] citations — never markdown tables. If the user repeats a question, answer again in the same list format; do not switch to tables or say you already answered.';
+
+const ENHANCE_PROMPT_INSTRUCTIONS = [
+  'You rewrite rough user requests into stronger CineGen Copilot prompts.',
+  'The user is still editing in the composer — this is NOT a chat turn and you must NOT answer the prompt.',
+  'Do NOT look up or state project facts: no clip names, durations, asset IDs, transcript quotes, or conclusions.',
+  'Preserve the user intent, /asset mentions, and @element mentions exactly as written.',
+  'Do not invent footage, facts, structure, or constraints the user did not provide.',
+  'Make the wording clearer and more specific; when the prompt is about timelines or clips, suggest [timeline:Name / clip:ClipName @ time] citation format.',
+  'Return ONLY the rewritten prompt text — no explanation, preamble, or markdown wrapper.',
+].join(' ');
+
+function buildEnhanceUserMessage(content: string): string {
+  return [
+    'Rewrite the rough CineGen Copilot prompt below. Do NOT answer it.',
+    '',
+    'Rough prompt:',
+    content,
+  ].join('\n');
+}
+
+function buildEnhanceSystemPrompt(): string {
+  return ENHANCE_PROMPT_INSTRUCTIONS;
+}
+
+function looksLikeEnhanceAnswer(rewritten: string): boolean {
+  const trimmed = rewritten.trim();
+  if (!trimmed) return true;
+  return /^based on (your )?(active )?timeline/i.test(trimmed)
+    || /\basset ID:/i.test(trimmed)
+    || /\bthe longest clip is\b/i.test(trimmed)
+    || /\bis the longest\b/i.test(trimmed);
+}
 
 /* Work mode is now unified — kept for buildProjectContext query weighting */
 
@@ -442,7 +631,11 @@ function loadStoredState(projectId: string): StoredLLMState {
       ...fallback,
       ...parsed,
       messages: Array.isArray(parsed.messages) ? parsed.messages : fallback.messages,
-      mode: parsed.mode === 'local' ? 'local' : 'cloud',
+      mode: parsed.mode === 'local'
+        ? 'local'
+        : isCliCopilotProvider(String(parsed.mode ?? ''))
+          ? parsed.mode as CliLlmProviderId
+          : 'cloud',
       workMode: parsed.workMode === 'search' || parsed.workMode === 'cut' || parsed.workMode === 'timeline'
         ? parsed.workMode
         : 'ask',
@@ -609,6 +802,8 @@ export function LLMTab({
   const [falKey, setFalKey] = useState<string | undefined>(() => getApiKey());
   const [localModel, setLocalModel] = useState(LOCAL_MODEL_DEFAULT);
   const [localModels, setLocalModels] = useState<string[]>([LOCAL_MODEL_DEFAULT]);
+  const [cliProviders, setCliProviders] = useState<Record<CliLlmProviderId, CliProviderInfo>>(EMPTY_CLI_PROVIDERS);
+  const [cliSession, setCliSession] = useState<CliLlmSessionState>(DEFAULT_CLI_LLM_SESSION);
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [indexPopover, setIndexPopover] = useState<'assets' | 'transcripts' | 'clips' | null>(null);
@@ -691,6 +886,7 @@ export function LLMTab({
     cost: sessionUsage.cost + (sideUsage?.usage?.cost ?? 0),
     requestCount: sessionUsage.requestCount + (sideUsage?.requestCount ?? 0),
   }), [sessionUsage, sideUsage]);
+  const isCliLlmMode = mode === 'local' || isCliBackendMode(mode);
 
   const resolveTimelineCitationForAsset = useCallback((assetId: string, sourceSeconds: number): TimelineCitationMatch | null => {
     const epsilon = 0.05;
@@ -799,9 +995,30 @@ export function LLMTab({
     return () => window.removeEventListener('cinegen:settings-changed', refreshSettings);
   }, []);
 
-  // Fetch available Ollama models when switching to local mode
+  // Detect installed CLI LLM tools on mount
   useEffect(() => {
-    if (mode !== 'local') return;
+    let cancelled = false;
+    window.electronAPI.llm.cliDetect().then(({ providers }) => {
+      if (cancelled) return;
+      const nextProviders = { ...EMPTY_CLI_PROVIDERS };
+      for (const provider of providers) {
+        if (provider.id in nextProviders) {
+          nextProviders[provider.id] = provider;
+        }
+      }
+      setCliProviders(nextProviders);
+      if (isCliBackendMode(mode) && !nextProviders[mode].installed) {
+        setMode('cloud');
+        setError(`${getCliProviderLabel(mode)} is not installed. Switched to Cloud.`);
+      }
+    }).catch(() => {
+      if (!cancelled) setCliProviders(EMPTY_CLI_PROVIDERS);
+    });
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch available Ollama models for the unified model picker
+  useEffect(() => {
     let cancelled = false;
     window.electronAPI.llm.localModels().then((models: string[]) => {
       if (cancelled) return;
@@ -811,7 +1028,109 @@ export function LLMTab({
       }
     }).catch(() => {/* Ollama may not be running */});
     return () => { cancelled = true; };
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const unifiedModelOptions = useMemo(
+    () => buildUnifiedModelOptions({
+      cloudModel: model,
+      localModels,
+      cliProviders,
+    }),
+    [cliProviders, localModels, model],
+  );
+
+  const selectedModelKey = useMemo(() => {
+    if (mode === 'cloud') return getUnifiedModelKey('cloud', model);
+    if (mode === 'local') return getUnifiedModelKey('local', localModel);
+    if (isCliBackendMode(mode)) {
+      const modelId = cliSession.provider === mode
+        ? cliSession.model
+        : getDefaultModelForCliProvider(mode);
+      return getUnifiedModelKey(mode, modelId);
+    }
+    return getUnifiedModelKey('cloud', model);
+  }, [cliSession.model, cliSession.provider, localModel, mode, model]);
+
+  const handleSelectCliMode = useCallback((providerId: CliLlmProviderId) => {
+    setMode(providerId);
+    setCliSession((current) => (
+      current.provider === providerId
+        ? current
+        : {
+          provider: providerId,
+          sessionId: null,
+          contextFingerprint: null,
+          model: getDefaultModelForCliProvider(providerId),
+          forceContextRefresh: false,
+        }
+    ));
+  }, []);
+
+  const handleUnifiedModelSelect = useCallback((key: string) => {
+    const parsed = parseUnifiedModelKey(key);
+    if (!parsed) return;
+    setMode(parsed.backend);
+    if (parsed.backend === 'cloud') setModel(parsed.modelId);
+    if (parsed.backend === 'local') setLocalModel(parsed.modelId);
+    if (isCliBackendMode(parsed.backend)) {
+      const cliProvider = parsed.backend;
+      setCliSession((current) => (
+        current.provider === cliProvider && current.model === parsed.modelId
+          ? current
+          : {
+            provider: cliProvider,
+            model: parsed.modelId,
+            sessionId: null,
+            contextFingerprint: null,
+            forceContextRefresh: false,
+          }
+      ));
+    }
+  }, []);
+
+  const renderUnifiedModelSelect = (className: string) => {
+    const groups = ['Claude', 'Codex', 'Gemini', 'Cloud', 'Local'] as const;
+    const hasSelectedOption = unifiedModelOptions.some((option) => option.key === selectedModelKey);
+    const selectedFallback = parseUnifiedModelKey(selectedModelKey);
+    const selectedDisplayLabel = hasSelectedOption || selectedFallback
+      ? getSelectedModelDisplayLabel(selectedModelKey)
+      : 'Select model';
+
+    return (
+      <div className="copilot__model-select-wrap">
+        <select
+          className={`${className} copilot__model-select--display-overlay`}
+          value={hasSelectedOption ? selectedModelKey : ''}
+          onChange={(event) => handleUnifiedModelSelect(event.target.value)}
+          aria-label={`Model: ${selectedDisplayLabel}`}
+        >
+          {!hasSelectedOption && selectedFallback && (
+            <option value={selectedModelKey}>
+              {selectedFallback.backend === 'cloud'
+                ? formatCloudModelLabel(selectedFallback.modelId)
+                : selectedFallback.modelId}
+            </option>
+          )}
+          {groups.map((group) => {
+            const groupOptions = unifiedModelOptions.filter((option) => option.group === group);
+            if (groupOptions.length === 0) return null;
+            return (
+              <optgroup key={group} label={group}>
+                {groupOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </optgroup>
+            );
+          })}
+        </select>
+        <span className="copilot__model-select-display" aria-hidden>
+          {selectedDisplayLabel}
+        </span>
+      </div>
+    );
+  };
 
   useEffect(() => {
     if (!workModeMenuOpen) return;
@@ -935,6 +1254,191 @@ export function LLMTab({
 
     const content = draft.trim();
     if (!content) return;
+
+    /* ── CLI subscription modes: Claude Code, Codex, Gemini CLI ── */
+    if (isCliBackendMode(mode)) {
+      const cliProvider = mode;
+      if (!cliProviders[cliProvider].installed) {
+        setError(`${getCliProviderLabel(cliProvider)} is not installed on this machine.`);
+        return;
+      }
+
+      const userMessage = createMessage('user', content);
+      const nextMessages = [...messages, userMessage];
+      const requestId = crypto.randomUUID();
+      const assistantMessage = createMessage('assistant', '');
+
+      setMessages([...nextMessages, assistantMessage]);
+      setDraft('');
+      setError('');
+      setIsSending(true);
+
+      const removeStreamListener = subscribeCliCopilotStream(cliProvider, (data) => {
+        if (data.requestId !== requestId) return;
+        if (data.token) {
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (last?.id !== assistantMessage.id) return current;
+            return [...current.slice(0, -1), { ...last, content: last.content + data.token }];
+          });
+        }
+      });
+
+      try {
+        const inferredWorkMode = inferAutoWorkMode(content, messages);
+        const resolvedWorkMode = workModeOverride === 'auto' ? inferredWorkMode : workModeOverride;
+        const chatWorkMode = resolvedWorkMode === 'cut' ? 'ask' : resolvedWorkMode;
+
+        const priorUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+        const isRepeatQuestion = isRepeatUserQuestion(content, priorUserMessage?.content);
+        const apiUserMessage = isRepeatQuestion
+          ? `${REPEAT_CLIP_FORMAT_HINT}\n\n${content}`
+          : content;
+
+        const activeSession = cliSession.provider === cliProvider
+          ? cliSession
+          : {
+            provider: cliProvider,
+            sessionId: null,
+            contextFingerprint: null,
+            model: getDefaultModelForCliProvider(cliProvider),
+            forceContextRefresh: false,
+          };
+
+        const currentFingerprint = computeProjectContextFingerprint({
+          projectId,
+          assets,
+          timelines,
+          elements,
+          activeTimelineId,
+        });
+        const { inject, refresh } = shouldInjectProjectContext(activeSession, currentFingerprint);
+
+        const projectContext = buildProjectContext({
+          projectId,
+          assets,
+          mediaFolders,
+          timelines,
+          activeTimelineId,
+          elements,
+          mode: chatWorkMode,
+          focusQuery: content,
+        });
+
+        const contextMessages = refresh
+          ? [...messages.slice(-8), userMessage]
+          : [userMessage];
+
+        const runCliTurn = async (
+          turnRequestId: string,
+          turnUserMessage: string,
+          turnOptions: {
+            injectProjectContext: boolean;
+            contextRefresh: boolean;
+            resumeSessionId?: string;
+            systemPrompt?: string;
+            messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+          },
+        ) => invokeCliCopilotChat(cliProvider, {
+          requestId: turnRequestId,
+          model: activeSession.model,
+          resumeSessionId: turnOptions.resumeSessionId,
+          injectProjectContext: turnOptions.injectProjectContext,
+          contextRefresh: turnOptions.contextRefresh,
+          systemPrompt: turnOptions.systemPrompt,
+          userMessage: turnUserMessage,
+          messages: turnOptions.messages,
+        });
+
+        let response = await runCliTurn(requestId, apiUserMessage, {
+          injectProjectContext: inject,
+          contextRefresh: refresh,
+          resumeSessionId: inject ? undefined : activeSession.sessionId ?? undefined,
+          systemPrompt: inject
+            ? [
+                buildModeSystemPrompt(chatWorkMode),
+                systemPrompt.trim(),
+                projectContext,
+              ].filter(Boolean).join('\n\n')
+            : undefined,
+          messages: inject
+            ? contextMessages.map((message) => ({ role: message.role, content: message.content }))
+            : undefined,
+        });
+
+        let finalContent = (response.message?.trim() || '').trim() || 'No response returned.';
+        let normalizedContent = normalizeAssistantCitations(finalContent);
+        let needsContextRetry = detectContextGapInResponse(normalizedContent) || detectAgenticDeflection(normalizedContent);
+
+        if (!needsContextRetry && detectBadClipListFormatting(normalizedContent)) {
+          const retryRequestId = crypto.randomUUID();
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (last?.id !== assistantMessage.id) return current;
+            return [...current.slice(0, -1), { ...last, content: '' }];
+          });
+
+          const removeRetryListener = subscribeCliCopilotStream(cliProvider, (data) => {
+            if (data.requestId !== retryRequestId) return;
+            if (data.token) {
+              setMessages((current) => {
+                const last = current[current.length - 1];
+                if (last?.id !== assistantMessage.id) return current;
+                return [...current.slice(0, -1), { ...last, content: last.content + data.token }];
+              });
+            }
+          });
+
+          try {
+            const retryResponse = await runCliTurn(
+              retryRequestId,
+              `${CLIP_FORMAT_RETRY_PROMPT} ${content}`,
+              {
+                injectProjectContext: false,
+                contextRefresh: false,
+                resumeSessionId: response.sessionId ?? activeSession.sessionId ?? undefined,
+              },
+            );
+            const retryContent = normalizeAssistantCitations((retryResponse.message?.trim() || '').trim());
+            if (retryContent && !detectBadClipListFormatting(retryContent)) {
+              response = retryResponse;
+              finalContent = retryContent;
+              normalizedContent = retryContent;
+            } else {
+              needsContextRetry = true;
+            }
+          } finally {
+            removeRetryListener();
+          }
+        }
+
+        setCliSession({
+          provider: cliProvider,
+          sessionId: needsContextRetry ? null : (response.sessionId ?? activeSession.sessionId),
+          contextFingerprint: inject ? currentFingerprint : activeSession.contextFingerprint,
+          model: activeSession.model,
+          forceContextRefresh: needsContextRetry,
+        });
+
+        setMessages((current) => {
+          const last = current[current.length - 1];
+          if (last?.id !== assistantMessage.id) return current;
+          return [...current.slice(0, -1), {
+            ...last,
+            content: normalizedContent,
+            ...(response.usage ? { usage: response.usage } : {}),
+          }];
+        });
+      } catch (chatError) {
+        const errMsg = chatError instanceof Error ? chatError.message : `Failed to send ${getCliProviderLabel(cliProvider)} request.`;
+        setError(errMsg);
+        setMessages((current) => current.filter((m) => m.id !== assistantMessage.id));
+      } finally {
+        removeStreamListener();
+        setIsSending(false);
+      }
+      return;
+    }
 
     /* ── Local mode: route through Ollama with streaming ── */
     if (mode === 'local') {
@@ -1110,7 +1614,7 @@ export function LLMTab({
     } finally {
       setIsSending(false);
     }
-  }, [activeTimelineId, assets, draft, elements, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, systemPrompt, temperature, timelines, workModeOverride]);
+  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, systemPrompt, temperature, timelines, workModeOverride]);
 
   const handleComposerKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
@@ -1130,7 +1634,17 @@ export function LLMTab({
       try {
         localStorage.setItem(
           getSessionStorageKey(projectId, sessionId),
-          JSON.stringify({ messages, model, workMode, workModeOverride, systemPrompt, maxTokens, temperature, sideUsage }),
+          JSON.stringify({
+            messages,
+            model,
+            workMode,
+            workModeOverride,
+            systemPrompt,
+            maxTokens,
+            temperature,
+            sideUsage,
+            cliSession,
+          }),
         );
       } catch {}
     }
@@ -1153,7 +1667,7 @@ export function LLMTab({
     });
 
     if (!activeSessionId) setActiveSessionId(sessionId);
-  }, [activeSessionId, maxTokens, messages, model, projectId, sideUsage, systemPrompt, temperature, workMode, workModeOverride]);
+  }, [activeSessionId, cliSession, maxTokens, messages, model, projectId, sideUsage, systemPrompt, temperature, workMode, workModeOverride]);
 
   // Auto-save session when messages change
   useEffect(() => {
@@ -1167,6 +1681,7 @@ export function LLMTab({
     setError('');
     setSideUsage(undefined);
     setActiveSessionId(null);
+    setCliSession(DEFAULT_CLI_LLM_SESSION);
   }, [saveCurrentSession]);
 
   const handleLoadSession = useCallback((sessionId: string) => {
@@ -1188,6 +1703,18 @@ export function LLMTab({
       }
       if (parsed.systemPrompt) setSystemPrompt(parsed.systemPrompt);
       setSideUsage(parsed.sideUsage);
+      const savedCliSession = parsed.cliSession ?? parsed.claudeCodeSession;
+      if (savedCliSession && typeof savedCliSession === 'object') {
+        setCliSession({
+          ...DEFAULT_CLI_LLM_SESSION,
+          ...savedCliSession,
+          provider: isCliCopilotProvider(savedCliSession.provider)
+            ? savedCliSession.provider
+            : DEFAULT_CLI_LLM_SESSION.provider,
+        });
+      } else {
+        setCliSession(DEFAULT_CLI_LLM_SESSION);
+      }
       setActiveSessionId(sessionId);
       setError('');
 
@@ -1216,6 +1743,7 @@ export function LLMTab({
       setMessages([]);
       setDraft('');
       setActiveSessionId(null);
+      setCliSession(DEFAULT_CLI_LLM_SESSION);
     }
   }, [activeSessionId, projectId]);
 
@@ -1548,6 +2076,16 @@ export function LLMTab({
       return <code className="copilot__md-code">{children}</code>;
     },
     pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    table: ({ children }: { children?: React.ReactNode }) => (
+      <div className="copilot__md-table-wrap">
+        <table className="copilot__md-table">{children}</table>
+      </div>
+    ),
+    thead: ({ children }: { children?: React.ReactNode }) => <thead className="copilot__md-thead">{children}</thead>,
+    tbody: ({ children }: { children?: React.ReactNode }) => <tbody className="copilot__md-tbody">{children}</tbody>,
+    tr: ({ children }: { children?: React.ReactNode }) => <tr className="copilot__md-tr">{children}</tr>,
+    th: ({ children }: { children?: React.ReactNode }) => <th className="copilot__md-th">{children}</th>,
+    td: ({ children }: { children?: React.ReactNode }) => <td className="copilot__md-td">{children}</td>,
   }), []);
 
   const renderMessageContent = useCallback((content: string, role: ChatRole = 'assistant') => {
@@ -1587,9 +2125,19 @@ export function LLMTab({
       em: ({ children }: { children?: React.ReactNode }) => (
         <em className="copilot__md-em">{injectCitations(children, citations, resolveCitation, assetIdByName, timelineIdByName, handleCitationClick, PLACEHOLDER_PREFIX)}</em>
       ),
+      th: ({ children }: { children?: React.ReactNode }) => (
+        <th className="copilot__md-th">{injectCitations(children, citations, resolveCitation, assetIdByName, timelineIdByName, handleCitationClick, PLACEHOLDER_PREFIX)}</th>
+      ),
+      td: ({ children }: { children?: React.ReactNode }) => (
+        <td className="copilot__md-td">{injectCitations(children, citations, resolveCitation, assetIdByName, timelineIdByName, handleCitationClick, PLACEHOLDER_PREFIX)}</td>
+      ),
     };
 
-    return <ReactMarkdown components={citationComponents}>{processed}</ReactMarkdown>;
+    return (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={citationComponents}>
+        {processed}
+      </ReactMarkdown>
+    );
   }, [assetIdByName, handleCitationClick, markdownComponents, renderCitationText, resolveCitation, timelineIdByName]);
 
   const hasMessages = messages.length > 0 || isSending;
@@ -1659,16 +2207,25 @@ export function LLMTab({
   }, [draft, resizeComposerTextarea]);
 
   const handleEnhancePrompt = useCallback(async () => {
-    if (mode !== 'cloud' || isSending || isEnhancingPrompt) return;
+    if (isSending || isEnhancingPrompt) return;
 
     const content = draft.trim();
     if (!content) return;
 
-    const apiKey = getApiKey();
-    setFalKey(apiKey);
-
-    if (!apiKey) {
-      setError('Add your fal.ai API key in Settings before enhancing prompts.');
+    if (mode === 'cloud') {
+      const apiKey = getApiKey();
+      setFalKey(apiKey);
+      if (!apiKey) {
+        setError('Add your fal.ai API key in Settings before enhancing prompts.');
+        return;
+      }
+    } else if (isCliBackendMode(mode)) {
+      if (!cliProviders[mode].installed) {
+        setError(`${getCliProviderLabel(mode)} is not installed on this machine.`);
+        return;
+      }
+    } else if (!localModel) {
+      setError('Select a local Ollama model before enhancing prompts.');
       return;
     }
 
@@ -1676,38 +2233,50 @@ export function LLMTab({
     setIsEnhancingPrompt(true);
 
     try {
-      const routedMode = inferAutoWorkMode(content, messages);
-      const projectContext = buildProjectContext({
-        projectId,
-        assets,
-        mediaFolders,
-        timelines,
-        activeTimelineId,
-        elements,
-        mode: routedMode,
-      });
+      const enhanceUserMessage = buildEnhanceUserMessage(content);
+      const systemPrompt = buildEnhanceSystemPrompt();
 
-      const response = await window.electronAPI.llm.chat({
-        apiKey,
-        model,
-        systemPrompt: [
-          'You rewrite rough user requests into stronger CineGen prompts.',
-          'Preserve the user intent, requested duration, deliverable, assets, and creative goal.',
-          'Preserve any /asset mentions and @element mentions exactly as written.',
-          'Do not invent footage, facts, structure, or constraints that the user did not provide.',
-          'Keep the rewritten prompt concise, direct, and immediately usable.',
-          'Return only the rewritten prompt text with no explanation.',
-          projectContext,
-        ].filter(Boolean).join('\n\n'),
-        messages: [{ role: 'user', content }],
-        maxTokens: 400,
-        temperature: 0.35,
-      });
+      let response: { message?: string; usage?: LLMUsage } | undefined;
 
-      const rewritten = response.message?.trim();
+      if (mode === 'cloud') {
+        response = await window.electronAPI.llm.chat({
+          apiKey: getApiKey()!,
+          model,
+          systemPrompt,
+          messages: [{ role: 'user', content: enhanceUserMessage }],
+          maxTokens: 400,
+          temperature: 0.35,
+        });
+      } else if (mode === 'local') {
+        response = await window.electronAPI.llm.localChat({
+          requestId: crypto.randomUUID(),
+          model: localModel,
+          systemPrompt,
+          messages: [{ role: 'user', content: enhanceUserMessage }],
+          maxTokens: 400,
+          temperature: 0.35,
+        });
+      } else if (isCliBackendMode(mode)) {
+        response = await invokeCliCopilotChat(mode, {
+          requestId: crypto.randomUUID(),
+          model: cliSession.provider === mode ? cliSession.model : getDefaultModelForCliProvider(mode),
+          purpose: 'enhance-prompt',
+          injectProjectContext: true,
+          systemPrompt,
+          userMessage: enhanceUserMessage,
+          messages: [{ role: 'user', content: enhanceUserMessage }],
+        });
+      } else {
+        throw new Error('Select a backend before enhancing prompts.');
+      }
+
+      const rewritten = response?.message?.trim();
       if (!rewritten) throw new Error('No enhanced prompt returned.');
+      if (looksLikeEnhanceAnswer(rewritten)) {
+        throw new Error('Enhance returned an answer instead of a rewritten prompt. Send the question with the arrow button instead.');
+      }
 
-      setSideUsage((current) => mergeSideUsage(current, response.usage));
+      setSideUsage((current) => mergeSideUsage(current, response?.usage));
       setDraft(rewritten);
       requestAnimationFrame(() => {
         resizeComposerTextarea();
@@ -1721,19 +2290,16 @@ export function LLMTab({
       setIsEnhancingPrompt(false);
     }
   }, [
-    activeTimelineId,
-    assets,
+    cliProviders,
+    cliSession.model,
+    cliSession.provider,
     draft,
-    elements,
     isEnhancingPrompt,
     isSending,
-    mediaFolders,
-    messages,
+    localModel,
     mode,
     model,
-    projectId,
     resizeComposerTextarea,
-    timelines,
   ]);
 
   const insertComposerToken = useCallback((prefix: MentionTrigger, label: string) => {
@@ -1826,9 +2392,23 @@ export function LLMTab({
             <div className="copilot__msg-body">{renderMessageContent(messageBodyContent, 'assistant')}</div>
             {message.usage && (
               <div className="copilot__msg-usage">
-                <span>{formatCurrency(message.usage.cost)}</span>
-                <span className="copilot__msg-usage-sep" />
-                <span>{formatCount(message.usage.totalTokens)} tokens</span>
+                {!isCliLlmMode && message.usage.cost > 0 && (
+                  <>
+                    <span>{formatCurrency(message.usage.cost)}</span>
+                    <span className="copilot__msg-usage-sep" />
+                  </>
+                )}
+                {isCliLlmMode ? (
+                  <>
+                    <span>{formatCount(message.usage.promptTokens)} in</span>
+                    <span className="copilot__msg-usage-sep" />
+                    <span>{formatCount(message.usage.completionTokens)} out</span>
+                    <span className="copilot__msg-usage-sep" />
+                    <span>{formatCount(message.usage.totalTokens)} total</span>
+                  </>
+                ) : (
+                  <span>{formatCount(message.usage.totalTokens)} tokens</span>
+                )}
               </div>
             )}
           </div>
@@ -2308,6 +2888,27 @@ export function LLMTab({
   ]);
 
   /* ── Composer ── */
+  const canEnhancePrompt = Boolean(
+    draft.trim()
+    && !isSending
+    && !isEnhancingPrompt
+    && (
+      (mode === 'cloud' && falKey)
+      || (mode === 'local' && localModel)
+      || (isCliBackendMode(mode) && cliProviders[mode].installed)
+    ),
+  );
+
+  const enhancePromptTitle = !draft.trim()
+    ? 'Type a prompt to enhance'
+    : mode === 'cloud' && !falKey
+      ? 'Add a fal.ai API key in Settings'
+      : mode === 'local' && !localModel
+        ? 'Select a local Ollama model'
+        : isCliBackendMode(mode) && !cliProviders[mode].installed
+          ? `Install ${getCliProviderLabel(mode)} to enhance prompts`
+          : 'Rewrite this prompt with project context';
+
   const composerBar = (
     <div className={`copilot__composer${hasMessages ? '' : ' copilot__composer--hero'}`}>
       <div className={`copilot__composer-surface${isEnhancingPrompt ? ' copilot__composer-surface--enhancing' : ''}`}>
@@ -2369,46 +2970,22 @@ export function LLMTab({
           <div className="copilot__composer-actions">
             <button
               type="button"
-              className={`copilot__composer-enhance${draft.trim() && falKey ? ' copilot__composer-enhance--ready' : ''}`}
+              className={`copilot__composer-enhance${canEnhancePrompt ? ' copilot__composer-enhance--ready' : ''}`}
               onClick={() => void handleEnhancePrompt()}
-              disabled={!draft.trim() || isSending || isEnhancingPrompt || !falKey || mode !== 'cloud'}
+              disabled={!canEnhancePrompt}
+              title={enhancePromptTitle}
             >
               {isEnhancingPrompt ? 'Enhancing\u2026' : 'Enhance Prompt'}
             </button>
           </div>
           <div className="copilot__composer-end">
             <div className="copilot__composer-model">
-              {mode === 'cloud' ? (
-                <select
-                  className="copilot__model-select"
-                  value={MODEL_SUGGESTIONS.includes(model) ? model : ''}
-                  onChange={(event) => setModel(event.target.value)}
-                >
-                  {MODEL_SUGGESTIONS.map((suggestion) => (
-                    <option key={suggestion} value={suggestion}>
-                      {suggestion.split('/').pop()}
-                    </option>
-                  ))}
-                  {!MODEL_SUGGESTIONS.includes(model) && (
-                    <option value={model}>{model}</option>
-                  )}
-                </select>
-              ) : (
-                <select
-                  className="copilot__model-select"
-                  value={localModel}
-                  onChange={(event) => setLocalModel(event.target.value)}
-                >
-                  {localModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              )}
+              {renderUnifiedModelSelect('copilot__model-select')}
             </div>
             <button
-              className={`copilot__composer-send${draft.trim() && (mode === 'local' || falKey) ? ' copilot__composer-send--ready' : ''}`}
+              className={`copilot__composer-send${draft.trim() && (mode === 'local' || isCliBackendMode(mode) || falKey) ? ' copilot__composer-send--ready' : ''}`}
               onClick={() => void handleSend()}
-              disabled={!draft.trim() || isSending || isEnhancingPrompt || (mode === 'cloud' && !falKey)}
+              disabled={!draft.trim() || isSending || isEnhancingPrompt || (mode === 'cloud' && !falKey) || (isCliBackendMode(mode) && !cliProviders[mode].installed)}
               aria-label="Send message"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
@@ -2417,6 +2994,18 @@ export function LLMTab({
         </div>
       </div>
       <div className="copilot__composer-shortcuts" aria-hidden>
+        {isCliBackendMode(mode) && cliSession.provider === mode && cliSession.sessionId && !cliSession.forceContextRefresh && (
+          <>
+            <span className="copilot__composer-shortcut copilot__composer-shortcut--status">Project context cached in session</span>
+            <span className="copilot__composer-shortcut-sep">•</span>
+          </>
+        )}
+        {isCliBackendMode(mode) && cliSession.provider === mode && cliSession.forceContextRefresh && (
+          <>
+            <span className="copilot__composer-shortcut copilot__composer-shortcut--status">Project context will refresh on next message</span>
+            <span className="copilot__composer-shortcut-sep">•</span>
+          </>
+        )}
         <span className="copilot__composer-shortcut">
           <kbd className="copilot__composer-kbd">@</kbd>
           <span>elements</span>
@@ -2475,18 +3064,41 @@ export function LLMTab({
 
         <div className="copilot__sidebar-footer">
           <div className="copilot__sidebar-usage">
-            <div className="copilot__sidebar-usage-row">
-              <span>Spend</span>
-              <span className="copilot__sidebar-usage-val copilot__sidebar-usage-val--accent">{formatCurrency(totalSessionUsage.cost)}</span>
-            </div>
-            <div className="copilot__sidebar-usage-row">
-              <span>Tokens</span>
-              <span className="copilot__sidebar-usage-val">{formatCount(totalSessionUsage.totalTokens)}</span>
-            </div>
-            <div className="copilot__sidebar-usage-row">
-              <span>Requests</span>
-              <span className="copilot__sidebar-usage-val">{formatCount(totalSessionUsage.requestCount)}</span>
-            </div>
+            {isCliLlmMode ? (
+              <>
+                <div className="copilot__sidebar-usage-row">
+                  <span>Input</span>
+                  <span className="copilot__sidebar-usage-val">{formatCount(totalSessionUsage.promptTokens)}</span>
+                </div>
+                <div className="copilot__sidebar-usage-row">
+                  <span>Output</span>
+                  <span className="copilot__sidebar-usage-val">{formatCount(totalSessionUsage.completionTokens)}</span>
+                </div>
+                <div className="copilot__sidebar-usage-row">
+                  <span>Tokens</span>
+                  <span className="copilot__sidebar-usage-val copilot__sidebar-usage-val--accent">{formatCount(totalSessionUsage.totalTokens)}</span>
+                </div>
+                <div className="copilot__sidebar-usage-row">
+                  <span>Requests</span>
+                  <span className="copilot__sidebar-usage-val">{formatCount(totalSessionUsage.requestCount)}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="copilot__sidebar-usage-row">
+                  <span>Spend</span>
+                  <span className="copilot__sidebar-usage-val copilot__sidebar-usage-val--accent">{formatCurrency(totalSessionUsage.cost)}</span>
+                </div>
+                <div className="copilot__sidebar-usage-row">
+                  <span>Tokens</span>
+                  <span className="copilot__sidebar-usage-val">{formatCount(totalSessionUsage.totalTokens)}</span>
+                </div>
+                <div className="copilot__sidebar-usage-row">
+                  <span>Requests</span>
+                  <span className="copilot__sidebar-usage-val">{formatCount(totalSessionUsage.requestCount)}</span>
+                </div>
+              </>
+            )}
           </div>
           <button
             className="copilot__sidebar-settings-btn"
@@ -2565,6 +3177,22 @@ export function LLMTab({
             </div>
           )}
 
+          {!hasMessages && isCliBackendMode(mode) && (
+            <div className="copilot__landing">
+              <div className="copilot__greeting">
+                <h1 className="copilot__greeting-text">{getCliProviderLabel(mode)}</h1>
+              </div>
+              <p className="copilot__landing-sub">
+                Using your {getCliProviderLabel(mode)} subscription. Project context is injected on the first message, then cached in the CLI session. Context refreshes automatically when the project changes or the model can&apos;t find what it needs.
+              </p>
+              {!cliProviders[mode].installed && (
+                <div className="copilot__alert copilot__alert--warn">
+                  {getCliProviderLabel(mode)} was not found on this machine. Install the CLI, sign in once in Terminal, then restart CineGen.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Conversation State ── */}
           {hasMessages && (
             <>
@@ -2625,7 +3253,13 @@ export function LLMTab({
                 </div>
                 <div className="copilot__topbar-right">
                   {totalSessionUsage.requestCount > 0 && (
-                    <span className="copilot__topbar-cost">{formatCurrency(totalSessionUsage.cost)}</span>
+                    isCliLlmMode ? (
+                      <span className="copilot__topbar-cost" title="Current chat session token usage">
+                        {formatCount(totalSessionUsage.totalTokens)} tokens
+                      </span>
+                    ) : (
+                      <span className="copilot__topbar-cost">{formatCurrency(totalSessionUsage.cost)}</span>
+                    )
                   )}
                   <div className="copilot__topbar-index">
                     <button
@@ -2743,22 +3377,24 @@ export function LLMTab({
                 <div className="copilot__settings-cell">
                   <label className="copilot__settings-label">Backend</label>
                   <div className="copilot__backend-toggle" role="tablist">
+                    {CLI_LLM_PROVIDER_IDS.filter((providerId) => cliProviders[providerId].installed).map((providerId) => (
+                      <button
+                        key={providerId}
+                        className={`copilot__backend-btn${mode === providerId ? ' copilot__backend-btn--active' : ''}`}
+                        onClick={() => handleSelectCliMode(providerId)}
+                        role="tab"
+                        aria-selected={mode === providerId}
+                      >
+                        {getCliProviderLabel(providerId)}
+                      </button>
+                    ))}
                     <button className={`copilot__backend-btn${mode === 'cloud' ? ' copilot__backend-btn--active' : ''}`} onClick={() => setMode('cloud')} role="tab" aria-selected={mode === 'cloud'}>Cloud</button>
                     <button className={`copilot__backend-btn${mode === 'local' ? ' copilot__backend-btn--active' : ''}`} onClick={() => setMode('local')} role="tab" aria-selected={mode === 'local'}>Local</button>
                   </div>
                 </div>
                 <div className="copilot__settings-cell">
                   <label className="copilot__settings-label">Model</label>
-                  {mode === 'cloud' ? (
-                    <select className="copilot__settings-input" value={MODEL_SUGGESTIONS.includes(model) ? model : ''} onChange={(e) => setModel(e.target.value)}>
-                      {MODEL_SUGGESTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-                      {!MODEL_SUGGESTIONS.includes(model) && <option value={model}>{model}</option>}
-                    </select>
-                  ) : (
-                    <select className="copilot__settings-input" value={localModel} onChange={(e) => setLocalModel(e.target.value)}>
-                      {localModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  )}
+                  {renderUnifiedModelSelect('copilot__settings-input')}
                 </div>
                 <div className="copilot__settings-cell copilot__settings-cell--wide">
                   <label className="copilot__settings-label">System Prompt</label>
@@ -2775,7 +3411,9 @@ export function LLMTab({
               </div>
               {totalSessionUsage.requestCount > 0 && (
                 <div className="copilot__settings-usage">
-                  Session: {formatCurrency(totalSessionUsage.cost)} across {formatCount(totalSessionUsage.requestCount)} requests ({formatCount(totalSessionUsage.totalTokens)} tokens)
+                  {isCliLlmMode
+                    ? `Session: ${formatCount(totalSessionUsage.promptTokens)} input / ${formatCount(totalSessionUsage.completionTokens)} output (${formatCount(totalSessionUsage.totalTokens)} total) across ${formatCount(totalSessionUsage.requestCount)} requests`
+                    : `Session: ${formatCurrency(totalSessionUsage.cost)} across ${formatCount(totalSessionUsage.requestCount)} requests (${formatCount(totalSessionUsage.totalTokens)} tokens)`}
                 </div>
               )}
             </div>
@@ -2785,6 +3423,15 @@ export function LLMTab({
         {/* Backend toggle (visible on landing) */}
         {!hasMessages && (
           <div className="copilot__landing-backend">
+            {CLI_LLM_PROVIDER_IDS.filter((providerId) => cliProviders[providerId].installed).map((providerId) => (
+              <button
+                key={providerId}
+                className={`copilot__landing-toggle${mode === providerId ? ' copilot__landing-toggle--active' : ''}`}
+                onClick={() => handleSelectCliMode(providerId)}
+              >
+                {getCliProviderLabel(providerId)}
+              </button>
+            ))}
             <button className={`copilot__landing-toggle${mode === 'cloud' ? ' copilot__landing-toggle--active' : ''}`} onClick={() => setMode('cloud')}>Cloud</button>
             <button className={`copilot__landing-toggle${mode === 'local' ? ' copilot__landing-toggle--active' : ''}`} onClick={() => setMode('local')}>Local</button>
           </div>

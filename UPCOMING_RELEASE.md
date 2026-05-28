@@ -19,6 +19,30 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## New Features
 
+### LLM tab: CLI LLM detection (Claude Code, Codex, Gemini CLI) **(in progress)**
+
+- Copilot scans for **Claude Code**, **Codex**, and **Gemini CLI** on startup (`~/.local/bin`, `~/.npm-global/bin`, Homebrew, PATH)
+- Each installed CLI appears as its own backend toggle and model group in the unified picker
+- Subscription CLI chat, context caching, Enhance Prompt, and token stats work across all detected CLIs
+- Uses your Claude subscription — no fal.ai API key or token billing
+- Sends full chat history plus project context (assets, transcripts, timelines, elements) on each message
+- Streams responses back into the Copilot chat UI in real time
+- Unified **Model** dropdown in composer and Settings lists Cloud, Local, and Claude Code models — selecting one switches backend automatically
+- Collapsed model chip shows **`provider: model`** (e.g. `claude: opus`); open menu uses grouped short labels (Claude / Codex / Gemini / Cloud / Local)
+- Sidebar and top bar show **Input / Output / Tokens** for CLI backends (Claude Code, Ollama) instead of API spend; per-message token counts included
+- Gemini CLI model picker uses CLI-native aliases (`auto`, `flash`, `pro`) plus Gemini 3.1/3 preview IDs — not pinned to 2.5 only
+- **Enhance Prompt:** works with Cloud, Local (Ollama), and CLI backends; rewrites composer text only (does not answer the question — use Send for that)
+- **Claude Code model picker:** Opus, Sonnet, and Haiku via `--model`
+- **Smart context caching:** full project context injected on first message only; follow-ups use `--resume` session (much lower token use)
+- **Auto context refresh** when assets/timelines/transcripts change, or when Claude indicates missing project info
+- **Copilot chat guardrails:** Claude Code runs with tools disabled so it answers from injected project context instead of searching the CineGen repo on disk
+- **Timeline clip list formatting:** chronological numbered list with clickable `[timeline:…]` citations; repeat questions stay in list format with auto-retry if a table slips through
+- **GFM markdown tables:** Copilot chat renders GitHub-flavored markdown tables (via `remark-gfm`) with scrollable styled table blocks
+
+**Requirements:** Install Claude Code from [code.claude.com](https://code.claude.com) and sign in once via Terminal (`claude`). Restart CineGen after install.
+
+---
+
 ### Spaces canvas file drop **(in progress)**
 
 - Drag image, video, or audio files from your desktop onto the Spaces canvas to create **File Upload** nodes at the drop position
@@ -133,6 +157,7 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Nano Banana 2:** Removed unsupported `seed` parameter
 - **Layer Decompose:** `reconstruct_bg` kept as app-only (not sent to SAM 3 API)
 - **KIE Runway:** Quality param no longer stripped before API call **(in progress fix)**
+- **Gemini CLI Copilot:** Pass `--skip-trust` and `GEMINI_CLI_TRUST_WORKSPACE=true` so headless Electron chat works outside a trusted folder; use `-p` headless mode (positional prompt + `-s` sandbox hung forever); `--approval-mode plan` for chat-only; 15-minute timeout; strip ANSI codes from CLI error text **(in progress)**
 
 ---
 

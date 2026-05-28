@@ -12,6 +12,7 @@ import Database from "better-sqlite3";
 import { spawn, execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { Worker } from "worker_threads";
 import net from "node:net";
 const LOAD_RETRY_DELAY_MS = 1200;
@@ -5541,7 +5542,7 @@ function mergeUsage(base, extra) {
     cost: base.cost + extra.cost
   };
 }
-function buildConversationPrompt(messages) {
+function buildConversationPrompt$2(messages) {
   return messages.filter((message) => message.role !== "system" && message.content.trim()).map((message) => `${message.role === "assistant" ? "Assistant" : "User"}:
 ${message.content.trim()}`).join("\n\n").concat("\n\nAssistant:\n");
 }
@@ -6176,7 +6177,7 @@ async function runCutWorkflow(params) {
   };
 }
 const OLLAMA_BASE_URL = "http://127.0.0.1:11434";
-function getMainWindow$2() {
+function getMainWindow$4() {
   return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
 }
 async function streamOllamaChat(requestId, params) {
@@ -6213,7 +6214,7 @@ async function streamOllamaChat(requestId, params) {
     const text = await response2.text().catch(() => "");
     throw new Error(`Ollama request failed (${response2.status}): ${text || response2.statusText}`);
   }
-  const win = getMainWindow$2();
+  const win = getMainWindow$4();
   let fullContent = "";
   let promptTokens = 0;
   let completionTokens = 0;
@@ -6289,7 +6290,7 @@ function registerLLMChatHandlers() {
     const key = params.apiKey;
     if (!key) throw new Error("No fal.ai API key provided.");
     const messages = Array.isArray(params.messages) ? params.messages : [];
-    const prompt = buildConversationPrompt(messages);
+    const prompt = buildConversationPrompt$2(messages);
     if (!prompt.trim()) throw new Error("No chat prompt provided.");
     const result = await callTextLLM({
       apiKey: key,
@@ -6316,6 +6317,700 @@ function registerLLMChatHandlers() {
     return listOllamaModels();
   });
   ipcMain.handle("llm:run-cut-workflow", async (_event, params) => runCutWorkflow(params));
+}
+const execFileAsync$1 = promisify(execFile);
+const CLAUDE_CANDIDATES = [
+  path.join(os.homedir(), ".local/bin/claude"),
+  "/opt/homebrew/bin/claude",
+  "/usr/local/bin/claude",
+  "claude"
+];
+const CHAT_ONLY_SUFFIX$1 = [
+  "CineGen Copilot chat mode: you are NOT exploring the CineGen source codebase.",
+  "The user's video-editing project (timelines, clips, transcripts, assets) is provided in ACTIVE PROJECT CONTEXT above — not on disk and not in repo files.",
+  'Answer immediately from ACTIVE PROJECT CONTEXT and conversation history. Never search files, run commands, or say "let me look at the project".',
+  "Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands."
+].join(" ");
+const COPILOT_RESUME_REMINDER = [
+  "CineGen Copilot follow-up: answer from project context already established in this conversation.",
+  "Do not search the filesystem or CineGen source code. Timelines and clips are in the prior context, not in repo files.",
+  "For clip/timeline lists: numbered list + [timeline:Name / clip:ClipName @ time] citations only — never markdown tables, even when repeating an earlier answer."
+].join(" ");
+const ENHANCE_PROMPT_SUFFIX$1 = [
+  "CineGen prompt-rewrite mode: rewrite the user's rough Copilot prompt only.",
+  "Do NOT answer the prompt or reveal project facts, clip names, durations, or asset IDs.",
+  "Do not search files or invoke tools.",
+  "Return only the rewritten prompt text."
+].join(" ");
+const CHAT_DISALLOWED_TOOLS = [
+  "Bash",
+  "Edit",
+  "Read",
+  "Write",
+  "Glob",
+  "Grep",
+  "Skill",
+  "WebFetch",
+  "WebSearch",
+  "Task",
+  "NotebookEdit"
+].join(",");
+let cachedBinary;
+let activeRequest$2 = null;
+function buildPathEnv() {
+  const home = os.homedir();
+  const extraPaths = [
+    path.join(home, ".local/bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin"
+  ];
+  const currentPath = process.env.PATH ?? "";
+  return {
+    ...process.env,
+    PATH: [...extraPaths, currentPath].filter(Boolean).join(path.delimiter)
+  };
+}
+async function resolveClaudeBinary() {
+  if (cachedBinary !== void 0) return cachedBinary;
+  for (const candidate of CLAUDE_CANDIDATES) {
+    try {
+      const { stdout } = await execFileAsync$1(candidate, ["--version"], {
+        env: buildPathEnv(),
+        timeout: 8e3
+      });
+      if (stdout.toLowerCase().includes("claude")) {
+        cachedBinary = candidate;
+        return candidate;
+      }
+    } catch {
+    }
+  }
+  cachedBinary = null;
+  return null;
+}
+function getMainWindow$3() {
+  return BrowserWindow.getAllWindows().find((window2) => !window2.isDestroyed());
+}
+function buildConversationPrompt$1(messages) {
+  return messages.filter((message) => message.role !== "system" && message.content.trim()).map((message) => `${message.role === "assistant" ? "Assistant" : "User"}:
+${message.content.trim()}`).join("\n\n").concat("\n\nAssistant:\n");
+}
+function parseClaudeCodeUsage(obj) {
+  const usageRaw = obj.usage;
+  if (!usageRaw || typeof usageRaw !== "object") return void 0;
+  const inputTokens = Number(usageRaw.input_tokens) || 0;
+  const cacheCreation = Number(usageRaw.cache_creation_input_tokens) || 0;
+  const cacheRead = Number(usageRaw.cache_read_input_tokens) || 0;
+  const promptTokens = inputTokens + cacheCreation + cacheRead;
+  const completionTokens = Number(usageRaw.output_tokens) || 0;
+  const totalTokens = promptTokens + completionTokens;
+  const cost = Number(obj.total_cost_usd) || 0;
+  if (promptTokens <= 0 && completionTokens <= 0 && totalTokens <= 0 && cost <= 0) {
+    return void 0;
+  }
+  return { promptTokens, completionTokens, totalTokens, cost };
+}
+function extractStreamToken(obj) {
+  if (obj.type === "stream_event") {
+    const event = obj.event;
+    const delta = event == null ? void 0 : event.delta;
+    if ((delta == null ? void 0 : delta.type) === "text_delta" && typeof delta.text === "string") {
+      return delta.text;
+    }
+  }
+  if (obj.type === "assistant") {
+    const message = obj.message;
+    return ((message == null ? void 0 : message.content) ?? []).filter((block) => block.type === "text" && typeof block.text === "string").map((block) => block.text).join("");
+  }
+  if (obj.type === "result" && typeof obj.result === "string") {
+    return obj.result;
+  }
+  return "";
+}
+function buildPrompt(params) {
+  if (params.injectProjectContext) {
+    const history = (params.messages ?? []).filter((message) => message.content.trim());
+    if (history.length > 0) {
+      return buildConversationPrompt$1(history);
+    }
+  }
+  return `${params.userMessage.trim()}
+
+Assistant:
+`;
+}
+async function streamClaudeCodeChat(requestId, params) {
+  var _a, _b;
+  const binary = await resolveClaudeBinary();
+  if (!binary) {
+    throw new Error("Claude Code is not installed. Install it from https://code.claude.com");
+  }
+  if (!params.userMessage.trim()) {
+    throw new Error("No chat message provided.");
+  }
+  const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "sonnet";
+  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
+  const args = [
+    "-p",
+    canResume ? params.userMessage.trim() : buildPrompt(params),
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+    "--max-turns",
+    "1",
+    "--model",
+    model,
+    "--disallowed-tools",
+    CHAT_DISALLOWED_TOOLS
+  ];
+  if (canResume && params.resumeSessionId) {
+    args.push("--resume", params.resumeSessionId);
+    args.push("--append-system-prompt", COPILOT_RESUME_REMINDER);
+  } else if (params.injectProjectContext && ((_b = params.systemPrompt) == null ? void 0 : _b.trim())) {
+    const refreshPrefix = params.contextRefresh ? "The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n" : "";
+    const suffix = params.purpose === "enhance-prompt" ? ENHANCE_PROMPT_SUFFIX$1 : CHAT_ONLY_SUFFIX$1;
+    args.push("--append-system-prompt", `${refreshPrefix}${params.systemPrompt.trim()}
+
+${suffix}`);
+  }
+  const win = getMainWindow$3();
+  let fullContent = "";
+  let stderrBuffer = "";
+  let sessionId;
+  let authFailed = false;
+  let sawStreamDelta = false;
+  let usage;
+  return new Promise((resolve, reject) => {
+    var _a2, _b2;
+    const child = spawn(binary, args, {
+      env: buildPathEnv(),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    activeRequest$2 = { child, requestId };
+    let lineBuffer = "";
+    (_a2 = child.stdout) == null ? void 0 : _a2.on("data", (chunk) => {
+      lineBuffer += chunk.toString();
+      let newlineIdx;
+      while ((newlineIdx = lineBuffer.indexOf("\n")) >= 0) {
+        const line = lineBuffer.slice(0, newlineIdx).trim();
+        lineBuffer = lineBuffer.slice(newlineIdx + 1);
+        if (!line) continue;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === "system" && obj.subtype === "init" && typeof obj.session_id === "string") {
+            sessionId = obj.session_id;
+          }
+          if (obj.type === "assistant" && obj.error === "authentication_failed") {
+            authFailed = true;
+          }
+          const parsedUsage = parseClaudeCodeUsage(obj);
+          if (parsedUsage) {
+            usage = parsedUsage;
+          } else if (obj.type === "assistant") {
+            const message = obj.message;
+            if (message == null ? void 0 : message.usage) {
+              const assistantUsage = parseClaudeCodeUsage({ usage: message.usage });
+              if (assistantUsage) usage = assistantUsage;
+            }
+          }
+          const token = extractStreamToken(obj);
+          if (!token) continue;
+          if (obj.type === "stream_event") {
+            sawStreamDelta = true;
+            fullContent += token;
+            win == null ? void 0 : win.webContents.send("llm:claude-code-stream", { requestId, token });
+            continue;
+          }
+          if (obj.type === "assistant" && !sawStreamDelta) {
+            fullContent = token;
+            win == null ? void 0 : win.webContents.send("llm:claude-code-stream", { requestId, token });
+          } else if (obj.type === "result" && !fullContent.trim()) {
+            fullContent = token;
+            win == null ? void 0 : win.webContents.send("llm:claude-code-stream", { requestId, token });
+          }
+        } catch {
+        }
+      }
+    });
+    (_b2 = child.stderr) == null ? void 0 : _b2.on("data", (chunk) => {
+      stderrBuffer += chunk.toString();
+    });
+    child.on("error", (error) => {
+      activeRequest$2 = null;
+      reject(error);
+    });
+    child.on("close", (code) => {
+      activeRequest$2 = null;
+      win == null ? void 0 : win.webContents.send("llm:claude-code-stream", { requestId, done: true });
+      const trimmed = fullContent.trim();
+      if (authFailed || trimmed.includes("Not logged in")) {
+        reject(new Error("Claude Code is not logged in. Open Terminal, run `claude`, and sign in with your subscription."));
+        return;
+      }
+      if (!trimmed) {
+        reject(new Error(stderrBuffer.trim() || `Claude Code exited with code ${code ?? "unknown"}`));
+        return;
+      }
+      resolve({ message: trimmed, sessionId, usage, resumed: canResume });
+    });
+  });
+}
+function registerClaudeCodeHandlers() {
+  ipcMain.handle("llm:claude-code-detect", async () => {
+    const binary = await resolveClaudeBinary();
+    if (!binary) {
+      return { installed: false };
+    }
+    try {
+      const { stdout } = await execFileAsync$1(binary, ["--version"], {
+        env: buildPathEnv(),
+        timeout: 8e3
+      });
+      return {
+        installed: true,
+        path: binary,
+        version: stdout.trim()
+      };
+    } catch {
+      return { installed: false };
+    }
+  });
+  ipcMain.handle("llm:claude-code-chat", async (_event, params) => {
+    const requestId = params.requestId || crypto$1.randomUUID();
+    const result = await streamClaudeCodeChat(requestId, params);
+    return {
+      message: result.message,
+      sessionId: result.sessionId,
+      resumed: result.resumed,
+      ...result.usage ? { usage: result.usage } : {}
+    };
+  });
+  ipcMain.handle("llm:claude-code-cancel", async (_event, requestId) => {
+    if ((activeRequest$2 == null ? void 0 : activeRequest$2.requestId) !== requestId) return;
+    activeRequest$2.child.kill("SIGTERM");
+    activeRequest$2 = null;
+  });
+}
+const execFileAsync = promisify(execFile);
+const PROVIDER_BINARIES = {
+  "claude-code": [
+    path.join(os.homedir(), ".local/bin/claude"),
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+    "claude"
+  ],
+  codex: [
+    path.join(os.homedir(), ".npm-global/bin/codex"),
+    path.join(os.homedir(), ".local/bin/codex"),
+    "/opt/homebrew/bin/codex",
+    "/usr/local/bin/codex",
+    "codex"
+  ],
+  gemini: [
+    path.join(os.homedir(), ".npm-global/bin/gemini"),
+    path.join(os.homedir(), ".local/bin/gemini"),
+    "/opt/homebrew/bin/gemini",
+    "/usr/local/bin/gemini",
+    "gemini"
+  ]
+};
+const binaryCache = /* @__PURE__ */ new Map();
+function buildCliPathEnv() {
+  const home = os.homedir();
+  const extraPaths = [
+    path.join(home, ".local/bin"),
+    path.join(home, ".npm-global/bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin"
+  ];
+  const currentPath = process.env.PATH ?? "";
+  return {
+    ...process.env,
+    PATH: [...extraPaths, currentPath].filter(Boolean).join(path.delimiter)
+  };
+}
+function buildGeminiCliEnv() {
+  return {
+    ...buildCliPathEnv(),
+    GEMINI_CLI_TRUST_WORKSPACE: "true",
+    TERM: "dumb",
+    NO_COLOR: "1"
+  };
+}
+function stripAnsiCodes(text) {
+  return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+async function resolveCliBinary(provider) {
+  if (binaryCache.has(provider)) {
+    return binaryCache.get(provider) ?? null;
+  }
+  for (const candidate of PROVIDER_BINARIES[provider]) {
+    try {
+      const { stdout } = await execFileAsync(candidate, ["--version"], {
+        env: buildCliPathEnv(),
+        timeout: 8e3
+      });
+      if (stdout.trim()) {
+        binaryCache.set(provider, candidate);
+        return candidate;
+      }
+    } catch {
+    }
+  }
+  binaryCache.set(provider, null);
+  return null;
+}
+async function detectCliProvider(provider) {
+  const binary = await resolveCliBinary(provider);
+  if (!binary) {
+    return { id: provider, installed: false };
+  }
+  try {
+    const { stdout } = await execFileAsync(binary, ["--version"], {
+      env: buildCliPathEnv(),
+      timeout: 8e3
+    });
+    return {
+      id: provider,
+      installed: true,
+      path: binary,
+      version: stdout.trim()
+    };
+  } catch {
+    return { id: provider, installed: false };
+  }
+}
+async function detectAllCliProviders() {
+  return Promise.all([
+    detectCliProvider("claude-code"),
+    detectCliProvider("codex"),
+    detectCliProvider("gemini")
+  ]);
+}
+function getMainWindow$2() {
+  return BrowserWindow.getAllWindows().find((window2) => !window2.isDestroyed());
+}
+function buildConversationPrompt(messages) {
+  return messages.filter((message) => message.role !== "system" && message.content.trim()).map((message) => `${message.role === "assistant" ? "Assistant" : "User"}:
+${message.content.trim()}`).join("\n\n").concat("\n\nAssistant:\n");
+}
+const CHAT_ONLY_SUFFIX = [
+  "CineGen Copilot chat mode: you are NOT exploring the CineGen source codebase.",
+  "The user's video-editing project (timelines, clips, transcripts, assets) is provided in ACTIVE PROJECT CONTEXT above — not on disk and not in repo files.",
+  'Answer immediately from ACTIVE PROJECT CONTEXT and conversation history. Never search files, run commands, or say "let me look at the project".',
+  "Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands."
+].join(" ");
+const ENHANCE_PROMPT_SUFFIX = [
+  "CineGen prompt-rewrite mode: rewrite the user's rough Copilot prompt only.",
+  "Do NOT answer the prompt or reveal project facts, clip names, durations, or asset IDs.",
+  "Do not search files or invoke tools.",
+  "Return only the rewritten prompt text."
+].join(" ");
+function registerCliLlmDetectHandlers() {
+  ipcMain.handle("llm:cli-detect", async () => {
+    const providers = await detectAllCliProviders();
+    return { providers };
+  });
+}
+let activeRequest$1 = null;
+function buildCodexPrompt(params) {
+  var _a;
+  const systemParts = [];
+  if (params.injectProjectContext && ((_a = params.systemPrompt) == null ? void 0 : _a.trim())) {
+    const refreshPrefix = params.contextRefresh ? "The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n" : "";
+    const suffix = params.purpose === "enhance-prompt" ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
+    systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}
+
+${suffix}`);
+  }
+  const history = (params.messages ?? []).filter((message) => message.content.trim());
+  const conversation = history.length > 0 ? buildConversationPrompt(history) : `${params.userMessage.trim()}
+
+Assistant:
+`;
+  return systemParts.length > 0 ? `${systemParts.join("\n\n")}
+
+${conversation}` : params.userMessage.trim();
+}
+function parseCodexUsage(obj) {
+  const usageRaw = obj.usage;
+  if (!usageRaw) return void 0;
+  const inputTokens = Number(usageRaw.input_tokens) || 0;
+  const cachedInput = Number(usageRaw.cached_input_tokens) || 0;
+  const promptTokens = inputTokens + cachedInput;
+  const completionTokens = Number(usageRaw.output_tokens) || 0;
+  const totalTokens = promptTokens + completionTokens;
+  if (totalTokens <= 0) return void 0;
+  return { promptTokens, completionTokens, totalTokens, cost: 0 };
+}
+function extractCodexAgentText(obj) {
+  if (obj.type !== "item.completed" && obj.type !== "item.updated") return "";
+  const item = obj.item;
+  if ((item == null ? void 0 : item.type) === "agent_message" && typeof item.text === "string") {
+    return item.text;
+  }
+  return "";
+}
+async function streamCodexChat(requestId, params) {
+  var _a;
+  const binary = await resolveCliBinary("codex");
+  if (!binary) {
+    throw new Error("Codex CLI is not installed. Install it from https://developers.openai.com/codex");
+  }
+  if (!params.userMessage.trim()) {
+    throw new Error("No chat message provided.");
+  }
+  const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "gpt-5.3-codex";
+  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
+  const args = ["exec"];
+  if (canResume && params.resumeSessionId) {
+    args.push("resume", params.resumeSessionId, params.userMessage.trim());
+  } else {
+    args.push(buildCodexPrompt(params));
+  }
+  args.push(
+    "--json",
+    "-s",
+    "read-only",
+    "-m",
+    model,
+    "--skip-git-repo-check"
+  );
+  const win = getMainWindow$2();
+  let fullContent = "";
+  let stderrBuffer = "";
+  let sessionId;
+  let usage;
+  let lastAgentText = "";
+  return new Promise((resolve, reject) => {
+    var _a2, _b;
+    const child = spawn(binary, args, {
+      env: buildCliPathEnv(),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    activeRequest$1 = { child, requestId, provider: "codex" };
+    let lineBuffer = "";
+    (_a2 = child.stdout) == null ? void 0 : _a2.on("data", (chunk) => {
+      lineBuffer += chunk.toString();
+      let newlineIdx;
+      while ((newlineIdx = lineBuffer.indexOf("\n")) >= 0) {
+        const line = lineBuffer.slice(0, newlineIdx).trim();
+        lineBuffer = lineBuffer.slice(newlineIdx + 1);
+        if (!line) continue;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === "thread.started" && typeof obj.thread_id === "string") {
+            sessionId = obj.thread_id;
+          }
+          const parsedUsage = parseCodexUsage(obj);
+          if (parsedUsage) usage = parsedUsage;
+          if (obj.type === "turn.failed") {
+            const error = obj.error;
+            stderrBuffer += (error == null ? void 0 : error.message) ?? "Codex turn failed.";
+          }
+          const agentText = extractCodexAgentText(obj);
+          if (agentText) {
+            const delta = agentText.startsWith(lastAgentText) ? agentText.slice(lastAgentText.length) : agentText;
+            lastAgentText = agentText;
+            fullContent = agentText;
+            if (delta) {
+              win == null ? void 0 : win.webContents.send("llm:codex-stream", { requestId, token: delta });
+            }
+          }
+        } catch {
+        }
+      }
+    });
+    (_b = child.stderr) == null ? void 0 : _b.on("data", (chunk) => {
+      stderrBuffer += chunk.toString();
+    });
+    child.on("error", (error) => {
+      activeRequest$1 = null;
+      reject(error);
+    });
+    child.on("close", (code) => {
+      activeRequest$1 = null;
+      win == null ? void 0 : win.webContents.send("llm:codex-stream", { requestId, done: true });
+      const trimmed = fullContent.trim();
+      if (!trimmed) {
+        reject(new Error(stderrBuffer.trim() || `Codex exited with code ${code ?? "unknown"}`));
+        return;
+      }
+      resolve({ message: trimmed, sessionId, usage, resumed: canResume });
+    });
+  });
+}
+function registerCodexCliHandlers() {
+  ipcMain.handle("llm:codex-chat", async (_event, params) => {
+    const requestId = params.requestId || crypto$1.randomUUID();
+    const result = await streamCodexChat(requestId, params);
+    return {
+      message: result.message,
+      sessionId: result.sessionId,
+      resumed: result.resumed,
+      ...result.usage ? { usage: result.usage } : {}
+    };
+  });
+  ipcMain.handle("llm:codex-cancel", async (_event, requestId) => {
+    if ((activeRequest$1 == null ? void 0 : activeRequest$1.requestId) !== requestId || activeRequest$1.provider !== "codex") return;
+    activeRequest$1.child.kill("SIGTERM");
+    activeRequest$1 = null;
+  });
+}
+let activeRequest = null;
+function buildGeminiPrompt(params) {
+  var _a;
+  const systemParts = [];
+  if (params.injectProjectContext && ((_a = params.systemPrompt) == null ? void 0 : _a.trim())) {
+    const refreshPrefix = params.contextRefresh ? "The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n" : "";
+    const suffix = params.purpose === "enhance-prompt" ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
+    systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}
+
+${suffix}`);
+  }
+  const history = (params.messages ?? []).filter((message) => message.content.trim());
+  if (history.length > 0) {
+    return systemParts.length > 0 ? `${systemParts.join("\n\n")}
+
+${buildConversationPrompt(history)}` : buildConversationPrompt(history);
+  }
+  return systemParts.length > 0 ? `${systemParts.join("\n\n")}
+
+User:
+${params.userMessage.trim()}
+
+Assistant:
+` : params.userMessage.trim();
+}
+function parseGeminiUsage(obj) {
+  const stats = obj.stats;
+  if (!stats) return void 0;
+  const promptTokens = Number(stats.input_tokens) || 0;
+  const completionTokens = Number(stats.output_tokens) || 0;
+  const totalTokens = Number(stats.total_tokens) || promptTokens + completionTokens;
+  if (totalTokens <= 0) return void 0;
+  return { promptTokens, completionTokens, totalTokens, cost: 0 };
+}
+async function streamGeminiChat(requestId, params) {
+  var _a;
+  const binary = await resolveCliBinary("gemini");
+  if (!binary) {
+    throw new Error("Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli");
+  }
+  if (!params.userMessage.trim()) {
+    throw new Error("No chat message provided.");
+  }
+  const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "auto";
+  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
+  const prompt = canResume ? params.userMessage.trim() : buildGeminiPrompt(params);
+  const args = [
+    "--skip-trust",
+    "-p",
+    prompt,
+    "-o",
+    "stream-json",
+    "-m",
+    model,
+    "--approval-mode",
+    "plan"
+  ];
+  if (canResume && params.resumeSessionId) {
+    args.push("-r", params.resumeSessionId);
+  }
+  const win = getMainWindow$2();
+  let fullContent = "";
+  let stderrBuffer = "";
+  let sessionId;
+  let usage;
+  const chatTimeoutMs = 15 * 60 * 1e3;
+  return new Promise((resolve, reject) => {
+    var _a2, _b;
+    const child = spawn(binary, args, {
+      env: buildGeminiCliEnv(),
+      cwd: os.homedir(),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    activeRequest = { child, requestId, provider: "gemini" };
+    let lineBuffer = "";
+    let settled = false;
+    const finish = (handler) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      handler();
+    };
+    const timeoutId = setTimeout(() => {
+      activeRequest = null;
+      child.kill("SIGTERM");
+      finish(() => reject(new Error("Gemini CLI timed out after 15 minutes. Try again or switch models.")));
+    }, chatTimeoutMs);
+    (_a2 = child.stdout) == null ? void 0 : _a2.on("data", (chunk) => {
+      lineBuffer += chunk.toString();
+      let newlineIdx;
+      while ((newlineIdx = lineBuffer.indexOf("\n")) >= 0) {
+        const line = lineBuffer.slice(0, newlineIdx).trim();
+        lineBuffer = lineBuffer.slice(newlineIdx + 1);
+        if (!line) continue;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === "init" && typeof obj.session_id === "string") {
+            sessionId = obj.session_id;
+          }
+          const parsedUsage = parseGeminiUsage(obj);
+          if (parsedUsage) usage = parsedUsage;
+          if (obj.type === "message" && obj.role === "assistant" && typeof obj.content === "string") {
+            const token = obj.content;
+            fullContent += token;
+            win == null ? void 0 : win.webContents.send("llm:gemini-stream", { requestId, token });
+          }
+          if (obj.type === "error" && typeof obj.message === "string") {
+            stderrBuffer += obj.message;
+          }
+          if (obj.type === "result" && obj.status === "error") {
+            const resultError = typeof obj.error === "string" ? obj.error : typeof obj.message === "string" ? obj.message : "Gemini CLI returned an error.";
+            stderrBuffer += resultError;
+          }
+        } catch {
+        }
+      }
+    });
+    (_b = child.stderr) == null ? void 0 : _b.on("data", (chunk) => {
+      stderrBuffer += chunk.toString();
+    });
+    child.on("error", (error) => {
+      activeRequest = null;
+      finish(() => reject(error));
+    });
+    child.on("close", (code) => {
+      activeRequest = null;
+      win == null ? void 0 : win.webContents.send("llm:gemini-stream", { requestId, done: true });
+      const trimmed = fullContent.trim();
+      if (!trimmed) {
+        const errorMessage = stripAnsiCodes(stderrBuffer.trim()) || `Gemini CLI exited with code ${code ?? "unknown"}`;
+        finish(() => reject(new Error(errorMessage)));
+        return;
+      }
+      finish(() => resolve({ message: trimmed, sessionId, usage, resumed: canResume }));
+    });
+  });
+}
+function registerGeminiCliHandlers() {
+  ipcMain.handle("llm:gemini-chat", async (_event, params) => {
+    const requestId = params.requestId || crypto$1.randomUUID();
+    const result = await streamGeminiChat(requestId, params);
+    return {
+      message: result.message,
+      sessionId: result.sessionId,
+      resumed: result.resumed,
+      ...result.usage ? { usage: result.usage } : {}
+    };
+  });
+  ipcMain.handle("llm:gemini-cancel", async (_event, requestId) => {
+    if ((activeRequest == null ? void 0 : activeRequest.requestId) !== requestId || activeRequest.provider !== "gemini") return;
+    activeRequest.child.kill("SIGTERM");
+    activeRequest = null;
+  });
 }
 const SYSTEM_PROMPT = `You are a music prompt engineer. Your job is to write a detailed, evocative text prompt that will be used to generate music with an AI music model (ElevenLabs/Suno).
 
@@ -9135,6 +9830,10 @@ app.whenReady().then(async () => {
   registerExportHandlers();
   registerElementHandlers();
   registerLLMChatHandlers();
+  registerClaudeCodeHandlers();
+  registerCliLlmDetectHandlers();
+  registerCodexCliHandlers();
+  registerGeminiCliHandlers();
   registerMusicPromptHandlers();
   registerFileSystemHandlers();
   registerDbHandlers();
