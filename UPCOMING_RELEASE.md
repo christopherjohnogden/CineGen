@@ -23,6 +23,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 - Copilot can apply changes across CineGen via **`cinegen-skill-action`** buttons: **`add_nodes`** (prompt/model nodes to active or named Spaces workspace), **`save_elements`**, **`edit_timeline`** (split/trim/remove clips, close gaps, add markers), plus existing **`create_space`** workflows
 - **Prompt / node requests** ("give me a node for shot 13") show a one-click **Add to [workspace]** button — client infers the action even when the model only asks in text
+- **New chat empty state:** Claude Code, Codex, Gemini CLI, and Local modes now show the message composer on the landing screen (previously only Cloud did) **(in progress)**
 - Project context now includes **active Spaces workspace** and workspace list so Copilot knows where nodes will land
 
 ### LLM tab: Skill Builder **(in progress)**
@@ -59,6 +60,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - Collapsed model chip shows **`provider: model`** (e.g. `claude: opus`); open menu uses grouped short labels (Claude / Codex / Gemini / Cloud / Local)
 - Sidebar and top bar show **Input / Output / Tokens** for CLI backends (Claude Code, Ollama) instead of API spend; per-message token counts included
 - Gemini CLI model picker uses CLI-native aliases (`auto`, `flash`, `pro`) plus Gemini 3.1/3 preview IDs — not pinned to 2.5 only
+- **Gemini CLI Copilot speed:** default model is **gemini-2.5-flash** (was `auto`); compact project context, isolated temp workspace, headless **default** approval mode (avoids plan-mode filesystem reads), 90s first-token timeout with visible tool status while waiting **(in progress)**
 - **Enhance Prompt:** works with Cloud, Local (Ollama), and CLI backends; rewrites composer text only (does not answer the question — use Send for that)
 - **Claude Code model picker:** Opus, Sonnet, and Haiku via `--model`
 - **Smart context caching:** full project context injected on first message only; follow-ups use `--resume` session (much lower token use)
@@ -185,7 +187,7 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Nano Banana 2:** Removed unsupported `seed` parameter
 - **Layer Decompose:** `reconstruct_bg` kept as app-only (not sent to SAM 3 API)
 - **KIE Runway:** Quality param no longer stripped before API call **(in progress fix)**
-- **Gemini CLI Copilot:** Pass `--skip-trust` and `GEMINI_CLI_TRUST_WORKSPACE=true` so headless Electron chat works outside a trusted folder; use `-p` headless mode (positional prompt + `-s` sandbox hung forever); `--approval-mode plan` for chat-only; 15-minute timeout; strip ANSI codes from CLI error text **(in progress)**
+- **Gemini CLI Copilot hang:** Headless chat no longer runs in your home directory with `--approval-mode plan` (which triggered slow filesystem/image reads). Uses isolated temp cwd, **default** approval mode, compact context, **gemini-2.5-flash** default, stdin for large prompts, 90s first-token timeout, and live tool status while waiting **(in progress)**
 - **Claude Code Copilot exit 1:** Use `--tools ""` (disable all tools) instead of a partial deny list — MCP/plugin tools were still callable, hitting `--max-turns 1` with no reply text; clearer errors from CLI `result.errors` **(in progress)**
 - **Claude Code max turns:** Raise Copilot to `--max-turns 2`, disable slash commands, auto-retry with fresh context on max-turn failures; `#skill-name` in a message loads that skill into the prompt **(in progress)**
 - **Copilot skill inventory:** Inject **CineGen SKILLS** catalog into system context; auto-retry when Claude deflects with “let me check / use Skill tool” instead of listing skills **(in progress)**

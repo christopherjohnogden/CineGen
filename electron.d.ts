@@ -201,7 +201,7 @@ export interface ElectronAPI {
     geminiCancel: (requestId: string) => Promise<void>;
     onClaudeCodeStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => (() => void);
     onCodexStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => (() => void);
-    onGeminiStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => (() => void);
+    onGeminiStream: (cb: (data: { requestId: string; token?: string; done?: boolean; status?: string }) => void) => (() => void);
   };
   vision: {
     indexAsset: (params: {

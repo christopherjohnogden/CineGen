@@ -40,9 +40,16 @@ export async function invokeCliCopilotChat(
   }
 }
 
+export interface CliCopilotStreamEvent {
+  requestId: string;
+  token?: string;
+  done?: boolean;
+  status?: string;
+}
+
 export function subscribeCliCopilotStream(
   provider: CliLlmProviderId,
-  handler: (data: { requestId: string; token?: string; done?: boolean }) => void,
+  handler: (data: CliCopilotStreamEvent) => void,
 ): () => void {
   switch (provider) {
     case 'claude-code':

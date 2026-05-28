@@ -59,7 +59,7 @@ export function getDefaultModelForCliProvider(provider: CliLlmProviderId): strin
     case 'codex':
       return 'gpt-5.3-codex';
     case 'gemini':
-      return 'auto';
+      return 'gemini-2.5-flash';
     default:
       return 'sonnet';
   }

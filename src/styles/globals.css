@@ -6234,6 +6234,13 @@ input[type='range']::-moz-range-track {
 .copilot__thinking-dot:nth-child(2) { animation-delay: 0.2s; }
 .copilot__thinking-dot:nth-child(3) { animation-delay: 0.4s; }
 
+.copilot__stream-status {
+  margin: 0;
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--muted-foreground, #9ca3af);
+}
+
 /* ── Alerts ── */
 
 .copilot__alert {

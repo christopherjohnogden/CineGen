@@ -851,6 +851,7 @@ export function LLMTab({
   const [maxTokens, setMaxTokens] = useState(initialState.maxTokens);
   const [temperature, setTemperature] = useState(initialState.temperature);
   const [isSending, setIsSending] = useState(false);
+  const [cliStreamStatus, setCliStreamStatus] = useState('');
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
   const [error, setError] = useState('');
   const [sideUsage, setSideUsage] = useState<SessionSideUsage | undefined>(initialState.sideUsage);
@@ -1578,10 +1579,15 @@ export function LLMTab({
       setDraft('');
       setError('');
       setIsSending(true);
+      setCliStreamStatus('');
 
       const removeStreamListener = subscribeCliCopilotStream(cliProvider, (data) => {
         if (data.requestId !== requestId) return;
+        if (data.status) {
+          setCliStreamStatus(data.status);
+        }
         if (data.token) {
+          setCliStreamStatus('');
           setMessages((current) => {
             const last = current[current.length - 1];
             if (last?.id !== assistantMessage.id) return current;
@@ -1631,6 +1637,7 @@ export function LLMTab({
           activeSpaceId: workspaceState.activeSpaceId,
           mode: chatWorkMode,
           focusQuery: content,
+          compact: cliProvider === 'gemini',
         });
 
         const contextMessages = refresh
@@ -1831,6 +1838,7 @@ export function LLMTab({
         setMessages((current) => current.filter((m) => m.id !== assistantMessage.id));
       } finally {
         removeStreamListener();
+        setCliStreamStatus('');
         setIsSending(false);
       }
       return;
@@ -3891,6 +3899,20 @@ export function LLMTab({
               <p className="copilot__landing-sub">
                 Running <strong>{localModel}</strong> via Ollama. {localModels.length > 1 ? `${localModels.length} models available.` : ''} Chat is fully local — no API key needed.
               </p>
+
+              {composerBar}
+
+              <div className="copilot__suggestions">
+                {modePromptExamples.map((example) => (
+                  <button
+                    key={example}
+                    className="copilot__suggestion"
+                    onClick={() => { setDraft(example); composerRef.current?.focus(); }}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -3907,6 +3929,20 @@ export function LLMTab({
                   {getCliProviderLabel(mode)} was not found on this machine. Install the CLI, sign in once in Terminal, then restart CineGen.
                 </div>
               )}
+
+              {composerBar}
+
+              <div className="copilot__suggestions">
+                {modePromptExamples.map((example) => (
+                  <button
+                    key={example}
+                    className="copilot__suggestion"
+                    onClick={() => { setDraft(example); composerRef.current?.focus(); }}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -4064,11 +4100,15 @@ export function LLMTab({
                   {isSending && (mode === 'cloud' || !messages[messages.length - 1]?.content) && (
                     <article className="copilot__msg copilot__msg--assistant">
                       <div className="copilot__msg-open">
-                        <div className="copilot__thinking">
-                          <span className="copilot__thinking-dot" />
-                          <span className="copilot__thinking-dot" />
-                          <span className="copilot__thinking-dot" />
-                        </div>
+                        {cliStreamStatus ? (
+                          <p className="copilot__stream-status">{cliStreamStatus}</p>
+                        ) : (
+                          <div className="copilot__thinking">
+                            <span className="copilot__thinking-dot" />
+                            <span className="copilot__thinking-dot" />
+                            <span className="copilot__thinking-dot" />
+                          </div>
+                        )}
                       </div>
                     </article>
                   )}

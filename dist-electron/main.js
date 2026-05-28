@@ -2,7 +2,7 @@ var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { BrowserWindow, screen, ipcMain, app, dialog, shell, protocol, nativeImage, powerMonitor } from "electron";
-import fs$1 from "node:fs/promises";
+import fs$1, { mkdtemp, rm } from "node:fs/promises";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -6333,7 +6333,7 @@ const CHAT_ONLY_SUFFIX$1 = [
   "When an ACTIVE SKILL section is present, follow it directly in chat — never invoke Skill tool or slash commands.",
   "Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands."
 ].join(" ");
-const COPILOT_RESUME_REMINDER = [
+const COPILOT_RESUME_REMINDER$1 = [
   "CineGen Copilot follow-up: answer from project context already established in this conversation.",
   "Do not search the filesystem or CineGen source code. Timelines and clips are in the prior context, not in repo files.",
   "CineGen SKILLS are in the system prompt — list them directly; never use Skill tool or say you will check.",
@@ -6474,7 +6474,7 @@ async function streamClaudeCodeChat(requestId, params) {
   ];
   if (canResume && params.resumeSessionId) {
     args.push("--resume", params.resumeSessionId);
-    const resumeAppend = [(_b = params.systemPrompt) == null ? void 0 : _b.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join("\n\n");
+    const resumeAppend = [(_b = params.systemPrompt) == null ? void 0 : _b.trim(), COPILOT_RESUME_REMINDER$1].filter(Boolean).join("\n\n");
     args.push("--append-system-prompt", resumeAppend);
   } else if (params.injectProjectContext && ((_c = params.systemPrompt) == null ? void 0 : _c.trim())) {
     const refreshPrefix = params.contextRefresh ? "The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n" : "";
@@ -6715,6 +6715,11 @@ const CHAT_ONLY_SUFFIX = [
   "CineGen SKILLS are listed in the system prompt — answer skill inventory questions from that catalog, never via tools.",
   "Respond in plain text or markdown only. Do not invoke tools, skills, or shell commands."
 ].join(" ");
+const COPILOT_RESUME_REMINDER = [
+  "CineGen Copilot follow-up: answer from project context already established in this conversation.",
+  "Do not search the filesystem or CineGen source code. Timelines and clips are in the prior context, not in repo files.",
+  "For clip/timeline lists: numbered list + [timeline:Name / clip:ClipName @ time] citations only — never markdown tables, even when repeating an earlier answer."
+].join(" ");
 const ENHANCE_PROMPT_SUFFIX = [
   "CineGen prompt-rewrite mode: rewrite the user's rough Copilot prompt only.",
   "Do NOT answer the prompt or reveal project facts, clip names, durations, or asset IDs.",
@@ -6873,6 +6878,8 @@ function registerCodexCliHandlers() {
   });
 }
 let activeRequest = null;
+const FIRST_TOKEN_TIMEOUT_MS = 9e4;
+const PROMPT_STDIN_THRESHOLD = 8e3;
 function buildGeminiPrompt(params) {
   var _a;
   const systemParts = [];
@@ -6897,6 +6904,20 @@ ${params.userMessage.trim()}
 Assistant:
 ` : params.userMessage.trim();
 }
+function buildGeminiResumePrompt(params) {
+  var _a;
+  const prefix = [(_a = params.systemPrompt) == null ? void 0 : _a.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join("\n\n");
+  return prefix ? `${prefix}
+
+User:
+${params.userMessage.trim()}
+
+Assistant:
+` : `${params.userMessage.trim()}
+
+Assistant:
+`;
+}
 function parseGeminiUsage(obj) {
   const stats = obj.stats;
   if (!stats) return void 0;
@@ -6905,6 +6926,14 @@ function parseGeminiUsage(obj) {
   const totalTokens = Number(stats.total_tokens) || promptTokens + completionTokens;
   if (totalTokens <= 0) return void 0;
   return { promptTokens, completionTokens, totalTokens, cost: 0 };
+}
+function formatGeminiToolStatus(toolName) {
+  if (typeof toolName !== "string" || !toolName.trim()) return "Gemini CLI is working…";
+  const label = toolName.replace(/_/g, " ");
+  return `Gemini CLI: ${label}…`;
+}
+function isFatalGeminiStreamError(message) {
+  return /malformed tool call|empty response|API Error|INVALID_ARGUMENT/i.test(message);
 }
 async function streamGeminiChat(requestId, params) {
   var _a;
@@ -6915,19 +6944,20 @@ async function streamGeminiChat(requestId, params) {
   if (!params.userMessage.trim()) {
     throw new Error("No chat message provided.");
   }
-  const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "auto";
+  const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "gemini-2.5-flash";
   const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
-  const prompt = canResume ? params.userMessage.trim() : buildGeminiPrompt(params);
+  const prompt = canResume ? buildGeminiResumePrompt(params) : buildGeminiPrompt(params);
+  const useStdin = prompt.length > PROMPT_STDIN_THRESHOLD;
+  const workDir = await mkdtemp(path.join(os.tmpdir(), "cinegen-gemini-"));
   const args = [
     "--skip-trust",
-    "-p",
-    prompt,
+    ...useStdin ? ["-p", ""] : ["-p", prompt],
     "-o",
     "stream-json",
     "-m",
     model,
     "--approval-mode",
-    "plan"
+    "default"
   ];
   if (canResume && params.resumeSessionId) {
     args.push("-r", params.resumeSessionId);
@@ -6939,19 +6969,30 @@ async function streamGeminiChat(requestId, params) {
   let usage;
   const chatTimeoutMs = 15 * 60 * 1e3;
   return new Promise((resolve, reject) => {
-    var _a2, _b;
+    var _a2, _b, _c, _d;
     const child = spawn(binary, args, {
       env: buildGeminiCliEnv(),
-      cwd: os.homedir(),
-      stdio: ["ignore", "pipe", "pipe"]
+      cwd: workDir,
+      stdio: useStdin ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"]
     });
+    if (useStdin) {
+      (_a2 = child.stdin) == null ? void 0 : _a2.write(prompt);
+      (_b = child.stdin) == null ? void 0 : _b.end();
+    }
     activeRequest = { child, requestId, provider: "gemini" };
     let lineBuffer = "";
     let settled = false;
+    let firstTokenReceived = false;
+    const cleanupWorkDir = () => {
+      void rm(workDir, { recursive: true, force: true }).catch(() => {
+      });
+    };
     const finish = (handler) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
+      clearTimeout(firstTokenTimeoutId);
+      cleanupWorkDir();
       handler();
     };
     const timeoutId = setTimeout(() => {
@@ -6959,7 +7000,15 @@ async function streamGeminiChat(requestId, params) {
       child.kill("SIGTERM");
       finish(() => reject(new Error("Gemini CLI timed out after 15 minutes. Try again or switch models.")));
     }, chatTimeoutMs);
-    (_a2 = child.stdout) == null ? void 0 : _a2.on("data", (chunk) => {
+    const firstTokenTimeoutId = setTimeout(() => {
+      if (firstTokenReceived || settled) return;
+      activeRequest = null;
+      child.kill("SIGTERM");
+      finish(() => reject(new Error(
+        "Gemini CLI is taking too long to respond. Try gemini-2.5-flash, shorten the question, or start a new chat."
+      )));
+    }, FIRST_TOKEN_TIMEOUT_MS);
+    (_c = child.stdout) == null ? void 0 : _c.on("data", (chunk) => {
       lineBuffer += chunk.toString();
       let newlineIdx;
       while ((newlineIdx = lineBuffer.indexOf("\n")) >= 0) {
@@ -6973,13 +7022,27 @@ async function streamGeminiChat(requestId, params) {
           }
           const parsedUsage = parseGeminiUsage(obj);
           if (parsedUsage) usage = parsedUsage;
+          if (obj.type === "tool_use") {
+            win == null ? void 0 : win.webContents.send("llm:gemini-stream", {
+              requestId,
+              status: formatGeminiToolStatus(obj.tool_name)
+            });
+          }
           if (obj.type === "message" && obj.role === "assistant" && typeof obj.content === "string") {
             const token = obj.content;
-            fullContent += token;
-            win == null ? void 0 : win.webContents.send("llm:gemini-stream", { requestId, token });
+            if (token) {
+              firstTokenReceived = true;
+              fullContent += token;
+              win == null ? void 0 : win.webContents.send("llm:gemini-stream", { requestId, token });
+            }
           }
           if (obj.type === "error" && typeof obj.message === "string") {
             stderrBuffer += obj.message;
+            if (!fullContent.trim() && isFatalGeminiStreamError(obj.message)) {
+              activeRequest = null;
+              child.kill("SIGTERM");
+              finish(() => reject(new Error(stripAnsiCodes(obj.message))));
+            }
           }
           if (obj.type === "result" && obj.status === "error") {
             const resultError = typeof obj.error === "string" ? obj.error : typeof obj.message === "string" ? obj.message : "Gemini CLI returned an error.";
@@ -6989,7 +7052,7 @@ async function streamGeminiChat(requestId, params) {
         }
       }
     });
-    (_b = child.stderr) == null ? void 0 : _b.on("data", (chunk) => {
+    (_d = child.stderr) == null ? void 0 : _d.on("data", (chunk) => {
       stderrBuffer += chunk.toString();
     });
     child.on("error", (error) => {

@@ -63,8 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('llm:codex-stream', handler);
       return () => ipcRenderer.removeListener('llm:codex-stream', handler);
     },
-    onGeminiStream: (cb: (data: { requestId: string; token?: string; done?: boolean }) => void) => {
-      const handler = (_e: Electron.IpcRendererEvent, d: { requestId: string; token?: string; done?: boolean }) => cb(d);
+    onGeminiStream: (cb: (data: { requestId: string; token?: string; done?: boolean; status?: string }) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, d: { requestId: string; token?: string; done?: boolean; status?: string }) => cb(d);
       ipcRenderer.on('llm:gemini-stream', handler);
       return () => ipcRenderer.removeListener('llm:gemini-stream', handler);
     },
