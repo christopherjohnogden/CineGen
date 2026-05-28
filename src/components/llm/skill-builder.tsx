@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { SkillAuthoringPanel } from '@/components/llm/skill-authoring-panel';
+import { saveSkillDraft, type ParsedSkillDraft } from '@/lib/llm/skill-authoring';
+import type { CliLlmSessionState, CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import {
   createBlankSkill,
   createSkillFromTemplate,
@@ -13,18 +16,47 @@ import {
   type LLMSkill,
 } from '@/lib/llm/skills';
 
+type LLMMode = 'cloud' | 'local' | CliLlmProviderId;
+
+interface CliProviderInfo {
+  id: CliLlmProviderId;
+  installed: boolean;
+}
+
+type EditorPanelMode = 'empty' | 'create-prompt' | 'authoring' | 'edit';
+
 interface SkillBuilderProps {
   open: boolean;
   onClose: () => void;
   activeSkillId: string | null;
   onActiveSkillChange: (skillId: string | null) => void;
+  mode: LLMMode;
+  model: string;
+  localModel: string;
+  falKey?: string;
+  cliProviders: Record<CliLlmProviderId, CliProviderInfo>;
+  cliSession: CliLlmSessionState;
 }
 
-export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange }: SkillBuilderProps) {
+export function SkillBuilder({
+  open,
+  onClose,
+  activeSkillId,
+  onActiveSkillChange,
+  mode,
+  model,
+  localModel,
+  falKey,
+  cliProviders,
+  cliSession,
+}: SkillBuilderProps) {
   const [skills, setSkills] = useState<LLMSkill[]>(() => loadSkills());
   const [selectedId, setSelectedId] = useState<string | null>(activeSkillId);
   const [draft, setDraft] = useState<LLMSkill | null>(null);
   const [saveError, setSaveError] = useState('');
+  const [panelMode, setPanelMode] = useState<EditorPanelMode>('empty');
+  const [createPrompt, setCreatePrompt] = useState('');
+  const [authorSeed, setAuthorSeed] = useState('');
 
   const selectedSkill = useMemo(
     () => skills.find((skill) => skill.id === selectedId) ?? null,
@@ -34,6 +66,7 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
   const syncDraft = useCallback((skill: LLMSkill | null) => {
     setDraft(skill ? { ...skill } : null);
     setSaveError('');
+    setPanelMode(skill ? 'edit' : 'empty');
   }, []);
 
   useEffect(() => {
@@ -43,6 +76,8 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
     const initial = latest.find((skill) => skill.id === activeSkillId) ?? latest[0] ?? null;
     setSelectedId(initial?.id ?? null);
     syncDraft(initial);
+    setCreatePrompt('');
+    setAuthorSeed('');
   }, [activeSkillId, open, syncDraft]);
 
   useEffect(() => {
@@ -62,7 +97,18 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
   const handleSelect = useCallback((skill: LLMSkill) => {
     setSelectedId(skill.id);
     syncDraft(skill);
+    setCreatePrompt('');
+    setAuthorSeed('');
   }, [syncDraft]);
+
+  const handleStartCreate = useCallback(() => {
+    setSelectedId(null);
+    setDraft(null);
+    setSaveError('');
+    setCreatePrompt('');
+    setAuthorSeed('');
+    setPanelMode('create-prompt');
+  }, []);
 
   const handleCreateBlank = useCallback(() => {
     const skill = createBlankSkill();
@@ -70,6 +116,8 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
     persistSkills(next);
     setSelectedId(skill.id);
     syncDraft(skill);
+    setCreatePrompt('');
+    setAuthorSeed('');
   }, [persistSkills, skills, syncDraft]);
 
   const handleCreateFromTemplate = useCallback((templateIndex: number) => {
@@ -81,6 +129,33 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
     setSelectedId(skill.id);
     syncDraft(skill);
   }, [persistSkills, skills, syncDraft]);
+
+  const handleStartAuthoring = useCallback(() => {
+    const seed = createPrompt.trim()
+      ? `Help me create a Copilot skill for: ${createPrompt.trim()}`
+      : 'Help me create a new Copilot skill. Ask me what you need to know.';
+    setAuthorSeed(seed);
+    setPanelMode('authoring');
+  }, [createPrompt]);
+
+  const handleAuthoringDraftReady = useCallback((parsed: ParsedSkillDraft) => {
+    const skill = updateSkillRecord(createBlankSkill(), {
+      name: parsed.name,
+      description: parsed.description,
+      instructions: parsed.instructions,
+    });
+    setDraft(skill);
+    setPanelMode('edit');
+  }, []);
+
+  const handleSaveAuthoringDraft = useCallback((parsed: ParsedSkillDraft) => {
+    const { skill } = saveSkillDraft(parsed);
+    const next = [...skills, skill];
+    persistSkills(next);
+    setSelectedId(skill.id);
+    syncDraft(skill);
+    onActiveSkillChange(skill.id);
+  }, [onActiveSkillChange, persistSkills, skills, syncDraft]);
 
   const handleSave = useCallback(() => {
     if (!draft) return;
@@ -137,7 +212,7 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
     try {
       await navigator.clipboard.writeText(markdown);
     } catch {
-      // fallback: no clipboard
+      // ignore clipboard failures
     }
   }, [draft]);
 
@@ -181,7 +256,7 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
         <div className="copilot__skills-body">
           <aside className="copilot__skills-list-pane">
             <div className="copilot__skills-list-actions">
-              <button type="button" className="copilot__skills-action" onClick={handleCreateBlank}>New skill</button>
+              <button type="button" className="copilot__skills-action" onClick={handleStartCreate}>New skill</button>
               <div className="copilot__skills-template-wrap">
                 <select
                   className="copilot__skills-template-select"
@@ -225,9 +300,59 @@ export function SkillBuilder({ open, onClose, activeSkillId, onActiveSkillChange
           </aside>
 
           <section className="copilot__skills-editor">
-            {!draft ? (
+            {panelMode === 'create-prompt' && (
+              <div className="copilot__skills-create">
+                <span className="copilot__skills-create-title">New skill</span>
+                <p className="copilot__skills-create-copy">
+                  Optionally describe what you want — your installed CLI (or Cloud/Local fallback) will ask a few questions and draft the skill for you.
+                </p>
+                <label className="copilot__skills-field" htmlFor="skill-create-prompt">
+                  <span className="copilot__settings-label">What should this skill do?</span>
+                  <textarea
+                    id="skill-create-prompt"
+                    className="copilot__settings-textarea"
+                    rows={4}
+                    value={createPrompt}
+                    onChange={(event) => setCreatePrompt(event.target.value)}
+                    placeholder="e.g. Build shot lists from interview transcripts with coverage notes and duration estimates"
+                  />
+                </label>
+                <div className="copilot__skills-create-actions">
+                  <button type="button" className="copilot__btn copilot__btn--accent" onClick={handleStartAuthoring}>
+                    Build with AI
+                  </button>
+                  <button type="button" className="copilot__btn copilot__btn--ghost" onClick={handleCreateBlank}>
+                    Blank skill
+                  </button>
+                  <button type="button" className="copilot__btn copilot__btn--ghost" onClick={() => setPanelMode(selectedSkill ? 'edit' : 'empty')}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {panelMode === 'authoring' && (
+              <SkillAuthoringPanel
+                key={authorSeed}
+                seedPrompt={authorSeed}
+                mode={mode}
+                model={model}
+                localModel={localModel}
+                falKey={falKey}
+                cliProviders={cliProviders}
+                cliSession={cliSession}
+                onDraftReady={handleAuthoringDraftReady}
+                onCancel={() => setPanelMode('create-prompt')}
+                showSaveButton
+                onSave={handleSaveAuthoringDraft}
+              />
+            )}
+
+            {panelMode === 'empty' && (
               <div className="copilot__skills-editor-empty">Select or create a skill to edit.</div>
-            ) : (
+            )}
+
+            {panelMode === 'edit' && draft && (
               <>
                 <div className="copilot__skills-field">
                   <label className="copilot__settings-label" htmlFor="skill-name">Name</label>

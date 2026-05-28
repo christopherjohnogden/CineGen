@@ -27,6 +27,8 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - Built-in templates: **shot-list**, **editorial-brief**, **prompt-writer**
 - **Import / export** via SKILL.md (YAML frontmatter + markdown body); skills stored app-wide in localStorage
 - Active skill highlighted in main nav, sidebar, and skill list
+- **AI skill authoring:** **New skill → Build with AI** opens a guided Q&A; uses installed CLI first (Claude Code / Codex / Gemini), then Cloud or Local
+- **Chat skill authoring:** ask Copilot to “create a skill for …” — same guided flow in chat with a **Save skill** button when the draft is ready
 
 ---
 

@@ -7133,6 +7133,193 @@ input[type='range']::-moz-range-track {
   background: rgba(255, 80, 80, 0.08);
 }
 
+.copilot__skills-create {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.copilot__skills-create-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.copilot__skills-create-copy {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+}
+
+.copilot__skills-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.copilot__skill-author {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.copilot__skill-author-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copilot__skill-author-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.copilot__skill-author-backend {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.copilot__skill-author-thread {
+  flex: 1;
+  min-height: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.copilot__skill-author-msg {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.copilot__skill-author-msg--assistant {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+}
+
+.copilot__skill-author-msg--user {
+  align-self: flex-end;
+  background: rgba(214, 168, 92, 0.12);
+  color: var(--text-primary);
+}
+
+.copilot__skill-author-draft {
+  padding: 12px;
+  border: 1px solid rgba(214, 168, 92, 0.22);
+  border-radius: 10px;
+  background: rgba(214, 168, 92, 0.06);
+}
+
+.copilot__skill-author-draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.copilot__skill-author-draft-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.copilot__skill-author-draft-desc {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-tertiary);
+}
+
+.copilot__skill-author-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.copilot__skill-author-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.copilot__skill-draft {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(214, 168, 92, 0.22);
+  border-radius: 12px;
+  background: rgba(214, 168, 92, 0.06);
+}
+
+.copilot__skill-draft-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copilot__skill-draft-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.copilot__skill-draft-name {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.copilot__skill-draft-desc {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.copilot__skill-draft--saved {
+  padding: 10px 14px;
+}
+
+.copilot__skill-draft-saved {
+  font-size: 12px;
+  color: var(--accent);
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {

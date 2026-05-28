@@ -108,7 +108,7 @@ function slugifySkillName(value: string): string {
     .slice(0, 64);
 }
 
-function normalizeSkillName(value: string): string {
+export function normalizeSkillName(value: string): string {
   const slug = slugifySkillName(value);
   return slug || 'untitled-skill';
 }

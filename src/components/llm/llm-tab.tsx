@@ -53,6 +53,16 @@ import {
   type LLMSkill,
 } from '@/lib/llm/skills';
 import { SkillBuilder } from '@/components/llm/skill-builder';
+import {
+  detectSkillAuthoringCancel,
+  detectSkillAuthoringIntent,
+  isSkillAuthoringThread,
+  resolveSkillAuthoringBackend,
+  saveSkillDraft,
+  sendSkillAuthoringTurn,
+  stripSkillDraftBlock,
+  type ParsedSkillDraft,
+} from '@/lib/llm/skill-authoring';
 
 type LLMMode = 'cloud' | 'local' | CliLlmProviderId;
 
@@ -126,6 +136,9 @@ interface ChatMessage {
   appliedTimelineName?: string;
   unresolvedSegmentCount?: number;
   applicationError?: string;
+  skillAuthoring?: boolean;
+  skillDraft?: ParsedSkillDraft;
+  skillDraftSaved?: boolean;
 }
 
 interface StoredLLMState {
@@ -824,6 +837,8 @@ export function LLMTab({
   const [showSkillBuilder, setShowSkillBuilder] = useState(false);
   const [skills, setSkills] = useState<LLMSkill[]>(() => loadSkills());
   const [activeSkillId, setActiveSkillId] = useState<string | null>(initialState.activeSkillId ?? null);
+  const [skillAuthoringActive, setSkillAuthoringActive] = useState(false);
+  const [skillAuthoringCliSessionId, setSkillAuthoringCliSessionId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [indexPopover, setIndexPopover] = useState<'assets' | 'transcripts' | 'clips' | null>(null);
   const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
@@ -988,6 +1003,8 @@ export function LLMTab({
     setMaxTokens(next.maxTokens);
     setTemperature(next.temperature);
     setActiveSkillId(next.activeSkillId ?? null);
+    setSkillAuthoringActive(false);
+    setSkillAuthoringCliSessionId(null);
     setSideUsage(next.sideUsage);
     setError('');
     setIsSending(false);
@@ -1294,11 +1311,127 @@ export function LLMTab({
     return applied.timeline;
   }, [assets, onCreateTimelineFromCut, timelines]);
 
+  const handleSaveSkillFromChat = useCallback((messageId: string) => {
+    const target = messages.find((message) => message.id === messageId);
+    if (!target?.skillDraft) return;
+
+    const { skill } = saveSkillDraft(target.skillDraft);
+    setSkills(loadSkills());
+    setActiveSkillId(skill.id);
+    setMessages((current) => current.map((message) => (
+      message.id === messageId
+        ? { ...message, skillDraftSaved: true }
+        : message
+    )));
+    setSkillAuthoringActive(false);
+    setSkillAuthoringCliSessionId(null);
+  }, [messages]);
+
+  const handleSkillAuthoringTurn = useCallback(async (content: string) => {
+    const backend = resolveSkillAuthoringBackend({
+      mode,
+      cliProviders,
+      model,
+      localModel,
+      falKey,
+      cliSession: skillAuthoringCliSessionId
+        ? { provider: cliSession.provider, model: cliSession.model, sessionId: skillAuthoringCliSessionId }
+        : cliSession,
+    });
+
+    if (!backend) {
+      setError('Install a CLI, add a fal.ai API key, or select a local model to build skills with AI.');
+      return;
+    }
+
+    const userMessage = createMessage('user', content, { skillAuthoring: true });
+    const assistantMessage = createMessage('assistant', '', { skillAuthoring: true });
+    const priorHistory = messages
+      .filter((message) => message.skillAuthoring)
+      .map((message) => ({
+        role: message.role,
+        content: message.role === 'assistant'
+          ? stripSkillDraftBlock(message.content)
+          : message.content,
+      }));
+
+    setMessages([...messages, userMessage, assistantMessage]);
+    setDraft('');
+    setError('');
+    setIsSending(true);
+
+    const requestId = crypto.randomUUID();
+    let streamed = '';
+
+    try {
+      const resolvedBackend = backend.kind === 'cli'
+        ? { ...backend, resumeSessionId: skillAuthoringCliSessionId }
+        : backend;
+
+      const result = await sendSkillAuthoringTurn({
+        backend: resolvedBackend,
+        history: priorHistory,
+        userMessage: content,
+        requestId,
+        onToken: (token) => {
+          streamed += token;
+          setMessages((current) => {
+            const last = current[current.length - 1];
+            if (!last || last.id !== assistantMessage.id) return current;
+            return [...current.slice(0, -1), { ...last, content: streamed }];
+          });
+        },
+      });
+
+      if (result.sessionId) setSkillAuthoringCliSessionId(result.sessionId);
+
+      setMessages((current) => {
+        const last = current[current.length - 1];
+        if (!last || last.id !== assistantMessage.id) return current;
+        return [...current.slice(0, -1), {
+          ...last,
+          content: result.displayMessage,
+          skillDraft: result.draft ?? undefined,
+          ...(result.usage ? { usage: result.usage } : {}),
+        }];
+      });
+    } catch (authoringError) {
+      const errMsg = authoringError instanceof Error ? authoringError.message : 'Failed to build skill.';
+      setError(errMsg);
+      setMessages((current) => current.filter((message) => message.id !== assistantMessage.id));
+    } finally {
+      setIsSending(false);
+    }
+  }, [cliSession, cliProviders, falKey, localModel, messages, mode, model, skillAuthoringCliSessionId]);
+
   const handleSend = useCallback(async () => {
     if (isSending) return;
 
     const content = draft.trim();
     if (!content) return;
+
+    const shouldAuthorSkill = skillAuthoringActive
+      || detectSkillAuthoringIntent(content)
+      || isSkillAuthoringThread(messages);
+
+    if (shouldAuthorSkill) {
+      if (detectSkillAuthoringCancel(content)) {
+        const userMessage = createMessage('user', content, { skillAuthoring: true });
+        const assistantMessage = createMessage('assistant', 'Skill builder cancelled.', { skillAuthoring: true });
+        setMessages([...messages, userMessage, assistantMessage]);
+        setDraft('');
+        setSkillAuthoringActive(false);
+        setSkillAuthoringCliSessionId(null);
+        return;
+      }
+
+      if (detectSkillAuthoringIntent(content)) {
+        setSkillAuthoringActive(true);
+      }
+
+      await handleSkillAuthoringTurn(content);
+      return;
+    }
 
     /* ── CLI subscription modes: Claude Code, Codex, Gemini CLI ── */
     if (isCliBackendMode(mode)) {
@@ -1662,7 +1795,7 @@ export function LLMTab({
     } finally {
       setIsSending(false);
     }
-  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, skillSystemPrompt, systemPrompt, temperature, timelines, workModeOverride]);
+  }, [activeTimelineId, assets, cliProviders, cliSession, draft, elements, handleSkillAuthoringTurn, isSending, localModel, maxTokens, mediaFolders, messages, mode, model, normalizeAssistantCitations, onUpdateAssetAnalysis, projectId, projectInsightIndex, skillAuthoringActive, skillSystemPrompt, systemPrompt, temperature, timelines, workModeOverride]);
 
   const handleComposerKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey) return;
@@ -1731,6 +1864,8 @@ export function LLMTab({
     setSideUsage(undefined);
     setActiveSessionId(null);
     setActiveSkillId(null);
+    setSkillAuthoringActive(false);
+    setSkillAuthoringCliSessionId(null);
     setCliSession(DEFAULT_CLI_LLM_SESSION);
   }, [saveCurrentSession]);
 
@@ -2429,7 +2564,9 @@ export function LLMTab({
       applicationError: message.applicationError,
     }] : legacyParsedCutSet?.proposals.map((proposal) => ({ proposal })) ?? []);
     const messageBodyContent = sanitizeWorkflowMessageContent(
-      legacyParsedCutSet?.cleanedMessage || message.content,
+      legacyParsedCutSet?.cleanedMessage || (
+        message.skillDraft ? stripSkillDraftBlock(message.content) : message.content
+      ),
       workflow,
     );
     const canCreateCombinedTimeline = messageCutPlans.length > 1;
@@ -2462,6 +2599,31 @@ export function LLMTab({
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {message.skillDraft && !message.skillDraftSaved && (
+          <div className="copilot__skill-draft">
+            <div className="copilot__skill-draft-head">
+              <div>
+                <div className="copilot__skill-draft-title">Skill draft ready</div>
+                <div className="copilot__skill-draft-name">{message.skillDraft.name}</div>
+              </div>
+              <button
+                type="button"
+                className="copilot__btn copilot__btn--accent"
+                onClick={() => handleSaveSkillFromChat(message.id)}
+              >
+                Save skill
+              </button>
+            </div>
+            <p className="copilot__skill-draft-desc">{message.skillDraft.description}</p>
+          </div>
+        )}
+
+        {message.skillDraftSaved && (
+          <div className="copilot__skill-draft copilot__skill-draft--saved">
+            <span className="copilot__skill-draft-saved">Skill saved to your skills list.</span>
           </div>
         )}
 
@@ -2929,10 +3091,12 @@ export function LLMTab({
     handleApplyWorkflowCutPlan,
     handleGenerateCutVariants,
     handleOpenAppliedTimeline,
+    handleSaveSkillFromChat,
     handleSelectClarifyingOption,
     handleSetCutPreviewMode,
     handleUpdateBriefField,
     handleUpdateClarifyingCustom,
+    isCliLlmMode,
     messages,
     renderMessageContent,
     timelines,
@@ -3509,6 +3673,12 @@ export function LLMTab({
           onClose={() => setShowSkillBuilder(false)}
           activeSkillId={activeSkillId}
           onActiveSkillChange={setActiveSkillId}
+          mode={mode}
+          model={model}
+          localModel={localModel}
+          falKey={falKey}
+          cliProviders={cliProviders}
+          cliSession={cliSession}
         />
 
         {/* Backend toggle (visible on landing) */}
