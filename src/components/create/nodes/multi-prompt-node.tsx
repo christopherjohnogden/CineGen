@@ -7,22 +7,22 @@ import { MentionTextarea } from './mention-textarea';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import type { WorkflowNodeData } from '@/types/workflow';
 
-interface Shot {
+interface MultiPromptShot {
   prompt: string;
   duration: number;
 }
 
-type ShotPromptNodeProps = NodeProps & { data: WorkflowNodeData };
+type MultiPromptNodeProps = NodeProps & { data: WorkflowNodeData };
 
 const DURATION_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-function ShotPromptNodeInner({ id, data, selected }: ShotPromptNodeProps) {
+function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
   const { updateNodeData } = useReactFlow();
   const { state } = useWorkspace();
-  const shots: Shot[] = (data.config?.shots as Shot[]) ?? [{ prompt: '', duration: 5 }];
+  const shots: MultiPromptShot[] = (data.config?.shots as MultiPromptShot[]) ?? [{ prompt: '', duration: 5 }];
 
   const updateShots = useCallback(
-    (newShots: Shot[]) => {
+    (newShots: MultiPromptShot[]) => {
       updateNodeData(id, { config: { ...data.config, shots: newShots } });
     },
     [id, data.config, updateNodeData],
@@ -57,15 +57,15 @@ function ShotPromptNodeInner({ id, data, selected }: ShotPromptNodeProps) {
   );
 
   return (
-    <BaseNode nodeType="shotPrompt" selected={!!selected}>
-      <div className="shot-prompt-node__shots">
+    <BaseNode nodeType="multiPrompt" selected={!!selected}>
+      <div className="multi-prompt-node__shots">
         {shots.map((shot, i) => (
-          <div key={i} className="shot-prompt-node__shot">
-            <div className="shot-prompt-node__shot-header">
-              <span className="shot-prompt-node__shot-label">Shot {i + 1}</span>
-              <div className="shot-prompt-node__shot-controls">
+          <div key={i} className="multi-prompt-node__shot">
+            <div className="multi-prompt-node__shot-header">
+              <span className="multi-prompt-node__shot-label">Shot {i + 1}</span>
+              <div className="multi-prompt-node__shot-controls">
                 <select
-                  className="shot-prompt-node__duration nodrag nowheel"
+                  className="multi-prompt-node__duration nodrag nowheel"
                   value={shot.duration}
                   onChange={(e) => handleDurationChange(i, Number(e.target.value))}
                 >
@@ -76,7 +76,7 @@ function ShotPromptNodeInner({ id, data, selected }: ShotPromptNodeProps) {
                 {shots.length > 1 && (
                   <button
                     type="button"
-                    className="shot-prompt-node__remove-btn nodrag"
+                    className="multi-prompt-node__remove-btn nodrag"
                     onClick={() => removeShot(i)}
                   >
                     &times;
@@ -96,7 +96,7 @@ function ShotPromptNodeInner({ id, data, selected }: ShotPromptNodeProps) {
       </div>
       <button
         type="button"
-        className="shot-prompt-node__add-btn nodrag"
+        className="multi-prompt-node__add-btn nodrag"
         onClick={addShot}
       >
         + Add Shot
@@ -105,4 +105,4 @@ function ShotPromptNodeInner({ id, data, selected }: ShotPromptNodeProps) {
   );
 }
 
-export const ShotPromptNode = memo(ShotPromptNodeInner);
+export const MultiPromptNode = memo(MultiPromptNodeInner);

@@ -91,7 +91,7 @@ A full-canvas node editor (React Flow) for building AI generation pipelines. Pre
 - **Image models** — FLUX Dev, FLUX 2 Max, Fast SDXL, SD3 Medium, Nano Banana Pro, Flux Kontext, Flux 2 Pro, GPT-4o Image
 - **Video models** — Kling 3.0, LTX 2.3, Veo 3.1, Runway Gen-4, Sora 2, MiniMax, Wan 2.6 Flash
 - **Audio** — ElevenLabs Music, Suno Music
-- **Utility nodes** — Prompt, Shot Prompt, Element, Composition Plan, File Picker, Music Prompt, Asset Output
+- **Utility nodes** — Prompt, Multi Prompt, Element, Composition Plan, File Picker, Music Prompt, Asset Output
 - **Storyboarder node** — describe a scene and an LLM (Gemini, Claude, GPT-4.1, Llama 4) breaks it into 3–12 sequential shots with camera prompts, dialogue, and negative prompts. Optionally generate video for each shot and import the entire sequence to the timeline in one click
 - **Shot Board node** — 9-cell grid of camera angles (wide, close-up, over-shoulder, etc.) generated from a single reference image for rapid character coverage
 - **Composition Plan node** — multi-section music scoring with per-section style tags, duration, lyrics, and global style overrides

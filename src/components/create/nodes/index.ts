@@ -1,6 +1,6 @@
 import { PromptNode } from './prompt-node';
 import { AssetOutputNode } from './asset-output-node';
-import { ShotPromptNode } from './shot-prompt-node';
+import { MultiPromptNode } from './multi-prompt-node';
 import { CompositionPlanNode } from './composition-plan-node';
 import { MusicPromptNode } from './music-prompt-node';
 import { ElementNode } from './element-node';
@@ -23,7 +23,8 @@ export const nodeTypes: Record<string, React.ComponentType<any>> = {
   group: GroupNode,
   prompt: PromptNode,
   assetOutput: AssetOutputNode,
-  shotPrompt: ShotPromptNode,
+  multiPrompt: MultiPromptNode,
+  shotPrompt: MultiPromptNode,
   compositionPlan: CompositionPlanNode,
   musicPrompt: MusicPromptNode,
   element: ElementNode,

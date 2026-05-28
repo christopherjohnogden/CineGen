@@ -4567,7 +4567,7 @@ function registerWorkflowHandlers() {
     const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, nodeId, nodeType, modelId, inputs: rawInputs } = params;
     if (apiKey) configureFal(apiKey);
     const inputs = await resolveLocalMediaUrls(rawInputs);
-    const { ALL_MODELS } = await import("./models-a4WF-RtF.js");
+    const { ALL_MODELS, isKlingV3NodeType, resolveKlingV3ModelId } = await import("./models-Deu8Ltpy.js");
     const modelDef = ALL_MODELS[modelId] ?? Object.values(ALL_MODELS).find(
       (m) => m.id === modelId || m.altId === modelId || m.nodeType === modelId
     );
@@ -4581,7 +4581,13 @@ function registerWorkflowHandlers() {
       }
       throw new Error(`Unknown model: ${modelId}`);
     }
-    const apiModelId = modelId.includes("/") ? modelId : modelDef.id;
+    let apiModelId = modelId.includes("/") ? modelId : modelDef.id;
+    const registryNodeType = modelDef.nodeType ?? modelId;
+    if (isKlingV3NodeType(registryNodeType)) {
+      const mode = registryNodeType === "kling-3-image" ? "image-to-video" : "text-to-video";
+      apiModelId = resolveKlingV3ModelId(mode, inputs.quality);
+      delete inputs.quality;
+    }
     let result;
     const provider = modelDef.provider;
     if (provider === "kie") {

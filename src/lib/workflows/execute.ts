@@ -12,7 +12,7 @@ import {
   parseLayerDecomposeVisionMaskLabels,
   parseLayerDecomposeVisionOutput,
 } from './layer-decompose';
-import { getModelDefinition } from '@/lib/fal/models';
+import { getModelDefinition, isKlingV3NodeType, resolveKlingV3ModelId } from '@/lib/fal/models';
 import type { TranscriptSegment, TranscriptWord, WorkflowNodeData } from '@/types/workflow';
 import type { Element } from '@/types/elements';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
@@ -672,6 +672,7 @@ function resolveUtilityOutputs(
       case 'prompt':
         output[port.id] = data.config.prompt;
         break;
+      case 'multiPrompt':
       case 'shotPrompt':
         output[port.id] = data.config.shots;
         break;
@@ -803,6 +804,9 @@ async function executeModelNode(
           // Nano-banana/generic format: flat array of all image URLs
           const existing = Array.isArray(falInputs[field.falParam]) ? falInputs[field.falParam] as string[] : [];
           falInputs[field.falParam] = [...existing, ...items.flatMap((el) => el.allUrls)];
+        } else if (field.falParam === 'video_urls' || field.falParam === 'audio_urls') {
+          const existing = Array.isArray(falInputs[field.falParam]) ? falInputs[field.falParam] as string[] : [];
+          falInputs[field.falParam] = [...existing, ...items.map((el) => el.frontalImageUrl)];
         } else {
           // Fallback: pass frontal URLs as array
           falInputs[field.falParam] = items.map((el) => el.frontalImageUrl);
@@ -830,7 +834,9 @@ async function executeModelNode(
         || field.falParam === 'filesUrl'
         || field.falParam === 'imageUrls'
         || field.falParam === 'image_input'
-        || field.falParam === 'urls';
+        || field.falParam === 'urls'
+        || field.falParam === 'video_urls'
+        || field.falParam === 'audio_urls';
 
       if (isElementData && needsArrayParam) {
         const urls = (value as { allUrls?: string[] }).allUrls ?? [(value as { frontalImageUrl?: string }).frontalImageUrl].filter(Boolean);
@@ -842,7 +848,8 @@ async function executeModelNode(
       } else if (typeof value === 'string' && needsArrayParam) {
         falInputs[field.falParam] = [value];
       } else if (field.portType === 'number' && field.fieldType === 'select' && typeof value === 'string') {
-        falInputs[field.falParam] = Number(value);
+        const numeric = Number(value);
+        falInputs[field.falParam] = Number.isFinite(numeric) && value.trim() !== '' ? numeric : value;
       } else {
         falInputs[field.falParam] = value;
       }
@@ -935,7 +942,49 @@ async function executeModelNode(
       (f) => (f.portType === 'image' && (f.fieldType === 'port' || f.fieldType === 'element-list'))
         && (portInputs[f.id] || Object.keys(portInputs).some((k) => k.startsWith(f.id + '_'))),
     );
-    const effectiveModelId = (hasImageInputs && modelDef.altId) ? modelDef.altId : modelDef.id;
+    let effectiveModelId: string;
+    if (isKlingV3NodeType(modelDef.nodeType)) {
+      const mode = modelDef.nodeType === 'kling-3-image' ? 'image-to-video' : 'text-to-video';
+      effectiveModelId = resolveKlingV3ModelId(mode, String(falInputs.quality ?? data.config.quality ?? 'pro'));
+    } else {
+      effectiveModelId = (hasImageInputs && modelDef.altId) ? modelDef.altId : modelDef.id;
+    }
+
+    if (modelDef.nodeType === 'flux-kontext') {
+      if (hasImageInputs) {
+        delete falInputs.image_size;
+      } else {
+        delete falInputs.strength;
+      }
+    }
+
+    if (modelDef.nodeType === 'seedance-2' && effectiveModelId === modelDef.id) {
+      delete falInputs.image_url;
+      delete falInputs.end_image_url;
+    }
+
+    if (modelDef.nodeType === 'ltx-2-video' && effectiveModelId === modelDef.id) {
+      delete falInputs.image_url;
+    }
+
+    if (typeof falInputs.music_length_ms === 'string') {
+      falInputs.music_length_ms = Number(falInputs.music_length_ms);
+    }
+
+    const buildApiInputs = (): Record<string, unknown> => {
+      const inputs: Record<string, unknown> = { ...falInputs };
+      for (const key of Object.keys(inputs)) {
+        if (key.startsWith('_')) delete inputs[key];
+      }
+      if (modelDef.nodeType !== 'layer-decompose') {
+        delete inputs.reconstruct_bg;
+      }
+      delete inputs.quality;
+      for (const emptyKey of ['language_code', 'source_lang', 'language'] as const) {
+        if (inputs[emptyKey] === '') delete inputs[emptyKey];
+      }
+      return inputs;
+    };
 
     console.log('[workflow] Sending to model:', effectiveModelId, JSON.stringify(falInputs, null, 2));
 
@@ -976,7 +1025,7 @@ async function executeModelNode(
       });
     } else {
       // For cloud layer decompose, skip the standard API call — we handle everything in the block below
-      let apiInputs = falInputs;
+      let apiInputs = buildApiInputs();
       if (modelDef.nodeType === 'layer-decompose-cloud') {
         const maxMasks = getNormalizedLayerDecomposeCloudMaxMasks(data, falInputs);
         falInputs.max_masks = maxMasks;
@@ -1057,6 +1106,8 @@ async function executeModelNode(
             inputs: {
               image_url: sourceImageUrl,
               prompt,
+              return_multiple_masks: falInputs.return_multiple_masks ?? true,
+              max_masks: maxMasks,
             },
           }) as any;
           console.log('[layer-decompose-cloud] SAM 3 result for prompt "' + prompt + '":', JSON.stringify(promptResult, null, 2));

@@ -21,9 +21,17 @@ const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
     outputs: [],
     defaultData: { name: 'Untitled' },
   },
+  multiPrompt: {
+    type: 'multiPrompt',
+    label: 'Multi Prompt',
+    category: 'utility',
+    inputs: [],
+    outputs: [{ id: 'multi_prompt', type: 'multi_prompt', label: 'multi_prompt' }],
+    defaultData: { shots: [{ prompt: '', duration: 5 }] },
+  },
   shotPrompt: {
     type: 'shotPrompt',
-    label: 'Shot Prompt',
+    label: 'Multi Prompt',
     category: 'utility',
     inputs: [],
     outputs: [{ id: 'multi_prompt', type: 'multi_prompt', label: 'multi_prompt' }],

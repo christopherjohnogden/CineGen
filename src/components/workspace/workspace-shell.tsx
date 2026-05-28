@@ -205,6 +205,17 @@ function findTimelineMomentForAssetSource(params: {
 
 function normalizeWorkflowNodes(nodes: Node<WorkflowNodeData>[]): Node<WorkflowNodeData>[] {
   return nodes.map((node) => {
+    if (node.data.type === 'shotPrompt' || node.type === 'shotPrompt') {
+      node = {
+        ...node,
+        type: 'multiPrompt',
+        data: {
+          ...node.data,
+          type: 'multiPrompt',
+        },
+      };
+    }
+
     if (node.data.type !== 'layer-decompose-cloud') return node;
 
     const configVersion = Number(node.data.config.__layerDecomposeVersion ?? 1);

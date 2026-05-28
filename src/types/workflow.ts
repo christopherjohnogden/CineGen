@@ -2,7 +2,7 @@ export type PortType = 'text' | 'image' | 'video' | 'audio' | 'media' | 'number'
 
 export type NodeCategory = 'utility' | 'image' | 'video' | 'image-edit' | 'audio' | 'text';
 
-export type UtilityNodeType = 'prompt' | 'duration' | 'assetOutput' | 'shotPrompt' | 'element' | 'compositionPlan' | 'musicPrompt' | 'filePicker';
+export type UtilityNodeType = 'prompt' | 'duration' | 'assetOutput' | 'multiPrompt' | 'shotPrompt' | 'element' | 'compositionPlan' | 'musicPrompt' | 'filePicker';
 
 export type CinegenNodeType = UtilityNodeType | string;
 

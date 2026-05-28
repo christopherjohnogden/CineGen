@@ -132,7 +132,7 @@ async function populateSpacesCanvas(page) {
       name: 'Scene Prompt',
     },
     {
-      nodeType: 'shotPrompt',
+      nodeType: 'multiPrompt',
       config: { shots: [
         { prompt: 'Wide establishing shot of skyline', duration: 5 },
         { prompt: 'Tracking shot through streets', duration: 4 },
@@ -219,7 +219,7 @@ async function populateSpacesCanvas(page) {
       // Reposition nodes in a nice layout
       const positions = [
         { x: 100, y: 150 },    // prompt
-        { x: 100, y: 400 },    // shotPrompt
+        { x: 100, y: 400 },    // multiPrompt
         { x: 500, y: 100 },    // compositionPlan
         { x: 500, y: 400 },    // musicPrompt
         { x: 900, y: 250 },    // assetOutput
@@ -245,7 +245,7 @@ async function populateSpacesCanvas(page) {
           targetHandle: null,
           type: 'default',
         });
-        // shotPrompt → assetOutput
+        // multiPrompt → assetOutput
         edges.push({
           id: `e-${genId()}`,
           source: updatedNodes[1].id,

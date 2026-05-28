@@ -334,7 +334,7 @@ export function registerWorkflowHandlers(): void {
     const inputs = await resolveLocalMediaUrls(rawInputs);
 
     // Dynamically import models registry
-    const { ALL_MODELS } = await import('../../src/lib/fal/models.js');
+    const { ALL_MODELS, isKlingV3NodeType, resolveKlingV3ModelId } = await import('../../src/lib/fal/models.js');
 
     // Look up by registry key first, then by m.id / m.altId
     const modelDef = (ALL_MODELS as Record<string, { id: string; altId?: string; nodeType?: string; provider?: string }>)[modelId]
@@ -356,7 +356,13 @@ export function registerWorkflowHandlers(): void {
 
     // Use the passed modelId (which may be altId for edit endpoints) if it looks like an API path,
     // otherwise fall back to the model definition's id
-    const apiModelId = modelId.includes('/') ? modelId : (modelDef as { id: string }).id;
+    let apiModelId = modelId.includes('/') ? modelId : (modelDef as { id: string }).id;
+    const registryNodeType = (modelDef as { nodeType?: string }).nodeType ?? modelId;
+    if (isKlingV3NodeType(registryNodeType)) {
+      const mode = registryNodeType === 'kling-3-image' ? 'image-to-video' : 'text-to-video';
+      apiModelId = resolveKlingV3ModelId(mode, inputs.quality as string | undefined);
+      delete inputs.quality;
+    }
 
     let result: unknown;
 

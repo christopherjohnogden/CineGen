@@ -499,28 +499,28 @@ input[type='range']::-moz-range-track {
   outline: none;
 }
 
-/* Shot Prompt Node */
-.shot-prompt-node__shots {
+/* Multi Prompt Node */
+.multi-prompt-node__shots {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.shot-prompt-node__shot {
+.multi-prompt-node__shot {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 6px;
   background: rgba(0, 0, 0, 0.15);
 }
 
-.shot-prompt-node__shot-header {
+.multi-prompt-node__shot-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 4px;
 }
 
-.shot-prompt-node__shot-label {
+.multi-prompt-node__shot-label {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -528,13 +528,13 @@ input[type='range']::-moz-range-track {
   color: var(--text-secondary);
 }
 
-.shot-prompt-node__shot-controls {
+.multi-prompt-node__shot-controls {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.shot-prompt-node__duration {
+.multi-prompt-node__duration {
   font-size: 11px;
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
@@ -543,7 +543,7 @@ input[type='range']::-moz-range-track {
   padding: 2px 4px;
 }
 
-.shot-prompt-node__remove-btn {
+.multi-prompt-node__remove-btn {
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -553,11 +553,11 @@ input[type='range']::-moz-range-track {
   padding: 0 4px;
 }
 
-.shot-prompt-node__remove-btn:hover {
+.multi-prompt-node__remove-btn:hover {
   color: var(--error);
 }
 
-.shot-prompt-node__add-btn {
+.multi-prompt-node__add-btn {
   width: auto;
   padding: 6px;
   background: rgba(255, 255, 255, 0.05);
@@ -569,12 +569,12 @@ input[type='range']::-moz-range-track {
   margin-top: 4px;
 }
 
-.shot-prompt-node__add-btn:hover {
+.multi-prompt-node__add-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
 }
 
-.shot-prompt-node__shot .cinegen-node__textarea {
+.multi-prompt-node__shot .cinegen-node__textarea {
   font-size: 11px;
   min-height: 48px;
   padding: 8px;
@@ -803,7 +803,7 @@ input[type='range']::-moz-range-track {
   overflow: hidden;
 }
 
-.shot-prompt-node__shot .mention-textarea__backdrop {
+.multi-prompt-node__shot .mention-textarea__backdrop {
   font-size: 11px;
   padding: 8px;
 }
