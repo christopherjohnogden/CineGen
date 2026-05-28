@@ -1,0 +1,45 @@
+---
+description: Keep UPCOMING_RELEASE.md updated whenever features, fixes, or user-facing changes land
+alwaysApply: true
+---
+
+# Release changelog maintenance
+
+Maintain `UPCOMING_RELEASE.md` at the repo root as the living draft for the next GitHub release. Do this in **every chat**, without being asked.
+
+## When to update
+
+After completing work that is user-facing or release-note worthy:
+
+- New features, nodes, models, UI, or workflows
+- Enhancements to existing behavior
+- Bug fixes (especially API/routing/model registry fixes)
+- Breaking changes, renames, or migrations
+- Notable docs/README changes tied to product behavior
+
+Skip updates for: refactors with no user impact, formatting-only diffs, dependency bumps unless they fix something users care about.
+
+## What to do
+
+1. **Read** `UPCOMING_RELEASE.md` before finishing the task.
+2. **Append or edit** the right section (New Features, Improvements, Bug Fixes, Migration).
+3. Use a **one-line summary + short detail** (table row or bullet). Be specific (model names, node types, param names).
+4. Tag status: **(committed)** once in git, **(in progress)** while only local.
+5. Bump **Last updated** date at the top.
+6. If scope is large, add a row to **Highlights** — do not rewrite the whole file.
+
+## Do not
+
+- Wait for the user to ask
+- Create a separate changelog file unless they ask
+- Commit `UPCOMING_RELEASE.md` unless the user requests a commit
+- Remove shipped history; move items to **Shipped history** only after a release ships
+
+## Example entry
+
+```markdown
+### My Feature **(in progress)**
+- Added X node with Y/Z controls for fal.ai `model-id`
+```
+
+When marking done in the same session, change `(in progress)` → `(committed)` if changes were committed.

@@ -1,5 +1,20 @@
 import type { ModelDefinition } from '@/types/workflow';
 import { KIE_MODEL_REGISTRY } from '@/lib/kie/models';
+import {
+  KLING_V3_QUALITY_OPTS,
+  LTX23_QUALITY_OPTS,
+  SORA2_QUALITY_OPTS,
+} from '@/lib/fal/video-model-routing';
+
+export {
+  isKlingV3NodeType,
+  resolveKlingV3ModelId,
+  resolveVideoModelEndpoint,
+  sanitizeVideoInputsForEndpoint,
+  usesEndpointQualityRouting,
+} from '@/lib/fal/video-model-routing';
+export type { KlingV3Mode, KlingV3Quality } from '@/lib/fal/video-model-routing';
+export { KLING_V3_QUALITY_OPTS, LTX23_QUALITY_OPTS, SORA2_QUALITY_OPTS };
 
 const KLING_V3_DURATION_OPTS = Array.from({ length: 13 }, (_, i) => {
   const v = String(i + 3);
@@ -45,25 +60,6 @@ const ELEVENLABS_MP3_OPTS = [
 ];
 
 const KLING_25_DURATION_OPTS = [{ value: '5', label: '5s' }, { value: '10', label: '10s' }];
-
-export const KLING_V3_QUALITY_OPTS = [
-  { value: 'standard', label: 'Standard (720p)' },
-  { value: 'pro', label: 'Pro (1080p)' },
-  { value: '4k', label: '4K' },
-];
-
-export type KlingV3Quality = 'standard' | 'pro' | '4k';
-export type KlingV3Mode = 'text-to-video' | 'image-to-video';
-
-export function isKlingV3NodeType(nodeType: string): boolean {
-  return nodeType === 'kling-3-text' || nodeType === 'kling-3-image';
-}
-
-/** fal.ai Kling 3 resolution is selected by endpoint tier, not a request param. */
-export function resolveKlingV3ModelId(mode: KlingV3Mode, quality?: string | null): string {
-  const tier: KlingV3Quality = quality === 'standard' || quality === '4k' ? quality : 'pro';
-  return `fal-ai/kling-video/v3/${tier}/${mode}`;
-}
 
 export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
   'flux-dev': {
@@ -414,6 +410,7 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
     inputs: [
       { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
       { id: 'duration', portType: 'number', label: 'Duration', required: false, falParam: 'duration', fieldType: 'select', default: '6', options: LTX_DURATION_OPTS },
+      { id: 'quality', portType: 'text', label: 'Quality', required: false, falParam: 'quality', fieldType: 'select', default: 'pro', options: LTX23_QUALITY_OPTS },
       { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: [
         { value: '16:9', label: '16:9' }, { value: '9:16', label: '9:16' },
       ]},
@@ -446,6 +443,7 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
       { id: 'image_url', portType: 'image', label: 'First Frame', required: true, falParam: 'image_url', fieldType: 'port' },
       { id: 'end_image_url', portType: 'image', label: 'Last Frame', required: false, falParam: 'end_image_url', fieldType: 'port' },
       { id: 'duration', portType: 'number', label: 'Duration', required: false, falParam: 'duration', fieldType: 'select', default: '6', options: LTX_DURATION_OPTS },
+      { id: 'quality', portType: 'text', label: 'Quality', required: false, falParam: 'quality', fieldType: 'select', default: 'pro', options: LTX23_QUALITY_OPTS },
       { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: 'auto', options: [
         { value: 'auto', label: 'Auto' }, { value: '16:9', label: '16:9' }, { value: '9:16', label: '9:16' },
       ]},
@@ -524,6 +522,7 @@ export const MODEL_REGISTRY: Record<string, ModelDefinition> = {
         { value: '4', label: '4s' }, { value: '8', label: '8s' }, { value: '12', label: '12s' },
         { value: '16', label: '16s' }, { value: '20', label: '20s' },
       ]},
+      { id: 'quality', portType: 'text', label: 'Quality', required: false, falParam: 'quality', fieldType: 'select', default: 'pro', options: SORA2_QUALITY_OPTS },
       { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: 'auto', options: [
         { value: 'auto', label: 'Auto' }, { value: '16:9', label: '16:9' }, { value: '9:16', label: '9:16' },
       ]},

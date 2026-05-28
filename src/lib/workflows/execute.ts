@@ -12,7 +12,11 @@ import {
   parseLayerDecomposeVisionMaskLabels,
   parseLayerDecomposeVisionOutput,
 } from './layer-decompose';
-import { getModelDefinition, isKlingV3NodeType, resolveKlingV3ModelId } from '@/lib/fal/models';
+import {
+  getModelDefinition,
+  resolveVideoModelEndpoint,
+  sanitizeVideoInputsForEndpoint,
+} from '@/lib/fal/models';
 import type { TranscriptSegment, TranscriptWord, WorkflowNodeData } from '@/types/workflow';
 import type { Element } from '@/types/elements';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
@@ -942,12 +946,14 @@ async function executeModelNode(
       (f) => (f.portType === 'image' && (f.fieldType === 'port' || f.fieldType === 'element-list'))
         && (portInputs[f.id] || Object.keys(portInputs).some((k) => k.startsWith(f.id + '_'))),
     );
-    let effectiveModelId: string;
-    if (isKlingV3NodeType(modelDef.nodeType)) {
-      const mode = modelDef.nodeType === 'kling-3-image' ? 'image-to-video' : 'text-to-video';
-      effectiveModelId = resolveKlingV3ModelId(mode, String(falInputs.quality ?? data.config.quality ?? 'pro'));
-    } else {
-      effectiveModelId = (hasImageInputs && modelDef.altId) ? modelDef.altId : modelDef.id;
+    const qualityTier = String(falInputs.quality ?? data.config.quality ?? 'pro');
+    const effectiveModelId = resolveVideoModelEndpoint(modelDef.nodeType, modelDef, {
+      hasImageInputs,
+      quality: qualityTier,
+    });
+
+    if (modelDef.nodeType === 'sora-2' || modelDef.nodeType === 'ltx-2-3-text' || modelDef.nodeType === 'ltx-2-3-image') {
+      sanitizeVideoInputsForEndpoint(modelDef.nodeType, effectiveModelId, falInputs);
     }
 
     if (modelDef.nodeType === 'flux-kontext') {
@@ -979,7 +985,7 @@ async function executeModelNode(
       if (modelDef.nodeType !== 'layer-decompose') {
         delete inputs.reconstruct_bg;
       }
-      delete inputs.quality;
+      sanitizeVideoInputsForEndpoint(modelDef.nodeType, effectiveModelId, inputs);
       for (const emptyKey of ['language_code', 'source_lang', 'language'] as const) {
         if (inputs[emptyKey] === '') delete inputs[emptyKey];
       }

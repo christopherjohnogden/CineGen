@@ -4567,7 +4567,7 @@ function registerWorkflowHandlers() {
     const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, nodeId, nodeType, modelId, inputs: rawInputs } = params;
     if (apiKey) configureFal(apiKey);
     const inputs = await resolveLocalMediaUrls(rawInputs);
-    const { ALL_MODELS, isKlingV3NodeType, resolveKlingV3ModelId } = await import("./models-Deu8Ltpy.js");
+    const { ALL_MODELS, resolveVideoModelEndpoint, sanitizeVideoInputsForEndpoint } = await import("./models--j8coq92.js");
     const modelDef = ALL_MODELS[modelId] ?? Object.values(ALL_MODELS).find(
       (m) => m.id === modelId || m.altId === modelId || m.nodeType === modelId
     );
@@ -4583,11 +4583,14 @@ function registerWorkflowHandlers() {
     }
     let apiModelId = modelId.includes("/") ? modelId : modelDef.id;
     const registryNodeType = modelDef.nodeType ?? modelId;
-    if (isKlingV3NodeType(registryNodeType)) {
-      const mode = registryNodeType === "kling-3-image" ? "image-to-video" : "text-to-video";
-      apiModelId = resolveKlingV3ModelId(mode, inputs.quality);
-      delete inputs.quality;
-    }
+    const hasImageInputs = Object.keys(inputs).some(
+      (key) => key === "image_url" || key === "start_image_url" || key === "image_urls" || key === "imageUrl"
+    );
+    apiModelId = resolveVideoModelEndpoint(registryNodeType, modelDef, {
+      hasImageInputs,
+      quality: inputs.quality
+    });
+    sanitizeVideoInputsForEndpoint(registryNodeType, apiModelId, inputs);
     let result;
     const provider = modelDef.provider;
     if (provider === "kie") {

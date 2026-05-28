@@ -28,7 +28,7 @@ export const KIE_MODEL_REGISTRY: Record<string, ModelDefinition> = {
     inputs: [
       { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
       { id: 'imageUrls', portType: 'image', label: 'Image', required: false, falParam: 'imageUrls', fieldType: 'port' },
-      { id: 'model', portType: 'text', label: 'Model', required: false, falParam: 'model', fieldType: 'select', default: 'veo3_fast', options: [
+      { id: 'model', portType: 'text', label: 'Quality', required: false, falParam: 'model', fieldType: 'select', default: 'veo3_fast', options: [
         { value: 'veo3_fast', label: 'Fast' }, { value: 'veo3', label: 'Quality' },
       ]},
       { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: [
@@ -98,8 +98,8 @@ export const KIE_MODEL_REGISTRY: Record<string, ModelDefinition> = {
       { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: [
         { value: '16:9', label: '16:9' }, { value: '9:16', label: '9:16' }, { value: '1:1', label: '1:1' },
       ]},
-      { id: 'mode', portType: 'text', label: 'Mode', required: false, falParam: 'mode', fieldType: 'select', default: 'pro', options: [
-        { value: 'std', label: 'Standard' }, { value: 'pro', label: 'Pro' },
+      { id: 'mode', portType: 'text', label: 'Quality', required: false, falParam: 'mode', fieldType: 'select', default: 'pro', options: [
+        { value: 'std', label: 'Standard (720p)' }, { value: 'pro', label: 'Pro (1080p)' }, { value: '4K', label: '4K' },
       ]},
       { id: 'sound', portType: 'number', label: 'Sound', required: false, falParam: 'sound', fieldType: 'toggle', default: true },
     ],
