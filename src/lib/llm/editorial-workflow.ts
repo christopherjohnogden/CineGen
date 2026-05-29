@@ -3,6 +3,7 @@ import type { Timeline } from '@/types/timeline';
 import { clipEffectiveDuration } from '@/types/timeline';
 import type { CutProposal } from '@/lib/llm/cut-plan';
 import type { AcousticSegment, SilenceInterval } from '@/lib/llm/acoustic-analysis';
+import { scoreMomentPerformance, type ScoringContext } from '@/lib/llm/selection';
 
 export type EditorialPersona =
   | 'documentary-editor'
@@ -502,31 +503,42 @@ export function extractQueryTerms(query: string): string[] {
   )];
 }
 
-function scoreMoment(moment: InsightMoment, terms: string[], activeTimelineId: string): number {
-  if (terms.length === 0) {
-    return (moment.words.length > 0 ? 3 : 1) + (moment.timelinePlacements.some((placement) => placement.timelineId === activeTimelineId) ? 2 : 0);
-  }
+/** Emotion words a query might use, so retrieval can boost moments carrying that emotion. */
+const QUERY_EMOTION_WORDS = [
+  'emotional', 'emotion', 'sad', 'happy', 'angry', 'excited', 'reflective', 'tense',
+  'funny', 'nervous', 'calm', 'proud', 'hopeful', 'vulnerable', 'somber', 'wistful',
+];
 
-  const haystack = `${moment.assetName} ${moment.text} ${moment.words.map((word) => word.word).join(' ')}`.toLowerCase();
-  const termScore = terms.reduce((score, term) => (
-    haystack.includes(term) ? score + (moment.text.toLowerCase().includes(term) ? 4 : 2) : score
-  ), 0);
-  const activeBonus = moment.timelinePlacements.some((placement) => placement.timelineId === activeTimelineId) ? 2 : 0;
-  const wordBonus = moment.words.length > 0 ? 2 : 0;
-  return termScore + activeBonus + wordBonus;
+function extractQueryEmotions(query: string): string[] {
+  const lower = query.toLowerCase();
+  return QUERY_EMOTION_WORDS.filter((word) => lower.includes(word));
 }
 
-export function retrieveRelevantMoments(index: ProjectInsightIndex, query: string, limit = 24): RetrievedMoment[] {
+export interface RetrieveOptions {
+  limit?: number;
+  persona?: EditorialPersona;
+}
+
+export function retrieveRelevantMoments(
+  index: ProjectInsightIndex,
+  query: string,
+  optsOrLimit: RetrieveOptions | number = 24,
+): RetrievedMoment[] {
+  const opts: RetrieveOptions = typeof optsOrLimit === 'number' ? { limit: optsOrLimit } : optsOrLimit;
+  const limit = opts.limit ?? 24;
   const terms = extractQueryTerms(query);
+  const ctx: ScoringContext = {
+    activeTimelineId: index.activeTimelineId,
+    persona: opts.persona,
+    queryEmotions: extractQueryEmotions(query),
+  };
+
   return index.moments
-    .map((moment) => ({
-      moment,
-      score: scoreMoment(moment, terms, index.activeTimelineId),
-    }))
+    .map((moment) => ({ moment, ...scoreMomentPerformance(moment, terms, ctx) }))
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || a.moment.sourceStart - b.moment.sourceStart)
     .slice(0, limit)
-    .map(({ moment, score }) => ({
+    .map(({ moment, score, reasons }) => ({
       id: moment.id,
       assetId: moment.assetId,
       assetName: moment.assetName,
@@ -536,8 +548,8 @@ export function retrieveRelevantMoments(index: ProjectInsightIndex, query: strin
       words: moment.words.slice(0, 32),
       timelinePlacements: moment.timelinePlacements,
       score,
-      reason: terms.length > 0
-        ? `Matched ${terms.slice(0, 4).join(', ')} with ${moment.words.length > 0 ? 'word-level timing' : 'segment timing'}.`
+      reason: reasons.length > 0
+        ? `${reasons.slice(0, 3).join('; ')}.`
         : `${moment.words.length > 0 ? 'Word-level' : 'Segment-level'} transcript candidate.`,
     }));
 }
