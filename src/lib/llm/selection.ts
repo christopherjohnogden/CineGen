@@ -170,3 +170,99 @@ export function scoreMomentPerformance(
 
   return { score, reasons };
 }
+
+// ---------------------------------------------------------------------------
+// Story-shape map (heuristic) — where the narrative arc sits across moments.
+// ---------------------------------------------------------------------------
+
+export type StoryBeat = 'setup' | 'rising' | 'climax' | 'falling' | 'resolution';
+
+export interface StoryShapePoint {
+  momentId: string;
+  position: number;   // 0..1 normalized position in source order
+  beat: StoryBeat;
+  intensity: number;  // 0..1 from energy/emotion descriptors
+  reason: string;
+}
+
+export interface StoryShape {
+  points: StoryShapePoint[];
+  arcSummary: string;
+  method: 'heuristic' | 'llm-refined';
+}
+
+const HIGH_INTENSITY_TOKENS = ['high', 'driving', 'punchy', 'intense', 'building', 'epic', 'urgent', 'tense', 'excited', 'triumphant', 'hyped'];
+const LOW_INTENSITY_TOKENS = ['low', 'calm', 'measured', 'deliberate', 'slow', 'quiet', 'reflective', 'wistful', 'somber', 'gentle'];
+
+/** 0..1 intensity from the free-text energy + emotion descriptors. Neutral defaults to 0.5. */
+function momentIntensity(moment: InsightMoment): number {
+  const text = `${moment.energy ?? ''} ${moment.emotion ?? ''}`.toLowerCase();
+  if (!text.trim()) return 0.4; // unknown performance → slightly below neutral
+  const high = HIGH_INTENSITY_TOKENS.some((t) => text.includes(t));
+  const low = LOW_INTENSITY_TOKENS.some((t) => text.includes(t));
+  if (high && !low) return 0.85;
+  if (low && !high) return 0.2;
+  return 0.5;
+}
+
+export function buildStoryShape(moments: InsightMoment[]): StoryShape {
+  if (moments.length === 0) {
+    return { points: [], arcSummary: '', method: 'heuristic' };
+  }
+
+  const ordered = [...moments].sort((a, b) => a.sourceStart - b.sourceStart);
+  const n = ordered.length;
+  const intensities = ordered.map(momentIntensity);
+  const peakIntensity = Math.max(...intensities);
+  // Prefer a peak in the back half for the climax; fall back to the global peak.
+  let climaxIndex = intensities.indexOf(peakIntensity);
+  const backHalf = intensities.map((v, i) => ({ v, i })).filter(({ i }) => i >= Math.floor(n / 2));
+  if (backHalf.length > 0) {
+    const backPeak = backHalf.reduce((best, cur) => (cur.v > best.v ? cur : best));
+    if (backPeak.v >= peakIntensity - 0.15) climaxIndex = backPeak.i;
+  }
+
+  const points: StoryShapePoint[] = ordered.map((moment, i) => {
+    const position = n === 1 ? 0 : i / (n - 1);
+    const intensity = intensities[i];
+    let beat: StoryBeat;
+    if (i === climaxIndex) {
+      beat = 'climax';
+    } else if (i === 0 || (position < 0.2 && intensity <= 0.5)) {
+      beat = 'setup';
+    } else if (i === n - 1 || (position > 0.8 && intensity <= 0.5)) {
+      beat = 'resolution';
+    } else if (i < climaxIndex) {
+      beat = 'rising';
+    } else {
+      beat = 'falling';
+    }
+    return {
+      momentId: moment.id,
+      position: Math.round(position * 1000) / 1000,
+      beat,
+      intensity,
+      reason: `${beat} (intensity ${intensity.toFixed(2)} at ${(position * 100).toFixed(0)}%)`,
+    };
+  });
+
+  // Make sure the position extremes are exactly 0 and 1 for n > 1.
+  if (n > 1) {
+    points[0].position = 0;
+    points[n - 1].position = 1;
+  }
+
+  const climaxPos = points[climaxIndex]?.position ?? 0;
+  const arcSummary = describeArc(climaxPos, intensities);
+
+  return { points, arcSummary, method: 'heuristic' };
+}
+
+function describeArc(climaxPos: number, intensities: number[]): string {
+  const front = climaxPos < 0.4;
+  const back = climaxPos > 0.66;
+  const shape = front ? 'front-loaded' : back ? 'late-climax' : 'centered';
+  const last = intensities[intensities.length - 1];
+  const resolution = last <= 0.3 ? 'soft landing' : last >= 0.7 ? 'high-energy ending' : 'even resolution';
+  return `${shape} arc, ${resolution}`;
+}
