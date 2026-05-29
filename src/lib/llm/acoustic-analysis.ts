@@ -74,3 +74,47 @@ export function parseSilenceDetect(stderr: string): SilenceInterval[] {
 
   return intervals;
 }
+
+export interface PromptTranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+function formatTc(seconds: number): string {
+  return seconds.toFixed(2);
+}
+
+export function buildAcousticPrompt(params: {
+  assetName: string;
+  transcript: PromptTranscriptSegment[];
+}): string {
+  const { assetName, transcript } = params;
+
+  if (transcript.length === 0) {
+    return [
+      `Analyze the media "${assetName}", which has no spoken dialogue (b-roll / cutaway footage).`,
+      'Listen and watch, then return compact JSON ONLY with this shape:',
+      '{"segments":[{"start":0.0,"end":8.0,"content":"...","shotType":"wide","cutawayCandidate":true,"confidence":0.7}]}',
+      'Break the clip into a few meaningful time ranges. For each range, describe the visual content and ambient sound,',
+      'name a likely shotType, and set cutawayCandidate true when the range would work as a cutaway over interview audio.',
+      'Return only JSON, no prose.',
+    ].join('\n');
+  }
+
+  const transcriptLines = transcript
+    .map((seg) => `[${formatTc(seg.start)}-${formatTc(seg.end)}] ${seg.text}`)
+    .join('\n');
+
+  return [
+    `You are an assistant film editor analyzing the AUDIO performance in "${assetName}".`,
+    'Here is the transcript with timecodes (seconds):',
+    transcriptLines,
+    '',
+    'Listen to the audio and, for each transcript segment (matched by its timecodes), describe HOW it was said.',
+    'Return compact JSON ONLY with this shape:',
+    '{"segments":[{"start":0.0,"end":3.2,"delivery":"voice steadies then cracks on \'home\'","emotion":"reflective","energy":"low-and-deliberate","pace":"slow","notable":["400ms pause before \'home\'","usable as hook"],"confidence":0.8}]}',
+    'Use rich descriptive text, NOT numeric scores. Capture vocal delivery, emotion, energy, pace, hesitations,',
+    'laughter, breaths, and reflective pauses. Keep each field short. Return only JSON, no prose.',
+  ].join('\n');
+}
