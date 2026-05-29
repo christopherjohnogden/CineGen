@@ -66,12 +66,27 @@ export interface SkillEditTimelineStep {
   ops: TimelineEditOp[];
 }
 
+/** Generate media via Higgsfield and place it. Executed asynchronously in the renderer (not via
+ *  the synchronous executeSkillAction), since generation is an async CLI round-trip. */
+export interface SkillGenerateMediaStep {
+  type: 'generate_media';
+  prompt: string;
+  /** Higgsfield model job_set_type id (defaults applied downstream if omitted). */
+  model?: string;
+  outputType: 'image' | 'video';
+  /** Where to place the result. 'timeline' appends to the active timeline; 'bin' = library only. */
+  target: 'timeline' | 'bin';
+  /** Optional reference: an existing clip id to seed the generation from. */
+  refClipId?: string;
+}
+
 export type SkillActionStep =
   | SkillNavigateStep
   | SkillCreateSpaceStep
   | SkillAddNodesStep
   | SkillSaveElementsStep
-  | SkillEditTimelineStep;
+  | SkillEditTimelineStep
+  | SkillGenerateMediaStep;
 
 export interface SkillActionPayload {
   label: string;
@@ -379,6 +394,20 @@ function normalizeSkillActionPayload(raw: unknown): SkillActionPayload | null {
         type: 'edit_timeline',
         timelineId: typeof step.timelineId === 'string' ? step.timelineId : undefined,
         ops,
+      });
+    }
+    if (step.type === 'generate_media') {
+      const prompt = typeof step.prompt === 'string' ? step.prompt.trim() : '';
+      if (!prompt) continue;
+      const outputType = step.outputType === 'video' ? 'video' : 'image';
+      const target = step.target === 'bin' ? 'bin' : 'timeline';
+      steps.push({
+        type: 'generate_media',
+        prompt,
+        model: typeof step.model === 'string' && step.model.trim() ? step.model.trim() : undefined,
+        outputType,
+        target,
+        refClipId: typeof step.refClipId === 'string' ? step.refClipId : undefined,
       });
     }
   }
