@@ -1412,10 +1412,11 @@ export function TimelineEditor({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleAddMarker]);
 
-  // "Cmd/Ctrl+Shift+G" — Quick Edit with AI on a single selected video/image clip.
+  // "Cmd/Ctrl+Shift+Space" — Quick Edit with AI on a single selected video/image clip.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.key.toLowerCase() !== 'g') return;
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (e.key !== ' ' && e.code !== 'Space') return;
       const tag = (e.target as HTMLElement).tagName.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       e.preventDefault();
