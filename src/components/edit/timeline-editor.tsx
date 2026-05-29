@@ -8,6 +8,7 @@ import { formatTimecode } from './time-ruler';
 import { MusicGenerationPopup } from './music-generation-popup';
 import { FillGapModal } from './fill-gap-modal';
 import { ExtendModal } from './extend-modal';
+import { QuickEditModal } from './quick-edit-modal';
 import { useTimelineDrag } from './use-timeline-drag';
 import {
   removeClip,
@@ -131,6 +132,7 @@ export function TimelineEditor({
   } | null>(null);
   const [extendModalClipId, setExtendModalClipId] = useState<string | null>(null);
   const extendDragRef = useRef<typeof extendDrag>(null);
+  const [quickEditClipId, setQuickEditClipId] = useState<string | null>(null);
 
   // Ghost preview state for drag-from-media-pool
   const [ghostInfo, setGhostInfo] = useState<{ trackId: string; leftPx: number; trackTop: number } | null>(null);
@@ -1410,6 +1412,25 @@ export function TimelineEditor({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleAddMarker]);
 
+  // "Cmd/Ctrl+Shift+G" — Quick Edit with AI on a single selected video/image clip.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.key.toLowerCase() !== 'g') return;
+      const tag = (e.target as HTMLElement).tagName.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      e.preventDefault();
+      const selected = selectedClipIdsRef.current;
+      if (selected.size !== 1) return;
+      const clipId = [...selected][0];
+      const clip = timelineRef.current.clips.find((c) => c.id === clipId);
+      const asset = clip ? state.assets.find((a) => a.id === clip.assetId) : undefined;
+      if (!clip || !asset || (asset.type !== 'video' && asset.type !== 'image')) return;
+      setQuickEditClipId(clipId);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state.assets]);
+
   const handleRenameTrack = useCallback(
     (trackId: string, name: string) => {
       const tl = timelineRef.current;
@@ -2361,6 +2382,53 @@ export function TimelineEditor({
     [dispatch, setTimeline],
   );
 
+  // Quick Edit: insert a NEW clip after the source clip, showing generating → done states.
+  // Non-destructive (doesn't replace the source) — matches the Extend tool philosophy.
+  const handleQuickEditStartGeneration = useCallback(
+    (sourceClipId: string, generationPromise: Promise<{ url: string; durationSec: number }>, label: string) => {
+      const tl = timelineRef.current;
+      const sourceClip = tl.clips.find((c) => c.id === sourceClipId);
+      if (!sourceClip) return;
+
+      const startTime = sourceClip.startTime + clipEffectiveDuration(sourceClip);
+      const assetId = generateId();
+      const pendingAsset: Asset = {
+        id: assetId,
+        name: 'Generating…',
+        type: 'video',
+        url: '',
+        duration: clipEffectiveDuration(sourceClip),
+        metadata: { generating: true, generatedVia: 'quick-edit', sourceClipId, quickEditPrompt: label },
+      } as unknown as Asset;
+
+      dispatch({ type: 'ADD_ASSET', asset: pendingAsset });
+      const withClip = addClipToTrack(timelineRef.current, sourceClip.trackId, pendingAsset, startTime);
+      const newClip = withClip.clips.find((c) => c.assetId === assetId && c.trackId === sourceClip.trackId);
+      setTimeline(withClip);
+      if (newClip) setGeneratingClipIds((prev) => new Set(prev).add(newClip.id));
+
+      generationPromise.then(({ url, durationSec }) => {
+        dispatch({
+          type: 'UPDATE_ASSET',
+          asset: { id: assetId, name: label, url, duration: durationSec, metadata: { generating: false, generatedVia: 'quick-edit', sourceClipId, quickEditPrompt: label } },
+        });
+        const curTl = timelineRef.current;
+        setTimeline({
+          ...curTl,
+          clips: curTl.clips.map((c) => c.assetId === assetId ? { ...c, name: label, duration: durationSec } : c),
+        });
+        if (newClip) setGeneratingClipIds((prev) => { const next = new Set(prev); next.delete(newClip.id); return next; });
+      }).catch(() => {
+        dispatch({
+          type: 'UPDATE_ASSET',
+          asset: { id: assetId, name: 'Generation Failed', metadata: { generating: false, error: true } },
+        });
+        if (newClip) setGeneratingClipIds((prev) => { const next = new Set(prev); next.delete(newClip.id); return next; });
+      });
+    },
+    [dispatch, setTimeline],
+  );
+
   // Music tool: create placeholder clip on target track then run generation
   const handleMusicStartGeneration = useCallback(
     (generationPromise: Promise<{ url: string; durationSec: number }>, label: string) => {
@@ -3161,6 +3229,25 @@ export function TimelineEditor({
           onClose={handleCloseExtendModal}
         />
       )}
+
+      {(() => {
+        if (!quickEditClipId) return null;
+        const qeClip = timeline.clips.find((c) => c.id === quickEditClipId);
+        const qeAsset = qeClip ? assets.find((a) => a.id === qeClip.assetId) : undefined;
+        if (!qeClip || !qeAsset) return null;
+        // Source time at the playhead within the clip (clamped to the clip's visible window).
+        const intoClip = Math.max(0, currentTimeRef.current - qeClip.startTime);
+        const playheadSourceSec = qeClip.trimStart + Math.min(intoClip, clipEffectiveDuration(qeClip));
+        return (
+          <QuickEditModal
+            clip={qeClip}
+            asset={qeAsset}
+            playheadSourceSec={playheadSourceSec}
+            onStartGeneration={handleQuickEditStartGeneration}
+            onClose={() => setQuickEditClipId(null)}
+          />
+        );
+      })()}
 
       {/* Clip context menu — portaled to body */}
       {clipCtxMenu && createPortal(
