@@ -32,6 +32,12 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - New **story-shape map** (narrative arc beats + emotional climax) and **repetition/contradiction map** (catches duplicate takes and conflicting statements) on the project index, surfaced in chat context and as **"arc:" / "N duplicate moments"** stats in the Copilot topbar
 - Optional **LLM re-rank** of the top candidates when a non-auto quality goal is set; any failure falls back to the heuristic order, so cut generation can't regress
 
+### LLM tab: Human-feeling cuts **(in progress)**
+
+- New **"Humanize cut"** toggle (off by default): when on, generated cuts **snap their boundaries to the analyzed silence/breaths** instead of landing mid-word, add small **room-tone handles** so cuts breathe, and create **J/L cuts** (audio trails the picture) where the source has handle and there's adjacent silence
+- Boundary math is fully clamped — never shrinks a clip below a floor, never trims past source, never crosses a neighbor — and is the first consumer of the Phase 1 objective silence map
+- With the toggle off, generated-cut output is **byte-for-byte unchanged** (guarded by a no-regression snapshot test)
+
 ### LLM tab: Copilot app actions **(in progress)**
 
 - Copilot can apply changes across CineGen via **`cinegen-skill-action`** buttons: **`add_nodes`** (prompt/model nodes to active or named Spaces workspace), **`save_elements`**, **`edit_timeline`** (split/trim/remove clips, close gaps, add markers), plus existing **`create_space`** workflows
