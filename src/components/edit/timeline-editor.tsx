@@ -1424,13 +1424,16 @@ export function TimelineEditor({
       const selected = selectedClipIdsRef.current;
       if (selected.size === 0) return;
       const tl = timelineRef.current;
-      // A linked video+audio pair selects as 2 clips — pick the video/image clip among the
-      // selection (treating the linked pair as one logical clip).
+      const videoTrackIds = new Set(tl.tracks.filter((t) => t.kind === 'video').map((t) => t.id));
+
+      // A linked video+audio pair selects as 2 clips (and the audio clip's asset can also be
+      // type:'video'). Resolve to the clip sitting on a VIDEO track, with a video/image asset —
+      // that's the editable picture clip; its linked audio rides along.
       const selectedClips = [...selected].map((id) => tl.clips.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => Boolean(c));
       const editable = selectedClips
         .map((c) => ({ clip: c, asset: state.assets.find((a) => a.id === c.assetId) }))
-        .filter((x) => x.asset && (x.asset.type === 'video' || x.asset.type === 'image'));
-      if (editable.length !== 1) return; // ambiguous if 2+ distinct editable clips selected
+        .filter((x) => x.asset && videoTrackIds.has(x.clip.trackId) && (x.asset.type === 'video' || x.asset.type === 'image'));
+      if (editable.length !== 1) return; // 0 = nothing editable; 2+ = genuinely ambiguous multi-select
       const { clip, asset } = editable[0];
       if (!clip || !asset) return;
       setQuickEditClipId(clip.id);
