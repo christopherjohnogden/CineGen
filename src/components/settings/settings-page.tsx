@@ -206,6 +206,76 @@ function ApiKeyField({
   );
 }
 
+type HiggsfieldState = { connected: boolean; email?: string; plan?: string; credits?: number; error?: string };
+
+function HiggsfieldConnect() {
+  const [status, setStatus] = useState<HiggsfieldState | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await window.electronAPI.higgsfield.accountStatus();
+      setStatus(s);
+    } catch {
+      setStatus({ connected: false });
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const connect = useCallback(async () => {
+    setBusy(true);
+    try {
+      const s = await window.electronAPI.higgsfield.authLogin();
+      setStatus(s);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const disconnect = useCallback(async () => {
+    setBusy(true);
+    try {
+      await window.electronAPI.higgsfield.authLogout();
+      setStatus({ connected: false });
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  return (
+    <div className="sp-field" style={{ marginTop: 12 }}>
+      <label className="sp-field__label">
+        <IconKey /> Higgsfield
+      </label>
+      <div className="sp-field__key-row" style={{ alignItems: 'center', gap: 12 }}>
+        {status?.connected ? (
+          <>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+              Connected{status.email ? ` · ${status.email}` : ''}
+              {typeof status.credits === 'number' ? ` · ${status.credits} credits` : ''}
+              {status.plan ? ` · ${status.plan}` : ''}
+            </span>
+            <button className="sp-field__eye-btn" type="button" onClick={() => void disconnect()} disabled={busy} style={{ width: 'auto', padding: '4px 10px' }}>
+              Disconnect
+            </button>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 13, color: 'var(--text-tertiary, #888)' }}>Not connected</span>
+            <button className="sp-field__eye-btn" type="button" onClick={() => void connect()} disabled={busy} style={{ width: 'auto', padding: '4px 10px' }}>
+              {busy ? 'Connecting…' : 'Connect Higgsfield'}
+            </button>
+          </>
+        )}
+      </div>
+      <p className="sp-card__desc" style={{ marginTop: 4 }}>
+        Uses the Higgsfield CLI device login (browser). Powers Higgsfield nodes, Quick Edit, and Copilot generation.
+      </p>
+    </div>
+  );
+}
+
 /* -----------------------------------------------------------------------
    Main component
    ----------------------------------------------------------------------- */
@@ -350,6 +420,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                     placeholder="Enter your RunPod key..."
                   />
                 </div>
+                <HiggsfieldConnect />
               </section>
 
               {/* --- RunPod Endpoints --- */}
