@@ -23,3 +23,6 @@ target
 *.njsproj
 *.sln
 *.sw?
+
+# Superpowers brainstorm artifacts
+.superpowers/
