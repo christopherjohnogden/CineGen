@@ -105,18 +105,24 @@ async function generateWithHiggsfield(
   outputType: HiggsfieldMediaType,
 ): Promise<Record<string, unknown>> {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
-  const imageUrls = [input.image_url, input.start_image_url, input.imageUrl]
-    .filter((v): v is string => typeof v === 'string' && v.length > 0);
-  const extraImageUrls = Array.isArray(input.image_urls)
-    ? (input.image_urls as unknown[]).filter((v): v is string => typeof v === 'string')
-    : [];
-  const allImageUrls = [...imageUrls, ...extraImageUrls];
+
+  // Map common workflow input keys to Higgsfield medias[{ value, role }]. Video models take frame
+  // roles (start_image/end_image); image models take a generic image role.
+  const medias: { value: string; role: string }[] = [];
+  const pushMedia = (value: unknown, role: string) => {
+    if (typeof value === 'string' && value.length > 0) medias.push({ value, role });
+  };
+  pushMedia(input.start_image_url ?? input.image_url ?? input.imageUrl, outputType === 'video' ? 'start_image' : 'image');
+  pushMedia(input.end_image_url, 'end_image');
+  if (Array.isArray(input.image_urls)) {
+    for (const v of input.image_urls as unknown[]) pushMedia(v, outputType === 'video' ? 'start_image' : 'image');
+  }
 
   const result = await generateHiggsfield({
     model,
     prompt,
     mediaType: outputType,
-    imageUrls: allImageUrls.length > 0 ? allImageUrls : undefined,
+    medias: medias.length > 0 ? medias : undefined,
     aspectRatio: typeof input.aspect_ratio === 'string' ? input.aspect_ratio : undefined,
     durationSec: typeof input.duration === 'number' ? input.duration : undefined,
   }, token);

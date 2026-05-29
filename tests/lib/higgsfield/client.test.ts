@@ -2,24 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { buildSubmitBody, parseJobStatus, extractMediaUrl } from '../../../electron/ipc/higgsfield';
 
 describe('buildSubmitBody', () => {
-  it('builds a minimal text-to-video body', () => {
-    const body = buildSubmitBody({ model: 'seedance-2', prompt: '  rain on a window  ', mediaType: 'video' });
-    expect(body).toEqual({ model: 'seedance-2', prompt: 'rain on a window', type: 'video' });
+  it('builds a minimal text-to-video body (MCP-shaped, no type field)', () => {
+    const body = buildSubmitBody({ model: 'seedance_2_0', prompt: '  rain on a window  ', mediaType: 'video' });
+    expect(body).toEqual({ model: 'seedance_2_0', prompt: 'rain on a window' });
   });
 
-  it('includes reference images, aspect ratio, and duration when present', () => {
+  it('includes medias with roles, aspect ratio, duration, and count', () => {
     const body = buildSubmitBody({
-      model: 'soul-v2', prompt: 'a portrait', mediaType: 'image',
-      imageUrls: ['https://x/y.jpg'], aspectRatio: '16:9', durationSec: 5,
+      model: 'soul_2', prompt: 'a portrait', mediaType: 'image',
+      medias: [{ value: 'https://x/y.jpg', role: 'image' }], aspectRatio: '16:9', durationSec: 5, count: 2,
     });
-    expect(body.image_urls).toEqual(['https://x/y.jpg']);
+    expect(body.medias).toEqual([{ value: 'https://x/y.jpg', role: 'image' }]);
     expect(body.aspect_ratio).toBe('16:9');
     expect(body.duration).toBe(5);
+    expect(body.count).toBe(2);
   });
 
-  it('omits empty image arrays and non-positive durations', () => {
-    const body = buildSubmitBody({ model: 'm', prompt: 'p', mediaType: 'video', imageUrls: [], durationSec: 0 });
-    expect('image_urls' in body).toBe(false);
+  it('omits empty medias arrays and non-positive durations', () => {
+    const body = buildSubmitBody({ model: 'm', prompt: 'p', mediaType: 'video', medias: [], durationSec: 0 });
+    expect('medias' in body).toBe(false);
     expect('duration' in body).toBe(false);
   });
 
@@ -79,6 +80,11 @@ describe('parseJobStatus', () => {
     const s = parseJobStatus({ data: { state: 'completed', url: 'https://a/b.mp4' } });
     expect(s.state).toBe('completed');
     expect(s.url).toBe('https://a/b.mp4');
+  });
+
+  it('surfaces poll_after_seconds for non-terminal jobs', () => {
+    expect(parseJobStatus({ state: 'running', poll_after_seconds: 5 }).pollAfterSec).toBe(5);
+    expect(parseJobStatus({ state: 'queued', poll_after_seconds: 8 }).pollAfterSec).toBe(8);
   });
 
   it('defaults to running for unknown/empty input', () => {
