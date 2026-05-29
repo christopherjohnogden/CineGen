@@ -329,12 +329,16 @@ export async function analyzeMediaWithGeminiCli(params: {
 
   const model = params.model?.trim() || 'gemini-2.5-flash';
   const prompt = `@${stagedPath} ${params.prompt.trim()}`;
+  // `auto_edit` auto-approves the read/edit-class tools Gemini needs to ingest the attached media,
+  // but does NOT auto-approve arbitrary shell/exec tools the way `yolo` would. This keeps a pure
+  // media-analysis call from being able to escalate into running commands on user-supplied content.
+  // (`plan`/read-only mode is too strict — it blocks the media-read tool and forces a refusal.)
   const args = [
     '--skip-trust',
     '-p', prompt,
     '-o', 'stream-json',
     '-m', model,
-    '--approval-mode', 'yolo',
+    '--approval-mode', 'auto_edit',
     '--session-id', crypto.randomUUID(),
     '--include-directories', path.dirname(stagedPath),
   ];
