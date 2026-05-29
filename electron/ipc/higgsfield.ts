@@ -233,9 +233,42 @@ export function parseConnectionState(account: Record<string, unknown> | null): H
   };
 }
 
+export interface QuickEditParams {
+  fileRef: string;
+  prompt: string;
+  model: string;
+  outputType: HiggsfieldMediaType;
+  referenceMode: 'frame' | 'segment' | 'first-last';
+  frameTimeSec?: number;
+  sourceStartSec?: number;
+  sourceEndSec?: number;
+}
+
 export function registerHiggsfieldHandlers(): void {
   ipcMain.handle('higgsfield:account-status', async (): Promise<HiggsfieldConnectionState> => {
     return parseConnectionState(await getHiggsfieldAccountStatus());
+  });
+
+  // One-shot Quick Edit: extract reference media from the source clip, then generate. The CLI
+  // auto-uploads the local reference paths. Returns the media URL for the renderer to place.
+  ipcMain.handle('higgsfield:quick-edit', async (_event, params: QuickEditParams): Promise<HiggsfieldResult> => {
+    const { prepareClipReference } = await import('./copilot-visual-media.js');
+    const prepared = await prepareClipReference(params.fileRef, {
+      mode: params.referenceMode,
+      frameTimeSec: params.frameTimeSec,
+      sourceStartSec: params.sourceStartSec,
+      sourceEndSec: params.sourceEndSec,
+    });
+    const medias: HiggsfieldMedia[] = prepared.paths.map((p, i) => ({
+      value: p,
+      role: (prepared.roles[i] ?? 'image') as HiggsfieldMedia['role'],
+    }));
+    return generateHiggsfield({
+      model: params.model,
+      prompt: params.prompt,
+      mediaType: params.outputType,
+      medias: medias.length > 0 ? medias : undefined,
+    });
   });
 
   // Browser-based device login. Resolves when the CLI exits (user completed or aborted in browser).

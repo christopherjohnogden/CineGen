@@ -254,6 +254,16 @@ export interface ElectronAPI {
     accountStatus: () => Promise<{ connected: boolean; email?: string; plan?: string; credits?: number; error?: string }>;
     authLogin: () => Promise<{ connected: boolean; email?: string; plan?: string; credits?: number; error?: string }>;
     authLogout: () => Promise<void>;
+    quickEdit: (params: {
+      fileRef: string;
+      prompt: string;
+      model: string;
+      outputType: 'image' | 'video';
+      referenceMode: 'frame' | 'segment' | 'first-last';
+      frameTimeSec?: number;
+      sourceStartSec?: number;
+      sourceEndSec?: number;
+    }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
   };
   copilot: {
     analyzeVisualRefs: (params: {
