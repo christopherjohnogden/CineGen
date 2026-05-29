@@ -142,3 +142,56 @@ function reflowTracks(timeline: Timeline): Timeline {
   const duration = clips.reduce((max, clip) => Math.max(max, clip.startTime + clipEffectiveDuration(clip)), 0);
   return { ...timeline, clips, duration };
 }
+
+// ---------------------------------------------------------------------------
+// J/L cuts via linked-audio offset.
+// ---------------------------------------------------------------------------
+
+/**
+ * Create L-cuts by extending a segment's linked audio past its video where the source has handle
+ * and there's silence at the out-point (so the trailing audio sits under quiet). Pure. The audio
+ * clip keeps its startTime but reveals more source (smaller trimEnd), so it plays longer than its
+ * video — bounded by maxOverlapSec, available source handle, and the silence width. Where conditions
+ * aren't met, the pair stays frame-aligned.
+ */
+export function applyJLCuts(timeline: Timeline, ctx: SilenceContext, opts: HumanizeOptions): Timeline {
+  if (!opts.jlCuts) return timeline;
+
+  const byId = new Map(timeline.clips.map((c) => [c.id, c]));
+  const isVideoTrack = new Map(timeline.tracks.map((t) => [t.id, t.kind === 'video']));
+  const adjusted = new Map<string, Clip>();
+
+  for (const clip of timeline.clips) {
+    if (!isVideoTrack.get(clip.trackId)) continue;            // drive from the video clip
+    const linkedId = (clip.linkedClipIds ?? []).find((id) => {
+      const linked = byId.get(id);
+      return linked && !isVideoTrack.get(linked.trackId);     // its linked audio
+    });
+    if (!linkedId) continue;
+    const audio = byId.get(linkedId);
+    if (!audio) continue;
+
+    const silences = ctx.forAsset(clip.assetId);
+    if (silences.length === 0) continue;
+
+    const outPoint = clip.duration - clip.trimEnd;
+    // Need silence AT the out-point: it must start within tolerance of the out-point (or already
+    // contain it) and extend past it, so the trailing audio sits under genuinely adjacent quiet.
+    const silence = silences.find((s) => s.end > outPoint && s.start <= outPoint + opts.snapToleranceSec);
+    if (!silence) continue;
+
+    const sourceHandle = clip.duration - outPoint;            // source available past the out-point
+    const silenceTail = silence.end - outPoint;               // quiet available to cover the trail
+    const overlap = Math.max(0, Math.min(opts.maxOverlapSec, sourceHandle, silenceTail));
+    if (overlap < EPSILON) continue;
+
+    // Extend audio out-point by `overlap` (reveal more source = smaller trimEnd). Video unchanged.
+    const nextTrimEnd = Math.max(0, audio.trimEnd - overlap);
+    adjusted.set(audio.id, { ...audio, trimEnd: nextTrimEnd });
+  }
+
+  if (adjusted.size === 0) return timeline;
+  const clips = timeline.clips.map((c) => adjusted.get(c.id) ?? c);
+  const duration = clips.reduce((max, c) => Math.max(max, c.startTime + clipEffectiveDuration(c)), 0);
+  return { ...timeline, clips, duration };
+}
