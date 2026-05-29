@@ -733,26 +733,45 @@ git commit -m "feat(acoustic): join acoustic segments and silence into insight m
 
 ---
 
-## Task 7: Include acoustic descriptors when serializing moments for chat context
+## Task 7: Surface acoustic descriptors on timed transcript context lines
 
-`src/lib/llm/project-context.ts` formats moments into the text injected into the Copilot.
-Surface the new fields so the model can answer performance questions.
+> **Plan correction (applied during execution):** This task originally assumed
+> `project-context.ts` rendered `InsightMoment`/`RetrievedMoment` objects. It does NOT — those
+> types live only in `editorial-workflow.ts`. `project-context.ts` renders `TranscriptSegment`
+> lines (via `formatTimedSegment`) from a per-asset `{ asset, transcript }` list, and the `asset`
+> is in scope at the render sites. So we join acoustic descriptors by timecode here, reusing the
+> tested `extractAcousticSegments` extractor — the same join logic as Task 6, applied at the
+> transcript-rendering layer. Implemented as commit `705f109`.
+
+`src/lib/llm/project-context.ts` formats timed transcript segments into the text injected into the
+Copilot. Surface the acoustic fields so the model can answer performance questions.
 
 **Files:**
 - Modify: `src/lib/llm/project-context.ts`
-- Test: none required if a pure formatter is touched minimally; if `project-context.ts` has an exported moment formatter, add a unit test. Otherwise verify via Task 11 manual check.
+- Test: none (verified by tsc + existing `tests/lib/llm/` suite; behavior confirmed in Task 12 manual check). The join reuses already-unit-tested `extractAcousticSegments`.
 
-- [ ] **Step 1: Locate the moment serialization**
-
-Run: `grep -n "sourceStart\|formatSeconds\|moment.text\|\.text\b" src/lib/llm/project-context.ts | head -20`
-Identify where each moment becomes a context line.
-
-- [ ] **Step 2: Add acoustic descriptors to the serialized line**
-
-Where a moment line is currently built (e.g. `${formatSeconds(m.sourceStart)} ${m.text}`), append a performance suffix when present. Use this exact helper and inline it at the call site:
+- [ ] **Step 1: Add imports**
 
 ```ts
-function acousticSuffix(m: { delivery?: string; emotion?: string; pace?: string; notable?: string[] }): string {
+import { extractAcousticSegments } from '@/lib/llm/editorial-workflow';
+import type { AcousticSegment } from '@/lib/llm/acoustic-analysis';
+```
+
+- [ ] **Step 2: Add overlap + suffix helpers near `formatTimedSegment`**
+
+```ts
+function bestAcousticMatch(start: number, end: number, acoustic: AcousticSegment[]): AcousticSegment | undefined {
+  let best: AcousticSegment | undefined;
+  let bestOverlap = 0;
+  for (const a of acoustic) {
+    const overlap = Math.min(end, a.end) - Math.max(start, a.start);
+    if (overlap > bestOverlap) { bestOverlap = overlap; best = a; }
+  }
+  return bestOverlap > 0 ? best : undefined;
+}
+
+function acousticSuffix(m: AcousticSegment | undefined): string {
+  if (!m) return '';
   const parts = [
     m.emotion ? `emotion: ${m.emotion}` : null,
     m.pace ? `pace: ${m.pace}` : null,
@@ -763,19 +782,24 @@ function acousticSuffix(m: { delivery?: string; emotion?: string; pace?: string;
 }
 ```
 
-Append `acousticSuffix(m)` to the moment line string. If `project-context.ts` imports
-`InsightMoment` / `RetrievedMoment`, the fields are already typed (Tasks 5–6); no new import needed beyond what exists.
+- [ ] **Step 3: Thread acoustic into `formatTimedSegment` and the per-asset loop**
 
-- [ ] **Step 3: Typecheck**
+Give `formatTimedSegment(segment, acoustic: AcousticSegment[] = [])` an optional acoustic list and
+append `acousticSuffix(bestAcousticMatch(segment.start, segment.end, acoustic))` to its header line.
+In the `for (const { asset, transcript } of transcriptAssets)` loop, compute
+`const assetAcoustic = extractAcousticSegments(asset);` once before the inner segment loop, and pass
+`assetAcoustic` into `formatTimedSegment(segment, assetAcoustic)`. Leave the `topSourceMatchLines`
+quote-lookup block untouched.
 
-Run: `npx tsc --noEmit`
-Expected: no new errors.
+- [ ] **Step 4: Typecheck + tests**
 
-- [ ] **Step 4: Commit**
+Run: `npx tsc --noEmit` (no new errors) and `npx vitest run tests/lib/llm/` (all pass).
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/llm/project-context.ts
-git commit -m "feat(acoustic): surface performance descriptors in chat project context"
+git commit -m "feat(acoustic): surface performance descriptors on timed transcript context lines"
 ```
 
 ---
