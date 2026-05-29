@@ -195,3 +195,18 @@ export function applyJLCuts(timeline: Timeline, ctx: SilenceContext, opts: Human
   const duration = clips.reduce((max, c) => Math.max(max, c.startTime + clipEffectiveDuration(c)), 0);
   return { ...timeline, clips, duration };
 }
+
+// ---------------------------------------------------------------------------
+// Orchestrator.
+// ---------------------------------------------------------------------------
+
+/** Snap boundaries to silence, then apply J/L cuts. Each pass is gated by its opt flag. Pure. */
+export function humanizeCutTimeline(
+  timeline: Timeline,
+  ctx: SilenceContext,
+  opts: HumanizeOptions = DEFAULT_HUMANIZE,
+): Timeline {
+  let next = snapClipsToSilence(timeline, ctx, opts);
+  next = applyJLCuts(next, ctx, opts);
+  return next;
+}
