@@ -11,6 +11,7 @@ When the user wants CineGen to apply changes in the app (not just chat), include
 - \`add_nodes\`: add node(s) to a workspace — \`spaceId\`: \`"active"\` or workspace name/id
 - \`save_elements\`: \`{ "type": "save_elements", "items": [{ "kind": "character" | "location" | "prop" | "vehicle", "name": "...", "description": "..." }] }\`
 - \`edit_timeline\`: \`{ "type": "edit_timeline", "timelineId": "active", "ops": [...] }\` — ops: \`split_clip\`, \`trim_clip\`, \`remove_clip\`, \`close_gaps\`, \`add_markers\`
+- \`generate_media\`: generate an image/video via Higgsfield and place it — \`{ "type": "generate_media", "prompt": "...", "outputType": "image" | "video", "target": "timeline" | "bin", "refClipId": "optional clip id to seed from" }\`. Use when the user asks to generate/create media and add it (e.g. "make a rain b-roll and put it on my timeline"). \`outputType\` defaults to image, \`target\` to timeline.
 
 **Single prompt → Spaces:**
 When the user asks to add, create, or give them a node/prompt (e.g. "give me a node for shot 13", "add this to Spaces"), emit \`add_nodes\` in the **same response** — do not only ask "Want me to add?" in text without the action block. The app renders a clickable button from \`cinegen-skill-action\`.

@@ -61,6 +61,11 @@ import {
   type PromptTranscriptSegment,
 } from '@/lib/llm/acoustic-analysis';
 import { DEFAULT_HUMANIZE } from '@/lib/llm/cut-humanize';
+import { HIGGSFIELD_MODELS } from '@/lib/higgsfield/higgsfield-models';
+import { addClipToTrack } from '@/lib/editor/timeline-operations';
+import { generateId } from '@/lib/utils/ids';
+import { clipEndTime } from '@/types/timeline';
+import type { SkillGenerateMediaStep } from '@/lib/llm/skill-actions';
 import {
   buildSkillSystemPromptAddition,
   buildSkillsCatalogPromptAddition,
@@ -1519,6 +1524,57 @@ export function LLMTab({
     setSkillAuthoringCliSessionId(null);
   }, [messages]);
 
+  // Async execution of generate_media steps (Higgsfield generation → place on the active timeline
+  // or asset bin). Kept out of the synchronous executeSkillAction.
+  const runGenerateMediaSteps = useCallback(async (steps: SkillGenerateMediaStep[]) => {
+    for (const step of steps) {
+      const model = step.model
+        || (step.outputType === 'video' ? HIGGSFIELD_MODELS.seedance : HIGGSFIELD_MODELS.nanoBanana);
+      const refClip = step.refClipId ? timelines.flatMap((t) => t.clips).find((c) => c.id === step.refClipId) : undefined;
+      const refAsset = refClip ? assets.find((a) => a.id === refClip.assetId) : undefined;
+
+      const assetId = generateId();
+      const pendingAsset = {
+        id: assetId, name: 'Generating…', type: step.outputType, url: '', duration: 5,
+        metadata: { generating: true, generatedVia: 'copilot', quickEditPrompt: step.prompt, higgsfieldModel: model },
+      } as unknown as Asset;
+      dispatch({ type: 'ADD_ASSET', asset: pendingAsset });
+
+      try {
+        const res = await window.electronAPI.higgsfield.generate({
+          prompt: step.prompt,
+          model,
+          outputType: step.outputType,
+          referenceValue: refAsset?.fileRef || (refAsset as { url?: string } | undefined)?.url,
+        });
+        dispatch({
+          type: 'ADD_ASSET',
+          asset: { ...pendingAsset, name: step.prompt.slice(0, 40), url: res.url, fileRef: res.url, duration: res.durationSec ?? 5, metadata: { generating: false, generatedVia: 'copilot', quickEditPrompt: step.prompt, higgsfieldModel: model } } as unknown as Asset,
+        });
+
+        if (step.target === 'timeline') {
+          const activeTl = timelines.find((t) => t.id === activeTimelineId) ?? timelines[0];
+          if (activeTl) {
+            const videoTrack = activeTl.tracks.find((tr) => tr.kind === 'video');
+            const trackId = videoTrack?.id ?? activeTl.tracks[0]?.id;
+            if (trackId) {
+              const startTime = activeTl.clips.filter((c) => c.trackId === trackId).reduce((m, c) => Math.max(m, clipEndTime(c)), 0);
+              const placedAsset = { ...pendingAsset, name: step.prompt.slice(0, 40), url: res.url, fileRef: res.url, duration: res.durationSec ?? 5 } as unknown as Asset;
+              const nextTl = addClipToTrack(activeTl, trackId, placedAsset, startTime);
+              dispatch({ type: 'SET_TIMELINE', timelineId: activeTl.id, timeline: nextTl });
+            }
+          }
+        }
+      } catch (err) {
+        dispatch({
+          type: 'ADD_ASSET',
+          asset: { ...pendingAsset, name: 'Generation Failed', metadata: { generating: false, error: true } } as unknown as Asset,
+        });
+        throw err;
+      }
+    }
+  }, [activeTimelineId, assets, dispatch, timelines]);
+
   const handleExecuteSkillAction = useCallback((messageId: string) => {
     const target = messages.find((message) => message.id === messageId);
     if (!target || target.role !== 'assistant' || target.skillActionApplied) return;
@@ -1537,6 +1593,7 @@ export function LLMTab({
     });
     if (!action) return;
 
+    // Synchronous steps (navigate / create_space / add_nodes / save_elements / edit_timeline).
     executeSkillAction(action, dispatch, {
       elements,
       spaces: workspaceState.spaces,
@@ -1547,12 +1604,21 @@ export function LLMTab({
       activeTimelineId,
       assets,
     });
+
+    // Async generate_media steps (Higgsfield generation + placement).
+    const genSteps = action.steps.filter((s): s is SkillGenerateMediaStep => s.type === 'generate_media');
+    if (genSteps.length > 0) {
+      void runGenerateMediaSteps(genSteps).catch((err) => {
+        console.error('[copilot] generate_media failed', err);
+      });
+    }
+
     setMessages((current) => current.map((message) => (
       message.id === messageId
         ? { ...message, skillActionApplied: true }
         : message
     )));
-  }, [activeSkill?.name, activeTimelineId, assets, dispatch, elements, messages, skills, timelines, workspaceState]);
+  }, [activeSkill?.name, activeTimelineId, assets, dispatch, elements, messages, runGenerateMediaSteps, skills, timelines, workspaceState]);
 
   const handleSkillAuthoringTurn = useCallback(async (content: string) => {
     const backend = resolveSkillAuthoringBackend({

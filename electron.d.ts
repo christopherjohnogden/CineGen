@@ -264,6 +264,12 @@ export interface ElectronAPI {
       sourceStartSec?: number;
       sourceEndSec?: number;
     }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
+    generate: (params: {
+      prompt: string;
+      model: string;
+      outputType: 'image' | 'video';
+      referenceValue?: string;
+    }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
   };
   copilot: {
     analyzeVisualRefs: (params: {

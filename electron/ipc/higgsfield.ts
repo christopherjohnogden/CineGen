@@ -290,6 +290,20 @@ export function registerHiggsfieldHandlers(): void {
     });
   });
 
+  // Prompt-only (text→media) generation, optionally with a reference media value (local path or
+  // https URL the CLI accepts). Used by the copilot generate_media skill action.
+  ipcMain.handle('higgsfield:generate', async (_event, params: {
+    prompt: string;
+    model: string;
+    outputType: HiggsfieldMediaType;
+    referenceValue?: string;
+  }): Promise<HiggsfieldResult> => {
+    const medias: HiggsfieldMedia[] | undefined = params.referenceValue
+      ? [{ value: params.referenceValue, role: params.outputType === 'video' ? 'start_image' : 'image' }]
+      : undefined;
+    return generateHiggsfield({ model: params.model, prompt: params.prompt, mediaType: params.outputType, medias });
+  });
+
   // Browser-based device login. Resolves when the CLI exits (user completed or aborted in browser).
   ipcMain.handle('higgsfield:auth-login', async (): Promise<HiggsfieldConnectionState> => {
     try {
