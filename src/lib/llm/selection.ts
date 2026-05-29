@@ -5,7 +5,7 @@
 // deterministic backbone; an optional LLM re-rank (also pure: prompt-build + apply) can reorder the
 // top slice without ever regressing the heuristic order.
 
-import type { EditorialPersona, InsightMoment } from '@/lib/llm/editorial-workflow';
+import type { EditorialPersona, InsightMoment, RetrievedMoment, EditorialBrief } from '@/lib/llm/editorial-workflow';
 
 export interface ScoringWeights {
   termInText: number;        // keyword found in transcript text
@@ -352,4 +352,79 @@ export function buildRelationMap(moments: InsightMoment[]): RelationMap {
   }
 
   return { relations, method: 'heuristic' };
+}
+
+// ---------------------------------------------------------------------------
+// Optional LLM re-rank — pure prompt builder + pure apply. The LLM call itself
+// lives in the cut workflow; these helpers can only reorder an already-good
+// heuristic list and degrade to that list on any malformed/absent output.
+// ---------------------------------------------------------------------------
+
+export function buildRerankPrompt(params: {
+  query: string;
+  brief: Pick<EditorialBrief, 'persona' | 'tone' | 'storyGoal' | 'pacing'>;
+  candidates: RetrievedMoment[];
+}): string {
+  const { query, brief, candidates } = params;
+  const lines = candidates.map((c) => `- ${c.id}: ${c.text.replace(/\s+/g, ' ').slice(0, 160)}`);
+  return [
+    `You are a ${brief.persona} selecting the strongest moments for a cut.`,
+    `Story goal: ${brief.storyGoal}. Tone: ${brief.tone}. Pacing: ${brief.pacing}.`,
+    `Viewer query: "${query}".`,
+    'Re-order these candidate moments from most to least useful for this cut.',
+    'Candidates (id: text):',
+    ...lines,
+    'Return compact JSON ONLY: {"order":["id1","id2",...]} listing the ids best-first.',
+    'Include only ids from the list. No prose.',
+  ].join('\n');
+}
+
+function extractRerankJson(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const tryParse = (s: string): string | null => {
+    try { JSON.parse(s); return s; } catch { return null; }
+  };
+  const direct = tryParse(trimmed);
+  if (direct) return direct;
+  for (const m of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    const inner = m[1]?.trim();
+    if (inner && tryParse(inner)) return inner;
+  }
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    const slice = trimmed.slice(start, end + 1);
+    if (tryParse(slice)) return slice;
+  }
+  return null;
+}
+
+export function applyRerankResult(
+  heuristic: RetrievedMoment[],
+  rerankJson: string,
+): RetrievedMoment[] {
+  const jsonText = extractRerankJson(rerankJson);
+  if (!jsonText) return heuristic;
+  let parsed: unknown;
+  try { parsed = JSON.parse(jsonText); } catch { return heuristic; }
+  const order = (parsed as { order?: unknown }).order;
+  if (!Array.isArray(order) || order.length === 0) return heuristic;
+
+  const byId = new Map(heuristic.map((m) => [m.id, m]));
+  const seen = new Set<string>();
+  const ranked: RetrievedMoment[] = [];
+  for (const id of order) {
+    if (typeof id !== 'string') continue;
+    const moment = byId.get(id);
+    if (moment && !seen.has(id)) {
+      ranked.push(moment);
+      seen.add(id);
+    }
+  }
+  // Append any heuristic moments the model omitted, preserving heuristic order.
+  for (const moment of heuristic) {
+    if (!seen.has(moment.id)) ranked.push(moment);
+  }
+  return ranked;
 }
