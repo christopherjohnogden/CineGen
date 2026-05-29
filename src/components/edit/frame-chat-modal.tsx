@@ -42,8 +42,10 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
   const canvasRef = useRef<FrameCanvasHandle>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | undefined>(undefined);
-  // Holds prompt+drawnPath for proposed generations until the user presses Generate. Keyed by message index.
-  const pendingGenRef = useRef<Record<number, { prompt: string; drawnPath: string | null }>>({});
+  // Holds prompt+drawnPath for proposed generations until the user presses Generate. Keyed by message id.
+  // Not persisted: a `proposed` message reloaded from localStorage has no entry, so its Generate
+  // button is disabled (see render) rather than silently dead.
+  const pendingGenRef = useRef<Record<string, { prompt: string; drawnPath: string | null }>>({});
 
   const hasFrame = Boolean(clip && asset && (asset.type === 'video' || asset.type === 'image') && frameUrl);
 
@@ -76,18 +78,36 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
     if (!text || busy) return;
     setError(null);
     const intent = detectFrameChatIntent(text);
-    const drawnDataUrl = hasFrame ? canvasRef.current?.flatten() ?? null : null;
     const userMsg: FrameChatMessage = { id: crypto.randomUUID(), role: 'user', content: text, createdAt: new Date().toISOString(), intent };
     addMessage(userMsg);
     setDraft('');
-    canvasRef.current?.clear();
     setBusy(true);
 
     try {
+      // flatten() can throw a SecurityError on a tainted canvas; keep it inside the try so a
+      // failure surfaces via setError and busy still clears in finally.
       let drawnPath: string | null = null;
+      const drawnDataUrl = hasFrame ? canvasRef.current?.flatten() ?? null : null;
+      canvasRef.current?.clear();
       if (drawnDataUrl) drawnPath = await writeTempImage(drawnDataUrl);
 
-      if (intent === 'ask') {
+      // Only generate when a clip with a usable source file is selected (State A). In chat-only
+      // mode (State B) a 'generate' intent falls back to an ask turn so the user still gets a reply.
+      const canGenerate = Boolean(clip && asset?.fileRef);
+      if (intent === 'generate' && canGenerate) {
+        const route = routeQuickEdit(text);
+        const msgId = crypto.randomUUID();
+        pendingGenRef.current[msgId] = { prompt: text, drawnPath };
+        addMessage({
+          id: msgId, role: 'assistant',
+          content: `I can generate that — ${route.reason}. Press Generate to run it.`,
+          createdAt: new Date().toISOString(),
+          generation: {
+            model: route.model, outputType: route.outputType, referenceMode: route.referenceMode,
+            sourceClipId: clip!.id, status: 'proposed',
+          },
+        });
+      } else {
         const visualRefs = drawnPath
           ? [{ label: asset?.name ?? 'frame', kind: 'asset' as const, mediaType: 'image' as const, fileRef: drawnPath }]
           : [];
@@ -99,22 +119,6 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         });
         sessionIdRef.current = res.sessionId ?? sessionIdRef.current;
         addMessage({ id: crypto.randomUUID(), role: 'assistant', content: res.message || '(no response)', createdAt: new Date().toISOString() });
-      } else {
-        const route = routeQuickEdit(text);
-        // Capture the proposal context keyed by the index this assistant message will occupy.
-        setMessages((prev) => {
-          const idx = prev.length;
-          pendingGenRef.current[idx] = { prompt: text, drawnPath };
-          return [...prev, {
-            id: crypto.randomUUID(), role: 'assistant',
-            content: `I can generate that — ${route.reason}. Press Generate to run it.`,
-            createdAt: new Date().toISOString(),
-            generation: {
-              model: route.model, outputType: route.outputType, referenceMode: route.referenceMode,
-              sourceClipId: clip!.id, status: 'proposed',
-            },
-          }];
-        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -123,12 +127,12 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
     }
   }, [draft, busy, hasFrame, asset, clip, addMessage]);
 
-  const handleGenerate = useCallback(async (msgIndex: number) => {
-    const msg = messages[msgIndex];
+  const handleGenerate = useCallback(async (msgId: string) => {
+    const msg = messages.find((m) => m.id === msgId);
     if (!msg?.generation || !clip || !asset?.fileRef) return;
-    const pending = pendingGenRef.current[msgIndex];
+    const pending = pendingGenRef.current[msgId];
     if (!pending) return;
-    setMessages((prev) => prev.map((m, i) => i === msgIndex && m.generation ? { ...m, generation: { ...m.generation, status: 'generating' } } : m));
+    setMessages((prev) => prev.map((m) => m.id === msgId && m.generation ? { ...m, generation: { ...m.generation, status: 'generating' } } : m));
     try {
       const sourceStartSec = clip.trimStart;
       const sourceEndSec = clip.duration - clip.trimEnd;
@@ -139,22 +143,23 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         drawnFramePath: pending.drawnPath ?? undefined,
       });
       const durationSec = res.durationSec ?? clipEffectiveDuration(clip);
-      setMessages((prev) => prev.map((m, i) => i === msgIndex && m.generation
+      setMessages((prev) => prev.map((m) => m.id === msgId && m.generation
         ? { ...m, generation: { ...m.generation, status: 'ready', resultUrl: res.url, resultDurationSec: durationSec } } : m));
     } catch (err) {
-      setMessages((prev) => prev.map((m, i) => i === msgIndex && m.generation
+      setMessages((prev) => prev.map((m) => m.id === msgId && m.generation
         ? { ...m, generation: { ...m.generation, status: 'failed', error: err instanceof Error ? err.message : String(err) } } : m));
     }
   }, [messages, clip, asset, playheadSourceSec]);
 
-  const handlePlace = useCallback((msgIndex: number) => {
+  const handlePlace = useCallback((msgId: string) => {
+    const msgIndex = messages.findIndex((m) => m.id === msgId);
     const msg = messages[msgIndex];
     if (!msg?.generation?.resultUrl || !msg.generation.resultDurationSec) return;
     onPlaceResult({
       sourceClipId: msg.generation.sourceClipId, url: msg.generation.resultUrl,
       durationSec: msg.generation.resultDurationSec, label: messages[msgIndex - 1]?.content.slice(0, 40) ?? 'Frame Chat',
     });
-    setMessages((prev) => prev.map((m, i) => i === msgIndex && m.generation ? { ...m, generation: { ...m.generation, status: 'placed' } } : m));
+    setMessages((prev) => prev.map((m) => m.id === msgId && m.generation ? { ...m, generation: { ...m.generation, status: 'placed' } } : m));
   }, [messages, onPlaceResult]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -173,19 +178,23 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         <div className="fcm__chat-pane">
           <div className="fcm__thread" ref={threadRef}>
             {messages.length === 0 && <div className="fcm__empty">Ask about your project, or describe a change to generate.</div>}
-            {messages.map((m, i) => (
+            {messages.map((m) => (
               <div key={m.id} className={`fcm__msg fcm__msg--${m.role}`}>
                 <div className="fcm__msg-content">{m.content}</div>
                 {m.generation && (
                   <div className="fcm__gen">
-                    {m.generation.status === 'proposed' && <button onClick={() => void handleGenerate(i)}>Generate</button>}
+                    {m.generation.status === 'proposed' && (
+                      pendingGenRef.current[m.id]
+                        ? <button onClick={() => void handleGenerate(m.id)}>Generate</button>
+                        : <span className="fcm__error">Session expired — resend to generate.</span>
+                    )}
                     {m.generation.status === 'generating' && <span>Generating…</span>}
                     {m.generation.status === 'ready' && m.generation.resultUrl && (
                       <div>
                         {m.generation.outputType === 'video'
                           ? <video src={m.generation.resultUrl} muted loop autoPlay style={{ maxWidth: 220, borderRadius: 6 }} />
                           : <img src={m.generation.resultUrl} alt="result" style={{ maxWidth: 220, borderRadius: 6 }} />}
-                        <button onClick={() => handlePlace(i)}>Add to timeline</button>
+                        <button onClick={() => handlePlace(m.id)}>Add to timeline</button>
                       </div>
                     )}
                     {m.generation.status === 'placed' && <span>Placed above the clip ✓</span>}
