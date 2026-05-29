@@ -34,3 +34,47 @@ export function detectFrameChatIntent(prompt: string): FrameChatIntent {
 
   return 'ask';
 }
+
+export type FrameChatRole = 'user' | 'assistant';
+
+export interface FrameChatGenerationPreview {
+  /** Higgsfield model + output type chosen by routeQuickEdit. */
+  model: string;
+  outputType: 'image' | 'video';
+  referenceMode: 'frame' | 'segment' | 'first-last';
+  /** Source clip the generation references (for placement on confirm). */
+  sourceClipId: string;
+  /** Resolved media URL once generated; absent until generation completes. */
+  resultUrl?: string;
+  resultDurationSec?: number;
+  status: 'proposed' | 'generating' | 'ready' | 'failed' | 'placed';
+  error?: string;
+}
+
+export interface FrameChatMessage {
+  id: string;
+  role: FrameChatRole;
+  content: string;
+  createdAt: string;
+  intent?: FrameChatIntent;
+  /** Present on assistant messages that propose/produce a generation. */
+  generation?: FrameChatGenerationPreview;
+}
+
+export function frameChatStorageKey(projectId: string): string {
+  return `cinegen_frame_chat:${projectId}`;
+}
+
+export function serializeThread(messages: FrameChatMessage[]): string {
+  return JSON.stringify(messages);
+}
+
+export function deserializeThread(raw: string | null): FrameChatMessage[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as FrameChatMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
