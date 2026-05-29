@@ -60,6 +60,7 @@ import {
   ACOUSTIC_ANALYSIS_VERSION,
   type PromptTranscriptSegment,
 } from '@/lib/llm/acoustic-analysis';
+import { DEFAULT_HUMANIZE } from '@/lib/llm/cut-humanize';
 import {
   buildSkillSystemPromptAddition,
   buildSkillsCatalogPromptAddition,
@@ -882,6 +883,7 @@ export function LLMTab({
   const [indexPopover, setIndexPopover] = useState<'assets' | 'transcripts' | 'clips' | null>(null);
   const [acousticBatch, setAcousticBatch] = useState<{ total: number; done: number } | null>(null);
   const acousticInFlightRef = useRef(false);
+  const [humanizeCuts, setHumanizeCuts] = useState(false);
   const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<StoredChatHistory>(() => loadChatHistory(projectId));
   const [activeSessionId, setActiveSessionId] = useState<string | null>(chatHistory.activeSessionId);
@@ -1398,6 +1400,7 @@ export function LLMTab({
       proposal,
       assets,
       existingTimelines: timelines,
+      humanize: humanizeCuts ? DEFAULT_HUMANIZE : undefined,
     });
 
     if (!applied) {
@@ -1451,7 +1454,7 @@ export function LLMTab({
     }));
 
     return applied.timeline;
-  }, [assets, onCreateTimelineFromCut, timelines]);
+  }, [assets, onCreateTimelineFromCut, timelines, humanizeCuts]);
 
   const applyCombinedCutPlans = useCallback((messageId: string, proposals: CutProposal[]) => {
     const combinedProposal = buildCombinedCutProposal(proposals);
@@ -1468,6 +1471,7 @@ export function LLMTab({
       proposal: combinedProposal,
       assets,
       existingTimelines: timelines,
+      humanize: humanizeCuts ? DEFAULT_HUMANIZE : undefined,
     });
 
     if (!applied) {
@@ -1497,7 +1501,7 @@ export function LLMTab({
     )));
 
     return applied.timeline;
-  }, [assets, onCreateTimelineFromCut, timelines]);
+  }, [assets, onCreateTimelineFromCut, timelines, humanizeCuts]);
 
   const handleSaveSkillFromChat = useCallback((messageId: string) => {
     const target = messages.find((message) => message.id === messageId);
@@ -2614,6 +2618,7 @@ export function LLMTab({
       proposal: combinedProposal,
       assets,
       existingTimelines: timelines,
+      humanize: humanizeCuts ? DEFAULT_HUMANIZE : undefined,
     });
 
     if (!applied) {
@@ -4265,6 +4270,14 @@ export function LLMTab({
                       title="Analyze the audio performance (delivery, emotion, pacing) of every clip"
                     >
                       {acousticBatch ? `Analyzing ${acousticBatch.done}/${acousticBatch.total}…` : 'Analyze entire project'}
+                    </button>
+                    <span className="copilot__topbar-dot" />
+                    <button
+                      className={`copilot__topbar-stat${humanizeCuts ? ' copilot__topbar-stat--active' : ''}`}
+                      onClick={() => setHumanizeCuts((v) => !v)}
+                      title="When on, generated cuts snap to silence/breaths and add J/L cuts using the analyzed silence map"
+                    >
+                      Humanize cut: {humanizeCuts ? 'on' : 'off'}
                     </button>
                   </div>
 
