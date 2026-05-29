@@ -122,19 +122,22 @@ export function parseGenerateJson(
   const trimmed = stdout.trim();
   if (!trimmed) throw new Error('Higgsfield CLI returned no output');
 
-  // The CLI may print one JSON object, or JSON lines — take the last parseable object.
+  const normalize = (obj: unknown): Record<string, unknown> =>
+    (Array.isArray(obj) ? { results: obj } : obj as Record<string, unknown>);
+
+  // The `--wait --json` output is normally a single (possibly pretty-printed, multi-line) JSON
+  // value — array or object. Parse the whole thing first.
   let parsed: Record<string, unknown> | null = null;
-  for (const line of trimmed.split(/\r?\n/).reverse()) {
-    const s = line.trim();
-    if (!s.startsWith('{') && !s.startsWith('[')) continue;
-    try {
-      const obj = JSON.parse(s);
-      parsed = Array.isArray(obj) ? { results: obj } : obj as Record<string, unknown>;
-      break;
-    } catch { /* keep scanning */ }
-  }
-  if (!parsed) {
-    try { parsed = JSON.parse(trimmed) as Record<string, unknown>; } catch { parsed = null; }
+  try {
+    parsed = normalize(JSON.parse(trimmed));
+  } catch {
+    // Fallback for streamed multi-object output: scan from the end for the last parseable
+    // single-line JSON value.
+    for (const line of trimmed.split(/\r?\n/).reverse()) {
+      const s = line.trim();
+      if (!s.startsWith('{') && !s.startsWith('[')) continue;
+      try { parsed = normalize(JSON.parse(s)); break; } catch { /* keep scanning */ }
+    }
   }
   if (!parsed) throw new Error('Higgsfield CLI output was not valid JSON');
 

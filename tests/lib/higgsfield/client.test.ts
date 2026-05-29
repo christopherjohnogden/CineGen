@@ -91,6 +91,22 @@ describe('parseGenerateJson', () => {
     expect(() => parseGenerateJson('not json', p)).toThrow(/not valid JSON/);
   });
 
+  it('parses a pretty-printed multi-line array (the --wait output shape)', () => {
+    // This is what `generate create --wait --json` actually emits — indented, multi-line.
+    const real = `[
+  {
+    "id": "572aea65-7865-48f9-b550-cdc9e494d065",
+    "status": "completed",
+    "job_set_type": "nano_banana_2",
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_mug.png",
+    "params": { "width": 2048, "height": 2048 }
+  }
+]`;
+    const r = parseGenerateJson(real, { model: 'nano_banana_2', mediaType: 'image' });
+    expect(r.url).toBe('https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_mug.png');
+    expect(r.jobId).toBe('572aea65-7865-48f9-b550-cdc9e494d065');
+  });
+
   it('parses the real CLI array payload (live-captured shape)', () => {
     // Captured verbatim from `higgsfield generate create nano_banana_2 --wait --json`.
     const real = JSON.stringify([{
