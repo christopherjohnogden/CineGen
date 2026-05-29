@@ -277,6 +277,31 @@ export function extractSilenceMap(asset: Asset): SilenceInterval[] {
   });
 }
 
+function bestOverlap(
+  segmentStart: number,
+  segmentEnd: number,
+  acoustic: AcousticSegment[],
+): AcousticSegment | undefined {
+  let best: AcousticSegment | undefined;
+  let bestOverlapAmount = 0;
+  for (const a of acoustic) {
+    const overlap = Math.min(segmentEnd, a.end) - Math.max(segmentStart, a.start);
+    if (overlap > bestOverlapAmount) {
+      bestOverlapAmount = overlap;
+      best = a;
+    }
+  }
+  return bestOverlapAmount > 0 ? best : undefined;
+}
+
+function nearestSilence(time: number, silenceMap: SilenceInterval[], side: 'before' | 'after'): SilenceInterval | undefined {
+  const epsilon = 0.25;
+  if (side === 'before') {
+    return silenceMap.filter((s) => s.end <= time + epsilon).sort((x, y) => y.end - x.end)[0];
+  }
+  return silenceMap.filter((s) => s.start >= time - epsilon).sort((x, y) => x.start - y.start)[0];
+}
+
 function findTimelinePlacements(assetId: string, sourceTime: number, timelines: Timeline[], activeTimelineId: string): TimelinePlacement[] {
   const epsilon = 0.05;
   return timelines
@@ -415,16 +440,30 @@ export function buildProjectInsightIndex(params: {
   const { projectId, assets, timelines, activeTimelineId } = params;
   const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
 
-  const moments: InsightMoment[] = assets.flatMap((asset) => extractTranscriptSegments(asset).map((segment, index) => ({
-    id: `${asset.id}:${index}:${segment.start.toFixed(3)}`,
-    assetId: asset.id,
-    assetName: asset.name,
-    text: segment.text,
-    sourceStart: segment.start,
-    sourceEnd: segment.end,
-    words: segment.words,
-    timelinePlacements: findTimelinePlacements(asset.id, segment.words[0]?.start ?? segment.start, timelines, activeTimelineId),
-  })));
+  const moments: InsightMoment[] = assets.flatMap((asset) => {
+    const acoustic = extractAcousticSegments(asset);
+    const silenceMap = extractSilenceMap(asset);
+    return extractTranscriptSegments(asset).map((segment, index) => {
+      const match = bestOverlap(segment.start, segment.end, acoustic);
+      return {
+        id: `${asset.id}:${index}:${segment.start.toFixed(3)}`,
+        assetId: asset.id,
+        assetName: asset.name,
+        text: segment.text,
+        sourceStart: segment.start,
+        sourceEnd: segment.end,
+        words: segment.words,
+        timelinePlacements: findTimelinePlacements(asset.id, segment.words[0]?.start ?? segment.start, timelines, activeTimelineId),
+        delivery: match?.delivery,
+        emotion: match?.emotion,
+        energy: match?.energy,
+        pace: match?.pace,
+        notable: match?.notable,
+        silenceBefore: nearestSilence(segment.start, silenceMap, 'before'),
+        silenceAfter: nearestSilence(segment.end, silenceMap, 'after'),
+      };
+    });
+  });
 
   const referenceTimelines = timelines.map((timeline) => buildTimelineReferenceProfile(timeline, assetsById, activeTimelineId));
   const visualInputs = assets.flatMap((asset) => {
