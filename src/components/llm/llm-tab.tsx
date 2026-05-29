@@ -2192,6 +2192,7 @@ export function LLMTab({
         activeSpaceId: workspaceState.activeSpaceId,
         mode: resolvedWorkMode,
         focusQuery: sendContent,
+        insightIndex: projectInsightIndex,
       });
 
       const response = await window.electronAPI.llm.chat({

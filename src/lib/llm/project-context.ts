@@ -6,7 +6,7 @@ import type { WorkflowSpace } from '@/types/workspace';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { CUT_PLAN_CLOSE, CUT_PLAN_OPEN } from '@/lib/llm/cut-plan';
 import { COPILOT_ACTIONS_GUIDE } from '@/lib/llm/copilot-actions-guide';
-import { extractAcousticSegments } from '@/lib/llm/editorial-workflow';
+import { extractAcousticSegments, type ProjectInsightIndex } from '@/lib/llm/editorial-workflow';
 import type { AcousticSegment } from '@/lib/llm/acoustic-analysis';
 
 export type LLMWorkMode = 'ask' | 'search' | 'cut' | 'timeline';
@@ -408,6 +408,35 @@ function buildCompactProjectContext(params: {
   return lines.join('\n');
 }
 
+const MAX_RELATION_LINES = 12;
+
+/** Compact "what's the arc / what repeats" section from the Phase 2 analyses. */
+function buildStructureLines(index: ProjectInsightIndex): string[] {
+  const lines: string[] = [];
+  const momentText = new Map(index.moments.map((m) => [m.id, `${m.assetName}: "${m.text.replace(/\s+/g, ' ').slice(0, 60)}"`]));
+
+  if (index.storyShape.points.length > 0) {
+    lines.push(`Narrative arc: ${index.storyShape.arcSummary}.`);
+    const climax = index.storyShape.points.find((p) => p.beat === 'climax');
+    if (climax) lines.push(`Emotional climax near ${(climax.position * 100).toFixed(0)}% — ${momentText.get(climax.momentId) ?? climax.momentId}.`);
+  }
+
+  const relations = index.relationMap.relations;
+  if (relations.length > 0) {
+    const dupes = relations.filter((r) => r.kind === 'repetition');
+    const conflicts = relations.filter((r) => r.kind === 'contradiction');
+    if (dupes.length > 0) lines.push(`${dupes.length} duplicate/near-duplicate moment pair${dupes.length === 1 ? '' : 's'} — pick one per cut.`);
+    if (conflicts.length > 0) lines.push(`${conflicts.length} possible contradiction${conflicts.length === 1 ? '' : 's'} — review before combining.`);
+    const shown = relations.slice(0, MAX_RELATION_LINES);
+    for (const r of shown) {
+      lines.push(`- ${r.kind}: ${momentText.get(r.aId) ?? r.aId} <-> ${momentText.get(r.bId) ?? r.bId} (${r.reason})`);
+    }
+    if (relations.length > shown.length) lines.push(`- (+${relations.length - shown.length} more relations not shown)`);
+  }
+
+  return lines;
+}
+
 export function buildProjectContext(params: {
   projectId: string;
   assets: Asset[];
@@ -420,8 +449,9 @@ export function buildProjectContext(params: {
   mode?: LLMWorkMode;
   focusQuery?: string;
   compact?: boolean;
+  insightIndex?: ProjectInsightIndex;
 }): string {
-  const { projectId, assets, mediaFolders, timelines, activeTimelineId, elements, spaces = [], activeSpaceId, mode = 'ask', focusQuery } = params;
+  const { projectId, assets, mediaFolders, timelines, activeTimelineId, elements, spaces = [], activeSpaceId, mode = 'ask', focusQuery, insightIndex } = params;
 
   // Compact mode: minimal context for local/small models to keep prompt tokens low
   if (params.compact) {
@@ -631,6 +661,12 @@ export function buildProjectContext(params: {
           ...timedTranscriptLines,
         ]
       : []),
+    ...(insightIndex ? (() => {
+      const structureLines = buildStructureLines(insightIndex);
+      return structureLines.length > 0
+        ? ['', 'PROJECT STRUCTURE', 'Narrative arc + repeated/conflicting moments (use to dedupe and structure cuts).', ...structureLines]
+        : [];
+    })() : []),
     '',
     'TIMELINES',
     ...timelineLines,
