@@ -1,49 +1,56 @@
 import { describe, expect, it } from 'vitest';
-import { buildSubmitBody, parseJobStatus, extractMediaUrl } from '../../../electron/ipc/higgsfield';
+import { buildCreateArgs, parseGenerateJson, extractMediaUrl } from '../../../electron/ipc/higgsfield';
 
-describe('buildSubmitBody', () => {
-  it('builds a minimal text-to-video body (MCP-shaped, no type field)', () => {
-    const body = buildSubmitBody({ model: 'seedance_2_0', prompt: '  rain on a window  ', mediaType: 'video' });
-    expect(body).toEqual({ model: 'seedance_2_0', prompt: 'rain on a window' });
+describe('buildCreateArgs', () => {
+  it('builds a minimal text-to-video create command with --wait --json', () => {
+    const args = buildCreateArgs({ model: 'seedance_2_0', prompt: '  rain on a window  ', mediaType: 'video' });
+    expect(args).toEqual(['generate', 'create', 'seedance_2_0', '--prompt', 'rain on a window', '--wait', '--json']);
   });
 
-  it('includes medias with roles, aspect ratio, duration, and count', () => {
-    const body = buildSubmitBody({
-      model: 'soul_2', prompt: 'a portrait', mediaType: 'image',
-      medias: [{ value: 'https://x/y.jpg', role: 'image' }], aspectRatio: '16:9', durationSec: 5, count: 2,
+  it('maps media roles to the correct CLI flags', () => {
+    const args = buildCreateArgs({
+      model: 'seedance_2_0', prompt: 'p', mediaType: 'video',
+      medias: [
+        { value: './frame.png', role: 'start_image' },
+        { value: 'uuid-123', role: 'end_image' },
+      ],
     });
-    expect(body.medias).toEqual([{ value: 'https://x/y.jpg', role: 'image' }]);
-    expect(body.aspect_ratio).toBe('16:9');
-    expect(body.duration).toBe(5);
-    expect(body.count).toBe(2);
+    expect(args).toContain('--start-image');
+    expect(args[args.indexOf('--start-image') + 1]).toBe('./frame.png');
+    expect(args).toContain('--end-image');
+    expect(args[args.indexOf('--end-image') + 1]).toBe('uuid-123');
   });
 
-  it('omits empty medias arrays and non-positive durations', () => {
-    const body = buildSubmitBody({ model: 'm', prompt: 'p', mediaType: 'video', medias: [], durationSec: 0 });
-    expect('medias' in body).toBe(false);
-    expect('duration' in body).toBe(false);
+  it('includes aspect ratio, duration, count, and extra params', () => {
+    const args = buildCreateArgs({
+      model: 'soul_2', prompt: 'a portrait', mediaType: 'image',
+      aspectRatio: '16:9', durationSec: 5, count: 2, extra: { seed: 42 },
+    });
+    expect(args).toContain('--aspect_ratio'); expect(args[args.indexOf('--aspect_ratio') + 1]).toBe('16:9');
+    expect(args).toContain('--duration'); expect(args[args.indexOf('--duration') + 1]).toBe('5');
+    expect(args).toContain('--count'); expect(args[args.indexOf('--count') + 1]).toBe('2');
+    expect(args).toContain('--seed'); expect(args[args.indexOf('--seed') + 1]).toBe('42');
   });
 
-  it('merges extra params', () => {
-    const body = buildSubmitBody({ model: 'm', prompt: 'p', mediaType: 'image', extra: { seed: 42 } });
-    expect(body.seed).toBe(42);
+  it('skips media with empty values and omits non-positive durations', () => {
+    const args = buildCreateArgs({ model: 'm', prompt: 'p', mediaType: 'video', medias: [{ value: '', role: 'image' }], durationSec: 0 });
+    expect(args).not.toContain('--image');
+    expect(args).not.toContain('--duration');
   });
 });
 
 describe('extractMediaUrl', () => {
-  it('reads a direct url field', () => {
+  it('reads direct url fields', () => {
     expect(extractMediaUrl({ url: 'https://a/b.mp4' })).toBe('https://a/b.mp4');
     expect(extractMediaUrl({ video_url: 'https://a/v.mp4' })).toBe('https://a/v.mp4');
     expect(extractMediaUrl({ image_url: 'https://a/i.png' })).toBe('https://a/i.png');
   });
 
-  it('reads a nested output.url', () => {
+  it('reads nested and array shapes', () => {
     expect(extractMediaUrl({ output: { url: 'https://a/o.mp4' } })).toBe('https://a/o.mp4');
-  });
-
-  it('reads the first of an outputs array (string or object)', () => {
-    expect(extractMediaUrl({ outputs: ['https://a/1.png'] })).toBe('https://a/1.png');
-    expect(extractMediaUrl({ outputs: [{ url: 'https://a/2.png' }] })).toBe('https://a/2.png');
+    expect(extractMediaUrl({ results: ['https://a/1.png'] })).toBe('https://a/1.png');
+    expect(extractMediaUrl({ medias: [{ url: 'https://a/2.png' }] })).toBe('https://a/2.png');
+    expect(extractMediaUrl({ job: { outputs: [{ video_url: 'https://a/3.mp4' }] } })).toBe('https://a/3.mp4');
   });
 
   it('returns undefined when no url present', () => {
@@ -51,44 +58,36 @@ describe('extractMediaUrl', () => {
   });
 });
 
-describe('parseJobStatus', () => {
-  it('maps a completed job with a url', () => {
-    const s = parseJobStatus({ state: 'completed', url: 'https://a/b.mp4', duration: 5 });
-    expect(s.state).toBe('completed');
-    expect(s.url).toBe('https://a/b.mp4');
-    expect(s.durationSec).toBe(5);
+describe('parseGenerateJson', () => {
+  const p = { model: 'seedance_2_0', mediaType: 'video' as const };
+
+  it('parses a single JSON object with a url', () => {
+    const r = parseGenerateJson('{"state":"completed","url":"https://a/b.mp4","duration":5,"job_id":"j1"}', p);
+    expect(r.url).toBe('https://a/b.mp4');
+    expect(r.durationSec).toBe(5);
+    expect(r.jobId).toBe('j1');
+    expect(r.model).toBe('seedance_2_0');
   });
 
-  it('treats success/succeeded as completed', () => {
-    expect(parseJobStatus({ status: 'success', url: 'u' }).state).toBe('completed');
-    expect(parseJobStatus({ status: 'succeeded', video_url: 'u' }).state).toBe('completed');
+  it('takes the last JSON object when the CLI emits progress lines', () => {
+    const out = [
+      '{"state":"running"}',
+      '{"state":"running","progress":0.5}',
+      '{"state":"completed","output":{"url":"https://a/final.mp4"}}',
+    ].join('\n');
+    expect(parseGenerateJson(out, p).url).toBe('https://a/final.mp4');
   });
 
-  it('maps failure with an error message', () => {
-    const s = parseJobStatus({ state: 'failed', error: 'nsfw blocked' });
-    expect(s.state).toBe('failed');
-    expect(s.error).toBe('nsfw blocked');
+  it('throws on a failed job with the error message', () => {
+    expect(() => parseGenerateJson('{"state":"failed","error":"nsfw blocked"}', p)).toThrow(/nsfw blocked/);
   });
 
-  it('maps queued and running', () => {
-    expect(parseJobStatus({ state: 'queued' }).state).toBe('queued');
-    expect(parseJobStatus({ state: 'running' }).state).toBe('running');
-    expect(parseJobStatus({ status: 'pending' }).state).toBe('queued');
+  it('throws when output has no media url', () => {
+    expect(() => parseGenerateJson('{"state":"completed"}', p)).toThrow(/without a media URL/);
   });
 
-  it('unwraps a { data: {...} } envelope', () => {
-    const s = parseJobStatus({ data: { state: 'completed', url: 'https://a/b.mp4' } });
-    expect(s.state).toBe('completed');
-    expect(s.url).toBe('https://a/b.mp4');
-  });
-
-  it('surfaces poll_after_seconds for non-terminal jobs', () => {
-    expect(parseJobStatus({ state: 'running', poll_after_seconds: 5 }).pollAfterSec).toBe(5);
-    expect(parseJobStatus({ state: 'queued', poll_after_seconds: 8 }).pollAfterSec).toBe(8);
-  });
-
-  it('defaults to running for unknown/empty input', () => {
-    expect(parseJobStatus(null).state).toBe('running');
-    expect(parseJobStatus({}).state).toBe('running');
+  it('throws on empty or non-JSON output', () => {
+    expect(() => parseGenerateJson('', p)).toThrow(/no output/);
+    expect(() => parseGenerateJson('not json', p)).toThrow(/not valid JSON/);
   });
 });

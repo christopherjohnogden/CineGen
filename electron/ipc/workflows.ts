@@ -3,7 +3,7 @@ import { fal } from '@fal-ai/client';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { generateHiggsfield, type HiggsfieldMediaType } from './higgsfield.js';
+import { generateHiggsfield, type HiggsfieldMediaType, type HiggsfieldMedia } from './higgsfield.js';
 
 // --- kie.ai client (moved from lib/kie/client.ts) ---
 
@@ -101,15 +101,15 @@ async function generateWithKie(
 async function generateWithHiggsfield(
   model: string,
   input: Record<string, unknown>,
-  token: string,
   outputType: HiggsfieldMediaType,
 ): Promise<Record<string, unknown>> {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
 
   // Map common workflow input keys to Higgsfield medias[{ value, role }]. Video models take frame
-  // roles (start_image/end_image); image models take a generic image role.
-  const medias: { value: string; role: string }[] = [];
-  const pushMedia = (value: unknown, role: string) => {
+  // roles (start_image/end_image); image models take a generic image role. The CLI auto-uploads
+  // local file paths, so values may be local paths, upload UUIDs, prior job ids, or https URLs.
+  const medias: HiggsfieldMedia[] = [];
+  const pushMedia = (value: unknown, role: HiggsfieldMedia['role']) => {
     if (typeof value === 'string' && value.length > 0) medias.push({ value, role });
   };
   pushMedia(input.start_image_url ?? input.image_url ?? input.imageUrl, outputType === 'video' ? 'start_image' : 'image');
@@ -125,7 +125,7 @@ async function generateWithHiggsfield(
     medias: medias.length > 0 ? medias : undefined,
     aspectRatio: typeof input.aspect_ratio === 'string' ? input.aspect_ratio : undefined,
     durationSec: typeof input.duration === 'number' ? input.duration : undefined,
-  }, token);
+  });
 
   // Normalize to the { output: { url } } shape downstream code already reads.
   return { output: { url: result.url, duration: result.durationSec }, url: result.url };
@@ -358,13 +358,12 @@ export function registerWorkflowHandlers(): void {
     runpodKey?: string;
     runpodEndpointId?: string;
     podUrl?: string;
-    higgsfieldToken?: string;
     nodeId: string;
     nodeType: string;
     modelId: string;
     inputs: Record<string, unknown>;
   }) => {
-    const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, higgsfieldToken, nodeId, nodeType, modelId, inputs: rawInputs } = params;
+    const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, nodeId, nodeType, modelId, inputs: rawInputs } = params;
 
     // Upload any local-media:// URLs to fal storage before sending to cloud APIs
     if (apiKey) configureFal(apiKey);
@@ -422,9 +421,10 @@ export function registerWorkflowHandlers(): void {
       const endpointId = runpodEndpointId || (modelDef as { runpodEndpointId?: string }).runpodEndpointId || '';
       result = await generateWithRunpod(endpointId, inputs, key);
     } else if (provider === 'higgsfield') {
-      if (!higgsfieldToken) throw new Error('Higgsfield is not connected. Connect it in Settings.');
+      // The higgsfield CLI owns auth (device login); no token is threaded here. A "session expired"
+      // CLI error surfaces as a connect-Higgsfield message from runHiggsfieldCli.
       const outputType = (modelDef as { outputType?: string }).outputType === 'video' ? 'video' : 'image';
-      result = await generateWithHiggsfield(apiModelId, inputs, higgsfieldToken, outputType);
+      result = await generateWithHiggsfield(apiModelId, inputs, outputType);
     } else {
       const key = apiKey;
       if (!key) throw new Error('No fal.ai API key provided. Add one in Settings.');
