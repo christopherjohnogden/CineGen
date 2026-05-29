@@ -14,6 +14,7 @@ import {
   type RetrievedMoment,
   type RetrievalSummary,
 } from '@/lib/llm/editorial-workflow';
+import { buildRerankPrompt, applyRerankResult } from '@/lib/llm/selection';
 import type { CutPlanSegment, CutProposal } from '@/lib/llm/cut-plan';
 import { analyzeAssetVisualSummary } from './vision.js';
 
@@ -543,9 +544,35 @@ async function inferEditorialBrief(params: {
   }
 }
 
-function buildRetrievalSummary(index: ProjectInsightIndex, request: string, brief: EditorialBrief, visualFindings: AssetVisualSummary[]): RetrievalSummary {
+async function buildRetrievalSummary(
+  index: ProjectInsightIndex,
+  request: string,
+  brief: EditorialBrief,
+  visualFindings: AssetVisualSummary[],
+  opts: { apiKey?: string; model?: string; rerank?: boolean } = {},
+): Promise<RetrievalSummary> {
   const retrievalQuery = [request, brief.storyGoal, brief.hook, brief.tone, brief.audience].join(' ');
-  const topMoments = retrieveRelevantMoments(index, retrievalQuery, 20);
+  // Persona-aware heuristic ranking always runs (deterministic backbone).
+  let topMoments = retrieveRelevantMoments(index, retrievalQuery, { limit: 20, persona: brief.persona });
+
+  // Opt-in LLM re-rank: reorder only the heuristic top slice; any failure keeps heuristic order.
+  if (opts.rerank && opts.apiKey && topMoments.length > 1) {
+    try {
+      const rerankPrompt = buildRerankPrompt({ query: retrievalQuery, brief, candidates: topMoments });
+      const rerankResponse = await callTextLLM({
+        apiKey: opts.apiKey,
+        model: opts.model,
+        systemPrompt: 'You re-rank candidate video moments for an editor. Return JSON only.',
+        prompt: rerankPrompt,
+        maxTokens: 500,
+        temperature: 0.2,
+      });
+      topMoments = applyRerankResult(topMoments, rerankResponse.message);
+    } catch {
+      // keep heuristic order on any re-rank failure
+    }
+  }
+
   const visualReadyCount = visualFindings.filter((finding) => finding.status === 'ready').length;
   return {
     topMoments,
@@ -793,7 +820,7 @@ async function runCutWorkflow(params: CutWorkflowParams): Promise<CutWorkflowRes
   usage = mergeUsage(usage, briefInference.usage);
 
   const mergedBrief = mergeEditorialBrief(briefInference.brief, params.briefOverride, params.questionAnswers);
-  const retrievalSummary = buildRetrievalSummary(index, request, mergedBrief, []);
+  const retrievalSummary = await buildRetrievalSummary(index, request, mergedBrief, []);
 
   if (!params.confirmedBrief) {
     return {
@@ -816,7 +843,11 @@ async function runCutWorkflow(params: CutWorkflowParams): Promise<CutWorkflowRes
     retrievedMoments: retrievalSummary.topMoments,
     model: params.visionModel,
   });
-  const refreshedRetrievalSummary = buildRetrievalSummary(index, request, mergedBrief, visualFindings);
+  const refreshedRetrievalSummary = await buildRetrievalSummary(index, request, mergedBrief, visualFindings, {
+    apiKey: params.apiKey,
+    model: params.model,
+    rerank: mergedBrief.qualityGoal !== 'auto',
+  });
 
   const generation = await generateCutVariants({
     apiKey: params.apiKey,
