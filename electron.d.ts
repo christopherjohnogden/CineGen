@@ -263,6 +263,7 @@ export interface ElectronAPI {
       frameTimeSec?: number;
       sourceStartSec?: number;
       sourceEndSec?: number;
+      drawnFramePath?: string;
     }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
     generate: (params: {
       prompt: string;

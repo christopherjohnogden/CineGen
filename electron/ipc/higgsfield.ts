@@ -242,6 +242,29 @@ export interface QuickEditParams {
   frameTimeSec?: number;
   sourceStartSec?: number;
   sourceEndSec?: number;
+  /** Flattened drawn-on frame PNG (Frame Chat). When set with frame mode, used as the reference. */
+  drawnFramePath?: string;
+}
+
+/**
+ * Choose the media references for a Quick Edit generation. When the user drew on the frame
+ * (frame mode), the flattened drawing IS the reference; otherwise use the extracted refs.
+ */
+export function selectQuickEditMedias(opts: {
+  referenceMode: 'frame' | 'segment' | 'first-last';
+  outputType: HiggsfieldMediaType;
+  drawnFramePath?: string;
+  extractedPaths: string[];
+  extractedRoles: Array<'image' | 'start_image' | 'end_image'>;
+}): HiggsfieldMedia[] {
+  if (opts.drawnFramePath && opts.referenceMode === 'frame') {
+    const role: HiggsfieldMedia['role'] = opts.outputType === 'video' ? 'start_image' : 'image';
+    return [{ value: opts.drawnFramePath, role }];
+  }
+  return opts.extractedPaths.map((p, i) => ({
+    value: p,
+    role: (opts.extractedRoles[i] ?? 'image') as HiggsfieldMedia['role'],
+  }));
 }
 
 export function registerHiggsfieldHandlers(): void {
@@ -259,7 +282,13 @@ export function registerHiggsfieldHandlers(): void {
     const isRemote = /^https?:\/\//i.test(params.fileRef);
     const localPath = isRemote ? null : resolveLocalSourcePath(params.fileRef);
 
-    if (localPath) {
+    if (params.drawnFramePath && params.referenceMode === 'frame') {
+      // The user drew on the frame — that PNG is the reference; no extraction needed.
+      medias = selectQuickEditMedias({
+        referenceMode: 'frame', outputType: params.outputType,
+        drawnFramePath: params.drawnFramePath, extractedPaths: [], extractedRoles: [],
+      });
+    } else if (localPath) {
       // Local source → extract a frame/segment (the CLI auto-uploads the local file).
       try {
         const prepared = await prepareClipReference(params.fileRef, {
@@ -269,7 +298,13 @@ export function registerHiggsfieldHandlers(): void {
           sourceEndSec: params.sourceEndSec,
         });
         console.log('[higgsfield:quick-edit] extracted refs:', prepared.paths);
-        medias = prepared.paths.map((p, i) => ({ value: p, role: (prepared.roles[i] ?? 'image') as HiggsfieldMedia['role'] }));
+        medias = selectQuickEditMedias({
+          referenceMode: params.referenceMode,
+          outputType: params.outputType,
+          drawnFramePath: params.drawnFramePath,
+          extractedPaths: prepared.paths,
+          extractedRoles: prepared.roles,
+        });
       } catch (err) {
         console.warn('[higgsfield:quick-edit] extraction failed, falling back to source path:', err);
         medias = [{ value: localPath, role: params.outputType === 'video' ? 'start_image' : 'image' }];
