@@ -90,6 +90,21 @@ describe('parseGenerateJson', () => {
     expect(() => parseGenerateJson('', p)).toThrow(/no output/);
     expect(() => parseGenerateJson('not json', p)).toThrow(/not valid JSON/);
   });
+
+  it('parses the real CLI array payload (live-captured shape)', () => {
+    // Captured verbatim from `higgsfield generate create nano_banana_2 --wait --json`.
+    const real = JSON.stringify([{
+      id: '0316caff-f73c-43d3-be1e-fa113bcb95d3',
+      status: 'completed',
+      display_name: 'Nano Banana Pro',
+      job_set_type: 'nano_banana_2',
+      result_url: 'https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_apple.png',
+      params: { width: 2048, height: 2048, aspect_ratio: '1:1' },
+    }]);
+    const r = parseGenerateJson(real, { model: 'nano_banana_2', mediaType: 'image' });
+    expect(r.url).toBe('https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_apple.png');
+    expect(r.jobId).toBe('0316caff-f73c-43d3-be1e-fa113bcb95d3');
+  });
 });
 
 describe('parseConnectionState', () => {

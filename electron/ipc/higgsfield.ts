@@ -138,16 +138,23 @@ export function parseGenerateJson(
   }
   if (!parsed) throw new Error('Higgsfield CLI output was not valid JSON');
 
-  const state = String(parsed.state ?? parsed.status ?? '').toLowerCase();
+  // When the CLI returns a JSON array, the per-job fields (status, id, duration, result_url) live
+  // in the first element; for a single object they're at the top level.
+  const results = parsed.results;
+  const record = (Array.isArray(results) && results.length > 0 && typeof results[0] === 'object')
+    ? results[0] as Record<string, unknown>
+    : parsed;
+
+  const state = String(record.state ?? record.status ?? '').toLowerCase();
   if (state === 'failed' || state === 'error' || state === 'fail') {
-    throw new Error(typeof parsed.error === 'string' ? parsed.error : 'Higgsfield generation failed');
+    throw new Error(typeof record.error === 'string' ? record.error : 'Higgsfield generation failed');
   }
 
   const url = extractMediaUrl(parsed);
   if (!url) throw new Error('Higgsfield generation finished without a media URL');
 
-  const duration = parsed.duration ?? (parsed.output as Record<string, unknown> | undefined)?.duration;
-  const jobId = parsed.job_id ?? parsed.id ?? parsed.jobId;
+  const duration = record.duration ?? (record.output as Record<string, unknown> | undefined)?.duration;
+  const jobId = record.job_id ?? record.id ?? record.jobId;
   return {
     url,
     mediaType: params.mediaType,
