@@ -1,9 +1,5 @@
 import { ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import crypto from 'node:crypto';
 import { getFfmpegPath } from '../lib/ffmpeg-paths.js';
 import { analyzeVideoWithPrompt } from './vision.js';
 import {
@@ -43,16 +39,6 @@ function runFfmpegSilenceDetect(mediaPath: string): Promise<string> {
   });
 }
 
-function extractAudioToTemp(mediaPath: string): Promise<string> {
-  const outPath = path.join(os.tmpdir(), `cinegen-acoustic-${crypto.randomUUID()}.m4a`);
-  return new Promise((resolve, reject) => {
-    const args = ['-y', '-i', mediaPath, '-vn', '-acodec', 'aac', '-b:a', '128k', outPath];
-    const proc = spawn(getFfmpegPath(), args);
-    proc.on('error', reject);
-    proc.on('close', (code) => (code === 0 ? resolve(outPath) : reject(new Error(`ffmpeg audio extract failed (${code})`))));
-  });
-}
-
 export async function analyzeAssetAcoustics(params: AcousticAnalyzeParams): Promise<AcousticAnalysisResult> {
   const model = params.model?.trim() || 'gemini-2.5-flash';
   const base: AcousticAnalysisResult = {
@@ -70,20 +56,14 @@ export async function analyzeAssetAcoustics(params: AcousticAnalyzeParams): Prom
     return { ...base, error: 'No fal.ai API key provided.' };
   }
 
-  let tempAudio: string | null = null;
   try {
     const stderr = await runFfmpegSilenceDetect(params.mediaPath).catch(() => '');
     const silenceMap = parseSilenceDetect(stderr);
 
-    if (params.isVideo) {
-      tempAudio = await extractAudioToTemp(params.mediaPath).catch(() => null);
-    }
-    const analysisInputPath = tempAudio ?? params.mediaPath;
-
     const prompt = buildAcousticPrompt({ assetName: params.assetName, transcript: params.transcript });
     const rawText = await analyzeVideoWithPrompt({
       apiKey: params.apiKey,
-      videoPath: analysisInputPath,
+      videoPath: params.mediaPath,
       prompt,
       detailedAnalysis: true,
     });
@@ -100,10 +80,6 @@ export async function analyzeAssetAcoustics(params: AcousticAnalyzeParams): Prom
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { ...base, error: message || 'Acoustic analysis failed.' };
-  } finally {
-    if (tempAudio) {
-      await fs.unlink(tempAudio).catch(() => {});
-    }
   }
 }
 

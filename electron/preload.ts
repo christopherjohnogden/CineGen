@@ -73,6 +73,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     indexAsset: (params: unknown) => ipcRenderer.invoke('vision:index-asset', params),
     detectObjects: (params: unknown) => ipcRenderer.invoke('vision:detect-objects', params),
   },
+  acoustic: {
+    analyzeAsset: (params: unknown) => ipcRenderer.invoke('acoustic:analyze-asset', params),
+  },
   copilot: {
     analyzeVisualRefs: (params: {
       apiKey: string;

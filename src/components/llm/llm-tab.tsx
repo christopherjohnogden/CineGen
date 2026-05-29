@@ -57,6 +57,10 @@ import {
   type RetrievalSummary,
 } from '@/lib/llm/editorial-workflow';
 import {
+  ACOUSTIC_ANALYSIS_VERSION,
+  type PromptTranscriptSegment,
+} from '@/lib/llm/acoustic-analysis';
+import {
   buildSkillSystemPromptAddition,
   buildSkillsCatalogPromptAddition,
   loadSkills,
@@ -876,6 +880,8 @@ export function LLMTab({
   const [skillAuthoringCliSessionId, setSkillAuthoringCliSessionId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [indexPopover, setIndexPopover] = useState<'assets' | 'transcripts' | 'clips' | null>(null);
+  const [acousticBatch, setAcousticBatch] = useState<{ total: number; done: number } | null>(null);
+  const acousticInFlightRef = useRef(false);
   const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<StoredChatHistory>(() => loadChatHistory(projectId));
   const [activeSessionId, setActiveSessionId] = useState<string | null>(chatHistory.activeSessionId);
@@ -931,6 +937,91 @@ export function LLMTab({
     if (typeof transcription?.text === 'string' && transcription.text.trim()) return true;
     return Array.isArray(transcription?.segments) && transcription.segments.length > 0;
   }), [assets]);
+
+  const buildAcousticTranscript = useCallback((asset: Asset): PromptTranscriptSegment[] => {
+    const metadata = (asset.metadata ?? {}) as Record<string, unknown>;
+    const transcription = (metadata.transcription ?? {}) as { segments?: unknown[] };
+    if (!Array.isArray(transcription.segments)) return [];
+    return transcription.segments.flatMap((segment): PromptTranscriptSegment[] => {
+      if (!segment || typeof segment !== 'object') return [];
+      const record = segment as Record<string, unknown>;
+      const text = typeof record.text === 'string' ? record.text.trim() : '';
+      const start = Number(record.start);
+      const end = Number(record.end);
+      if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+      return [{ start, end, text }];
+    });
+  }, []);
+
+  const analyzeAssetAcoustics = useCallback(async (asset: Asset): Promise<void> => {
+    const apiKey = getApiKey();
+    if (!apiKey || !asset.fileRef) return;
+    const model = getCutVisionModel();
+    const transcript = buildAcousticTranscript(asset);
+
+    onUpdateAssetAnalysis(asset.id, {
+      analysis: {
+        assetId: asset.id,
+        status: 'analyzing',
+        version: ACOUSTIC_ANALYSIS_VERSION,
+        model,
+        silenceMap: [],
+        segments: [],
+        hasSpeech: transcript.length > 0,
+      },
+    });
+
+    try {
+      const result = await window.electronAPI.acoustic.analyzeAsset({
+        apiKey,
+        assetId: asset.id,
+        assetName: asset.name,
+        mediaPath: asset.fileRef,
+        isVideo: asset.type === 'video',
+        durationSec: asset.duration,
+        transcript,
+        model,
+      });
+      onUpdateAssetAnalysis(asset.id, { analysis: result });
+    } catch (err) {
+      onUpdateAssetAnalysis(asset.id, {
+        analysis: {
+          assetId: asset.id,
+          status: 'failed',
+          version: ACOUSTIC_ANALYSIS_VERSION,
+          model,
+          silenceMap: [],
+          segments: [],
+          hasSpeech: transcript.length > 0,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }, [buildAcousticTranscript, onUpdateAssetAnalysis]);
+
+  const analyzeProjectAcoustics = useCallback(async () => {
+    if (acousticInFlightRef.current) return;
+    if (!getApiKey()) return;
+    const candidates = assets.filter((asset) => {
+      if (asset.type !== 'video' && asset.type !== 'audio') return false;
+      if (!asset.fileRef) return false;
+      const analysis = (asset.metadata?.analysis ?? undefined) as { status?: string } | undefined;
+      return (analysis?.status ?? 'missing') !== 'ready';
+    });
+    if (candidates.length === 0) return;
+
+    acousticInFlightRef.current = true;
+    setAcousticBatch({ total: candidates.length, done: 0 });
+    try {
+      for (let i = 0; i < candidates.length; i++) {
+        await analyzeAssetAcoustics(candidates[i]);
+        setAcousticBatch({ total: candidates.length, done: i + 1 });
+      }
+    } finally {
+      acousticInFlightRef.current = false;
+      setAcousticBatch(null);
+    }
+  }, [analyzeAssetAcoustics, assets]);
 
   const mediaPoolMentionAssets = useMemo(
     () => assets.filter((asset) => isMentionableMediaPoolAsset(asset)),
@@ -4149,6 +4240,15 @@ export function LLMTab({
                     >{totalClipCount} clips</button>
                     <span className="copilot__topbar-dot" />
                     <span className="copilot__topbar-stat">{projectInsightIndex.stats.visualSummaryReadyCount} visuals</span>
+                    <span className="copilot__topbar-dot" />
+                    <button
+                      className="copilot__topbar-stat"
+                      onClick={() => void analyzeProjectAcoustics()}
+                      disabled={acousticBatch !== null}
+                      title="Analyze the audio performance (delivery, emotion, pacing) of every clip"
+                    >
+                      {acousticBatch ? `Analyzing ${acousticBatch.done}/${acousticBatch.total}…` : 'Analyze entire project'}
+                    </button>
                   </div>
 
                   {/* Index popover */}

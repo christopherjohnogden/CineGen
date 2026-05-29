@@ -31,6 +31,7 @@ import { registerLocalModelHandlers } from './ipc/local-models.js';
 import { registerSam3Handlers, stopSam3Server } from './ipc/sam3-server.js';
 import { registerVisionHandlers } from './ipc/vision.js';
 import { registerCopilotVideoAnalysisHandlers } from './ipc/copilot-video-analysis.js';
+import { registerAcousticHandlers } from './ipc/acoustic-analysis.js';
 
 const SHOULD_DISABLE_GPU_FOR_DEV_WAKE =
   process.platform === 'darwin' && !app.isPackaged;
@@ -403,6 +404,7 @@ app.whenReady().then(async () => {
   registerAudioSyncHandlers(submitJob);
   registerVisionHandlers();
   registerCopilotVideoAnalysisHandlers();
+  registerAcousticHandlers();
   registerNativeVideoHandlers();
   registerTranscriptionHandlers();
   registerLocalModelHandlers();

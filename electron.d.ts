@@ -238,6 +238,18 @@ export interface ElectronAPI {
       error?: string;
     }>;
   };
+  acoustic: {
+    analyzeAsset: (params: {
+      apiKey: string;
+      assetId: string;
+      assetName: string;
+      mediaPath: string;
+      isVideo: boolean;
+      durationSec?: number;
+      transcript: Array<{ start: number; end: number; text: string }>;
+      model?: string;
+    }) => Promise<import('./src/lib/llm/acoustic-analysis').AcousticAnalysisResult>;
+  };
   copilot: {
     analyzeVisualRefs: (params: {
       apiKey: string;

@@ -19,6 +19,12 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## New Features
 
+### LLM tab: Acoustic-emotional clip analysis **(in progress)**
+
+- Copilot can now analyze the **audio performance** of each clip (vocal delivery, emotion, energy, pacing) and detect **silence boundaries**; results are stored per-asset and joined into the project insight index so chat can answer performance questions with real timecodes
+- **"Analyze entire project"** button batch-runs ingest across the media pool, showing `Analyzing {done}/{total}…` progress; status persists per asset so a re-run resumes where it left off
+- Speechless b-roll clips get **content / shotType / cutawayCandidate** descriptors instead of vocal-delivery fields
+
 ### LLM tab: Copilot app actions **(in progress)**
 
 - Copilot can apply changes across CineGen via **`cinegen-skill-action`** buttons: **`add_nodes`** (prompt/model nodes to active or named Spaces workspace), **`save_elements`**, **`edit_timeline`** (split/trim/remove clips, close gaps, add markers), plus existing **`create_space`** workflows
