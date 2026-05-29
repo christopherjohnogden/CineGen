@@ -58,13 +58,14 @@ function buildRoute(intent: QuickEditIntent): QuickEditRoute {
     case 'clean-plate':
       return { intent, model: HIGGSFIELD_MODELS.nanoBanana, outputType: 'image', referenceMode: 'frame', placement: 'overlay', reason: 'background/clean-plate edit on a single frame' };
     case 'object-change':
-      return { intent, model: HIGGSFIELD_MODELS.seedance, outputType: 'video', referenceMode: 'segment', placement: 'insert_after', reason: 'wardrobe/object change via reference-driven video' };
+      // A still frame is the reference image the video model starts from (image roles take images).
+      return { intent, model: HIGGSFIELD_MODELS.seedance, outputType: 'video', referenceMode: 'frame', placement: 'insert_after', reason: 'wardrobe/object change via reference-driven video' };
     case 'extend':
       return { intent, model: HIGGSFIELD_MODELS.seedance, outputType: 'video', referenceMode: 'first-last', placement: 'insert_after', reason: 'continuation from the clip\'s last frame' };
     case 'stylize':
       return { intent, model: HIGGSFIELD_MODELS.nanoBanana, outputType: 'image', referenceMode: 'frame', placement: 'insert_after', reason: 'style change on a representative frame' };
     case 'ambiguous':
     default:
-      return { intent: 'ambiguous', model: HIGGSFIELD_MODELS.seedance, outputType: 'video', referenceMode: 'segment', placement: 'insert_after', reason: 'general reference-driven video edit' };
+      return { intent: 'ambiguous', model: HIGGSFIELD_MODELS.seedance, outputType: 'video', referenceMode: 'frame', placement: 'insert_after', reason: 'general reference-driven video edit' };
   }
 }

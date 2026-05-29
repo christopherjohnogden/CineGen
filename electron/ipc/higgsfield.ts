@@ -252,17 +252,36 @@ export function registerHiggsfieldHandlers(): void {
   // One-shot Quick Edit: extract reference media from the source clip, then generate. The CLI
   // auto-uploads the local reference paths. Returns the media URL for the renderer to place.
   ipcMain.handle('higgsfield:quick-edit', async (_event, params: QuickEditParams): Promise<HiggsfieldResult> => {
-    const { prepareClipReference } = await import('./copilot-visual-media.js');
-    const prepared = await prepareClipReference(params.fileRef, {
-      mode: params.referenceMode,
-      frameTimeSec: params.frameTimeSec,
-      sourceStartSec: params.sourceStartSec,
-      sourceEndSec: params.sourceEndSec,
-    });
-    const medias: HiggsfieldMedia[] = prepared.paths.map((p, i) => ({
-      value: p,
-      role: (prepared.roles[i] ?? 'image') as HiggsfieldMedia['role'],
-    }));
+    const { prepareClipReference, resolveLocalSourcePath } = await import('./copilot-visual-media.js');
+    console.log('[higgsfield:quick-edit] params:', { fileRef: params.fileRef, mode: params.referenceMode, model: params.model, range: [params.sourceStartSec, params.sourceEndSec] });
+
+    let medias: HiggsfieldMedia[] = [];
+    const isRemote = /^https?:\/\//i.test(params.fileRef);
+    const localPath = isRemote ? null : resolveLocalSourcePath(params.fileRef);
+
+    if (localPath) {
+      // Local source → extract a frame/segment (the CLI auto-uploads the local file).
+      try {
+        const prepared = await prepareClipReference(params.fileRef, {
+          mode: params.referenceMode,
+          frameTimeSec: params.frameTimeSec,
+          sourceStartSec: params.sourceStartSec,
+          sourceEndSec: params.sourceEndSec,
+        });
+        console.log('[higgsfield:quick-edit] extracted refs:', prepared.paths);
+        medias = prepared.paths.map((p, i) => ({ value: p, role: (prepared.roles[i] ?? 'image') as HiggsfieldMedia['role'] }));
+      } catch (err) {
+        console.warn('[higgsfield:quick-edit] extraction failed, falling back to source path:', err);
+        medias = [{ value: localPath, role: params.outputType === 'video' ? 'start_image' : 'image' }];
+      }
+    } else if (isRemote) {
+      // Remote URL → pass straight to the CLI (it accepts https media values).
+      console.log('[higgsfield:quick-edit] remote source, passing URL directly');
+      medias = [{ value: params.fileRef, role: params.outputType === 'video' ? 'start_image' : 'image' }];
+    } else {
+      throw new Error(`Quick Edit could not resolve the clip's source media: ${params.fileRef}`);
+    }
+
     return generateHiggsfield({
       model: params.model,
       prompt: params.prompt,

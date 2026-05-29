@@ -20,7 +20,7 @@ describe('routeQuickEdit', () => {
       expect(r.intent).toBe('object-change');
       expect(r.model).toBe(HIGGSFIELD_MODELS.seedance);
       expect(r.outputType).toBe('video');
-      expect(r.referenceMode).toBe('segment');
+      expect(r.referenceMode).toBe('frame');
       expect(r.placement).toBe('insert_after');
     }
   });
@@ -41,11 +41,11 @@ describe('routeQuickEdit', () => {
     expect(r.referenceMode).toBe('frame');
   });
 
-  it('falls back to ambiguous → reference-driven video segment', () => {
+  it('falls back to ambiguous → reference-driven video from a frame', () => {
     const r = routeQuickEdit('do something cool here');
     expect(r.intent).toBe('ambiguous');
     expect(r.model).toBe(HIGGSFIELD_MODELS.seedance);
-    expect(r.referenceMode).toBe('segment');
+    expect(r.referenceMode).toBe('frame');
   });
 
   it('prefers the more specific intent when patterns could overlap', () => {
