@@ -90,6 +90,7 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
       if (text) setStrokes((prev) => [...prev, { tool, color: COLOR, points: [p], text }]);
       return;
     }
+    e.currentTarget.setPointerCapture(e.pointerId);
     drawingRef.current = { tool, color: COLOR, points: [p] };
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -125,14 +126,14 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
           <button key={t} className={`frame-canvas__tool${tool === t ? ' is-active' : ''}`} onClick={() => setTool(t)}>{t}</button>
         ))}
         <button className="frame-canvas__tool" onClick={() => setStrokes((p) => p.slice(0, -1))}>undo</button>
-        <button className="frame-canvas__tool" onClick={() => setStrokes([])}>clear</button>
+        <button className="frame-canvas__tool" onClick={() => { drawingRef.current = null; setStrokes([]); }}>clear</button>
       </div>
       <div className="frame-canvas__stage" style={{ position: 'relative', width, height }}>
         <img ref={imgRef} src={frameUrl} alt="frame" crossOrigin="anonymous" onLoad={() => setImgLoaded(true)}
           style={{ position: 'absolute', inset: 0, width, height, objectFit: 'contain', pointerEvents: 'none' }} />
         <canvas ref={canvasRef} width={width} height={height}
           style={{ position: 'absolute', inset: 0, width, height, touchAction: 'none', cursor: 'crosshair' }}
-          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} />
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} />
       </div>
     </div>
   );
