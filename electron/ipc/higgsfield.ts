@@ -20,13 +20,18 @@ import path from 'node:path';
 
 export type HiggsfieldMediaType = 'image' | 'video';
 
-/** Real model ids from the Higgsfield catalog, keyed by CineGen node intent. */
+/**
+ * Real CLI job_set_type ids from `higgsfield model list`, keyed by CineGen node intent.
+ * (These are the CLI's ids, which differ from the MCP's model ids — the CLI is our transport.)
+ */
 export const HIGGSFIELD_MODELS = {
-  seedance: 'seedance_2_0',      // reference-driven video, strong identity, multi-shot
-  kling: 'kling3_0',             // multi-shot video, audio, motion transfer
-  soul: 'soul_2',                // portraits / fashion / UGC / character with reference
-  soulCast: 'soul_cast',         // text-only character / avatar
-  nanoBanana: 'nano_banana_pro', // top-quality image, 4K, text/diagrams
+  seedance: 'seedance_2_0',          // reference-driven video, strong identity, multi-shot
+  kling: 'kling3_0',                 // multi-shot video (Kling v3.0)
+  veo: 'veo3_1',                     // Google Veo 3.1
+  soul: 'text2image_soul_v2',        // Higgsfield Soul V2 — portraits / character image
+  soulCast: 'soul_cast',             // Soul Cast (video)
+  nanoBanana: 'nano_banana_2',       // Nano Banana Pro — top-quality 4K image, text/diagrams
+  gptImage: 'gpt_image_2',           // GPT Image 2 — general / design
 } as const;
 
 /** A reference input. role maps to a CLI media flag; value is a local path, upload UUID, or job id. */
@@ -219,10 +224,12 @@ export interface HiggsfieldConnectionState {
 export function parseConnectionState(account: Record<string, unknown> | null): HiggsfieldConnectionState {
   if (!account) return { connected: false };
   const data = (account.data && typeof account.data === 'object' ? account.data : account) as Record<string, unknown>;
+  // Live `account status --json` shape: { email, credits, subscription_plan_type }.
+  const plan = data.subscription_plan_type ?? data.plan;
   return {
     connected: true,
     email: typeof data.email === 'string' ? data.email : undefined,
-    plan: typeof data.plan === 'string' ? data.plan : undefined,
+    plan: typeof plan === 'string' ? plan : undefined,
     credits: typeof data.credits === 'number' ? data.credits : (typeof data.balance === 'number' ? data.balance : undefined),
   };
 }

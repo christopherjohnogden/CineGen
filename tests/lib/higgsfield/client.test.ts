@@ -97,9 +97,9 @@ describe('parseConnectionState', () => {
     expect(parseConnectionState(null)).toEqual({ connected: false });
   });
 
-  it('reads email/plan/credits from a status payload', () => {
-    const s = parseConnectionState({ email: 'a@b.com', plan: 'pro', credits: 1200 });
-    expect(s).toEqual({ connected: true, email: 'a@b.com', plan: 'pro', credits: 1200 });
+  it('reads the live shape (email, credits, subscription_plan_type)', () => {
+    const s = parseConnectionState({ email: 'a@b.com', credits: 156.65, subscription_plan_type: 'ultra' });
+    expect(s).toEqual({ connected: true, email: 'a@b.com', plan: 'ultra', credits: 156.65 });
   });
 
   it('unwraps a { data: {...} } envelope and falls back to balance', () => {
