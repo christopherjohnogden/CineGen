@@ -97,7 +97,7 @@ export function QuickEditModal({ clip, asset, playheadSourceSec, onStartGenerati
           <span className="fgm__duration">{asset.name}</span>
         </div>
 
-        <div style={{ padding: '12px 16px' }}>
+        <div style={{ padding: '12px 16px', boxSizing: 'border-box' }}>
           <textarea
             ref={inputRef}
             className="fgm__prompt"
@@ -106,7 +106,7 @@ export function QuickEditModal({ clip, asset, playheadSourceSec, onStartGenerati
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={PLACEHOLDERS[0]}
             rows={3}
-            style={{ width: '100%', resize: 'vertical', background: 'var(--surface-2, #1a1a1f)', color: 'inherit', border: '1px solid var(--border, #333)', borderRadius: 6, padding: 8, fontFamily: 'inherit' }}
+            style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical', background: 'var(--bg-sunken, #1a1a1f)', color: 'inherit', border: '1px solid var(--border-medium, #333)', borderRadius: 6, padding: 8, fontFamily: 'inherit', fontSize: 14 }}
           />
           {route && (
             <div className="fgm__hint" style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
