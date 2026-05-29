@@ -266,3 +266,90 @@ function describeArc(climaxPos: number, intensities: number[]): string {
   const resolution = last <= 0.3 ? 'soft landing' : last >= 0.7 ? 'high-energy ending' : 'even resolution';
   return `${shape} arc, ${resolution}`;
 }
+
+// ---------------------------------------------------------------------------
+// Repetition / contradiction map (heuristic) — which moments restate or conflict.
+// ---------------------------------------------------------------------------
+
+export interface MomentRelation {
+  aId: string;
+  bId: string;
+  kind: 'repetition' | 'contradiction';
+  similarity: number; // 0..1
+  reason: string;
+}
+
+export interface RelationMap {
+  relations: MomentRelation[];
+  method: 'heuristic' | 'llm-refined';
+}
+
+const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'to', 'of', 'in', 'on', 'at', 'is', 'was', 'it', 'i', 'we', 'you', 'he', 'she', 'they', 'my', 'this', 'that']);
+const POSITIVE_CUES = ['best', 'great', 'love', 'happy', 'good', 'better', 'amazing', 'proud', 'glad'];
+const NEGATIVE_CUES = ['worst', 'hate', 'sad', 'bad', 'worse', 'terrible', 'regret', 'awful', 'angry'];
+const POSITIVE_EMOTIONS = ['happy', 'excited', 'proud', 'hopeful', 'joy', 'triumphant'];
+const NEGATIVE_EMOTIONS = ['sad', 'angry', 'somber', 'tense', 'regret', 'fear'];
+
+const REPETITION_THRESHOLD = 0.6;
+const CONTRADICTION_OVERLAP_THRESHOLD = 0.45;
+
+function tokenSet(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase()
+      .split(/[^a-z0-9']+/)
+      .filter((t) => t.length >= 2 && !STOPWORDS.has(t)),
+  );
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter += 1;
+  return inter / (a.size + b.size - inter);
+}
+
+function sentimentSign(moment: InsightMoment): -1 | 0 | 1 {
+  const text = moment.text.toLowerCase();
+  const emotion = (moment.emotion ?? '').toLowerCase();
+  const pos = POSITIVE_CUES.some((c) => text.includes(c)) || POSITIVE_EMOTIONS.some((e) => emotion.includes(e));
+  const neg = NEGATIVE_CUES.some((c) => text.includes(c)) || NEGATIVE_EMOTIONS.some((e) => emotion.includes(e));
+  if (pos && !neg) return 1;
+  if (neg && !pos) return -1;
+  return 0;
+}
+
+export function buildRelationMap(moments: InsightMoment[]): RelationMap {
+  const relations: MomentRelation[] = [];
+  if (moments.length < 2) return { relations, method: 'heuristic' };
+
+  const tokens = moments.map((m) => tokenSet(m.text));
+  const signs = moments.map(sentimentSign);
+
+  for (let i = 0; i < moments.length; i++) {
+    for (let j = i + 1; j < moments.length; j++) {
+      const similarity = jaccard(tokens[i], tokens[j]);
+      const oppositeSentiment = signs[i] !== 0 && signs[j] !== 0 && signs[i] !== signs[j];
+      // Opposite sentiment over a shared subject is a contradiction even at high overlap (the texts
+      // can be near-identical save for an antonym), so check it before the repetition branch.
+      if (similarity >= CONTRADICTION_OVERLAP_THRESHOLD && oppositeSentiment) {
+        relations.push({
+          aId: moments[i].id,
+          bId: moments[j].id,
+          kind: 'contradiction',
+          similarity: Math.round(similarity * 1000) / 1000,
+          reason: `same subject (${(similarity * 100).toFixed(0)}% overlap) but opposite sentiment — possible contradiction`,
+        });
+      } else if (similarity >= REPETITION_THRESHOLD) {
+        relations.push({
+          aId: moments[i].id,
+          bId: moments[j].id,
+          kind: 'repetition',
+          similarity: Math.round(similarity * 1000) / 1000,
+          reason: `${(similarity * 100).toFixed(0)}% word overlap — likely the same line/take`,
+        });
+      }
+    }
+  }
+
+  return { relations, method: 'heuristic' };
+}

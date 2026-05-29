@@ -3,9 +3,9 @@ import type { Timeline } from '@/types/timeline';
 import { clipEffectiveDuration } from '@/types/timeline';
 import type { CutProposal } from '@/lib/llm/cut-plan';
 import type { AcousticSegment, SilenceInterval } from '@/lib/llm/acoustic-analysis';
-import { scoreMomentPerformance, buildStoryShape, type ScoringContext, type StoryShape } from '@/lib/llm/selection';
+import { scoreMomentPerformance, buildStoryShape, buildRelationMap, type ScoringContext, type StoryShape, type RelationMap } from '@/lib/llm/selection';
 
-export type { StoryShape, StoryShapePoint, StoryBeat } from '@/lib/llm/selection';
+export type { StoryShape, StoryShapePoint, StoryBeat, RelationMap, MomentRelation } from '@/lib/llm/selection';
 
 export type EditorialPersona =
   | 'documentary-editor'
@@ -191,6 +191,7 @@ export interface ProjectInsightIndex {
   referenceTimelines: TimelineReferenceProfile[];
   visualInputs: AssetVisualInput[];
   storyShape: StoryShape;
+  relationMap: RelationMap;
 }
 
 function roundTime(value: unknown): number | undefined {
@@ -495,6 +496,7 @@ export function buildProjectInsightIndex(params: {
     referenceTimelines,
     visualInputs,
     storyShape: buildStoryShape(moments),
+    relationMap: buildRelationMap(moments),
   };
 }
 
