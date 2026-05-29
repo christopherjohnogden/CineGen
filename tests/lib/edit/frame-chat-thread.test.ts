@@ -43,4 +43,24 @@ describe('frame-chat thread persistence', () => {
     expect(deserializeThread('not json')).toEqual([]);
     expect(deserializeThread(null)).toEqual([]);
   });
+
+  it('normalizes a persisted mid-flight generation to failed (cannot resume after reload)', () => {
+    const stored: FrameChatMessage[] = [
+      {
+        id: 'g', role: 'assistant', content: 'Generating…', createdAt: '2026-05-29T00:00:02.000Z',
+        generation: { model: 'seedance', outputType: 'video', referenceMode: 'frame', sourceClipId: 'c1', status: 'generating' },
+      },
+    ];
+    const loaded = deserializeThread(serializeThread(stored));
+    expect(loaded[0].generation?.status).toBe('failed');
+    expect(loaded[0].generation?.error).toMatch(/resend/i);
+  });
+
+  it('leaves ready/proposed/placed generations untouched on load', () => {
+    const stored: FrameChatMessage[] = [
+      { id: 'r', role: 'assistant', content: 'done', createdAt: '2026-05-29T00:00:03.000Z',
+        generation: { model: 'm', outputType: 'image', referenceMode: 'frame', sourceClipId: 'c1', status: 'ready', resultUrl: 'https://x/y.png', resultDurationSec: 4 } },
+    ];
+    expect(deserializeThread(serializeThread(stored))[0].generation?.status).toBe('ready');
+  });
 });

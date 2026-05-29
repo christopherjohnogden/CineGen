@@ -73,7 +73,15 @@ export function deserializeThread(raw: string | null): FrameChatMessage[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as FrameChatMessage[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    // A generation persisted mid-flight (status 'generating') can never resume after reload —
+    // its in-memory pending entry is gone. Normalize it to 'failed' so the UI offers a resend
+    // instead of showing "Generating…" forever.
+    return (parsed as FrameChatMessage[]).map((message) =>
+      message.generation?.status === 'generating'
+        ? { ...message, generation: { ...message.generation, status: 'failed', error: 'Interrupted — resend to retry.' } }
+        : message,
+    );
   } catch {
     return [];
   }

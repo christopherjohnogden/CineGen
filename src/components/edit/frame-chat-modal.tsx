@@ -9,6 +9,7 @@ import {
   detectFrameChatIntent, deserializeThread, frameChatStorageKey, serializeThread,
   type FrameChatMessage,
 } from '@/lib/edit/frame-chat-thread';
+import { toFileUrl } from '@/lib/utils/file-url';
 import { FrameCanvas, type FrameCanvasHandle } from './frame-canvas';
 
 export interface FrameChatPlaceResult {
@@ -61,12 +62,14 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
     if (!clip || !asset || !(asset.type === 'video' || asset.type === 'image') || !asset.fileRef) return;
     const inputPath = asset.fileRef;
     if (asset.type === 'image') {
-      setFrameUrl(inputPath.startsWith('http') || inputPath.startsWith('file') || inputPath.startsWith('local-media') ? inputPath : `file://${inputPath}`);
+      // Use the secure local-media:// scheme so the <img> is canvas-clean (file:// taints
+      // toDataURL in the http://localhost renderer); toFileUrl passes through existing URLs.
+      setFrameUrl(toFileUrl(inputPath));
       return;
     }
     window.electronAPI.media.extractFrame({ inputPath, timeSec: playheadSourceSec ?? clip.trimStart }).then((res) => {
       if (cancelled || !res) return;
-      setFrameUrl(`file://${res.outputPath}`);
+      setFrameUrl(toFileUrl(res.outputPath));
     }).catch(() => { if (!cancelled) setFrameUrl(null); });
     return () => { cancelled = true; };
   }, [clip, asset, playheadSourceSec]);
