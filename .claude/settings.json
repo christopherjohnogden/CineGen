@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -n '451,521p' electron/ipc/vision.ts)",
+      "Bash(sed -n '72,90p' electron/preload.ts)",
+      "Bash(npx vitest *)",
+      "Bash(git stash *)",
+      "Bash(grep -rn \"copilot-visual-media\\\\|video-understanding\\\\|analyzeVideoWithPrompt\\\\|gemini.*spawn\\\\|spawn.*gemini\\\\|@\\\\${.*path\\\\|registerCopilotVideoAnalysisHandlers\" electron/)",
+      "Bash(higgsfield generate *)",
+      "Bash(higgsfield auth *)",
+      "Bash(higgsfield account *)",
+      "Bash(higgsfield model *)",
+      "Bash(VITE_DEV_SERVER_URL=http://localhost:5173 node --input-type=module -e \"import\\('./dist-electron/main.js'\\).catch\\(e=>{console.error\\('LOAD ERR:', e.message\\); process.exit\\(0\\)}\\)\")",
+      "Bash(nohup npx vite)",
+      "Bash(jobs -p)",
+      "Bash(node --input-type=module -e ' *)",
+      "Bash(tee /tmp/hf-stdout.txt)",
+      "Bash(grep -n \"import.*generateId\\\\|clipEffectiveDuration\\\\|import type { Asset\\\\|, Asset\\\\b\\\\|handleClipCut\\\\|clip-ctx__item\" src/components/edit/timeline-editor.tsx)",
+      "Bash(grep -n \"import.*addClipToTrack\\\\|import.*generateId\\\\|import type { Asset\\\\|, Asset\\\\b\\\\|createDefaultTimeline\\\\|import.*timeline-operations\" src/components/llm/llm-tab.tsx)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}

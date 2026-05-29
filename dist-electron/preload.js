@@ -75,6 +75,16 @@ import_electron.contextBridge.exposeInMainWorld("electronAPI", {
     indexAsset: (params) => import_electron.ipcRenderer.invoke("vision:index-asset", params),
     detectObjects: (params) => import_electron.ipcRenderer.invoke("vision:detect-objects", params)
   },
+  acoustic: {
+    analyzeAsset: (params) => import_electron.ipcRenderer.invoke("acoustic:analyze-asset", params)
+  },
+  higgsfield: {
+    accountStatus: () => import_electron.ipcRenderer.invoke("higgsfield:account-status"),
+    authLogin: () => import_electron.ipcRenderer.invoke("higgsfield:auth-login"),
+    authLogout: () => import_electron.ipcRenderer.invoke("higgsfield:auth-logout"),
+    quickEdit: (params) => import_electron.ipcRenderer.invoke("higgsfield:quick-edit", params),
+    generate: (params) => import_electron.ipcRenderer.invoke("higgsfield:generate", params)
+  },
   copilot: {
     analyzeVisualRefs: (params) => import_electron.ipcRenderer.invoke("copilot:analyze-visual-refs", params)
   },

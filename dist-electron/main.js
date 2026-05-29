@@ -2137,12 +2137,12 @@ function requireQueue() {
   return queue;
 }
 var realtime = {};
-function utf8Count(str) {
-  const strLength = str.length;
+function utf8Count(str2) {
+  const strLength = str2.length;
   let byteLength = 0;
   let pos = 0;
   while (pos < strLength) {
-    let value = str.charCodeAt(pos++);
+    let value = str2.charCodeAt(pos++);
     if ((value & 4294967168) === 0) {
       byteLength++;
       continue;
@@ -2151,7 +2151,7 @@ function utf8Count(str) {
     } else {
       if (value >= 55296 && value <= 56319) {
         if (pos < strLength) {
-          const extra = str.charCodeAt(pos);
+          const extra = str2.charCodeAt(pos);
           if ((extra & 64512) === 56320) {
             ++pos;
             value = ((value & 1023) << 10) + (extra & 1023) + 65536;
@@ -2167,12 +2167,12 @@ function utf8Count(str) {
   }
   return byteLength;
 }
-function utf8EncodeJs(str, output, outputOffset) {
-  const strLength = str.length;
+function utf8EncodeJs(str2, output, outputOffset) {
+  const strLength = str2.length;
   let offset = outputOffset;
   let pos = 0;
   while (pos < strLength) {
-    let value = str.charCodeAt(pos++);
+    let value = str2.charCodeAt(pos++);
     if ((value & 4294967168) === 0) {
       output[offset++] = value;
       continue;
@@ -2181,7 +2181,7 @@ function utf8EncodeJs(str, output, outputOffset) {
     } else {
       if (value >= 55296 && value <= 56319) {
         if (pos < strLength) {
-          const extra = str.charCodeAt(pos);
+          const extra = str2.charCodeAt(pos);
           if ((extra & 64512) === 56320) {
             ++pos;
             value = ((value & 1023) << 10) + (extra & 1023) + 65536;
@@ -2202,14 +2202,14 @@ function utf8EncodeJs(str, output, outputOffset) {
 }
 const sharedTextEncoder = new TextEncoder();
 const TEXT_ENCODER_THRESHOLD = 50;
-function utf8EncodeTE(str, output, outputOffset) {
-  sharedTextEncoder.encodeInto(str, output.subarray(outputOffset));
+function utf8EncodeTE(str2, output, outputOffset) {
+  sharedTextEncoder.encodeInto(str2, output.subarray(outputOffset));
 }
-function utf8Encode(str, output, outputOffset) {
-  if (str.length > TEXT_ENCODER_THRESHOLD) {
-    utf8EncodeTE(str, output, outputOffset);
+function utf8Encode(str2, output, outputOffset) {
+  if (str2.length > TEXT_ENCODER_THRESHOLD) {
+    utf8EncodeTE(str2, output, outputOffset);
   } else {
-    utf8EncodeJs(str, output, outputOffset);
+    utf8EncodeJs(str2, output, outputOffset);
   }
 }
 const CHUNK_SIZE = 4096;
@@ -2918,10 +2918,10 @@ class CachedKeyDecoder {
       return cachedValue;
     }
     this.miss++;
-    const str = utf8DecodeJs(bytes, inputOffset, byteLength);
+    const str2 = utf8DecodeJs(bytes, inputOffset, byteLength);
     const slicedCopyOfBytes = Uint8Array.prototype.slice.call(bytes, inputOffset, inputOffset + byteLength);
-    this.store(slicedCopyOfBytes, str);
-    return str;
+    this.store(slicedCopyOfBytes, str2);
+    return str2;
   }
 }
 const STATE_ARRAY = "array";
@@ -4339,6 +4339,212 @@ function requireSrc() {
   return src;
 }
 var srcExports = requireSrc();
+const MEDIA_ROLE_FLAG = {
+  image: "--image",
+  start_image: "--start-image",
+  end_image: "--end-image",
+  video: "--video",
+  audio: "--audio"
+};
+function buildCreateArgs(params) {
+  const args = ["generate", "create", params.model, "--prompt", params.prompt.trim()];
+  for (const media of params.medias ?? []) {
+    if (!media.value) continue;
+    args.push(MEDIA_ROLE_FLAG[media.role], media.value);
+  }
+  if (params.aspectRatio) args.push("--aspect_ratio", params.aspectRatio);
+  if (typeof params.durationSec === "number" && params.durationSec > 0) args.push("--duration", String(params.durationSec));
+  if (typeof params.count === "number" && params.count >= 1) args.push("--count", String(params.count));
+  for (const [key, value] of Object.entries(params.extra ?? {})) {
+    args.push(`--${key}`, String(value));
+  }
+  args.push("--wait", "--json");
+  return args;
+}
+function extractMediaUrl(record) {
+  const direct = record.url ?? record.video_url ?? record.image_url ?? record.output_url ?? record.result_url;
+  if (typeof direct === "string" && direct) return direct;
+  for (const key of ["output", "result", "data", "job"]) {
+    const nested = record[key];
+    if (nested && typeof nested === "object") {
+      const found = extractMediaUrl(nested);
+      if (found) return found;
+    }
+  }
+  for (const key of ["results", "outputs", "medias", "jobs", "items"]) {
+    const arr = record[key];
+    if (Array.isArray(arr) && arr.length > 0) {
+      const first = arr[0];
+      if (typeof first === "string" && first.startsWith("http")) return first;
+      if (first && typeof first === "object") {
+        const found = extractMediaUrl(first);
+        if (found) return found;
+      }
+    }
+  }
+  return void 0;
+}
+function parseGenerateJson(stdout, params) {
+  var _a;
+  const trimmed = stdout.trim();
+  if (!trimmed) throw new Error("Higgsfield CLI returned no output");
+  const normalize = (obj) => Array.isArray(obj) ? { results: obj } : obj;
+  let parsed = null;
+  try {
+    parsed = normalize(JSON.parse(trimmed));
+  } catch {
+    for (const line of trimmed.split(/\r?\n/).reverse()) {
+      const s = line.trim();
+      if (!s.startsWith("{") && !s.startsWith("[")) continue;
+      try {
+        parsed = normalize(JSON.parse(s));
+        break;
+      } catch {
+      }
+    }
+  }
+  if (!parsed) throw new Error("Higgsfield CLI output was not valid JSON");
+  const results = parsed.results;
+  const record = Array.isArray(results) && results.length > 0 && typeof results[0] === "object" ? results[0] : parsed;
+  const state = String(record.state ?? record.status ?? "").toLowerCase();
+  if (state === "failed" || state === "error" || state === "fail") {
+    throw new Error(typeof record.error === "string" ? record.error : "Higgsfield generation failed");
+  }
+  const url = extractMediaUrl(parsed);
+  if (!url) throw new Error("Higgsfield generation finished without a media URL");
+  const duration = record.duration ?? ((_a = record.output) == null ? void 0 : _a.duration);
+  const jobId = record.job_id ?? record.id ?? record.jobId;
+  return {
+    url,
+    mediaType: params.mediaType,
+    durationSec: typeof duration === "number" ? duration : void 0,
+    jobId: typeof jobId === "string" ? jobId : void 0,
+    model: params.model
+  };
+}
+const HIGGSFIELD_BINARIES = [
+  path.join(os.homedir(), ".npm-global/bin/higgsfield"),
+  path.join(os.homedir(), ".local/bin/hf"),
+  "/opt/homebrew/bin/higgsfield",
+  "/usr/local/bin/higgsfield",
+  "higgsfield"
+];
+function higgsfieldEnv() {
+  const home = os.homedir();
+  const extra = [path.join(home, ".npm-global/bin"), path.join(home, ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+  return { ...process.env, PATH: [...extra, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter), NO_COLOR: "1" };
+}
+const GENERATE_TIMEOUT_MS = 8 * 60 * 1e3;
+function runHiggsfieldCli(args, timeoutMs = 6e4) {
+  return new Promise((resolve, reject) => {
+    var _a, _b;
+    const binary = HIGGSFIELD_BINARIES[0];
+    const finalArgs = args.includes("--json") ? args : [...args, "--json"];
+    const child = spawn(binary, finalArgs, { env: higgsfieldEnv() });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error("Higgsfield CLI timed out"));
+    }, timeoutMs);
+    (_a = child.stdout) == null ? void 0 : _a.on("data", (d) => {
+      stdout += d.toString();
+    });
+    (_b = child.stderr) == null ? void 0 : _b.on("data", (d) => {
+      stderr += d.toString();
+    });
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+      const msg = stderr.trim() || stdout.trim() || `Higgsfield CLI exited with code ${code}`;
+      reject(new Error(/session expired/i.test(msg) ? 'Higgsfield is not connected. Run "higgsfield auth login" or connect it in Settings.' : msg));
+    });
+  });
+}
+async function generateHiggsfield(params) {
+  const stdout = await runHiggsfieldCli(buildCreateArgs(params), GENERATE_TIMEOUT_MS);
+  return parseGenerateJson(stdout, params);
+}
+async function getHiggsfieldAccountStatus() {
+  try {
+    const stdout = await runHiggsfieldCli(["account", "status"], 15e3);
+    return JSON.parse(stdout.trim());
+  } catch {
+    return null;
+  }
+}
+function parseConnectionState(account) {
+  if (!account) return { connected: false };
+  const data = account.data && typeof account.data === "object" ? account.data : account;
+  const plan = data.subscription_plan_type ?? data.plan;
+  return {
+    connected: true,
+    email: typeof data.email === "string" ? data.email : void 0,
+    plan: typeof plan === "string" ? plan : void 0,
+    credits: typeof data.credits === "number" ? data.credits : typeof data.balance === "number" ? data.balance : void 0
+  };
+}
+function registerHiggsfieldHandlers() {
+  ipcMain.handle("higgsfield:account-status", async () => {
+    return parseConnectionState(await getHiggsfieldAccountStatus());
+  });
+  ipcMain.handle("higgsfield:quick-edit", async (_event, params) => {
+    const { prepareClipReference: prepareClipReference2, resolveLocalSourcePath: resolveLocalSourcePath2 } = await Promise.resolve().then(() => copilotVisualMedia);
+    console.log("[higgsfield:quick-edit] params:", { fileRef: params.fileRef, mode: params.referenceMode, model: params.model, range: [params.sourceStartSec, params.sourceEndSec] });
+    let medias = [];
+    const isRemote = /^https?:\/\//i.test(params.fileRef);
+    const localPath = isRemote ? null : resolveLocalSourcePath2(params.fileRef);
+    if (localPath) {
+      try {
+        const prepared = await prepareClipReference2(params.fileRef, {
+          mode: params.referenceMode,
+          frameTimeSec: params.frameTimeSec,
+          sourceStartSec: params.sourceStartSec,
+          sourceEndSec: params.sourceEndSec
+        });
+        console.log("[higgsfield:quick-edit] extracted refs:", prepared.paths);
+        medias = prepared.paths.map((p, i) => ({ value: p, role: prepared.roles[i] ?? "image" }));
+      } catch (err) {
+        console.warn("[higgsfield:quick-edit] extraction failed, falling back to source path:", err);
+        medias = [{ value: localPath, role: params.outputType === "video" ? "start_image" : "image" }];
+      }
+    } else if (isRemote) {
+      console.log("[higgsfield:quick-edit] remote source, passing URL directly");
+      medias = [{ value: params.fileRef, role: params.outputType === "video" ? "start_image" : "image" }];
+    } else {
+      throw new Error(`Quick Edit could not resolve the clip's source media: ${params.fileRef}`);
+    }
+    return generateHiggsfield({
+      model: params.model,
+      prompt: params.prompt,
+      mediaType: params.outputType,
+      medias: medias.length > 0 ? medias : void 0
+    });
+  });
+  ipcMain.handle("higgsfield:generate", async (_event, params) => {
+    const medias = params.referenceValue ? [{ value: params.referenceValue, role: params.outputType === "video" ? "start_image" : "image" }] : void 0;
+    return generateHiggsfield({ model: params.model, prompt: params.prompt, mediaType: params.outputType, medias });
+  });
+  ipcMain.handle("higgsfield:auth-login", async () => {
+    try {
+      await runHiggsfieldCli(["auth", "login"], 5 * 60 * 1e3);
+    } catch (error) {
+      return { connected: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return parseConnectionState(await getHiggsfieldAccountStatus());
+  });
+  ipcMain.handle("higgsfield:auth-logout", async () => {
+    await runHiggsfieldCli(["auth", "logout"], 15e3).catch(() => {
+    });
+  });
+}
 const KIE_BASE = "https://api.kie.ai/api/v1";
 const POLL_INTERVAL_MS = 3e3;
 const MAX_POLL_ATTEMPTS = 120;
@@ -4401,6 +4607,27 @@ async function pollKieResult(taskId, apiKey) {
 async function generateWithKie(model, input, apiKey) {
   const taskId = await submitKieTask(model, input, apiKey);
   return await pollKieResult(taskId, apiKey);
+}
+async function generateWithHiggsfield(model, input, outputType) {
+  const prompt = typeof input.prompt === "string" ? input.prompt : "";
+  const medias = [];
+  const pushMedia = (value, role) => {
+    if (typeof value === "string" && value.length > 0) medias.push({ value, role });
+  };
+  pushMedia(input.start_image_url ?? input.image_url ?? input.imageUrl, outputType === "video" ? "start_image" : "image");
+  pushMedia(input.end_image_url, "end_image");
+  if (Array.isArray(input.image_urls)) {
+    for (const v of input.image_urls) pushMedia(v, outputType === "video" ? "start_image" : "image");
+  }
+  const result = await generateHiggsfield({
+    model,
+    prompt,
+    mediaType: outputType,
+    medias: medias.length > 0 ? medias : void 0,
+    aspectRatio: typeof input.aspect_ratio === "string" ? input.aspect_ratio : void 0,
+    durationSec: typeof input.duration === "number" ? input.duration : void 0
+  });
+  return { output: { url: result.url, duration: result.durationSec }, url: result.url };
 }
 const RUNPOD_BASE = "https://api.runpod.ai/v2";
 const RUNPOD_POLL_INTERVAL_MS = 3e3;
@@ -4568,7 +4795,7 @@ function registerWorkflowHandlers() {
     const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, nodeId, nodeType, modelId, inputs: rawInputs } = params;
     if (apiKey) configureFal(apiKey);
     const inputs = await resolveLocalMediaUrls(rawInputs);
-    const { ALL_MODELS, resolveVideoModelEndpoint, sanitizeVideoInputsForEndpoint } = await import("./models--j8coq92.js");
+    const { ALL_MODELS, resolveVideoModelEndpoint, sanitizeVideoInputsForEndpoint } = await import("./models-HfergeTv.js");
     const modelDef = ALL_MODELS[modelId] ?? Object.values(ALL_MODELS).find(
       (m) => m.id === modelId || m.altId === modelId || m.nodeType === modelId
     );
@@ -4607,6 +4834,9 @@ function registerWorkflowHandlers() {
       if (!key) throw new Error("No RunPod API key provided. Add one in Settings.");
       const endpointId = runpodEndpointId || modelDef.runpodEndpointId || "";
       result = await generateWithRunpod(endpointId, inputs, key);
+    } else if (provider === "higgsfield") {
+      const outputType = modelDef.outputType === "video" ? "video" : "image";
+      result = await generateWithHiggsfield(apiModelId, inputs, outputType);
     } else {
       const key = apiKey;
       if (!key) throw new Error("No fal.ai API key provided. Add one in Settings.");
@@ -5005,27 +5235,220 @@ function registerElementHandlers() {
     }
   );
 }
+const BASE_WEIGHTS = {
+  termInText: 4,
+  termElsewhere: 2,
+  activeTimeline: 2,
+  wordTiming: 2,
+  hasEmotion: 1,
+  hasDelivery: 1,
+  energyMatch: 3,
+  paceMatch: 3,
+  notableSignal: 1,
+  emotionQueryMatch: 5,
+  emotionBias: 2
+};
+const PERSONA_WEIGHTS = {
+  "documentary-editor": {
+    weights: { paceMatch: 4, emotionBias: 3 },
+    preferredEnergy: ["low", "measured", "calm", "deliberate", "steady"],
+    preferredPace: ["slow", "measured", "deliberate", "unhurried"],
+    emotionBias: ["reflective", "wistful", "sincere", "somber", "thoughtful", "emotional"]
+  },
+  "promo-trailer-editor": {
+    weights: { energyMatch: 5, notableSignal: 2 },
+    preferredEnergy: ["high", "driving", "punchy", "energetic", "intense", "building"],
+    preferredPace: ["fast", "quick", "snappy", "urgent"],
+    emotionBias: ["excited", "triumphant", "tense", "hyped", "epic"]
+  },
+  "brand-storyteller": {
+    weights: { hasEmotion: 2, emotionBias: 3 },
+    preferredEnergy: ["warm", "confident", "uplifting", "steady"],
+    preferredPace: ["measured", "flowing", "smooth"],
+    emotionBias: ["inspired", "hopeful", "proud", "warm", "aspirational"]
+  },
+  "social-shortform-editor": {
+    weights: { energyMatch: 4, notableSignal: 3 },
+    preferredEnergy: ["high", "punchy", "snappy", "energetic", "hooky"],
+    preferredPace: ["fast", "quick", "snappy", "rapid"],
+    emotionBias: ["excited", "funny", "surprised", "relatable", "bold"]
+  },
+  "interview-producer": {
+    weights: { hasDelivery: 2, emotionBias: 2 },
+    preferredEnergy: ["conversational", "natural", "steady", "engaged"],
+    preferredPace: ["natural", "measured", "conversational"],
+    emotionBias: ["candid", "reflective", "honest", "vulnerable", "emotional"]
+  }
+};
+function resolveWeights(persona) {
+  if (!persona) return BASE_WEIGHTS;
+  return { ...BASE_WEIGHTS, ...PERSONA_WEIGHTS[persona].weights };
+}
+function descriptorMatches(descriptor, preferred) {
+  if (!descriptor) return false;
+  const lower = descriptor.toLowerCase();
+  return preferred.some((token) => lower.includes(token.toLowerCase()));
+}
+function scoreMomentPerformance(moment, terms, ctx) {
+  const weights = resolveWeights(ctx.persona);
+  const profile = ctx.persona ? PERSONA_WEIGHTS[ctx.persona] : void 0;
+  const reasons = [];
+  let score = 0;
+  if (terms.length === 0) {
+    score += moment.words.length > 0 ? 3 : 1;
+  } else {
+    const text = moment.text.toLowerCase();
+    const haystack = `${moment.assetName} ${moment.text} ${moment.words.map((w) => w.word).join(" ")}`.toLowerCase();
+    let matched = 0;
+    for (const term of terms) {
+      if (!haystack.includes(term)) continue;
+      matched += 1;
+      score += text.includes(term) ? weights.termInText : weights.termElsewhere;
+    }
+    if (matched > 0) reasons.push(`matched ${terms.slice(0, 4).join(", ")}`);
+  }
+  if (moment.timelinePlacements.some((p) => p.timelineId === ctx.activeTimelineId) && ctx.activeTimelineId) {
+    score += weights.activeTimeline;
+    reasons.push("already on the active timeline");
+  }
+  if (moment.words.length > 0) {
+    score += weights.wordTiming;
+  }
+  if (moment.emotion) {
+    score += weights.hasEmotion;
+  }
+  if (moment.delivery) {
+    score += weights.hasDelivery;
+    reasons.push("has vocal delivery notes");
+  }
+  if (profile) {
+    if (descriptorMatches(moment.energy, profile.preferredEnergy)) {
+      score += weights.energyMatch;
+      reasons.push(`${moment.energy} energy fits ${ctx.persona}`);
+    }
+    if (descriptorMatches(moment.pace, profile.preferredPace)) {
+      score += weights.paceMatch;
+      reasons.push(`${moment.pace} pace fits ${ctx.persona}`);
+    }
+    if (moment.emotion && profile.emotionBias.some((e) => moment.emotion.toLowerCase().includes(e))) {
+      score += weights.emotionBias;
+      reasons.push(`${moment.emotion} emotion favored by ${ctx.persona}`);
+    }
+  }
+  if (moment.emotion && ctx.queryEmotions.some((q) => moment.emotion.toLowerCase().includes(q) || q.includes(moment.emotion.toLowerCase()))) {
+    score += weights.emotionQueryMatch;
+    reasons.push(`emotion (${moment.emotion}) matches the query`);
+  }
+  if (moment.notable && moment.notable.length > 0) {
+    score += weights.notableSignal * moment.notable.length;
+    reasons.push(`notable: ${moment.notable.slice(0, 2).join("; ")}`);
+  }
+  return { score, reasons };
+}
+function buildRerankPrompt(params) {
+  const { query, brief, candidates } = params;
+  const lines = candidates.map((c) => `- ${c.id}: ${c.text.replace(/\s+/g, " ").slice(0, 160)}`);
+  return [
+    `You are a ${brief.persona} selecting the strongest moments for a cut.`,
+    `Story goal: ${brief.storyGoal}. Tone: ${brief.tone}. Pacing: ${brief.pacing}.`,
+    `Viewer query: "${query}".`,
+    "Re-order these candidate moments from most to least useful for this cut.",
+    "Candidates (id: text):",
+    ...lines,
+    'Return compact JSON ONLY: {"order":["id1","id2",...]} listing the ids best-first.',
+    "Include only ids from the list. No prose."
+  ].join("\n");
+}
+function extractRerankJson(raw) {
+  var _a;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const tryParse = (s) => {
+    try {
+      JSON.parse(s);
+      return s;
+    } catch {
+      return null;
+    }
+  };
+  const direct = tryParse(trimmed);
+  if (direct) return direct;
+  for (const m of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    const inner = (_a = m[1]) == null ? void 0 : _a.trim();
+    if (inner && tryParse(inner)) return inner;
+  }
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    const slice = trimmed.slice(start, end + 1);
+    if (tryParse(slice)) return slice;
+  }
+  return null;
+}
+function applyRerankResult(heuristic, rerankJson) {
+  const jsonText = extractRerankJson(rerankJson);
+  if (!jsonText) return heuristic;
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    return heuristic;
+  }
+  const order = parsed.order;
+  if (!Array.isArray(order) || order.length === 0) return heuristic;
+  const byId = new Map(heuristic.map((m) => [m.id, m]));
+  const seen = /* @__PURE__ */ new Set();
+  const ranked = [];
+  for (const id of order) {
+    if (typeof id !== "string") continue;
+    const moment = byId.get(id);
+    if (moment && !seen.has(id)) {
+      ranked.push(moment);
+      seen.add(id);
+    }
+  }
+  for (const moment of heuristic) {
+    if (!seen.has(moment.id)) ranked.push(moment);
+  }
+  return ranked;
+}
 function extractQueryTerms(query) {
   return [...new Set(
     query.toLowerCase().split(/[^a-z0-9']+/).map((term) => term.trim()).filter((term) => term.length >= 3)
   )];
 }
-function scoreMoment(moment, terms, activeTimelineId) {
-  if (terms.length === 0) {
-    return (moment.words.length > 0 ? 3 : 1) + (moment.timelinePlacements.some((placement) => placement.timelineId === activeTimelineId) ? 2 : 0);
-  }
-  const haystack = `${moment.assetName} ${moment.text} ${moment.words.map((word) => word.word).join(" ")}`.toLowerCase();
-  const termScore = terms.reduce((score, term) => haystack.includes(term) ? score + (moment.text.toLowerCase().includes(term) ? 4 : 2) : score, 0);
-  const activeBonus = moment.timelinePlacements.some((placement) => placement.timelineId === activeTimelineId) ? 2 : 0;
-  const wordBonus = moment.words.length > 0 ? 2 : 0;
-  return termScore + activeBonus + wordBonus;
+const QUERY_EMOTION_WORDS = [
+  "emotional",
+  "emotion",
+  "sad",
+  "happy",
+  "angry",
+  "excited",
+  "reflective",
+  "tense",
+  "funny",
+  "nervous",
+  "calm",
+  "proud",
+  "hopeful",
+  "vulnerable",
+  "somber",
+  "wistful"
+];
+function extractQueryEmotions(query) {
+  const lower = query.toLowerCase();
+  return QUERY_EMOTION_WORDS.filter((word) => lower.includes(word));
 }
-function retrieveRelevantMoments(index, query, limit = 24) {
+function retrieveRelevantMoments(index, query, optsOrLimit = 24) {
+  const opts = typeof optsOrLimit === "number" ? { limit: optsOrLimit } : optsOrLimit;
+  const limit = opts.limit ?? 24;
   const terms = extractQueryTerms(query);
-  return index.moments.map((moment) => ({
-    moment,
-    score: scoreMoment(moment, terms, index.activeTimelineId)
-  })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score || a.moment.sourceStart - b.moment.sourceStart).slice(0, limit).map(({ moment, score }) => ({
+  const ctx = {
+    activeTimelineId: index.activeTimelineId,
+    persona: opts.persona,
+    queryEmotions: extractQueryEmotions(query)
+  };
+  return index.moments.map((moment) => ({ moment, ...scoreMomentPerformance(moment, terms, ctx) })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score || a.moment.sourceStart - b.moment.sourceStart).slice(0, limit).map(({ moment, score, reasons }) => ({
     id: moment.id,
     assetId: moment.assetId,
     assetName: moment.assetName,
@@ -5035,7 +5458,7 @@ function retrieveRelevantMoments(index, query, limit = 24) {
     words: moment.words.slice(0, 32),
     timelinePlacements: moment.timelinePlacements,
     score,
-    reason: terms.length > 0 ? `Matched ${terms.slice(0, 4).join(", ")} with ${moment.words.length > 0 ? "word-level timing" : "segment timing"}.` : `${moment.words.length > 0 ? "Word-level" : "Segment-level"} transcript candidate.`
+    reason: reasons.length > 0 ? `${reasons.slice(0, 3).join("; ")}.` : `${moment.words.length > 0 ? "Word-level" : "Segment-level"} transcript candidate.`
   }));
 }
 const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash";
@@ -5072,7 +5495,7 @@ function parseFractionalNumber(value) {
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
-function extractJsonText$1(raw) {
+function extractJsonText$2(raw) {
   var _a;
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -5333,7 +5756,7 @@ function extractObjectPayload(value) {
   }
   const text = extractTextFromUnknown(value);
   if (!text) return null;
-  const jsonText = extractJsonText$1(text);
+  const jsonText = extractJsonText$2(text);
   if (!jsonText) return null;
   try {
     const parsed = JSON.parse(jsonText);
@@ -5395,7 +5818,7 @@ async function analyzeAssetVisualSummary(params) {
   });
   const data = result.data;
   const output = extractTextFromUnknown(data.output) || extractTextFromUnknown(data.text) || "";
-  const jsonText = extractJsonText$1(output);
+  const jsonText = extractJsonText$2(output);
   if (!jsonText) {
     return {
       assetId: params.assetId,
@@ -5625,7 +6048,7 @@ async function callTextLLM(params) {
     usage: parseUsage(data.usage)
   };
 }
-function extractJsonText(raw) {
+function extractJsonText$1(raw) {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   try {
@@ -5760,9 +6183,9 @@ ${answerLines.join("\n")}`.trim();
   return next;
 }
 function normalizePositiveNumber(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  return Math.max(0, num);
+  const num2 = Number(value);
+  if (!Number.isFinite(num2)) return null;
+  return Math.max(0, num2);
 }
 function normalizeSegment(segment) {
   if (!segment || typeof segment !== "object") return null;
@@ -5949,7 +6372,7 @@ async function inferEditorialBrief(params) {
     maxTokens: 900,
     temperature: 0.35
   });
-  const jsonText = extractJsonText(response2.message);
+  const jsonText = extractJsonText$1(response2.message);
   if (!jsonText) {
     return { brief: fallback, clarifyingQuestions: [], usage: response2.usage };
   }
@@ -5961,9 +6384,24 @@ async function inferEditorialBrief(params) {
     return { brief: fallback, clarifyingQuestions: [], usage: response2.usage };
   }
 }
-function buildRetrievalSummary(index, request2, brief, visualFindings) {
+async function buildRetrievalSummary(index, request2, brief, visualFindings, opts = {}) {
   const retrievalQuery = [request2, brief.storyGoal, brief.hook, brief.tone, brief.audience].join(" ");
-  const topMoments = retrieveRelevantMoments(index, retrievalQuery, 20);
+  let topMoments = retrieveRelevantMoments(index, retrievalQuery, { limit: 20, persona: brief.persona });
+  if (opts.rerank && opts.apiKey && topMoments.length > 1) {
+    try {
+      const rerankPrompt = buildRerankPrompt({ query: retrievalQuery, brief, candidates: topMoments });
+      const rerankResponse = await callTextLLM({
+        apiKey: opts.apiKey,
+        model: opts.model,
+        systemPrompt: "You re-rank candidate video moments for an editor. Return JSON only.",
+        prompt: rerankPrompt,
+        maxTokens: 500,
+        temperature: 0.2
+      });
+      topMoments = applyRerankResult(topMoments, rerankResponse.message);
+    } catch {
+    }
+  }
   const visualReadyCount = visualFindings.filter((finding) => finding.status === "ready").length;
   return {
     topMoments,
@@ -5975,7 +6413,7 @@ function buildRetrievalSummary(index, request2, brief, visualFindings) {
 async function generateCutVariants(params) {
   var _a;
   const parseSingleVariantResponse = (rawMessage, usage2) => {
-    const jsonText = extractJsonText(rawMessage);
+    const jsonText = extractJsonText$1(rawMessage);
     if (!jsonText) return null;
     try {
       const parsed = JSON.parse(jsonText);
@@ -6144,7 +6582,7 @@ async function judgeCutVariants(params) {
     maxTokens: 1600,
     temperature: 0.2
   });
-  const jsonText = extractJsonText(response2.message);
+  const jsonText = extractJsonText$1(response2.message);
   if (!jsonText) return { variants: params.variants, usage: response2.usage };
   try {
     const parsed = JSON.parse(jsonText);
@@ -6171,7 +6609,7 @@ async function runCutWorkflow(params) {
   });
   usage = mergeUsage(usage, briefInference.usage);
   const mergedBrief = mergeEditorialBrief(briefInference.brief, params.briefOverride, params.questionAnswers);
-  const retrievalSummary = buildRetrievalSummary(index, request2, mergedBrief, []);
+  const retrievalSummary = await buildRetrievalSummary(index, request2, mergedBrief, []);
   if (!params.confirmedBrief) {
     return {
       stage: "brief",
@@ -6190,7 +6628,11 @@ async function runCutWorkflow(params) {
     retrievedMoments: retrievalSummary.topMoments,
     model: params.visionModel
   });
-  const refreshedRetrievalSummary = buildRetrievalSummary(index, request2, mergedBrief, visualFindings);
+  const refreshedRetrievalSummary = await buildRetrievalSummary(index, request2, mergedBrief, visualFindings, {
+    apiKey: params.apiKey,
+    model: params.model,
+    rerank: mergedBrief.qualityGoal !== "auto"
+  });
   const generation = await generateCutVariants({
     apiKey: params.apiKey,
     model: params.model,
@@ -7140,6 +7582,192 @@ function cleanupEphemeralVisualRefs(prepared) {
     }
   }
 }
+function resolveLocalSourcePath(fileRef) {
+  const trimmed = fileRef.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("local-media://file/")) {
+    const decoded = decodeURIComponent(trimmed.replace("local-media://file", ""));
+    return resolveExistingPath(decoded);
+  }
+  if (trimmed.startsWith("file://")) {
+    try {
+      return resolveExistingPath(decodeURIComponent(new URL(trimmed).pathname));
+    } catch {
+      return null;
+    }
+  }
+  return resolveExistingPath(trimmed);
+}
+async function prepareClipReference(fileRef, opts) {
+  const source = resolveLocalSourcePath(fileRef);
+  if (!source) throw new Error(`Could not resolve a local source file for: ${fileRef}`);
+  const workDir = path.join(os.tmpdir(), "cinegen-higgsfield-refs");
+  fs.mkdirSync(workDir, { recursive: true });
+  const stamp = crypto$1.randomBytes(6).toString("hex");
+  const start = Math.max(0, opts.sourceStartSec ?? 0);
+  const end = opts.sourceEndSec ?? start;
+  if (opts.mode === "first-last") {
+    const firstOut = path.join(workDir, `${stamp}-first.jpg`);
+    const lastOut = path.join(workDir, `${stamp}-last.jpg`);
+    const first = await extractFrame(source, start, firstOut);
+    const last = await extractFrame(source, Math.max(start, end - 0.05), lastOut);
+    const paths = [];
+    const roles = [];
+    if (first) {
+      paths.push(first);
+      roles.push("start_image");
+    }
+    if (last) {
+      paths.push(last);
+      roles.push("end_image");
+    }
+    if (paths.length === 0) throw new Error("Failed to extract first/last frames");
+    return { paths, roles };
+  }
+  if (opts.mode === "segment") {
+    const outPath = path.join(workDir, `${stamp}-segment.mp4`);
+    const duration = Math.max(0.1, end > start ? end - start : opts.maxSegmentSec ?? 30);
+    const seg = await extractClipSegment(source, start, Math.min(duration, opts.maxSegmentSec ?? 30), outPath);
+    if (!seg) throw new Error("Failed to extract clip segment");
+    return { paths: [seg], roles: ["image"] };
+  }
+  const time = opts.frameTimeSec ?? (end > start ? (start + end) / 2 : start);
+  const frameOut = path.join(workDir, `${stamp}-frame.jpg`);
+  const frame = await extractFrame(source, time, frameOut);
+  if (!frame) throw new Error("Failed to extract reference frame");
+  return { paths: [frame], roles: ["image"] };
+}
+function isGeminiMediaRefusal(text) {
+  return /\b(cannot|can't|do not have the ability|unable to|not able to)\b[\s\S]{0,100}\b(video|visual|auditory|audio|mp4|mov|footage|media file)\b/i.test(text) || /\btools do not allow\b[\s\S]{0,60}\b(video|visual|auditory|mp4)\b/i.test(text);
+}
+class GeminiMediaUnavailableError extends Error {
+}
+const GEMINI_MEDIA_FIRST_TOKEN_TIMEOUT_MS = 18e4;
+const GEMINI_MEDIA_TOTAL_TIMEOUT_MS = 10 * 60 * 1e3;
+async function analyzeMediaWithGeminiCli(params) {
+  var _a;
+  const binary = await resolveCliBinary("gemini");
+  if (!binary) {
+    throw new GeminiMediaUnavailableError("Gemini CLI is not installed.");
+  }
+  const source = resolveExistingPath(params.mediaPath);
+  if (!source) {
+    throw new Error(`Media file not found: ${params.mediaPath}`);
+  }
+  const workDir = path.join(os.tmpdir(), "cinegen-gemini-acoustic");
+  await mkdir(workDir, { recursive: true });
+  let stagedPath = source;
+  let ephemeral = false;
+  if (hasWhitespace(source)) {
+    const ext = path.extname(source) || ".mp4";
+    const out = path.join(workDir, `${crypto$1.randomUUID()}${ext}`);
+    const staged = stagePathForGeminiAtReference(source, out);
+    if (!staged) {
+      throw new Error("Could not stage the media file for Gemini analysis.");
+    }
+    stagedPath = staged;
+    ephemeral = true;
+  }
+  const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "gemini-2.5-flash";
+  const prompt = `@${stagedPath} ${params.prompt.trim()}`;
+  const args = [
+    "--skip-trust",
+    "-p",
+    prompt,
+    "-o",
+    "stream-json",
+    "-m",
+    model,
+    "--approval-mode",
+    "auto_edit",
+    "--session-id",
+    crypto$1.randomUUID(),
+    "--include-directories",
+    path.dirname(stagedPath)
+  ];
+  const cleanup = () => {
+    if (!ephemeral) return;
+    try {
+      fs.unlinkSync(stagedPath);
+    } catch {
+    }
+  };
+  return new Promise((resolve, reject) => {
+    var _a2, _b;
+    const child = spawn(binary, args, { env: buildGeminiCliEnv(), cwd: workDir, stdio: ["ignore", "pipe", "pipe"] });
+    let fullContent = "";
+    let stderrBuffer = "";
+    let lineBuffer = "";
+    let settled = false;
+    let firstTokenReceived = false;
+    const finish = (handler) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(totalTimeoutId);
+      clearTimeout(firstTokenTimeoutId);
+      cleanup();
+      handler();
+    };
+    const totalTimeoutId = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(() => reject(new Error("Gemini CLI media analysis timed out.")));
+    }, GEMINI_MEDIA_TOTAL_TIMEOUT_MS);
+    const firstTokenTimeoutId = setTimeout(() => {
+      if (firstTokenReceived) return;
+      child.kill("SIGTERM");
+      finish(() => reject(new Error("Gemini CLI is still reading the media file. Try a shorter clip.")));
+    }, GEMINI_MEDIA_FIRST_TOKEN_TIMEOUT_MS);
+    (_a2 = child.stdout) == null ? void 0 : _a2.on("data", (chunk) => {
+      lineBuffer += chunk.toString();
+      let idx;
+      while ((idx = lineBuffer.indexOf("\n")) >= 0) {
+        const line = lineBuffer.slice(0, idx).trim();
+        lineBuffer = lineBuffer.slice(idx + 1);
+        if (!line) continue;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === "message" && obj.role === "assistant" && typeof obj.content === "string") {
+            if (obj.content) {
+              firstTokenReceived = true;
+              fullContent += obj.content;
+            }
+          }
+          if (obj.type === "error" && typeof obj.message === "string") {
+            stderrBuffer += obj.message;
+          }
+        } catch {
+        }
+      }
+    });
+    (_b = child.stderr) == null ? void 0 : _b.on("data", (chunk) => {
+      stderrBuffer += chunk.toString();
+    });
+    child.on("error", (error) => finish(() => reject(error)));
+    child.on("close", (code) => {
+      const trimmed = fullContent.trim();
+      if (!trimmed) {
+        const errorMessage = stripAnsiCodes(stderrBuffer.trim()) || `Gemini CLI exited with code ${code ?? "unknown"}`;
+        finish(() => reject(new Error(errorMessage)));
+        return;
+      }
+      if (isGeminiMediaRefusal(trimmed)) {
+        finish(() => reject(new GeminiMediaUnavailableError("Gemini CLI declined to analyze the media.")));
+        return;
+      }
+      finish(() => resolve(trimmed));
+    });
+  });
+}
+const copilotVisualMedia = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  GeminiMediaUnavailableError,
+  analyzeMediaWithGeminiCli,
+  buildGeminiUserMessageWithVisualRefs,
+  cleanupEphemeralVisualRefs,
+  prepareClipReference,
+  prepareCopilotVisualRefs,
+  resolveLocalSourcePath
+}, Symbol.toStringTag, { value: "Module" }));
 let activeRequest = null;
 const FIRST_TOKEN_TIMEOUT_MS = 9e4;
 const VISUAL_FIRST_TOKEN_TIMEOUT_MS = 18e4;
@@ -10094,6 +10722,222 @@ async function analyzeCopilotVisualRefs(params) {
 function registerCopilotVideoAnalysisHandlers() {
   ipcMain.handle("copilot:analyze-visual-refs", async (_event, params) => analyzeCopilotVisualRefs(params));
 }
+const ACOUSTIC_ANALYSIS_VERSION = 1;
+const SILENCE_NOISE_DB = -30;
+const SILENCE_MIN_DURATION = 0.3;
+function parseSilenceDetect(stderr) {
+  const intervals = [];
+  let pendingStart = null;
+  for (const line of stderr.split(/\r?\n/)) {
+    const startMatch = line.match(/silence_start:\s*(-?\d+(?:\.\d+)?)/);
+    if (startMatch) {
+      pendingStart = Number(startMatch[1]);
+      continue;
+    }
+    const endMatch = line.match(/silence_end:\s*(-?\d+(?:\.\d+)?)/);
+    if (endMatch && pendingStart !== null) {
+      const end = Number(endMatch[1]);
+      if (Number.isFinite(end) && end > pendingStart) {
+        intervals.push({ start: pendingStart, end });
+      }
+      pendingStart = null;
+    }
+  }
+  return intervals;
+}
+function formatTc(seconds) {
+  return seconds.toFixed(2);
+}
+function buildAcousticPrompt(params) {
+  const { assetName, transcript } = params;
+  if (transcript.length === 0) {
+    return [
+      `Analyze the media "${assetName}", which has no spoken dialogue (b-roll / cutaway footage).`,
+      "Listen and watch, then return compact JSON ONLY with this shape:",
+      '{"segments":[{"start":0.0,"end":8.0,"content":"...","shotType":"wide","cutawayCandidate":true,"confidence":0.7}]}',
+      "Break the clip into a few meaningful time ranges. For each range, describe the visual content and ambient sound,",
+      "name a likely shotType, and set cutawayCandidate true when the range would work as a cutaway over interview audio.",
+      "Return only JSON, no prose."
+    ].join("\n");
+  }
+  const transcriptLines = transcript.map((seg) => `[${formatTc(seg.start)}-${formatTc(seg.end)}] ${seg.text}`).join("\n");
+  return [
+    `You are an assistant film editor analyzing the AUDIO performance in "${assetName}".`,
+    "Here is the transcript with timecodes (seconds):",
+    transcriptLines,
+    "",
+    "Listen to the audio and, for each transcript segment (matched by its timecodes), describe HOW it was said.",
+    "Return compact JSON ONLY with this shape:",
+    `{"segments":[{"start":0.0,"end":3.2,"delivery":"voice steadies then cracks on 'home'","emotion":"reflective","energy":"low-and-deliberate","pace":"slow","notable":["400ms pause before 'home'","usable as hook"],"confidence":0.8}]}`,
+    "Use rich descriptive text, NOT numeric scores. Capture vocal delivery, emotion, energy, pace, hesitations,",
+    "laughter, breaths, and reflective pauses. Keep each field short. Return only JSON, no prose."
+  ].join("\n");
+}
+function extractJsonText(raw) {
+  var _a;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const tryParse = (s) => {
+    try {
+      JSON.parse(s);
+      return s;
+    } catch {
+      return null;
+    }
+  };
+  const direct = tryParse(trimmed);
+  if (direct) return direct;
+  for (const m of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    const inner = (_a = m[1]) == null ? void 0 : _a.trim();
+    if (inner && tryParse(inner)) return inner;
+  }
+  for (const [open, close] of [["{", "}"], ["[", "]"]]) {
+    const startIdx = trimmed.indexOf(open);
+    if (startIdx === -1) continue;
+    let depth = 0;
+    for (let i = startIdx; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          const slice = trimmed.slice(startIdx, i + 1);
+          const parsedSlice = tryParse(slice);
+          if (parsedSlice) return parsedSlice;
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+function num(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : void 0;
+}
+function str(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : void 0;
+}
+function strArray(value) {
+  if (!Array.isArray(value)) return void 0;
+  const out = value.filter((v) => typeof v === "string" && v.trim().length > 0).map((v) => v.trim());
+  return out.length > 0 ? out : void 0;
+}
+function normalizeAcousticSegments(raw) {
+  const jsonText = extractJsonText(raw);
+  if (!jsonText) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    return [];
+  }
+  const list = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" && Array.isArray(parsed.segments) ? parsed.segments : [];
+  return list.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const r = entry;
+    const start = num(r.start);
+    const end = num(r.end);
+    if (start === void 0 || end === void 0 || end <= start) return [];
+    return [{
+      start,
+      end,
+      delivery: str(r.delivery),
+      emotion: str(r.emotion),
+      energy: str(r.energy),
+      pace: str(r.pace),
+      notable: strArray(r.notable),
+      content: str(r.content),
+      shotType: str(r.shotType),
+      cutawayCandidate: typeof r.cutawayCandidate === "boolean" ? r.cutawayCandidate : void 0,
+      confidence: num(r.confidence)
+    }];
+  });
+}
+function runFfmpegSilenceDetect(mediaPath) {
+  return new Promise((resolve) => {
+    const args = [
+      "-i",
+      mediaPath,
+      "-af",
+      `silencedetect=noise=${SILENCE_NOISE_DB}dB:d=${SILENCE_MIN_DURATION}`,
+      "-f",
+      "null",
+      "-"
+    ];
+    const proc = spawn(getFfmpegPath(), args);
+    let stderr = "";
+    proc.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
+    proc.on("error", () => resolve(""));
+    proc.on("close", () => resolve(stderr));
+  });
+}
+const GEMINI_MODEL_DEFAULT = "gemini-2.5-flash";
+const FAL_MODEL_LABEL = "fal-ai/video-understanding";
+async function runDescriptorPass(params, prompt) {
+  var _a;
+  const geminiModel = ((_a = params.model) == null ? void 0 : _a.trim()) || GEMINI_MODEL_DEFAULT;
+  try {
+    const rawText = await analyzeMediaWithGeminiCli({
+      mediaPath: params.mediaPath,
+      prompt,
+      model: geminiModel
+    });
+    return { rawText, model: geminiModel };
+  } catch (error) {
+    const geminiUnavailable = error instanceof GeminiMediaUnavailableError;
+    if (!geminiUnavailable) throw error;
+    if (!params.apiKey) {
+      throw new Error("Gemini CLI could not analyze this clip and no fal.ai API key is set for fallback.");
+    }
+    const rawText = await analyzeVideoWithPrompt({
+      apiKey: params.apiKey,
+      videoPath: params.mediaPath,
+      prompt,
+      detailedAnalysis: true
+    });
+    return { rawText, model: FAL_MODEL_LABEL };
+  }
+}
+async function analyzeAssetAcoustics(params) {
+  var _a;
+  const base = {
+    assetId: params.assetId,
+    status: "failed",
+    version: ACOUSTIC_ANALYSIS_VERSION,
+    model: ((_a = params.model) == null ? void 0 : _a.trim()) || GEMINI_MODEL_DEFAULT,
+    silenceMap: [],
+    segments: [],
+    hasSpeech: params.transcript.length > 0,
+    sourceDurationSec: params.durationSec
+  };
+  try {
+    const stderr = await runFfmpegSilenceDetect(params.mediaPath).catch(() => "");
+    const silenceMap = parseSilenceDetect(stderr);
+    const prompt = buildAcousticPrompt({ assetName: params.assetName, transcript: params.transcript });
+    const { rawText, model } = await runDescriptorPass(params, prompt);
+    const segments = normalizeAcousticSegments(rawText);
+    return {
+      ...base,
+      model,
+      status: "ready",
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      silenceMap,
+      segments,
+      error: silenceMap.length === 0 ? "Silence detection returned no intervals." : void 0
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ...base, error: message || "Acoustic analysis failed." };
+  }
+}
+function registerAcousticHandlers() {
+  ipcMain.handle("acoustic:analyze-asset", async (_event, params) => {
+    return analyzeAssetAcoustics(params);
+  });
+}
 const SHOULD_DISABLE_GPU_FOR_DEV_WAKE = process.platform === "darwin" && !app.isPackaged;
 if (SHOULD_DISABLE_GPU_FOR_DEV_WAKE) {
   app.disableHardwareAcceleration();
@@ -10396,6 +11240,7 @@ app.whenReady().then(async () => {
   });
   registerProjectHandlers();
   registerWorkflowHandlers();
+  registerHiggsfieldHandlers();
   registerExportHandlers();
   registerElementHandlers();
   registerLLMChatHandlers();
@@ -10410,6 +11255,7 @@ app.whenReady().then(async () => {
   registerAudioSyncHandlers(submitJob);
   registerVisionHandlers();
   registerCopilotVideoAnalysisHandlers();
+  registerAcousticHandlers();
   registerNativeVideoHandlers();
   registerTranscriptionHandlers();
   registerLocalModelHandlers();
