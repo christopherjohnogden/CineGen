@@ -466,6 +466,8 @@ export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpReq
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
       if (e.code === 'Space') {
+        // Let Cmd/Ctrl(+Shift)+Space fall through to other handlers (Quick Edit with AI).
+        if (e.metaKey || e.ctrlKey) return;
         e.preventDefault();
         togglePlayPause();
       } else if (e.code === 'ArrowRight') {
