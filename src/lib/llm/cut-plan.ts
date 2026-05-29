@@ -3,6 +3,7 @@ import type { Clip, Timeline } from '@/types/timeline';
 import { DEFAULT_AUDIO_COLOR, DEFAULT_VIDEO_COLOR } from '@/types/timeline';
 import { createDefaultTimeline } from '@/lib/editor/timeline-operations';
 import { generateId } from '@/lib/utils/ids';
+import { humanizeCutTimeline, buildSilenceContext, type HumanizeOptions } from '@/lib/llm/cut-humanize';
 
 export interface CutPlanSegment {
   asset_id?: string;
@@ -292,8 +293,9 @@ export function buildTimelineFromCutProposal(params: {
   proposal: CutProposal;
   assets: Asset[];
   existingTimelines: Timeline[];
+  humanize?: HumanizeOptions;
 }): AppliedCutTimeline | null {
-  const { proposal, assets, existingTimelines } = params;
+  const { proposal, assets, existingTimelines, humanize } = params;
   const validAssets = assets.filter((asset) => asset.type === 'video' || asset.type === 'audio');
   if (validAssets.length === 0) return null;
 
@@ -357,8 +359,13 @@ export function buildTimelineFromCutProposal(params: {
   timeline.clips = clips;
   timeline.duration = cursor;
 
+  // Opt-in Phase 3 pass: snap boundaries to silence + J/L cuts. Default output is unchanged.
+  const finalTimeline = humanize
+    ? humanizeCutTimeline(timeline, buildSilenceContext(assets), humanize)
+    : timeline;
+
   return {
-    timeline,
+    timeline: finalTimeline,
     unresolvedSegments,
   };
 }
