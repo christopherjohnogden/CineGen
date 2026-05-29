@@ -47,3 +47,30 @@ export function emptyAcousticAnalysis(assetId: string): AcousticAnalysisResult {
     segments: [],
   };
 }
+
+/** ffmpeg silencedetect defaults — tunable later. */
+export const SILENCE_NOISE_DB = -30;
+export const SILENCE_MIN_DURATION = 0.3;
+
+export function parseSilenceDetect(stderr: string): SilenceInterval[] {
+  const intervals: SilenceInterval[] = [];
+  let pendingStart: number | null = null;
+
+  for (const line of stderr.split(/\r?\n/)) {
+    const startMatch = line.match(/silence_start:\s*(-?\d+(?:\.\d+)?)/);
+    if (startMatch) {
+      pendingStart = Number(startMatch[1]);
+      continue;
+    }
+    const endMatch = line.match(/silence_end:\s*(-?\d+(?:\.\d+)?)/);
+    if (endMatch && pendingStart !== null) {
+      const end = Number(endMatch[1]);
+      if (Number.isFinite(end) && end > pendingStart) {
+        intervals.push({ start: pendingStart, end });
+      }
+      pendingStart = null;
+    }
+  }
+
+  return intervals;
+}
