@@ -954,8 +954,9 @@ export function LLMTab({
   }, []);
 
   const analyzeAssetAcoustics = useCallback(async (asset: Asset): Promise<void> => {
+    if (!asset.fileRef) return;
+    // Primary transport is the local Gemini CLI (no key needed); the fal.ai key is an optional fallback.
     const apiKey = getApiKey();
-    if (!apiKey || !asset.fileRef) return;
     const model = getCutVisionModel();
     const transcript = buildAcousticTranscript(asset);
 
@@ -1001,7 +1002,6 @@ export function LLMTab({
 
   const analyzeProjectAcoustics = useCallback(async () => {
     if (acousticInFlightRef.current) return;
-    if (!getApiKey()) return;
     const candidates = assets.filter((asset) => {
       if (asset.type !== 'video' && asset.type !== 'audio') return false;
       if (!asset.fileRef) return false;

@@ -240,7 +240,7 @@ export interface ElectronAPI {
   };
   acoustic: {
     analyzeAsset: (params: {
-      apiKey: string;
+      apiKey?: string;
       assetId: string;
       assetName: string;
       mediaPath: string;
