@@ -6,6 +6,8 @@ import type { WorkflowSpace } from '@/types/workspace';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { CUT_PLAN_CLOSE, CUT_PLAN_OPEN } from '@/lib/llm/cut-plan';
 import { COPILOT_ACTIONS_GUIDE } from '@/lib/llm/copilot-actions-guide';
+import { extractAcousticSegments } from '@/lib/llm/editorial-workflow';
+import type { AcousticSegment } from '@/lib/llm/acoustic-analysis';
 
 export type LLMWorkMode = 'ask' | 'search' | 'cut' | 'timeline';
 
@@ -113,8 +115,30 @@ function formatTimedWord(word: TranscriptWord): string {
   return `${word.word}@${formatSeconds(word.start)}-${formatSeconds(word.end)}`;
 }
 
-function formatTimedSegment(segment: TranscriptSegment): string {
-  const header = `${formatSeconds(segment.start)} -> ${formatSeconds(segment.end)} | ${segment.text}`;
+function bestAcousticMatch(start: number, end: number, acoustic: AcousticSegment[]): AcousticSegment | undefined {
+  let best: AcousticSegment | undefined;
+  let bestOverlap = 0;
+  for (const a of acoustic) {
+    const overlap = Math.min(end, a.end) - Math.max(start, a.start);
+    if (overlap > bestOverlap) { bestOverlap = overlap; best = a; }
+  }
+  return bestOverlap > 0 ? best : undefined;
+}
+
+function acousticSuffix(m: AcousticSegment | undefined): string {
+  if (!m) return '';
+  const parts = [
+    m.emotion ? `emotion: ${m.emotion}` : null,
+    m.pace ? `pace: ${m.pace}` : null,
+    m.delivery ? `delivery: ${m.delivery}` : null,
+    m.notable && m.notable.length > 0 ? `notable: ${m.notable.join('; ')}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? ` — [${parts.join(' | ')}]` : '';
+}
+
+function formatTimedSegment(segment: TranscriptSegment, acoustic: AcousticSegment[] = []): string {
+  const suffix = acousticSuffix(bestAcousticMatch(segment.start, segment.end, acoustic));
+  const header = `${formatSeconds(segment.start)} -> ${formatSeconds(segment.end)} | ${segment.text}${suffix}`;
   if (!Array.isArray(segment.words) || segment.words.length === 0) return header;
   const wordsLine = segment.words.map(formatTimedWord).join(' ');
   return `${header}\n    Words: ${wordsLine}`;
@@ -553,9 +577,11 @@ export function buildProjectContext(params: {
         `  Timed transcript source: ${transcript.wordCount > 0 ? 'word-level timestamps' : 'segment timestamps only'}`,
       ];
 
+      const assetAcoustic = extractAcousticSegments(asset);
+
       let assetBudget = Math.min(MAX_TIMED_TRANSCRIPT_CHARS_PER_ASSET, timedBudget);
       for (const segment of selectedSegments) {
-        const formatted = `  - ${formatTimedSegment(segment)}`;
+        const formatted = `  - ${formatTimedSegment(segment, assetAcoustic)}`;
         if (formatted.length > assetBudget) break;
         lines.push(formatted);
         assetBudget -= formatted.length;
