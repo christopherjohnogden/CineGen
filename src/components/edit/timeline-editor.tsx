@@ -8,7 +8,7 @@ import { formatTimecode } from './time-ruler';
 import { MusicGenerationPopup } from './music-generation-popup';
 import { FillGapModal } from './fill-gap-modal';
 import { ExtendModal } from './extend-modal';
-import { QuickEditModal } from './quick-edit-modal';
+import { FrameChatModal, type FrameChatPlaceResult } from './frame-chat-modal';
 import { useTimelineDrag } from './use-timeline-drag';
 import {
   removeClip,
@@ -18,6 +18,7 @@ import {
   snapToHalfSecond,
   addClipToTrack,
   addTrack,
+  addTrackAbove,
   removeTrack,
   removeTransition,
   addKeyframe,
@@ -132,7 +133,8 @@ export function TimelineEditor({
   } | null>(null);
   const [extendModalClipId, setExtendModalClipId] = useState<string | null>(null);
   const extendDragRef = useRef<typeof extendDrag>(null);
-  const [quickEditClipId, setQuickEditClipId] = useState<string | null>(null);
+  const [frameChatOpen, setFrameChatOpen] = useState(false);
+  const [frameChatClipId, setFrameChatClipId] = useState<string | null>(null);
 
   // Ghost preview state for drag-from-media-pool
   const [ghostInfo, setGhostInfo] = useState<{ trackId: string; leftPx: number; trackTop: number } | null>(null);
@@ -1422,21 +1424,15 @@ export function TimelineEditor({
       e.preventDefault();
 
       const selected = selectedClipIdsRef.current;
-      if (selected.size === 0) return;
       const tl = timelineRef.current;
       const videoTrackIds = new Set(tl.tracks.filter((t) => t.kind === 'video').map((t) => t.id));
-
-      // A linked video+audio pair selects as 2 clips (and the audio clip's asset can also be
-      // type:'video'). Resolve to the clip sitting on a VIDEO track, with a video/image asset —
-      // that's the editable picture clip; its linked audio rides along.
       const selectedClips = [...selected].map((id) => tl.clips.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => Boolean(c));
       const editable = selectedClips
         .map((c) => ({ clip: c, asset: state.assets.find((a) => a.id === c.assetId) }))
         .filter((x) => x.asset && videoTrackIds.has(x.clip.trackId) && (x.asset.type === 'video' || x.asset.type === 'image'));
-      if (editable.length !== 1) return; // 0 = nothing editable; 2+ = genuinely ambiguous multi-select
-      const { clip, asset } = editable[0];
-      if (!clip || !asset) return;
-      setQuickEditClipId(clip.id);
+      // Exactly one editable clip → State A (frame canvas); otherwise open chat-only (State B).
+      setFrameChatClipId(editable.length === 1 ? editable[0].clip.id : null);
+      setFrameChatOpen(true);
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -2393,49 +2389,45 @@ export function TimelineEditor({
     [dispatch, setTimeline],
   );
 
-  // Quick Edit: insert a NEW clip after the source clip, showing generating → done states.
-  // Non-destructive (doesn't replace the source) — matches the Extend tool philosophy.
-  const handleQuickEditStartGeneration = useCallback(
-    (sourceClipId: string, generationPromise: Promise<{ url: string; durationSec: number }>, label: string) => {
+  const handleFrameChatPlaceResult = useCallback(
+    ({ sourceClipId, url, durationSec, label }: FrameChatPlaceResult) => {
       const tl = timelineRef.current;
       const sourceClip = tl.clips.find((c) => c.id === sourceClipId);
       if (!sourceClip) return;
 
-      const startTime = sourceClip.startTime + clipEffectiveDuration(sourceClip);
+      // Find / create a video track directly above the source clip's track (reversed render: above = later in video group).
+      const videoTracks = tl.tracks.filter((t) => t.kind === 'video');
+      const sourceVideoIndex = videoTracks.findIndex((t) => t.id === sourceClip.trackId);
+      const aboveTrack = sourceVideoIndex >= 0 ? videoTracks[sourceVideoIndex + 1] : undefined;
+
+      let workingTl = tl;
+      let targetTrackId: string;
+      if (aboveTrack) {
+        targetTrackId = aboveTrack.id;
+      } else {
+        const result = addTrackAbove(tl, sourceClip.trackId, 'video');
+        workingTl = result.timeline;
+        targetTrackId = result.trackId;
+      }
+
       const assetId = generateId();
-      const pendingAsset: Asset = {
+      const placedAsset: Asset = {
         id: assetId,
-        name: 'Generating…',
+        name: label,
         type: 'video',
-        url: '',
+        url,
         duration: clipEffectiveDuration(sourceClip),
-        metadata: { generating: true, generatedVia: 'quick-edit', sourceClipId, quickEditPrompt: label },
+        metadata: { generatedVia: 'frame-chat', sourceClipId },
       } as unknown as Asset;
+      dispatch({ type: 'ADD_ASSET', asset: placedAsset });
 
-      dispatch({ type: 'ADD_ASSET', asset: pendingAsset });
-      const withClip = addClipToTrack(timelineRef.current, sourceClip.trackId, pendingAsset, startTime);
-      const newClip = withClip.clips.find((c) => c.assetId === assetId && c.trackId === sourceClip.trackId);
-      setTimeline(withClip);
-      if (newClip) setGeneratingClipIds((prev) => new Set(prev).add(newClip.id));
-
-      generationPromise.then(({ url, durationSec }) => {
-        dispatch({
-          type: 'UPDATE_ASSET',
-          asset: { id: assetId, name: label, url, duration: durationSec, metadata: { generating: false, generatedVia: 'quick-edit', sourceClipId, quickEditPrompt: label } },
-        });
-        const curTl = timelineRef.current;
-        setTimeline({
-          ...curTl,
-          clips: curTl.clips.map((c) => c.assetId === assetId ? { ...c, name: label, duration: durationSec } : c),
-        });
-        if (newClip) setGeneratingClipIds((prev) => { const next = new Set(prev); next.delete(newClip.id); return next; });
-      }).catch(() => {
-        dispatch({
-          type: 'UPDATE_ASSET',
-          asset: { id: assetId, name: 'Generation Failed', metadata: { generating: false, error: true } },
-        });
-        if (newClip) setGeneratingClipIds((prev) => { const next = new Set(prev); next.delete(newClip.id); return next; });
-      });
+      // Align to the source clip: same startTime, fit to its effective duration.
+      const withClip = addClipToTrack(workingTl, targetTrackId, placedAsset, sourceClip.startTime);
+      const placed = withClip.clips.find((c) => c.assetId === assetId && c.trackId === targetTrackId);
+      const fitted = placed
+        ? { ...withClip, clips: withClip.clips.map((c) => c.id === placed.id ? { ...c, duration: clipEffectiveDuration(sourceClip), trimStart: 0, trimEnd: 0 } : c) }
+        : withClip;
+      setTimeline(fitted);
     },
     [dispatch, setTimeline],
   );
@@ -3241,21 +3233,19 @@ export function TimelineEditor({
         />
       )}
 
-      {(() => {
-        if (!quickEditClipId) return null;
-        const qeClip = timeline.clips.find((c) => c.id === quickEditClipId);
-        const qeAsset = qeClip ? assets.find((a) => a.id === qeClip.assetId) : undefined;
-        if (!qeClip || !qeAsset) return null;
-        // Source time at the playhead within the clip (clamped to the clip's visible window).
-        const intoClip = Math.max(0, currentTimeRef.current - qeClip.startTime);
-        const playheadSourceSec = qeClip.trimStart + Math.min(intoClip, clipEffectiveDuration(qeClip));
+      {frameChatOpen && (() => {
+        const fcClip = frameChatClipId ? timeline.clips.find((c) => c.id === frameChatClipId) : undefined;
+        const fcAsset = fcClip ? assets.find((a) => a.id === fcClip.assetId) : undefined;
+        const intoClip = fcClip ? Math.max(0, currentTimeRef.current - fcClip.startTime) : 0;
+        const playheadSourceSec = fcClip ? fcClip.trimStart + Math.min(intoClip, clipEffectiveDuration(fcClip)) : undefined;
         return (
-          <QuickEditModal
-            clip={qeClip}
-            asset={qeAsset}
+          <FrameChatModal
+            projectId={projectId}
+            clip={fcClip}
+            asset={fcAsset}
             playheadSourceSec={playheadSourceSec}
-            onStartGeneration={handleQuickEditStartGeneration}
-            onClose={() => setQuickEditClipId(null)}
+            onPlaceResult={handleFrameChatPlaceResult}
+            onClose={() => { setFrameChatOpen(false); setFrameChatClipId(null); }}
           />
         );
       })()}
