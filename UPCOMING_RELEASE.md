@@ -26,6 +26,12 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - **"Analyze entire project"** button batch-runs ingest across the media pool, showing `Analyzing {done}/{total}…` progress; status persists per asset so a re-run resumes where it left off
 - Speechless b-roll clips get **content / shotType / cutawayCandidate** descriptors instead of vocal-delivery fields
 
+### LLM tab: Performance-aware selection **(in progress)**
+
+- Moment retrieval now reads the acoustic **emotion / energy / pace / delivery** descriptors instead of keyword matching alone, **specialized per editorial persona** (a documentary editor surfaces reflective/measured takes; a promo-trailer editor surfaces high-energy ones) — deterministic and a strict superset of the old keyword behavior
+- New **story-shape map** (narrative arc beats + emotional climax) and **repetition/contradiction map** (catches duplicate takes and conflicting statements) on the project index, surfaced in chat context and as **"arc:" / "N duplicate moments"** stats in the Copilot topbar
+- Optional **LLM re-rank** of the top candidates when a non-auto quality goal is set; any failure falls back to the heuristic order, so cut generation can't regress
+
 ### LLM tab: Copilot app actions **(in progress)**
 
 - Copilot can apply changes across CineGen via **`cinegen-skill-action`** buttons: **`add_nodes`** (prompt/model nodes to active or named Spaces workspace), **`save_elements`**, **`edit_timeline`** (split/trim/remove clips, close gaps, add markers), plus existing **`create_space`** workflows
