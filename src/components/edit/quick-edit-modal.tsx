@@ -49,6 +49,13 @@ export function QuickEditModal({ clip, asset, playheadSourceSec, onStartGenerati
     const sourceStartSec = clip.trimStart;
     const sourceEndSec = clip.duration - clip.trimEnd;
 
+    // TEMP DEBUG — inspect what reference we're sending.
+    console.log('[QuickEdit] generate', {
+      fileRef: asset.fileRef, url: (asset as { url?: string }).url, assetType: asset.type,
+      referenceMode: decided.referenceMode, model: decided.model,
+      sourceStartSec, sourceEndSec, frameTimeSec: playheadSourceSec,
+    });
+
     const generationPromise = window.electronAPI.higgsfield.quickEdit({
       fileRef: asset.fileRef,
       prompt: text,
@@ -100,13 +107,12 @@ export function QuickEditModal({ clip, asset, playheadSourceSec, onStartGenerati
         <div style={{ padding: '12px 16px', boxSizing: 'border-box' }}>
           <textarea
             ref={inputRef}
-            className="fgm__prompt"
             value={prompt}
             disabled={phase === 'generating'}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={PLACEHOLDERS[0]}
             rows={3}
-            style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical', background: 'var(--bg-sunken, #1a1a1f)', color: 'inherit', border: '1px solid var(--border-medium, #333)', borderRadius: 6, padding: 8, fontFamily: 'inherit', fontSize: 14 }}
+            style={{ display: 'block', width: '100%', boxSizing: 'border-box', margin: 0, resize: 'vertical', background: 'var(--bg-input, #1a1a1f)', color: 'var(--text-primary, inherit)', border: '1px solid var(--border-subtle, #333)', borderRadius: 'var(--radius-md, 6px)', padding: '10px 12px', fontFamily: 'var(--font-display, inherit)', fontSize: 13, minHeight: 60 }}
           />
           {route && (
             <div className="fgm__hint" style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
