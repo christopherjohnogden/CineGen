@@ -118,3 +118,69 @@ export function buildAcousticPrompt(params: {
     'laughter, breaths, and reflective pauses. Keep each field short. Return only JSON, no prose.',
   ].join('\n');
 }
+
+function extractJsonText(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const tryParse = (s: string): string | null => {
+    try { JSON.parse(s); return s; } catch { return null; }
+  };
+  const direct = tryParse(trimmed);
+  if (direct) return direct;
+  for (const m of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    const inner = m[1]?.trim();
+    if (inner && tryParse(inner)) return inner;
+  }
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const slice = trimmed.slice(firstBrace, lastBrace + 1);
+    if (tryParse(slice)) return slice;
+  }
+  return null;
+}
+
+function num(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function str(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function strArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out = value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim());
+  return out.length > 0 ? out : undefined;
+}
+
+export function normalizeAcousticSegments(raw: string): AcousticSegment[] {
+  const jsonText = extractJsonText(raw);
+  if (!jsonText) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(jsonText); } catch { return []; }
+  const record = parsed as Record<string, unknown>;
+  const list = Array.isArray(record.segments) ? record.segments : [];
+
+  return list.flatMap((entry): AcousticSegment[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    const r = entry as Record<string, unknown>;
+    const start = num(r.start);
+    const end = num(r.end);
+    if (start === undefined || end === undefined || end <= start) return [];
+    return [{
+      start,
+      end,
+      delivery: str(r.delivery),
+      emotion: str(r.emotion),
+      energy: str(r.energy),
+      pace: str(r.pace),
+      notable: strArray(r.notable),
+      content: str(r.content),
+      shotType: str(r.shotType),
+      cutawayCandidate: typeof r.cutawayCandidate === 'boolean' ? r.cutawayCandidate : undefined,
+      confidence: num(r.confidence),
+    }];
+  });
+}

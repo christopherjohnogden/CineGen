@@ -6,6 +6,7 @@ import {
   SILENCE_NOISE_DB,
   SILENCE_MIN_DURATION,
   buildAcousticPrompt,
+  normalizeAcousticSegments,
 } from '@/lib/llm/acoustic-analysis';
 
 describe('acoustic-analysis types', () => {
@@ -65,5 +66,29 @@ describe('buildAcousticPrompt', () => {
     const prompt = buildAcousticPrompt({ assetName: 'Bcam church', transcript: [] });
     expect(prompt).toContain('cutawayCandidate');
     expect(prompt).toContain('no spoken dialogue');
+  });
+});
+
+describe('normalizeAcousticSegments', () => {
+  it('parses fenced JSON and keeps valid segments', () => {
+    const raw = 'Here you go:\n```json\n{"segments":[{"start":0,"end":3.2,"delivery":"steady","emotion":"calm","confidence":0.8},{"start":"bad","end":1}]}\n```';
+    const out = normalizeAcousticSegments(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ start: 0, end: 3.2, delivery: 'steady', emotion: 'calm', confidence: 0.8 });
+  });
+
+  it('keeps cutaway fields for speechless segments', () => {
+    const raw = '{"segments":[{"start":0,"end":8,"content":"church exterior","shotType":"wide","cutawayCandidate":true}]}';
+    const out = normalizeAcousticSegments(raw);
+    expect(out[0]).toMatchObject({ content: 'church exterior', shotType: 'wide', cutawayCandidate: true });
+  });
+
+  it('returns [] when no JSON is present', () => {
+    expect(normalizeAcousticSegments('sorry, I cannot help')).toEqual([]);
+  });
+
+  it('drops segments where end <= start', () => {
+    const raw = '{"segments":[{"start":5,"end":5},{"start":2,"end":1}]}';
+    expect(normalizeAcousticSegments(raw)).toEqual([]);
   });
 });
