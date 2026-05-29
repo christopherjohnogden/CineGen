@@ -13,6 +13,7 @@
 // The arg-building and JSON-parsing logic is PURE and unit-tested (tests/lib/higgsfield/client.test.ts).
 // The spawn itself is thin and mockable.
 
+import { ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -204,4 +205,44 @@ export async function getHiggsfieldAccountStatus(): Promise<Record<string, unkno
   } catch {
     return null;
   }
+}
+
+export interface HiggsfieldConnectionState {
+  connected: boolean;
+  email?: string;
+  plan?: string;
+  credits?: number;
+  error?: string;
+}
+
+/** Normalize an `account status` JSON payload into a connection state. Pure. */
+export function parseConnectionState(account: Record<string, unknown> | null): HiggsfieldConnectionState {
+  if (!account) return { connected: false };
+  const data = (account.data && typeof account.data === 'object' ? account.data : account) as Record<string, unknown>;
+  return {
+    connected: true,
+    email: typeof data.email === 'string' ? data.email : undefined,
+    plan: typeof data.plan === 'string' ? data.plan : undefined,
+    credits: typeof data.credits === 'number' ? data.credits : (typeof data.balance === 'number' ? data.balance : undefined),
+  };
+}
+
+export function registerHiggsfieldHandlers(): void {
+  ipcMain.handle('higgsfield:account-status', async (): Promise<HiggsfieldConnectionState> => {
+    return parseConnectionState(await getHiggsfieldAccountStatus());
+  });
+
+  // Browser-based device login. Resolves when the CLI exits (user completed or aborted in browser).
+  ipcMain.handle('higgsfield:auth-login', async (): Promise<HiggsfieldConnectionState> => {
+    try {
+      await runHiggsfieldCli(['auth', 'login'], 5 * 60 * 1000);
+    } catch (error) {
+      return { connected: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    return parseConnectionState(await getHiggsfieldAccountStatus());
+  });
+
+  ipcMain.handle('higgsfield:auth-logout', async (): Promise<void> => {
+    await runHiggsfieldCli(['auth', 'logout'], 15_000).catch(() => {});
+  });
 }

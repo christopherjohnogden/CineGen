@@ -13,6 +13,7 @@ import {
 } from './window.js';
 import { registerProjectHandlers } from './ipc/project.js';
 import { registerWorkflowHandlers } from './ipc/workflows.js';
+import { registerHiggsfieldHandlers } from './ipc/higgsfield.js';
 import { registerExportHandlers } from './ipc/exports.js';
 import { registerElementHandlers } from './ipc/elements.js';
 import { registerLLMChatHandlers } from './ipc/llm-chat.js';
@@ -390,6 +391,7 @@ app.whenReady().then(async () => {
   // Register all IPC handlers
   registerProjectHandlers();
   registerWorkflowHandlers();
+  registerHiggsfieldHandlers();
   registerExportHandlers();
   registerElementHandlers();
   registerLLMChatHandlers();

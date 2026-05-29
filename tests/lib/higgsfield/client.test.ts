@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateArgs, parseGenerateJson, extractMediaUrl } from '../../../electron/ipc/higgsfield';
+import { buildCreateArgs, parseGenerateJson, extractMediaUrl, parseConnectionState } from '../../../electron/ipc/higgsfield';
 
 describe('buildCreateArgs', () => {
   it('builds a minimal text-to-video create command with --wait --json', () => {
@@ -89,5 +89,23 @@ describe('parseGenerateJson', () => {
   it('throws on empty or non-JSON output', () => {
     expect(() => parseGenerateJson('', p)).toThrow(/no output/);
     expect(() => parseGenerateJson('not json', p)).toThrow(/not valid JSON/);
+  });
+});
+
+describe('parseConnectionState', () => {
+  it('reports disconnected for null', () => {
+    expect(parseConnectionState(null)).toEqual({ connected: false });
+  });
+
+  it('reads email/plan/credits from a status payload', () => {
+    const s = parseConnectionState({ email: 'a@b.com', plan: 'pro', credits: 1200 });
+    expect(s).toEqual({ connected: true, email: 'a@b.com', plan: 'pro', credits: 1200 });
+  });
+
+  it('unwraps a { data: {...} } envelope and falls back to balance', () => {
+    const s = parseConnectionState({ data: { email: 'x@y.com', balance: 50 } });
+    expect(s.connected).toBe(true);
+    expect(s.email).toBe('x@y.com');
+    expect(s.credits).toBe(50);
   });
 });

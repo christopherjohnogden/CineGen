@@ -250,6 +250,11 @@ export interface ElectronAPI {
       model?: string;
     }) => Promise<import('./src/lib/llm/acoustic-analysis').AcousticAnalysisResult>;
   };
+  higgsfield: {
+    accountStatus: () => Promise<{ connected: boolean; email?: string; plan?: string; credits?: number; error?: string }>;
+    authLogin: () => Promise<{ connected: boolean; email?: string; plan?: string; credits?: number; error?: string }>;
+    authLogout: () => Promise<void>;
+  };
   copilot: {
     analyzeVisualRefs: (params: {
       apiKey: string;

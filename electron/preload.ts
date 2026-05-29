@@ -76,6 +76,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   acoustic: {
     analyzeAsset: (params: unknown) => ipcRenderer.invoke('acoustic:analyze-asset', params),
   },
+  higgsfield: {
+    accountStatus: () => ipcRenderer.invoke('higgsfield:account-status'),
+    authLogin: () => ipcRenderer.invoke('higgsfield:auth-login'),
+    authLogout: () => ipcRenderer.invoke('higgsfield:auth-logout'),
+  },
   copilot: {
     analyzeVisualRefs: (params: {
       apiKey: string;
