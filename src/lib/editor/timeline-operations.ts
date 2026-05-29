@@ -400,6 +400,43 @@ export function addTrack(timeline: Timeline, kind: TrackKind, color?: string): T
   return { ...timeline, tracks: newTracks };
 }
 
+/**
+ * Insert a new track directly "above" a target track in the timeline's visual stacking.
+ * Video tracks render reversed, so "above" = inserted immediately AFTER the target in the
+ * tracks array. Returns the updated timeline and the new track id. If the target is unknown,
+ * falls back to appending via addTrack.
+ */
+export function addTrackAbove(
+  timeline: Timeline,
+  targetTrackId: string,
+  kind: TrackKind,
+): { timeline: Timeline; trackId: string } {
+  const targetIndex = timeline.tracks.findIndex((t) => t.id === targetTrackId);
+
+  if (targetIndex < 0) {
+    const appended = addTrack(timeline, kind);
+    const originalIds = new Set(timeline.tracks.map((t) => t.id));
+    const added = appended.tracks.find((t) => !originalIds.has(t.id))!;
+    return { timeline: appended, trackId: added.id };
+  }
+
+  const track: Track = {
+    id: generateId(),
+    name: nextTrackName(timeline.tracks, kind),
+    kind,
+    color: nextTrackColor(timeline.tracks, kind),
+    muted: false,
+    solo: false,
+    locked: false,
+    visible: true,
+    volume: 1,
+  };
+
+  const nextTracks = [...timeline.tracks];
+  nextTracks.splice(targetIndex + 1, 0, track);
+  return { timeline: { ...timeline, tracks: nextTracks }, trackId: track.id };
+}
+
 export function removeTrack(timeline: Timeline, trackId: string): Timeline {
   const track = timeline.tracks.find((t) => t.id === trackId);
   if (!track) return timeline;
