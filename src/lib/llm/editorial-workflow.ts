@@ -2,6 +2,7 @@ import type { Asset } from '@/types/project';
 import type { Timeline } from '@/types/timeline';
 import { clipEffectiveDuration } from '@/types/timeline';
 import type { CutProposal } from '@/lib/llm/cut-plan';
+import type { AcousticSegment, SilenceInterval } from '@/lib/llm/acoustic-analysis';
 
 export type EditorialPersona =
   | 'documentary-editor'
@@ -32,6 +33,13 @@ export interface InsightMoment {
   sourceEnd: number;
   words: Array<{ word: string; start: number; end: number }>;
   timelinePlacements: TimelinePlacement[];
+  delivery?: string;
+  emotion?: string;
+  energy?: string;
+  pace?: string;
+  notable?: string[];
+  silenceBefore?: SilenceInterval;
+  silenceAfter?: SilenceInterval;
 }
 
 export interface TimelineReferenceProfile {
@@ -224,6 +232,48 @@ function extractTranscriptSegments(asset: Asset): Array<{
       words,
       index,
     }];
+  });
+}
+
+export function extractAcousticSegments(asset: Asset): AcousticSegment[] {
+  const metadata = (asset.metadata ?? {}) as Record<string, unknown>;
+  const analysis = metadata.analysis as Record<string, unknown> | undefined;
+  if (!analysis || analysis.status !== 'ready') return [];
+  const segments = Array.isArray(analysis.segments) ? analysis.segments : [];
+  return segments.flatMap((entry): AcousticSegment[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    const r = entry as Record<string, unknown>;
+    const start = Number(r.start);
+    const end = Number(r.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+    return [{
+      start,
+      end,
+      delivery: typeof r.delivery === 'string' ? r.delivery : undefined,
+      emotion: typeof r.emotion === 'string' ? r.emotion : undefined,
+      energy: typeof r.energy === 'string' ? r.energy : undefined,
+      pace: typeof r.pace === 'string' ? r.pace : undefined,
+      notable: Array.isArray(r.notable) ? r.notable.filter((v): v is string => typeof v === 'string') : undefined,
+      content: typeof r.content === 'string' ? r.content : undefined,
+      shotType: typeof r.shotType === 'string' ? r.shotType : undefined,
+      cutawayCandidate: typeof r.cutawayCandidate === 'boolean' ? r.cutawayCandidate : undefined,
+      confidence: Number.isFinite(Number(r.confidence)) ? Number(r.confidence) : undefined,
+    }];
+  });
+}
+
+export function extractSilenceMap(asset: Asset): SilenceInterval[] {
+  const metadata = (asset.metadata ?? {}) as Record<string, unknown>;
+  const analysis = metadata.analysis as Record<string, unknown> | undefined;
+  if (!analysis || analysis.status !== 'ready') return [];
+  const map = Array.isArray(analysis.silenceMap) ? analysis.silenceMap : [];
+  return map.flatMap((entry): SilenceInterval[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    const r = entry as Record<string, unknown>;
+    const start = Number(r.start);
+    const end = Number(r.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+    return [{ start, end }];
   });
 }
 
