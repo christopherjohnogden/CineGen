@@ -279,6 +279,94 @@ export function cleanupEphemeralVisualRefs(prepared: PreparedCopilotVisualRef[])
   }
 }
 
+// ---------------------------------------------------------------------------
+// Shared clip-reference prep (Higgsfield Phase 0.4). Extracts a frame or clip segment to a local
+// temp file; the Higgsfield CLI auto-uploads local paths, so no separate upload step is needed.
+// ---------------------------------------------------------------------------
+
+export type ClipReferenceMode = 'frame' | 'segment' | 'first-last';
+
+export interface PrepareClipReferenceOptions {
+  mode: ClipReferenceMode;
+  /** Source playback time (seconds) for a single frame; defaults to the segment midpoint. */
+  frameTimeSec?: number;
+  /** Source in/out (seconds) for segment / first-last extraction. */
+  sourceStartSec?: number;
+  sourceEndSec?: number;
+  /** Cap for segment extraction (default 30s). */
+  maxSegmentSec?: number;
+}
+
+export interface PreparedClipReference {
+  /** Local file paths to pass to the Higgsfield CLI (it auto-uploads them). */
+  paths: string[];
+  /** Roles aligned with paths, for video frame inputs (start_image/end_image) vs a single image. */
+  roles: Array<'image' | 'start_image' | 'end_image'>;
+}
+
+/** Resolve a CineGen fileRef (raw path, local-media://, or file://) to an existing local path. */
+export function resolveLocalSourcePath(fileRef: string): string | null {
+  const trimmed = fileRef.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('local-media://file/')) {
+    const decoded = decodeURIComponent(trimmed.replace('local-media://file', ''));
+    return resolveExistingPath(decoded);
+  }
+  if (trimmed.startsWith('file://')) {
+    try { return resolveExistingPath(decodeURIComponent(new URL(trimmed).pathname)); } catch { return null; }
+  }
+  return resolveExistingPath(trimmed);
+}
+
+/**
+ * Prepare reference media for a Higgsfield generation from a source file. Returns local paths +
+ * roles. `mode`:
+ *  - 'frame'       → one still at frameTimeSec (or segment midpoint), role 'image'
+ *  - 'segment'     → a trimmed clip segment (capped), role 'image' (model decides usage)
+ *  - 'first-last'  → first + last frame of [sourceStart, sourceEnd], roles start_image/end_image
+ */
+export async function prepareClipReference(
+  fileRef: string,
+  opts: PrepareClipReferenceOptions,
+): Promise<PreparedClipReference> {
+  const source = resolveLocalSourcePath(fileRef);
+  if (!source) throw new Error(`Could not resolve a local source file for: ${fileRef}`);
+
+  const workDir = path.join(os.tmpdir(), 'cinegen-higgsfield-refs');
+  fs.mkdirSync(workDir, { recursive: true });
+  const stamp = crypto.randomBytes(6).toString('hex');
+  const start = Math.max(0, opts.sourceStartSec ?? 0);
+  const end = opts.sourceEndSec ?? start;
+
+  if (opts.mode === 'first-last') {
+    const firstOut = path.join(workDir, `${stamp}-first.jpg`);
+    const lastOut = path.join(workDir, `${stamp}-last.jpg`);
+    const first = await extractFrame(source, start, firstOut);
+    const last = await extractFrame(source, Math.max(start, end - 0.05), lastOut);
+    const paths: string[] = [];
+    const roles: Array<'start_image' | 'end_image'> = [];
+    if (first) { paths.push(first); roles.push('start_image'); }
+    if (last) { paths.push(last); roles.push('end_image'); }
+    if (paths.length === 0) throw new Error('Failed to extract first/last frames');
+    return { paths, roles };
+  }
+
+  if (opts.mode === 'segment') {
+    const outPath = path.join(workDir, `${stamp}-segment.mp4`);
+    const duration = Math.max(0.1, (end > start ? end - start : opts.maxSegmentSec ?? 30));
+    const seg = await extractClipSegment(source, start, Math.min(duration, opts.maxSegmentSec ?? 30), outPath);
+    if (!seg) throw new Error('Failed to extract clip segment');
+    return { paths: [seg], roles: ['image'] };
+  }
+
+  // 'frame'
+  const time = opts.frameTimeSec ?? (end > start ? (start + end) / 2 : start);
+  const frameOut = path.join(workDir, `${stamp}-frame.jpg`);
+  const frame = await extractFrame(source, time, frameOut);
+  if (!frame) throw new Error('Failed to extract reference frame');
+  return { paths: [frame], roles: ['image'] };
+}
+
 /** True when Gemini's reply is a "I can't analyze video/audio" refusal rather than real analysis. */
 function isGeminiMediaRefusal(text: string): boolean {
   return /\b(cannot|can't|do not have the ability|unable to|not able to)\b[\s\S]{0,100}\b(video|visual|auditory|audio|mp4|mov|footage|media file)\b/i.test(text)
