@@ -4241,6 +4241,22 @@ export function LLMTab({
                     >{totalClipCount} clips</button>
                     <span className="copilot__topbar-dot" />
                     <span className="copilot__topbar-stat">{projectInsightIndex.stats.visualSummaryReadyCount} visuals</span>
+                    {projectInsightIndex.storyShape.arcSummary && (
+                      <>
+                        <span className="copilot__topbar-dot" />
+                        <span className="copilot__topbar-stat" title="Heuristic narrative arc across analyzed moments">
+                          arc: {projectInsightIndex.storyShape.arcSummary}
+                        </span>
+                      </>
+                    )}
+                    {projectInsightIndex.relationMap.relations.some((r) => r.kind === 'repetition') && (
+                      <>
+                        <span className="copilot__topbar-dot" />
+                        <span className="copilot__topbar-stat" title="Near-duplicate moments detected — pick one per cut">
+                          {projectInsightIndex.relationMap.relations.filter((r) => r.kind === 'repetition').length} duplicate moments
+                        </span>
+                      </>
+                    )}
                     <span className="copilot__topbar-dot" />
                     <button
                       className="copilot__topbar-stat"
