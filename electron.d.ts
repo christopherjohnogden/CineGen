@@ -333,6 +333,7 @@ export interface ElectronAPI {
     onJobComplete: (cb: (data: { jobId: string; result: unknown; assetId?: string; jobType?: string }) => void) => (() => void);
     onJobError: (cb: (data: { jobId: string; error: string; assetId?: string; jobType?: string }) => void) => (() => void);
     extractFrame: (params: { inputPath: string; timeSec: number }) => Promise<{ outputPath: string } | null>;
+    writeTempImage: (params: { dataUrl: string }) => Promise<{ outputPath: string }>;
     extractClip: (params: { inputPath: string; startTimeSec: number; durationSec: number }) => Promise<{ outputPath: string } | null>;
     downloadRemote: (params: { url: string; projectId: string; assetId: string; ext?: string }) => Promise<{ path: string }>;
     persistGeneratedAsset: (params: {

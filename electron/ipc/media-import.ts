@@ -326,6 +326,17 @@ export function registerMediaImportHandlers(): void {
     });
   });
 
+  // Write a base64/dataURL image (the flattened Frame Chat drawing) to a temp PNG and return its path.
+  ipcMain.handle('media:write-temp-image', async (_event, params: { dataUrl: string }): Promise<{ outputPath: string }> => {
+    const match = params.dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
+    if (!match) throw new Error('media:write-temp-image expects a base64 image data URL.');
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+    const buffer = Buffer.from(match[2], 'base64');
+    const outputPath = path.join(os.tmpdir(), `cinegen-frame-chat-${crypto.randomUUID()}.${ext}`);
+    await fsPromises.writeFile(outputPath, buffer);
+    return { outputPath };
+  });
+
   // media:extract-clip — extract a trimmed clip segment via ffmpeg for cloud tools
   ipcMain.handle('media:extract-clip', async (_event, params: {
     inputPath: string;

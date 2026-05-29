@@ -123,6 +123,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     queueProcessing: (params: unknown) => ipcRenderer.invoke('media:queue-processing', params),
     extractFrame: (params: { inputPath: string; timeSec: number }) =>
       ipcRenderer.invoke('media:extract-frame', params),
+    writeTempImage: (params: { dataUrl: string }) =>
+      ipcRenderer.invoke('media:write-temp-image', params),
     extractClip: (params: { inputPath: string; startTimeSec: number; durationSec: number }) =>
       ipcRenderer.invoke('media:extract-clip', params),
     downloadRemote: (params: { url: string; projectId: string; assetId: string; ext?: string }) =>
