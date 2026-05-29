@@ -44,6 +44,16 @@ describe('parseSilenceDetect', () => {
     expect(SILENCE_NOISE_DB).toBe(-30);
     expect(SILENCE_MIN_DURATION).toBe(0.3);
   });
+
+  it('handles CRLF line endings', () => {
+    const stderr = 'silence_start: 2.000\r\nsilence_end: 3.000 | silence_duration: 1.000\r\n';
+    expect(parseSilenceDetect(stderr)).toEqual([{ start: 2, end: 3 }]);
+  });
+
+  it('accepts a negative start (pre-roll clips)', () => {
+    const stderr = 'silence_start: -0.250\nsilence_end: 0.500 | silence_duration: 0.750\n';
+    expect(parseSilenceDetect(stderr)).toEqual([{ start: -0.25, end: 0.5 }]);
+  });
 });
 
 describe('buildAcousticPrompt', () => {
@@ -90,5 +100,19 @@ describe('normalizeAcousticSegments', () => {
   it('drops segments where end <= start', () => {
     const raw = '{"segments":[{"start":5,"end":5},{"start":2,"end":1}]}';
     expect(normalizeAcousticSegments(raw)).toEqual([]);
+  });
+
+  it('accepts a bare top-level array of segments', () => {
+    const raw = '[{"start":0,"end":3.2,"delivery":"steady"}]';
+    const out = normalizeAcousticSegments(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ start: 0, end: 3.2, delivery: 'steady' });
+  });
+
+  it('extracts a complete object even with prose and trailing braces', () => {
+    const raw = 'Sure! {"segments":[{"start":0,"end":2,"emotion":"calm"}]} (hope that helps) }';
+    const out = normalizeAcousticSegments(raw);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ emotion: 'calm' });
   });
 });

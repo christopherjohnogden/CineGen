@@ -131,11 +131,24 @@ function extractJsonText(raw: string): string | null {
     const inner = m[1]?.trim();
     if (inner && tryParse(inner)) return inner;
   }
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    const slice = trimmed.slice(firstBrace, lastBrace + 1);
-    if (tryParse(slice)) return slice;
+  // Balanced scan: find the first complete {...} or [...] block.
+  for (const [open, close] of [['{', '}'], ['[', ']']] as const) {
+    const startIdx = trimmed.indexOf(open);
+    if (startIdx === -1) continue;
+    let depth = 0;
+    for (let i = startIdx; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          const slice = trimmed.slice(startIdx, i + 1);
+          const parsedSlice = tryParse(slice);
+          if (parsedSlice) return parsedSlice;
+          break;
+        }
+      }
+    }
   }
   return null;
 }
@@ -160,8 +173,11 @@ export function normalizeAcousticSegments(raw: string): AcousticSegment[] {
   if (!jsonText) return [];
   let parsed: unknown;
   try { parsed = JSON.parse(jsonText); } catch { return []; }
-  const record = parsed as Record<string, unknown>;
-  const list = Array.isArray(record.segments) ? record.segments : [];
+  const list: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as Record<string, unknown>).segments)
+      ? ((parsed as Record<string, unknown>).segments as unknown[])
+      : [];
 
   return list.flatMap((entry): AcousticSegment[] => {
     if (!entry || typeof entry !== 'object') return [];
