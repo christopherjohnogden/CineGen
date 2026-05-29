@@ -243,9 +243,9 @@ export function extractAcousticSegments(asset: Asset): AcousticSegment[] {
   return segments.flatMap((entry): AcousticSegment[] => {
     if (!entry || typeof entry !== 'object') return [];
     const r = entry as Record<string, unknown>;
-    const start = Number(r.start);
-    const end = Number(r.end);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+    const start = roundTime(r.start);
+    const end = roundTime(r.end);
+    if (start === undefined || end === undefined || end <= start) return [];
     return [{
       start,
       end,
@@ -270,9 +270,9 @@ export function extractSilenceMap(asset: Asset): SilenceInterval[] {
   return map.flatMap((entry): SilenceInterval[] => {
     if (!entry || typeof entry !== 'object') return [];
     const r = entry as Record<string, unknown>;
-    const start = Number(r.start);
-    const end = Number(r.end);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
+    const start = roundTime(r.start);
+    const end = roundTime(r.end);
+    if (start === undefined || end === undefined || end <= start) return [];
     return [{ start, end }];
   });
 }

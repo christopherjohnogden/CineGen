@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildProjectInsightIndex, extractAcousticSegments } from '@/lib/llm/editorial-workflow';
+import { buildProjectInsightIndex, extractAcousticSegments, extractSilenceMap } from '@/lib/llm/editorial-workflow';
 import type { Asset } from '@/types/project';
 
 function makeAsset(analysis: unknown): Asset {
@@ -29,6 +29,21 @@ describe('extractAcousticSegments', () => {
   });
 });
 
+describe('extractSilenceMap', () => {
+  it('reads ready silence intervals', () => {
+    const asset = makeAsset({ status: 'ready', segments: [], silenceMap: [{ start: 1, end: 2 }] });
+    expect(extractSilenceMap(asset)).toEqual([{ start: 1, end: 2 }]);
+  });
+  it('returns [] when not ready or missing', () => {
+    expect(extractSilenceMap(makeAsset(undefined))).toEqual([]);
+    expect(extractSilenceMap(makeAsset({ status: 'analyzing', silenceMap: [{ start: 1, end: 2 }] }))).toEqual([]);
+  });
+  it('drops intervals where end <= start or array is absent', () => {
+    expect(extractSilenceMap(makeAsset({ status: 'ready', silenceMap: [{ start: 2, end: 2 }, { start: 3, end: 1 }] }))).toEqual([]);
+    expect(extractSilenceMap(makeAsset({ status: 'ready' }))).toEqual([]);
+  });
+});
+
 describe('buildProjectInsightIndex acoustic join', () => {
   it('joins acoustic segment onto the overlapping transcript moment', () => {
     const asset = {
@@ -48,7 +63,7 @@ describe('buildProjectInsightIndex acoustic join', () => {
           segments: [
             { start: 3.2, end: 7.0, delivery: "cracks on 'home'", emotion: 'reflective', pace: 'slow', notable: ['400ms pause'] },
           ],
-          silenceMap: [{ start: 7.0, end: 7.5 }],
+          silenceMap: [{ start: 2.9, end: 3.15 }, { start: 7.0, end: 7.5 }],
         },
       },
     } as unknown as Asset;
@@ -66,6 +81,7 @@ describe('buildProjectInsightIndex acoustic join', () => {
     expect(moment!.emotion).toBe('reflective');
     expect(moment!.notable).toEqual(['400ms pause']);
     expect(moment!.silenceAfter).toEqual({ start: 7.0, end: 7.5 });
+    expect(moment!.silenceBefore).toEqual({ start: 2.9, end: 3.15 });
 
     const firstMoment = index.moments.find((m) => m.text === 'I grew up in a small town.');
     expect(firstMoment!.delivery).toBeUndefined();
