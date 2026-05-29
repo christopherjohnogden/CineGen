@@ -54,7 +54,7 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
 
       if (tab === 'cloud') {
         if (!n.isModel) return false;
-        return provider === 'fal' || provider === 'kie';
+        return provider === 'fal' || provider === 'kie' || provider === 'higgsfield';
       }
       if (tab === 'local') {
         if (!n.isModel) return false;
