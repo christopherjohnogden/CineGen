@@ -2421,13 +2421,27 @@ export function TimelineEditor({
       } as unknown as Asset;
       dispatch({ type: 'ADD_ASSET', asset: placedAsset });
 
-      // Align to the source clip: same startTime, fit to its effective duration.
-      const withClip = addClipToTrack(workingTl, targetTrackId, placedAsset, sourceClip.startTime);
-      const placed = withClip.clips.find((c) => c.assetId === assetId && c.trackId === targetTrackId);
-      const fitted = placed
-        ? { ...withClip, clips: withClip.clips.map((c) => c.id === placed.id ? { ...c, duration: clipEffectiveDuration(sourceClip), trimStart: 0, trimEnd: 0 } : c) }
-        : withClip;
-      setTimeline(fitted);
+      // Place the overlay as a SINGLE video clip aligned to the source — no linked audio.
+      // (addClipToTrack would auto-spawn a linked audio clip + empty audio track for a video
+      // asset on a video track; a frame-chat overlay is a silent visual edit, so we build the
+      // clip directly, mirroring addClipToTrack's video-clip fields minus linkedClipIds.)
+      const overlayClip: TimelineClip = {
+        id: generateId(),
+        assetId,
+        trackId: targetTrackId,
+        name: label,
+        startTime: sourceClip.startTime,
+        duration: clipEffectiveDuration(sourceClip),
+        trimStart: 0,
+        trimEnd: 0,
+        speed: 1,
+        opacity: 1,
+        volume: 1,
+        flipH: false,
+        flipV: false,
+        keyframes: [],
+      };
+      setTimeline({ ...workingTl, clips: [...workingTl.clips, overlayClip] });
     },
     [dispatch, setTimeline],
   );
