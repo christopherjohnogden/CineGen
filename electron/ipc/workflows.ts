@@ -3,6 +3,7 @@ import { fal } from '@fal-ai/client';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { generateHiggsfield, type HiggsfieldMediaType } from './higgsfield.js';
 
 // --- kie.ai client (moved from lib/kie/client.ts) ---
 
@@ -93,6 +94,35 @@ async function generateWithKie(
 ): Promise<Record<string, unknown>> {
   const taskId = await submitKieTask(model, input, apiKey);
   return await pollKieResult(taskId, apiKey);
+}
+
+// --- Higgsfield client wrapper ---
+
+async function generateWithHiggsfield(
+  model: string,
+  input: Record<string, unknown>,
+  token: string,
+  outputType: HiggsfieldMediaType,
+): Promise<Record<string, unknown>> {
+  const prompt = typeof input.prompt === 'string' ? input.prompt : '';
+  const imageUrls = [input.image_url, input.start_image_url, input.imageUrl]
+    .filter((v): v is string => typeof v === 'string' && v.length > 0);
+  const extraImageUrls = Array.isArray(input.image_urls)
+    ? (input.image_urls as unknown[]).filter((v): v is string => typeof v === 'string')
+    : [];
+  const allImageUrls = [...imageUrls, ...extraImageUrls];
+
+  const result = await generateHiggsfield({
+    model,
+    prompt,
+    mediaType: outputType,
+    imageUrls: allImageUrls.length > 0 ? allImageUrls : undefined,
+    aspectRatio: typeof input.aspect_ratio === 'string' ? input.aspect_ratio : undefined,
+    durationSec: typeof input.duration === 'number' ? input.duration : undefined,
+  }, token);
+
+  // Normalize to the { output: { url } } shape downstream code already reads.
+  return { output: { url: result.url, duration: result.durationSec }, url: result.url };
 }
 
 // --- RunPod client ---
@@ -322,12 +352,13 @@ export function registerWorkflowHandlers(): void {
     runpodKey?: string;
     runpodEndpointId?: string;
     podUrl?: string;
+    higgsfieldToken?: string;
     nodeId: string;
     nodeType: string;
     modelId: string;
     inputs: Record<string, unknown>;
   }) => {
-    const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, nodeId, nodeType, modelId, inputs: rawInputs } = params;
+    const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, higgsfieldToken, nodeId, nodeType, modelId, inputs: rawInputs } = params;
 
     // Upload any local-media:// URLs to fal storage before sending to cloud APIs
     if (apiKey) configureFal(apiKey);
@@ -384,6 +415,10 @@ export function registerWorkflowHandlers(): void {
       if (!key) throw new Error('No RunPod API key provided. Add one in Settings.');
       const endpointId = runpodEndpointId || (modelDef as { runpodEndpointId?: string }).runpodEndpointId || '';
       result = await generateWithRunpod(endpointId, inputs, key);
+    } else if (provider === 'higgsfield') {
+      if (!higgsfieldToken) throw new Error('Higgsfield is not connected. Connect it in Settings.');
+      const outputType = (modelDef as { outputType?: string }).outputType === 'video' ? 'video' : 'image';
+      result = await generateWithHiggsfield(apiModelId, inputs, higgsfieldToken, outputType);
     } else {
       const key = apiKey;
       if (!key) throw new Error('No fal.ai API key provided. Add one in Settings.');

@@ -45,7 +45,7 @@ export interface ModelDefinition {
   description: string;
   inputs: ModelInputField[];
   outputType: 'image' | 'video' | 'audio' | 'text';
-  provider?: 'fal' | 'kie' | 'local' | 'runpod' | 'pod';
+  provider?: 'fal' | 'kie' | 'local' | 'runpod' | 'pod' | 'higgsfield';
   runpodEndpointId?: string;
   podRoute?: string;  // e.g. 'sdxl', 'flux', 'qwen-edit', 'ltx', 'wan-t2v', 'wan-i2v'
   responseMapping: {
