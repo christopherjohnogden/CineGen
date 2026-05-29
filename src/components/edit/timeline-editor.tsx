@@ -1420,13 +1420,20 @@ export function TimelineEditor({
       const tag = (e.target as HTMLElement).tagName.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       e.preventDefault();
+
       const selected = selectedClipIdsRef.current;
-      if (selected.size !== 1) return;
-      const clipId = [...selected][0];
-      const clip = timelineRef.current.clips.find((c) => c.id === clipId);
-      const asset = clip ? state.assets.find((a) => a.id === clip.assetId) : undefined;
-      if (!clip || !asset || (asset.type !== 'video' && asset.type !== 'image')) return;
-      setQuickEditClipId(clipId);
+      if (selected.size === 0) return;
+      const tl = timelineRef.current;
+      // A linked video+audio pair selects as 2 clips — pick the video/image clip among the
+      // selection (treating the linked pair as one logical clip).
+      const selectedClips = [...selected].map((id) => tl.clips.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => Boolean(c));
+      const editable = selectedClips
+        .map((c) => ({ clip: c, asset: state.assets.find((a) => a.id === c.assetId) }))
+        .filter((x) => x.asset && (x.asset.type === 'video' || x.asset.type === 'image'));
+      if (editable.length !== 1) return; // ambiguous if 2+ distinct editable clips selected
+      const { clip, asset } = editable[0];
+      if (!clip || !asset) return;
+      setQuickEditClipId(clip.id);
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
