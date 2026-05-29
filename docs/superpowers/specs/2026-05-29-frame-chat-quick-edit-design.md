@@ -118,3 +118,9 @@ When the user clicks **Add to timeline** on a previewed result:
 - `addTrack` appends to the end of the video group; the new helper must insert at the right index for "directly above the selected clip" given the reversed render.
 - Decide whether drawing marks clear after each send (default: yes) or persist until the playhead moves.
 - The flattened PNG temp files should live under a `cinegen-frame-chat` temp dir and be cleaned opportunistically (same pattern as `cinegen-higgsfield-refs` / `cinegen-gemini-visual-refs`).
+
+## Post-implementation follow-ups (deferred — low impact)
+
+- **Extend drawings are silently ignored.** `routeQuickEdit` returns `referenceMode:'first-last'` for "extend", and `selectQuickEditMedias` only uses the drawn frame when `referenceMode==='frame'`. So an extend request ignores the user's drawing (correct — extend needs source endpoints) but gives no feedback. Consider hiding/disabling the canvas or noting "drawing not used for extend" when `route.referenceMode !== 'frame'`.
+- **Frame-extraction failure falls back to chat-only silently.** If `media.extractFrame` returns null (ffmpeg failure), the modal drops to State B with no notice. Consider a small inline "couldn't load the frame" message.
+- **Frame URL passthrough caveat.** Frame URLs now route through `toFileUrl` → `local-media://` (canvas-clean). A `fileRef` that is already a bare `file://` URL is passed through unchanged and would still taint the canvas — not observed in practice (the app uses `local-media://`/raw paths), but worth normalizing if such refs ever appear.
