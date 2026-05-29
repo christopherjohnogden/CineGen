@@ -18,21 +18,10 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
-export type HiggsfieldMediaType = 'image' | 'video';
+// Single source of truth for model ids (shared with the renderer).
+export { HIGGSFIELD_MODELS } from '../../src/lib/higgsfield/higgsfield-models.js';
 
-/**
- * Real CLI job_set_type ids from `higgsfield model list`, keyed by CineGen node intent.
- * (These are the CLI's ids, which differ from the MCP's model ids — the CLI is our transport.)
- */
-export const HIGGSFIELD_MODELS = {
-  seedance: 'seedance_2_0',          // reference-driven video, strong identity, multi-shot
-  kling: 'kling3_0',                 // multi-shot video (Kling v3.0)
-  veo: 'veo3_1',                     // Google Veo 3.1
-  soul: 'text2image_soul_v2',        // Higgsfield Soul V2 — portraits / character image
-  soulCast: 'soul_cast',             // Soul Cast (video)
-  nanoBanana: 'nano_banana_2',       // Nano Banana Pro — top-quality 4K image, text/diagrams
-  gptImage: 'gpt_image_2',           // GPT Image 2 — general / design
-} as const;
+export type HiggsfieldMediaType = 'image' | 'video';
 
 /** A reference input. role maps to a CLI media flag; value is a local path, upload UUID, or job id. */
 export interface HiggsfieldMedia {
