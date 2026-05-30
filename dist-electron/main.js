@@ -4491,6 +4491,16 @@ function parseConnectionState(account) {
     credits: typeof data.credits === "number" ? data.credits : typeof data.balance === "number" ? data.balance : void 0
   };
 }
+function selectQuickEditMedias(opts) {
+  if (opts.drawnFramePath && opts.referenceMode === "frame") {
+    const role = opts.outputType === "video" ? "start_image" : "image";
+    return [{ value: opts.drawnFramePath, role }];
+  }
+  return opts.extractedPaths.map((p, i) => ({
+    value: p,
+    role: opts.extractedRoles[i] ?? "image"
+  }));
+}
 function registerHiggsfieldHandlers() {
   ipcMain.handle("higgsfield:account-status", async () => {
     return parseConnectionState(await getHiggsfieldAccountStatus());
@@ -4501,7 +4511,15 @@ function registerHiggsfieldHandlers() {
     let medias = [];
     const isRemote = /^https?:\/\//i.test(params.fileRef);
     const localPath = isRemote ? null : resolveLocalSourcePath2(params.fileRef);
-    if (localPath) {
+    if (params.drawnFramePath && params.referenceMode === "frame") {
+      medias = selectQuickEditMedias({
+        referenceMode: "frame",
+        outputType: params.outputType,
+        drawnFramePath: params.drawnFramePath,
+        extractedPaths: [],
+        extractedRoles: []
+      });
+    } else if (localPath) {
       try {
         const prepared = await prepareClipReference2(params.fileRef, {
           mode: params.referenceMode,
@@ -4510,7 +4528,13 @@ function registerHiggsfieldHandlers() {
           sourceEndSec: params.sourceEndSec
         });
         console.log("[higgsfield:quick-edit] extracted refs:", prepared.paths);
-        medias = prepared.paths.map((p, i) => ({ value: p, role: prepared.roles[i] ?? "image" }));
+        medias = selectQuickEditMedias({
+          referenceMode: params.referenceMode,
+          outputType: params.outputType,
+          drawnFramePath: params.drawnFramePath,
+          extractedPaths: prepared.paths,
+          extractedRoles: prepared.roles
+        });
       } catch (err) {
         console.warn("[higgsfield:quick-edit] extraction failed, falling back to source path:", err);
         medias = [{ value: localPath, role: params.outputType === "video" ? "start_image" : "image" }];
@@ -7847,7 +7871,7 @@ async function streamGeminiChatOnce(requestId, params, options) {
   if (!binary) {
     throw new Error("Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli");
   }
-  const model = ((_a = params.model) == null ? void 0 : _a.trim()) || "gemini-2.5-flash";
+  const model = ((_a = params.model) == null ? void 0 : _a.trim().replace(/^[^/]+\//, "")) || "gemini-2.5-flash";
   const prompt = options.canResume ? buildGeminiResumePrompt(params) : buildGeminiPrompt(params);
   const useStdin = prompt.length > PROMPT_STDIN_THRESHOLD;
   const workDir = getGeminiWorkspaceDir();
@@ -9514,6 +9538,15 @@ function registerMediaImportHandlers() {
         resolve({ outputPath });
       });
     });
+  });
+  ipcMain.handle("media:write-temp-image", async (_event, params) => {
+    const match = params.dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
+    if (!match) throw new Error("media:write-temp-image expects a base64 image data URL.");
+    const ext = match[1] === "jpeg" ? "jpg" : match[1];
+    const buffer = Buffer.from(match[2], "base64");
+    const outputPath = path.join(os.tmpdir(), `cinegen-frame-chat-${crypto$1.randomUUID()}.${ext}`);
+    await fs$1.writeFile(outputPath, buffer);
+    return { outputPath };
   });
   ipcMain.handle("media:extract-clip", async (_event, params) => {
     const { inputPath, startTimeSec, durationSec } = params;

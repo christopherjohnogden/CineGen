@@ -16,10 +16,17 @@
       "Bash(node --input-type=module -e ' *)",
       "Bash(tee /tmp/hf-stdout.txt)",
       "Bash(grep -n \"import.*generateId\\\\|clipEffectiveDuration\\\\|import type { Asset\\\\|, Asset\\\\b\\\\|handleClipCut\\\\|clip-ctx__item\" src/components/edit/timeline-editor.tsx)",
-      "Bash(grep -n \"import.*addClipToTrack\\\\|import.*generateId\\\\|import type { Asset\\\\|, Asset\\\\b\\\\|createDefaultTimeline\\\\|import.*timeline-operations\" src/components/llm/llm-tab.tsx)"
+      "Bash(grep -n \"import.*addClipToTrack\\\\|import.*generateId\\\\|import type { Asset\\\\|, Asset\\\\b\\\\|createDefaultTimeline\\\\|import.*timeline-operations\" src/components/llm/llm-tab.tsx)",
+      "Bash(sed -n '1,60p' src/components/edit/frame-canvas.tsx)",
+      "Bash(sed -n '1,80p' src/lib/higgsfield/quick-edit-intent.ts)",
+      "Bash(sed -n '400,410p' src/components/edit/timeline-editor.tsx)",
+      "Bash(sed -n '409,470p' src/lib/editor/timeline-operations.ts)",
+      "Bash(git rm *)",
+      "Bash(cd /Users/cogden/Desktop/Coding/CineGen; git checkout -- dist-electron/main.js dist-electron/preload.js dist-electron/workers/media-worker.js tsconfig.tsbuildinfo 2>/dev/null; rm -f dist-electron/models-5OlHuf8t.js .claude/scheduled_tasks.lock 2>/dev/null; echo \"=== clean tree \\(feature-wise\\) ===\"; git status --short)"
     ],
     "additionalDirectories": [
-      "/tmp"
+      "/tmp",
+      "/Users/cogden/Desktop/Coding/CineGen/.claude"
     ]
   }
 }
