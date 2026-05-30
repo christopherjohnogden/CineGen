@@ -4,7 +4,7 @@ import type { Asset } from '@/types/project';
 import type { Clip } from '@/types/timeline';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { routeQuickEdit } from '@/lib/higgsfield/quick-edit-intent';
-import { modelsFor, defaultModelFor, type FrameChatOutputType } from '@/lib/higgsfield/frame-chat-model-options';
+import { modelsFor, defaultModelFor, aspectRatioFor, type FrameChatOutputType } from '@/lib/higgsfield/frame-chat-model-options';
 import { getCutVisionModel } from '@/lib/utils/api-key';
 import {
   detectFrameChatIntent, deserializeThread, frameChatStorageKey, serializeThread,
@@ -214,11 +214,17 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
       // If the user drew on the frame, that annotated still IS the reference — force 'frame' mode
       // even if the prompt routed to extend ('first-last'), so the drawing is never dropped.
       const referenceMode = pending.drawnPath ? 'frame' : msg.generation.referenceMode;
+      // Prefer the actual loaded frame's pixel size (exact); fall back to asset dims, then 16:9.
+      const natural = canvasRef.current?.naturalSize();
+      const aspectRatio = natural
+        ? aspectRatioFor(natural.width, natural.height)
+        : aspectRatioFor(asset.width, asset.height);
       const res = await window.electronAPI.higgsfield.quickEdit({
         fileRef: asset.fileRef, prompt: pending.prompt,
         model: msg.generation.model, outputType: msg.generation.outputType, referenceMode,
         frameTimeSec: playheadSourceSec, sourceStartSec, sourceEndSec,
         drawnFramePath: pending.drawnPath ?? undefined,
+        aspectRatio,
       });
       const durationSec = res.durationSec ?? clipEffectiveDuration(clip);
       setMessages((prev) => prev.map((m) => m.id === msgId && m.generation

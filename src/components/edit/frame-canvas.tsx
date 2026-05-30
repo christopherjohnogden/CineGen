@@ -8,6 +8,8 @@ export interface FrameCanvasHandle {
   flatten: () => string | null;
   /** True when the user has drawn at least one mark on the frame. */
   hasDrawing: () => boolean;
+  /** Natural pixel dimensions of the loaded frame image, or null until loaded. */
+  naturalSize: () => { width: number; height: number } | null;
   clear: () => void;
 }
 
@@ -126,6 +128,10 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
       return out.toDataURL('image/png');
     },
     hasDrawing: () => strokesRef.current.length > 0,
+    naturalSize: () => {
+      const img = imgRef.current;
+      return img && img.naturalWidth > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null;
+    },
     clear: () => { setStrokes([]); drawingRef.current = null; },
   }), [imgLoaded, width, height]);
 

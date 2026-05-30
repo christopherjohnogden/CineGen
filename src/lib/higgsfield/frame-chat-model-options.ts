@@ -39,3 +39,27 @@ export function defaultModelFor(outputType: FrameChatOutputType): string {
 export function outputTypeForModel(modelId: string): FrameChatOutputType | null {
   return FRAME_CHAT_MODEL_OPTIONS.find((m) => m.id === modelId)?.outputType ?? null;
 }
+
+// Aspect ratios Higgsfield models accept via --aspect_ratio.
+const SUPPORTED_RATIOS: Array<{ label: string; value: number }> = [
+  { label: '16:9', value: 16 / 9 },
+  { label: '9:16', value: 9 / 16 },
+  { label: '4:3', value: 4 / 3 },
+  { label: '3:4', value: 3 / 4 },
+  { label: '1:1', value: 1 },
+  { label: '21:9', value: 21 / 9 },
+];
+
+/**
+ * Snap a source width/height to the nearest supported aspect ratio so a generated edit matches the
+ * footage instead of defaulting to square. Falls back to '16:9' when dimensions are unknown.
+ */
+export function aspectRatioFor(width?: number, height?: number): string {
+  if (!width || !height || width <= 0 || height <= 0) return '16:9';
+  const ratio = width / height;
+  let best = SUPPORTED_RATIOS[0];
+  for (const candidate of SUPPORTED_RATIOS) {
+    if (Math.abs(candidate.value - ratio) < Math.abs(best.value - ratio)) best = candidate;
+  }
+  return best.label;
+}

@@ -244,6 +244,8 @@ export interface QuickEditParams {
   sourceEndSec?: number;
   /** Flattened drawn-on frame PNG (Frame Chat). When set with frame mode, used as the reference. */
   drawnFramePath?: string;
+  /** Output aspect ratio (e.g. '16:9'); defaults to the model's own default when omitted. */
+  aspectRatio?: string;
 }
 
 /**
@@ -322,6 +324,7 @@ export function registerHiggsfieldHandlers(): void {
       prompt: params.prompt,
       mediaType: params.outputType,
       medias: medias.length > 0 ? medias : undefined,
+      aspectRatio: params.aspectRatio,
     });
   });
 
