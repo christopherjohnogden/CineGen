@@ -4307,9 +4307,10 @@
 /* ── Drawing canvas ──────────────────────────────────────────────────── */
 .frame-canvas { display: flex; flex-direction: column; gap: 12px; }
 .frame-canvas__tools {
-  display: flex;
+  display: inline-flex;
+  align-self: center;        /* shrink to content + center under the frame, not full width */
+  width: fit-content;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 5px;
   background: var(--bg-raised, #13161e);
@@ -4318,6 +4319,11 @@
   box-shadow: 0 2px 12px -4px rgba(0, 0, 0, 0.5);
 }
 .frame-canvas__toolgroup { display: flex; gap: 3px; }
+/* Vertical divider between the draw tools and the undo/clear group. */
+.frame-canvas__toolgroup + .frame-canvas__toolgroup {
+  padding-left: 8px;
+  border-left: 1px solid var(--border-medium, rgba(255, 255, 255, 0.10));
+}
 .frame-canvas__tool {
   display: grid;
   place-items: center;
