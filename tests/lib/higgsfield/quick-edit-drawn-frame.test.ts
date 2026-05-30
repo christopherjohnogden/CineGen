@@ -18,6 +18,26 @@ describe('selectQuickEditMedias', () => {
     expect(medias).toEqual([{ value: '/tmp/drawn.png', role: 'start_image' }]);
   });
 
+  it('sends the clean frame as the reference and the annotated guide as a second image', () => {
+    const medias = selectQuickEditMedias({
+      referenceMode: 'frame', outputType: 'image',
+      drawnFramePath: '/tmp/clean.png', guideFramePath: '/tmp/annotated.png',
+      extractedPaths: [], extractedRoles: [],
+    });
+    expect(medias).toEqual([
+      { value: '/tmp/clean.png', role: 'image' },
+      { value: '/tmp/annotated.png', role: 'image' },
+    ]);
+  });
+
+  it('omits the guide image when none is provided', () => {
+    const medias = selectQuickEditMedias({
+      referenceMode: 'frame', outputType: 'image',
+      drawnFramePath: '/tmp/clean.png', extractedPaths: [], extractedRoles: [],
+    });
+    expect(medias).toEqual([{ value: '/tmp/clean.png', role: 'image' }]);
+  });
+
   it('falls back to extracted paths when there is no drawn frame', () => {
     const medias = selectQuickEditMedias({
       referenceMode: 'first-last', outputType: 'video',

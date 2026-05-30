@@ -242,8 +242,10 @@ export interface QuickEditParams {
   frameTimeSec?: number;
   sourceStartSec?: number;
   sourceEndSec?: number;
-  /** Flattened drawn-on frame PNG (Frame Chat). When set with frame mode, used as the reference. */
+  /** Clean frame PNG (Frame Chat). When set with frame mode, used as the edit reference. */
   drawnFramePath?: string;
+  /** Annotated frame PNG (marking shows the region to change). Sent as a second image guide. */
+  guideFramePath?: string;
   /** Output aspect ratio (e.g. '16:9'); defaults to the model's own default when omitted. */
   aspectRatio?: string;
 }
@@ -256,12 +258,18 @@ export function selectQuickEditMedias(opts: {
   referenceMode: 'frame' | 'segment' | 'first-last';
   outputType: HiggsfieldMediaType;
   drawnFramePath?: string;
+  /** Annotated frame (marking shows where to edit). Sent as a SECOND image alongside the clean
+   * reference so the marks guide placement without being baked into the output. */
+  guideFramePath?: string;
   extractedPaths: string[];
   extractedRoles: Array<'image' | 'start_image' | 'end_image'>;
 }): HiggsfieldMedia[] {
   if (opts.drawnFramePath && opts.referenceMode === 'frame') {
     const role: HiggsfieldMedia['role'] = opts.outputType === 'video' ? 'start_image' : 'image';
-    return [{ value: opts.drawnFramePath, role }];
+    const medias: HiggsfieldMedia[] = [{ value: opts.drawnFramePath, role }];
+    // Attach the annotated guide frame as an additional image reference.
+    if (opts.guideFramePath) medias.push({ value: opts.guideFramePath, role: 'image' });
+    return medias;
   }
   return opts.extractedPaths.map((p, i) => ({
     value: p,
@@ -285,10 +293,12 @@ export function registerHiggsfieldHandlers(): void {
     const localPath = isRemote ? null : resolveLocalSourcePath(params.fileRef);
 
     if (params.drawnFramePath && params.referenceMode === 'frame') {
-      // The user drew on the frame — that PNG is the reference; no extraction needed.
+      // The user drew on the frame — the clean PNG is the reference (no extraction needed); the
+      // annotated guide frame, if present, rides along as a second image.
       medias = selectQuickEditMedias({
         referenceMode: 'frame', outputType: params.outputType,
-        drawnFramePath: params.drawnFramePath, extractedPaths: [], extractedRoles: [],
+        drawnFramePath: params.drawnFramePath, guideFramePath: params.guideFramePath,
+        extractedPaths: [], extractedRoles: [],
       });
     } else if (localPath) {
       // Local source → extract a frame/segment (the CLI auto-uploads the local file).

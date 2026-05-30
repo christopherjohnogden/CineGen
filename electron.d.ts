@@ -264,6 +264,7 @@ export interface ElectronAPI {
       sourceStartSec?: number;
       sourceEndSec?: number;
       drawnFramePath?: string;
+      guideFramePath?: string;
       aspectRatio?: string;
     }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
     generate: (params: {

@@ -90,7 +90,7 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
   // Holds prompt+drawnPath for proposed generations until the user presses Generate. Keyed by message id.
   // Not persisted: a `proposed` message reloaded from localStorage has no entry, so its Generate
   // button is disabled (see render) rather than silently dead.
-  const pendingGenRef = useRef<Record<string, { prompt: string; drawnPath: string | null; baseVersionUrl: string | null }>>({});
+  const pendingGenRef = useRef<Record<string, { prompt: string; drawnPath: string | null; guidePath: string | null; baseVersionUrl: string | null }>>({});
 
   const hasFrame = Boolean(clip && asset && (asset.type === 'video' || asset.type === 'image') && frameUrl);
 
@@ -177,13 +177,14 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
     setBusy(true);
 
     try {
-      // flatten() can throw a SecurityError on a tainted canvas; keep it inside the try so a
-      // failure surfaces via setError and busy still clears in finally.
-      let drawnPath: string | null = null;
+      // Snapshot the drawing before clearing the canvas. flatten()/cleanFrame() can throw a
+      // SecurityError on a tainted canvas — keep inside the try so failures surface via setError.
       const didDraw = hasFrame ? canvasRef.current?.hasDrawing() ?? false : false;
-      const drawnDataUrl = hasFrame ? canvasRef.current?.flatten() ?? null : null;
+      // The annotated frame (marks baked in) — guides WHERE the edit goes (ask + generate guide).
+      const drawnDataUrl = (hasFrame && didDraw) ? canvasRef.current?.flatten() ?? null : null;
+      // The clean frame (no marks) — the reference the edit is rendered FROM, so marks aren't baked in.
+      const cleanDataUrl = (hasFrame && didDraw) ? canvasRef.current?.cleanFrame() ?? null : null;
       canvasRef.current?.clear();
-      if (drawnDataUrl) drawnPath = await writeTempImage(drawnDataUrl);
 
       // Only generate when a clip with a usable source file is selected (State A). In chat-only
       // mode (State B) a 'generate' intent falls back to an ask turn so the user still gets a reply.
@@ -197,7 +198,11 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         // is a valid Higgsfield reference). Original frame or a video version → edit the source.
         const base = versions[activeVersion];
         const baseVersionUrl = base && base.label !== 'Orig' && base.outputType === 'image' ? base.url : null;
-        pendingGenRef.current[msgId] = { prompt: text, drawnPath, baseVersionUrl };
+        // Send BOTH: clean frame = the reference to render from; annotated frame = a guide showing
+        // where to apply the change. The clean frame keeps the marks out of the result.
+        const cleanPath = cleanDataUrl ? await writeTempImage(cleanDataUrl) : null;
+        const guidePath = drawnDataUrl ? await writeTempImage(drawnDataUrl) : null;
+        pendingGenRef.current[msgId] = { prompt: text, drawnPath: cleanPath, guidePath, baseVersionUrl };
         addMessage({
           id: msgId, role: 'assistant',
           content: 'I can generate that — choose how:',
@@ -219,8 +224,10 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
           }));
         });
       } else {
-        const visualRefs = drawnPath
-          ? [{ label: asset?.name ?? 'frame', kind: 'asset' as const, mediaType: 'image' as const, fileRef: drawnPath }]
+        // Ask: send the annotated frame so Gemini can see where the user pointed.
+        const askRefPath = drawnDataUrl ? await writeTempImage(drawnDataUrl) : null;
+        const visualRefs = askRefPath
+          ? [{ label: asset?.name ?? 'frame', kind: 'asset' as const, mediaType: 'image' as const, fileRef: askRefPath }]
           : [];
         // When the user drew on the frame, the red marks are a POINTING GESTURE at the subject of
         // their question — not part of the scene. Tell Gemini to answer about what's marked and to
@@ -313,7 +320,11 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         ? aspectRatioFor(natural.width, natural.height)
         : aspectRatioFor(asset.width, asset.height);
       // Use the edited/enhanced prompt the user sees in the clarify field; fall back to the raw text.
-      const finalPrompt = (msg.generation.prompt ?? pending.prompt).trim() || pending.prompt;
+      let finalPrompt = (msg.generation.prompt ?? pending.prompt).trim() || pending.prompt;
+      // When a guide image is attached, tell the model the second image is a location marker only.
+      if (pending.guidePath) {
+        finalPrompt += ' A second reference image has a colored marking indicating the region to change; apply the edit only there and do NOT reproduce the marking in the output.';
+      }
       // Build on the version currently shown in the viewer: if it's a generated version (not the
       // original) and the user didn't draw a fresh annotation, use that result as the reference so
       // edits stack (show v2 → generate → v3 builds on v2). Otherwise edit the source frame.
@@ -324,6 +335,7 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         model: msg.generation.model, outputType: msg.generation.outputType, referenceMode,
         frameTimeSec: playheadSourceSec, sourceStartSec, sourceEndSec,
         drawnFramePath: pending.drawnPath ?? undefined,
+        guideFramePath: pending.guidePath ?? undefined,
         aspectRatio,
       });
       const durationSec = res.durationSec ?? clipEffectiveDuration(clip);
