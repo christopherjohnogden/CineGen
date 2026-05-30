@@ -222,52 +222,94 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
   return (
     <div className="fcm__backdrop" onMouseDown={onClose}>
       <div className={`fcm${hasFrame ? ' fcm--with-frame' : ''}`} role="dialog" aria-modal="true" aria-label="Frame Chat" onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
-        {hasFrame && frameUrl && (
-          <div className="fcm__canvas-pane">
-            <FrameCanvas ref={canvasRef} frameUrl={frameUrl} />
-          </div>
-        )}
-        <div className="fcm__chat-pane">
-          <div className="fcm__thread" ref={threadRef}>
-            {messages.length === 0 && <div className="fcm__empty">Ask about your project, or describe a change to generate.</div>}
-            {messages.map((m) => (
-              <div key={m.id} className={`fcm__msg fcm__msg--${m.role}`}>
-                <div className="fcm__msg-content">
-                  {m.content}
-                  {streamingId === m.id && (
-                    m.content
-                      ? <span className="fcm__cursor">▋</span>
-                      : <span className="fcm__thinking">{streamStatus || 'Thinking…'}</span>
-                  )}
+        <div className="fcm__topbar">
+          <span className="fcm__brand">
+            <span className="fcm__brand-dot" />
+            Frame Chat
+          </span>
+          <span className="fcm__subtitle">
+            {hasFrame ? `${asset?.name ?? 'Clip'} · frame at playhead` : 'No clip under playhead — ask anything'}
+          </span>
+          <button className="fcm__close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+
+        <div className="fcm__body">
+          {hasFrame && frameUrl && (
+            <div className="fcm__canvas-pane">
+              <FrameCanvas ref={canvasRef} frameUrl={frameUrl} />
+            </div>
+          )}
+          <div className="fcm__chat-pane">
+            <div className="fcm__thread" ref={threadRef}>
+              {messages.length === 0 && (
+                <div className="fcm__empty">
+                  <div className="fcm__empty-mark">✦</div>
+                  <p className="fcm__empty-title">{hasFrame ? 'Ask about this frame' : 'Ask anything about your project'}</p>
+                  <p className="fcm__empty-hint">{hasFrame ? 'Draw to point at something, then ask — or describe a change to generate.' : 'Move the playhead over a clip to draw on its frame.'}</p>
                 </div>
-                {m.generation && (
-                  <div className="fcm__gen">
-                    {m.generation.status === 'proposed' && (
-                      pendingGenRef.current[m.id]
-                        ? <button onClick={() => void handleGenerate(m.id)}>Generate</button>
-                        : <span className="fcm__error">Session expired — resend to generate.</span>
-                    )}
-                    {m.generation.status === 'generating' && <span>Generating…</span>}
-                    {m.generation.status === 'ready' && m.generation.resultUrl && (
-                      <div>
-                        {m.generation.outputType === 'video'
-                          ? <video src={m.generation.resultUrl} muted loop autoPlay style={{ maxWidth: 220, borderRadius: 6 }} />
-                          : <img src={m.generation.resultUrl} alt="result" style={{ maxWidth: 220, borderRadius: 6 }} />}
-                        <button onClick={() => handlePlace(m.id)}>Add to timeline</button>
+              )}
+              {messages.map((m) => (
+                <div key={m.id} className={`fcm__row fcm__row--${m.role}`}>
+                  {m.role === 'assistant' && <div className="fcm__avatar">✦</div>}
+                  <div className={`fcm__msg fcm__msg--${m.role}`}>
+                    <div className="fcm__msg-content">
+                      {m.content}
+                      {streamingId === m.id && (
+                        m.content
+                          ? <span className="fcm__cursor">▋</span>
+                          : <span className="fcm__thinking">{streamStatus || 'Thinking…'}</span>
+                      )}
+                    </div>
+                    {m.generation && (
+                      <div className="fcm__gen">
+                        {m.generation.status === 'proposed' && (
+                          pendingGenRef.current[m.id]
+                            ? <button className="fcm__btn fcm__btn--accent" onClick={() => void handleGenerate(m.id)}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 L14 9 L21 9 L15 13 L17 20 L12 16 L7 20 L9 13 L3 9 L10 9 Z" /></svg>
+                                Generate
+                              </button>
+                            : <span className="fcm__note">Session expired — resend to generate.</span>
+                        )}
+                        {m.generation.status === 'generating' && (
+                          <span className="fcm__note fcm__note--busy"><span className="fcm__spinner" /> Generating…</span>
+                        )}
+                        {m.generation.status === 'ready' && m.generation.resultUrl && (
+                          <div className="fcm__result">
+                            {m.generation.outputType === 'video'
+                              ? <video className="fcm__result-media" src={m.generation.resultUrl} muted loop autoPlay />
+                              : <img className="fcm__result-media" src={m.generation.resultUrl} alt="result" />}
+                            <button className="fcm__btn fcm__btn--accent" onClick={() => handlePlace(m.id)}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                              Add to timeline
+                            </button>
+                          </div>
+                        )}
+                        {m.generation.status === 'placed' && <span className="fcm__note fcm__note--ok">✓ Placed above the clip</span>}
+                        {m.generation.status === 'failed' && <span className="fcm__note fcm__note--err">{m.generation.error}</span>}
                       </div>
                     )}
-                    {m.generation.status === 'placed' && <span>Placed above the clip ✓</span>}
-                    {m.generation.status === 'failed' && <span className="fcm__error">{m.generation.error}</span>}
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-          {error && <div className="fcm__error">{error}</div>}
-          <div className="fcm__composer">
-            <textarea value={draft} disabled={busy} placeholder={hasFrame ? 'Ask about the frame, or describe a change…' : 'Ask anything, or describe a change…'}
-              onChange={(e) => setDraft(e.target.value)} rows={2} />
-            <button onClick={() => void handleSend()} disabled={!draft.trim() || busy}>{busy ? '…' : 'Send'}</button>
+                </div>
+              ))}
+            </div>
+            {error && <div className="fcm__error">{error}</div>}
+            <div className="fcm__composer">
+              <textarea
+                className="fcm__input"
+                value={draft}
+                disabled={busy}
+                placeholder={hasFrame ? 'Ask about the frame, or describe a change…' : 'Ask anything, or describe a change…'}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={1}
+              />
+              <button className="fcm__send" onClick={() => void handleSend()} disabled={!draft.trim() || busy} aria-label="Send">
+                {busy
+                  ? <span className="fcm__spinner" />
+                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></svg>}
+              </button>
+            </div>
           </div>
         </div>
       </div>

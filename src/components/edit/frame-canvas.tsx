@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 
 export type FrameTool = 'brush' | 'rect' | 'ellipse' | 'arrow' | 'text';
 
@@ -28,7 +28,7 @@ interface Stroke {
 const COLOR = '#ff3b30';
 
 export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(function FrameCanvas(
-  { frameUrl, width = 512, height = 288 },
+  { frameUrl, width = 560, height = 315 },
   ref,
 ) {
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -129,16 +129,41 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
     clear: () => { setStrokes([]); drawingRef.current = null; },
   }), [imgLoaded, width, height]);
 
+  const tools: Array<{ id: FrameTool; label: string; icon: ReactNode }> = [
+    { id: 'brush', label: 'Brush', icon: <path d="M3 21c1.8-1.5 2.4-3.6 2.6-5.2L15.4 6a2 2 0 0 1 2.8 0l-.2-.2a2 2 0 0 1 0 2.8L8.2 18.4C6.6 18.6 4.5 19.2 3 21Z" /> },
+    { id: 'rect', label: 'Rectangle', icon: <rect x="4" y="6" width="16" height="12" rx="1" /> },
+    { id: 'ellipse', label: 'Ellipse', icon: <ellipse cx="12" cy="12" rx="8" ry="6" /> },
+    { id: 'arrow', label: 'Arrow', icon: <><path d="M5 19 19 5" /><path d="M10 5h9v9" /></> },
+    { id: 'text', label: 'Text', icon: <><path d="M5 6h14" /><path d="M12 6v13" /></> },
+  ];
+
   return (
     <div className="frame-canvas">
       <div className="frame-canvas__tools">
-        {(['brush', 'rect', 'ellipse', 'arrow', 'text'] as FrameTool[]).map((t) => (
-          <button key={t} className={`frame-canvas__tool${tool === t ? ' is-active' : ''}`} onClick={() => setTool(t)}>{t}</button>
-        ))}
-        <button className="frame-canvas__tool" onClick={() => setStrokes((p) => p.slice(0, -1))}>undo</button>
-        <button className="frame-canvas__tool" onClick={() => { drawingRef.current = null; setStrokes([]); }}>clear</button>
+        <div className="frame-canvas__toolgroup">
+          {tools.map((t) => (
+            <button
+              key={t.id}
+              className={`frame-canvas__tool${tool === t.id ? ' is-active' : ''}`}
+              onClick={() => setTool(t.id)}
+              title={t.label}
+              aria-label={t.label}
+              aria-pressed={tool === t.id}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{t.icon}</svg>
+            </button>
+          ))}
+        </div>
+        <div className="frame-canvas__toolgroup">
+          <button className="frame-canvas__tool" onClick={() => setStrokes((p) => p.slice(0, -1))} title="Undo" aria-label="Undo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-1" /></svg>
+          </button>
+          <button className="frame-canvas__tool" onClick={() => { drawingRef.current = null; setStrokes([]); }} title="Clear all" aria-label="Clear all">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
+          </button>
+        </div>
       </div>
-      <div className="frame-canvas__stage" style={{ position: 'relative', width, height }}>
+      <div className="frame-canvas__stage" style={{ width, height }}>
         <img ref={imgRef} src={frameUrl} alt="frame" crossOrigin="anonymous" onLoad={() => setImgLoaded(true)}
           style={{ position: 'absolute', inset: 0, width, height, objectFit: 'contain', pointerEvents: 'none' }} />
         <canvas ref={canvasRef} width={width} height={height}
