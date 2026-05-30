@@ -114,7 +114,9 @@ async function streamGeminiChatOnce(
     throw new Error('Gemini CLI is not installed. Install it with: npm install -g @google/gemini-cli');
   }
 
-  const model = params.model?.trim() || 'gemini-2.5-flash';
+  // Callers may pass a fal.ai-style slug (e.g. "google/gemini-2.5-flash"); the Gemini CLI wants a
+  // bare model id ("gemini-2.5-flash"), so strip any leading "provider/" prefix or it 404s.
+  const model = (params.model?.trim().replace(/^[^/]+\//, '')) || 'gemini-2.5-flash';
   const prompt = options.canResume
     ? buildGeminiResumePrompt(params)
     : buildGeminiPrompt(params);
