@@ -5,6 +5,7 @@ import type { Clip } from '@/types/timeline';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { routeQuickEdit } from '@/lib/higgsfield/quick-edit-intent';
 import { modelsFor, defaultModelFor, aspectRatioFor, type FrameChatOutputType } from '@/lib/higgsfield/frame-chat-model-options';
+import { buildEnhanceRequest, cleanEnhancedPrompt } from '@/lib/edit/frame-chat-prompt';
 import { getCutVisionModel } from '@/lib/utils/api-key';
 import {
   detectFrameChatIntent, deserializeThread, frameChatStorageKey, serializeThread,
@@ -43,27 +44,15 @@ async function writeTempImage(dataUrl: string): Promise<string> {
   return outputPath;
 }
 
-const ENHANCE_SYSTEM = [
-  'You rewrite a short video-editing instruction into a vivid, specific prompt for an image/video',
-  'generation model that edits a provided reference frame.',
-  'Keep the user’s intent EXACTLY. Do not invent a new scene, new subjects, or change the shot.',
-  'Describe the requested change concretely and instruct the model to preserve everything else —',
-  'composition, lighting, identity, textures, and the rest of the frame — changing only what is asked.',
-  'Return ONLY the rewritten prompt: one or two sentences, no preamble, no quotes, no markdown.',
-].join(' ');
-
 /** Ask Gemini to expand a terse edit instruction into a richer generation prompt. Returns the
  * original text on any failure so generation is never blocked. */
 async function enhanceGeneratePrompt(text: string): Promise<string> {
   try {
     const res = await window.electronAPI.llm.geminiChat({
-      userMessage: `Rewrite this image/video edit instruction into a stronger generation prompt. Instruction: "${text}"`,
+      userMessage: buildEnhanceRequest(text),
       model: getCutVisionModel(),
-      systemPrompt: ENHANCE_SYSTEM,
-      purpose: 'enhance-prompt',
     });
-    const out = (res.message || '').trim().replace(/^["'`]+|["'`]+$/g, '').trim();
-    return out || text;
+    return cleanEnhancedPrompt(res.message || '', text);
   } catch {
     return text;
   }
