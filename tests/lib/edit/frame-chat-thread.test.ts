@@ -18,6 +18,20 @@ describe('detectFrameChatIntent', () => {
     expect(detectFrameChatIntent('who is in this scene?')).toBe('ask');
   });
 
+  it('routes polite-imperative edit requests to generate (the can/could-you bug)', () => {
+    expect(detectFrameChatIntent('can you change the shirt to blue')).toBe('generate');
+    expect(detectFrameChatIntent('could you make his shirt blue')).toBe('generate');
+    expect(detectFrameChatIntent('would you remove the logo')).toBe('generate');
+    expect(detectFrameChatIntent('can you please darken this')).toBe('generate');
+    expect(detectFrameChatIntent('will you turn it into a painting')).toBe('generate');
+  });
+
+  it('keeps polite questions (no change verb) as ask', () => {
+    expect(detectFrameChatIntent('can you see the lamp?')).toBe('ask');
+    expect(detectFrameChatIntent('can you tell me what he is wearing')).toBe('ask');
+    expect(detectFrameChatIntent('could you describe this scene')).toBe('ask');
+  });
+
   it('defaults ambiguous prompts to ask (no credits spent)', () => {
     expect(detectFrameChatIntent('the car')).toBe('ask');
     expect(detectFrameChatIntent('hmm')).toBe('ask');

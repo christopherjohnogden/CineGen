@@ -7,29 +7,38 @@ const QUESTION_PREFIX = /^(what|who|where|when|why|how|which|is|are|do|does|did|
 
 // Broad change-verb heuristic: prompts that clearly request a visual change but may
 // not match routeQuickEdit's specific patterns (e.g. "make this car red").
-// Known trade-off: polite-imperative forms ("can you darken this", "will you make this
-// blue") are deliberately routed to `ask` (the QUESTION_PREFIX guard runs first) to match
-// the inferAutoWorkMode heuristic in llm-tab.tsx.
-const CHANGE_VERB = /^\s*(make|turn|change|swap|put|set|color|colour|paint|give|apply|convert|transform|render|replace|recolor|recolour|darken|lighten|brighten)\b/i;
+const CHANGE_VERB = /^\s*(make|turn|change|swap|put|set|color|colour|paint|give|apply|convert|transform|render|replace|recolor|recolour|add|remove|erase|delete|darken|lighten|brighten)\b/i;
+
+// Polite-imperative opener ("can you", "could you please", "would you", "will you"). When a
+// change verb follows it, the message is an edit request phrased as a question — route to
+// generate, not ask. ("can you see the lamp?" has no change verb → stays a question.)
+const POLITE_PREFIX = /^\s*(can|could|would|will)\s+(you\s+)?(please\s+)?/i;
 
 /**
  * Decide whether a Frame Chat message is a generation request or a question.
- * - generate: matches routeQuickEdit's change-verb rules (and is NOT phrased as a question),
- *             or begins with a broad change-verb (make/turn/change/…)
- * - ask: questions, or anything with no clear change intent (safer default — no credits)
+ * - generate: clear change requests — matches routeQuickEdit's rules, OR begins with a change
+ *             verb, OR is a polite-imperative ("can you change…/make…") wrapping a change verb.
+ * - ask: genuine questions, or anything with no clear change intent (safe default — no credits).
  */
 export function detectFrameChatIntent(prompt: string): FrameChatIntent {
   const text = prompt.trim();
   if (!text) return 'ask';
 
+  // Strip a leading polite opener so "can you change the shirt" is judged on "change the shirt".
+  const core = text.replace(POLITE_PREFIX, '').trim();
+
+  // A clear change request wins even when phrased as a question:
+  //   - routeQuickEdit matches a known edit rule (clean-plate/object-change/extend/stylize), or
+  //   - the core (after stripping a polite opener) starts with a change verb.
+  if (routeQuickEdit(text).intent !== 'ambiguous') return 'generate';
+  if (routeQuickEdit(core).intent !== 'ambiguous') return 'generate';
+  if (CHANGE_VERB.test(core)) return 'generate';
+
+  // Otherwise, a question (or polite request with no change verb) → ask. No credits spent.
   const isQuestion = text.endsWith('?') || QUESTION_PREFIX.test(text);
   if (isQuestion) return 'ask';
 
-  // routeQuickEdit returns 'ambiguous' when no change rule matched.
-  const route = routeQuickEdit(text);
-  if (route.intent !== 'ambiguous') return 'generate';
-
-  // Fallback: catch broad change-verb phrases not covered by routeQuickEdit rules.
+  // Plain change verb at the very start (no polite opener) also generates.
   if (CHANGE_VERB.test(text)) return 'generate';
 
   return 'ask';
