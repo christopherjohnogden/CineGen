@@ -144,6 +144,13 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
 
   const addMessage = useCallback((m: FrameChatMessage) => setMessages((prev) => [...prev, m]), []);
 
+  const clearThread = useCallback(() => {
+    setMessages([]);
+    pendingGenRef.current = {};
+    sessionIdRef.current = undefined;
+    setError(null);
+  }, []);
+
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!text || busy) return;
@@ -355,6 +362,11 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
           <span className="fcm__subtitle">
             {hasFrame ? `${asset?.name ?? 'Clip'} · frame at playhead` : 'No clip under playhead — ask anything'}
           </span>
+          {messages.length > 0 && (
+            <button className="fcm__close" onClick={clearThread} aria-label="Clear conversation" title="Clear conversation">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
+            </button>
+          )}
           <button className="fcm__close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
