@@ -4414,3 +4414,30 @@
   border-color: var(--accent, #d4a054);
   box-shadow: 0 0 0 3px var(--accent-dim, rgba(212, 160, 84, 0.15));
 }
+
+/* ── Frame Chat editable (enhanced) prompt in the clarify step ─────────── */
+.fcm__clarify-label {
+  font-family: var(--font-mono, 'Space Mono', monospace);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary, #5c5851);
+}
+.fcm__prompt-edit {
+  width: 100%;
+  resize: vertical;
+  min-height: 54px;
+  background: var(--bg-input, #0f1119);
+  color: var(--text-primary, #e8e4df);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-sm, 4px);
+  padding: 8px 10px;
+  font-family: var(--font-display, 'Outfit', sans-serif);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.fcm__prompt-edit:focus {
+  outline: none;
+  border-color: var(--accent, #d4a054);
+  box-shadow: 0 0 0 3px var(--accent-dim, rgba(212, 160, 84, 0.15));
+}

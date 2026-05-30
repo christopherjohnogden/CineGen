@@ -236,6 +236,10 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
     setMessages((prev) => prev.map((m) => m.id === msgId && m.generation ? { ...m, generation: { ...m.generation, model } } : m));
   }, []);
 
+  const setGenPrompt = useCallback((msgId: string, prompt: string) => {
+    setMessages((prev) => prev.map((m) => m.id === msgId && m.generation ? { ...m, generation: { ...m.generation, prompt } } : m));
+  }, []);
+
   const handleGenerate = useCallback(async (msgId: string) => {
     const msg = messages.find((m) => m.id === msgId);
     if (!msg?.generation || !clip || !asset?.fileRef) return;
@@ -255,8 +259,10 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
       const aspectRatio = natural
         ? aspectRatioFor(natural.width, natural.height)
         : aspectRatioFor(asset.width, asset.height);
+      // Use the edited/enhanced prompt the user sees in the clarify field; fall back to the raw text.
+      const finalPrompt = (msg.generation.prompt ?? pending.prompt).trim() || pending.prompt;
       const res = await window.electronAPI.higgsfield.quickEdit({
-        fileRef: asset.fileRef, prompt: pending.prompt,
+        fileRef: asset.fileRef, prompt: finalPrompt,
         model: msg.generation.model, outputType: msg.generation.outputType, referenceMode,
         frameTimeSec: playheadSourceSec, sourceStartSec, sourceEndSec,
         drawnFramePath: pending.drawnPath ?? undefined,
@@ -335,6 +341,16 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
                         {m.generation.status === 'clarifying' && (
                           pendingGenRef.current[m.id]
                             ? <div className="fcm__clarify">
+                                <label className="fcm__clarify-label">
+                                  Prompt {m.generation.enhancing && <span className="fcm__thinking">· enhancing…</span>}
+                                </label>
+                                <textarea
+                                  className="fcm__prompt-edit"
+                                  value={m.generation.prompt ?? ''}
+                                  onChange={(e) => setGenPrompt(m.id, e.target.value)}
+                                  rows={3}
+                                  aria-label="Generation prompt"
+                                />
                                 <div className="fcm__seg" role="group" aria-label="Output type">
                                   {(['image', 'video'] as FrameChatOutputType[]).map((ot) => (
                                     <button
