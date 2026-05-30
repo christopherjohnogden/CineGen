@@ -1414,7 +1414,8 @@ export function TimelineEditor({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleAddMarker]);
 
-  // "Cmd/Ctrl+Shift+Space" — Quick Edit with AI on a single selected video/image clip.
+  // "Cmd/Ctrl+Shift+Space" — Frame Chat. Picks the video/image clip under the PLAYHEAD
+  // (no selection required); falls back to chat-only (State B) if nothing editable is there.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
@@ -1423,15 +1424,24 @@ export function TimelineEditor({
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       e.preventDefault();
 
-      const selected = selectedClipIdsRef.current;
       const tl = timelineRef.current;
-      const videoTrackIds = new Set(tl.tracks.filter((t) => t.kind === 'video').map((t) => t.id));
-      const selectedClips = [...selected].map((id) => tl.clips.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => Boolean(c));
-      const editable = selectedClips
-        .map((c) => ({ clip: c, asset: state.assets.find((a) => a.id === c.assetId) }))
-        .filter((x) => x.asset && videoTrackIds.has(x.clip.trackId) && (x.asset.type === 'video' || x.asset.type === 'image'));
-      // Exactly one editable clip → State A (frame canvas); otherwise open chat-only (State B).
-      setFrameChatClipId(editable.length === 1 ? editable[0].clip.id : null);
+      const time = currentTimeRef.current;
+      // Video tracks in render order; reversed so the topmost track wins when clips overlap.
+      const videoTracks = tl.tracks.filter((t) => t.kind === 'video');
+      const videoTrackRank = new Map(videoTracks.map((t, i) => [t.id, i]));
+      const underPlayhead = tl.clips
+        .map((clip) => ({ clip, asset: state.assets.find((a) => a.id === clip.assetId) }))
+        .filter((x) =>
+          x.asset
+          && videoTrackRank.has(x.clip.trackId)
+          && (x.asset.type === 'video' || x.asset.type === 'image')
+          && time >= x.clip.startTime
+          && time < x.clip.startTime + clipEffectiveDuration(x.clip),
+        )
+        // Topmost track first (highest rank = renders above).
+        .sort((a, b) => (videoTrackRank.get(b.clip.trackId)! - videoTrackRank.get(a.clip.trackId)!));
+
+      setFrameChatClipId(underPlayhead.length > 0 ? underPlayhead[0].clip.id : null);
       setFrameChatOpen(true);
     }
     window.addEventListener('keydown', handleKeyDown);
