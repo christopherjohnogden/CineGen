@@ -21,6 +21,14 @@ export interface FrameChatPlaceResult {
   label: string;
 }
 
+// A version shown in the left viewer: the original extracted frame, or a generated result.
+interface FrameVersion {
+  label: string;          // 'Orig', 'v1', 'v2', …
+  url: string;            // displayable URL (local-media:// or https)
+  outputType: 'image' | 'video';
+  durationSec?: number;   // for video results, to place on the timeline
+}
+
 interface FrameChatModalProps {
   projectId: string;
   clip?: Clip;
@@ -78,6 +86,12 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  // Version stack for the left viewer: index 0 is the original frame; each generation pushes (or
+  // replaces) a version. The active one is shown on the canvas and is the base for the next edit.
+  const [versions, setVersions] = useState<FrameVersion[]>([]);
+  const [activeVersion, setActiveVersion] = useState(0);
+  // 'new' keeps each result as v1,v2,…; 'replace' overwrites the latest generated version.
+  const [iterateMode, setIterateMode] = useState<'new' | 'replace'>('new');
   // The assistant message currently being streamed, and a status line shown until the first token.
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState<string>('');
@@ -87,7 +101,7 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
   // Holds prompt+drawnPath for proposed generations until the user presses Generate. Keyed by message id.
   // Not persisted: a `proposed` message reloaded from localStorage has no entry, so its Generate
   // button is disabled (see render) rather than silently dead.
-  const pendingGenRef = useRef<Record<string, { prompt: string; drawnPath: string | null }>>({});
+  const pendingGenRef = useRef<Record<string, { prompt: string; drawnPath: string | null; baseVersionUrl: string | null }>>({});
 
   const hasFrame = Boolean(clip && asset && (asset.type === 'video' || asset.type === 'image') && frameUrl);
 
@@ -97,23 +111,36 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
 
   useEffect(() => { if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight; }, [messages, busy]);
 
+  // Seed the original frame as version 0. Generated results are appended as v1, v2, … below.
+  const seedOriginal = useCallback((url: string) => {
+    setFrameUrl(url);
+    setVersions([{ label: 'Orig', url, outputType: 'image' }]);
+    setActiveVersion(0);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setFrameUrl(null);
+    setVersions([]);
+    setActiveVersion(0);
     if (!clip || !asset || !(asset.type === 'video' || asset.type === 'image') || !asset.fileRef) return;
     const inputPath = asset.fileRef;
     if (asset.type === 'image') {
       // Use the secure local-media:// scheme so the <img> is canvas-clean (file:// taints
       // toDataURL in the http://localhost renderer); toFileUrl passes through existing URLs.
-      setFrameUrl(toFileUrl(inputPath));
+      seedOriginal(toFileUrl(inputPath));
       return;
     }
     window.electronAPI.media.extractFrame({ inputPath, timeSec: playheadSourceSec ?? clip.trimStart }).then((res) => {
       if (cancelled || !res) return;
-      setFrameUrl(toFileUrl(res.outputPath));
+      seedOriginal(toFileUrl(res.outputPath));
     }).catch(() => { if (!cancelled) setFrameUrl(null); });
     return () => { cancelled = true; };
-  }, [clip, asset, playheadSourceSec]);
+  }, [clip, asset, playheadSourceSec, seedOriginal]);
+
+  // The version currently shown in the left viewer (drives the canvas + becomes the next base).
+  const shownVersion = versions[activeVersion] ?? null;
+  const shownUrl = shownVersion?.url ?? frameUrl;
 
   const addMessage = useCallback((m: FrameChatMessage) => setMessages((prev) => [...prev, m]), []);
 
@@ -144,7 +171,11 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         // before spending credits (status 'clarifying' until they press Generate).
         const route = routeQuickEdit(text);
         const msgId = crypto.randomUUID();
-        pendingGenRef.current[msgId] = { prompt: text, drawnPath };
+        // If a generated IMAGE version is currently shown, stack the next edit on it (its https URL
+        // is a valid Higgsfield reference). Original frame or a video version → edit the source.
+        const base = versions[activeVersion];
+        const baseVersionUrl = base && base.label !== 'Orig' && base.outputType === 'image' ? base.url : null;
+        pendingGenRef.current[msgId] = { prompt: text, drawnPath, baseVersionUrl };
         addMessage({
           id: msgId, role: 'assistant',
           content: 'I can generate that — choose how:',
@@ -261,8 +292,13 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         : aspectRatioFor(asset.width, asset.height);
       // Use the edited/enhanced prompt the user sees in the clarify field; fall back to the raw text.
       const finalPrompt = (msg.generation.prompt ?? pending.prompt).trim() || pending.prompt;
+      // Build on the version currently shown in the viewer: if it's a generated version (not the
+      // original) and the user didn't draw a fresh annotation, use that result as the reference so
+      // edits stack (show v2 → generate → v3 builds on v2). Otherwise edit the source frame.
+      const baseVersion = pending.baseVersionUrl;
+      const fileRef = (!pending.drawnPath && baseVersion) ? baseVersion : asset.fileRef;
       const res = await window.electronAPI.higgsfield.quickEdit({
-        fileRef: asset.fileRef, prompt: finalPrompt,
+        fileRef, prompt: finalPrompt,
         model: msg.generation.model, outputType: msg.generation.outputType, referenceMode,
         frameTimeSec: playheadSourceSec, sourceStartSec, sourceEndSec,
         drawnFramePath: pending.drawnPath ?? undefined,
@@ -271,6 +307,21 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
       const durationSec = res.durationSec ?? clipEffectiveDuration(clip);
       setMessages((prev) => prev.map((m) => m.id === msgId && m.generation
         ? { ...m, generation: { ...m.generation, status: 'ready', resultUrl: res.url, resultDurationSec: durationSec } } : m));
+      // Add (or replace) a version in the left viewer and switch to it.
+      const outputType = msg.generation.outputType;
+      setVersions((prev) => {
+        const base = prev.length > 0 ? prev : [{ label: 'Orig', url: shownUrl ?? res.url, outputType: 'image' as const }];
+        const generatedCount = base.filter((v) => v.label !== 'Orig').length;
+        // Replace mode (with at least one prior result) overwrites the latest, keeping its label.
+        if (iterateMode === 'replace' && generatedCount > 0) {
+          const next = [...base.slice(0, -1), { label: base[base.length - 1].label, url: res.url, outputType, durationSec }];
+          setActiveVersion(next.length - 1);
+          return next;
+        }
+        const next = [...base, { label: `v${generatedCount + 1}`, url: res.url, outputType, durationSec }];
+        setActiveVersion(next.length - 1);
+        return next;
+      });
     } catch (err) {
       setMessages((prev) => prev.map((m) => m.id === msgId && m.generation
         ? { ...m, generation: { ...m.generation, status: 'failed', error: err instanceof Error ? err.message : String(err) } } : m));
@@ -310,9 +361,35 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         </div>
 
         <div className="fcm__body">
-          {hasFrame && frameUrl && (
+          {hasFrame && shownUrl && (
             <div className="fcm__canvas-pane">
-              <FrameCanvas ref={canvasRef} frameUrl={frameUrl} />
+              <div className="fcm__viewer">
+                {/* Re-key on the active version so the <img> reloads when you switch versions. */}
+                <FrameCanvas key={`${activeVersion}:${shownUrl}`} ref={canvasRef} frameUrl={shownUrl} />
+                {versions.length > 1 && (
+                  <div className="fcm__versions">
+                    {versions.map((v, i) => (
+                      <button
+                        key={i}
+                        className={`fcm__ver-tab${activeVersion === i ? ' is-active' : ''}`}
+                        onClick={() => setActiveVersion(i)}
+                        title={v.label === 'Orig' ? 'Original frame' : `Version ${v.label.slice(1)}`}
+                      >
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {versions.length > 1 && (
+                <div className="fcm__iterate">
+                  <span className="fcm__iterate-label">Next result:</span>
+                  <div className="fcm__seg" role="group" aria-label="Iteration mode">
+                    <button className={`fcm__seg-btn${iterateMode === 'new' ? ' is-active' : ''}`} onClick={() => setIterateMode('new')}>New version</button>
+                    <button className={`fcm__seg-btn${iterateMode === 'replace' ? ' is-active' : ''}`} onClick={() => setIterateMode('replace')}>Replace</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <div className="fcm__chat-pane">

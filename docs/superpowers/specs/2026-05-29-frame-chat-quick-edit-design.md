@@ -124,3 +124,15 @@ When the user clicks **Add to timeline** on a previewed result:
 - **Extend drawings are silently ignored.** `routeQuickEdit` returns `referenceMode:'first-last'` for "extend", and `selectQuickEditMedias` only uses the drawn frame when `referenceMode==='frame'`. So an extend request ignores the user's drawing (correct — extend needs source endpoints) but gives no feedback. Consider hiding/disabling the canvas or noting "drawing not used for extend" when `route.referenceMode !== 'frame'`.
 - **Frame-extraction failure falls back to chat-only silently.** If `media.extractFrame` returns null (ffmpeg failure), the modal drops to State B with no notice. Consider a small inline "couldn't load the frame" message.
 - **Frame URL passthrough caveat.** Frame URLs now route through `toFileUrl` → `local-media://` (canvas-clean). A `fileRef` that is already a bare `file://` URL is passed through unchanged and would still taint the canvas — not observed in practice (the app uses `local-media://`/raw paths), but worth normalizing if such refs ever appear.
+
+## Version stack (added post-launch)
+
+The left viewer now shows a version stack: index 0 is the original extracted frame; each confirmed
+generation pushes (or, in Replace mode, overwrites) a version. Version tabs (Orig · v1 · v2 …) overlay
+the top-right of the frame; a New version / Replace toggle controls iteration. The currently-shown
+version is the base for the next edit — when a generated IMAGE version is active and the user hasn't
+drawn a fresh annotation, its URL is passed as the Higgsfield reference so edits stack.
+
+- **Known limitation:** a VIDEO result set as the active version renders in FrameCanvas's `<img>`,
+  which won't display (and can't be drawn on meaningfully). Image versions are the common path.
+  Follow-up: render video versions with a `<video>` element in the viewer, or disable drawing for them.
