@@ -4088,3 +4088,23 @@
   background: var(--accent, #4a6cf7);
   color: #fff;
 }
+
+/* ── Frame Chat streaming indicators ───────────────────────────────────── */
+.fcm__thinking {
+  opacity: 0.6;
+  font-style: italic;
+  animation: fcm-pulse 1.2s ease-in-out infinite;
+}
+@keyframes fcm-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.75; }
+}
+.fcm__cursor {
+  display: inline-block;
+  margin-left: 1px;
+  animation: fcm-blink 1s step-start infinite;
+  color: var(--accent, #4a6cf7);
+}
+@keyframes fcm-blink {
+  50% { opacity: 0; }
+}

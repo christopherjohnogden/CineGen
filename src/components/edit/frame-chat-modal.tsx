@@ -10,6 +10,7 @@ import {
   type FrameChatMessage,
 } from '@/lib/edit/frame-chat-thread';
 import { toFileUrl } from '@/lib/utils/file-url';
+import { subscribeCliCopilotStream } from '@/lib/llm/cli-copilot-client';
 import { FrameCanvas, type FrameCanvasHandle } from './frame-canvas';
 
 export interface FrameChatPlaceResult {
@@ -50,6 +51,9 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  // The assistant message currently being streamed, and a status line shown until the first token.
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [streamStatus, setStreamStatus] = useState<string>('');
   const canvasRef = useRef<FrameCanvasHandle>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | undefined>(undefined);
@@ -131,14 +135,42 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         const userMessage = didDraw
           ? `${ANNOTATION_GUIDANCE}\n\nMy question: ${text}`
           : text;
-        const res = await window.electronAPI.llm.geminiChat({
-          userMessage,
-          model: getCutVisionModel(),
-          resumeSessionId: sessionIdRef.current,
-          visualRefs,
+
+        // Create the assistant message up-front and stream tokens into it so the user sees it think.
+        const requestId = crypto.randomUUID();
+        const assistantId = crypto.randomUUID();
+        addMessage({ id: assistantId, role: 'assistant', content: '', createdAt: new Date().toISOString() });
+        setStreamingId(assistantId);
+        setStreamStatus('Thinking…');
+
+        let streamed = '';
+        const unsubscribe = subscribeCliCopilotStream('gemini', (ev) => {
+          if (ev.requestId !== requestId) return;
+          if (ev.status) setStreamStatus(ev.status);
+          if (ev.token) {
+            streamed += ev.token;
+            setStreamStatus('');
+            setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: streamed } : m));
+          }
         });
-        sessionIdRef.current = res.sessionId ?? sessionIdRef.current;
-        addMessage({ id: crypto.randomUUID(), role: 'assistant', content: res.message || '(no response)', createdAt: new Date().toISOString() });
+
+        try {
+          const res = await window.electronAPI.llm.geminiChat({
+            requestId,
+            userMessage,
+            model: getCutVisionModel(),
+            resumeSessionId: sessionIdRef.current,
+            visualRefs,
+          });
+          sessionIdRef.current = res.sessionId ?? sessionIdRef.current;
+          // Reconcile with the authoritative final text (covers backends that don't stream tokens).
+          const finalText = res.message || streamed || '(no response)';
+          setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: finalText } : m));
+        } finally {
+          unsubscribe();
+          setStreamingId(null);
+          setStreamStatus('');
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -200,7 +232,14 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
             {messages.length === 0 && <div className="fcm__empty">Ask about your project, or describe a change to generate.</div>}
             {messages.map((m) => (
               <div key={m.id} className={`fcm__msg fcm__msg--${m.role}`}>
-                <div className="fcm__msg-content">{m.content}</div>
+                <div className="fcm__msg-content">
+                  {m.content}
+                  {streamingId === m.id && (
+                    m.content
+                      ? <span className="fcm__cursor">▋</span>
+                      : <span className="fcm__thinking">{streamStatus || 'Thinking…'}</span>
+                  )}
+                </div>
                 {m.generation && (
                   <div className="fcm__gen">
                     {m.generation.status === 'proposed' && (
