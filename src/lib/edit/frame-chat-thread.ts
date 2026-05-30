@@ -9,37 +9,37 @@ const QUESTION_PREFIX = /^(what|who|where|when|why|how|which|is|are|do|does|did|
 // not match routeQuickEdit's specific patterns (e.g. "make this car red").
 const CHANGE_VERB = /^\s*(make|turn|change|swap|put|set|color|colour|paint|give|apply|convert|transform|render|replace|recolor|recolour|add|remove|erase|delete|darken|lighten|brighten)\b/i;
 
-// Polite-imperative opener ("can you", "could you please", "would you", "will you"). When a
-// change verb follows it, the message is an edit request phrased as a question — route to
-// generate, not ask. ("can you see the lamp?" has no change verb → stays a question.)
-const POLITE_PREFIX = /^\s*(can|could|would|will)\s+(you\s+)?(please\s+)?/i;
+// Polite-imperative opener: an optional "please", an optional modal ("can/could/would/will" +
+// optional "you"), and an optional trailing "please". Every group is optional and the regex is
+// deliberately NON-GLOBAL — on a non-polite input it matches a zero-width prefix and strips
+// nothing (stripped === text). When a change verb follows the opener, the message is an edit
+// request phrased politely → generate. ("can you see the lamp?" has no change verb → stays ask.)
+// NOTE: keep this all-optional and non-global; adding /g or required groups could corrupt input.
+const POLITE_PREFIX = /^(?:please\s+)?(?:(?:can|could|would|will)\s+(?:you\s+)?)?(?:please\s+)?/i;
 
 /**
  * Decide whether a Frame Chat message is a generation request or a question.
- * - generate: clear change requests — matches routeQuickEdit's rules, OR begins with a change
- *             verb, OR is a polite-imperative ("can you change…/make…") wrapping a change verb.
+ * - generate: clear change requests — matches routeQuickEdit's rules, OR (after stripping a polite
+ *             opener) begins with a change verb. Polite-imperative edits ("can you change…",
+ *             "please make…") route to generate.
  * - ask: genuine questions, or anything with no clear change intent (safe default — no credits).
+ * Residual edge cases (tolerable — credits are only spent on an explicit Generate press, and the
+ * clarification step is non-destructive): "make me a sandwich" → generate; "is it possible to make
+ * it red" → ask (modal not at position 0). Reasonable defaults, not exact intent classification.
  */
 export function detectFrameChatIntent(prompt: string): FrameChatIntent {
   const text = prompt.trim();
   if (!text) return 'ask';
 
-  // Strip a leading polite opener so "can you change the shirt" is judged on "change the shirt".
+  // Strip a leading polite opener, then judge the core: "can you change the shirt" → "change the shirt".
   const core = text.replace(POLITE_PREFIX, '').trim();
 
-  // A clear change request wins even when phrased as a question:
-  //   - routeQuickEdit matches a known edit rule (clean-plate/object-change/extend/stylize), or
-  //   - the core (after stripping a polite opener) starts with a change verb.
-  if (routeQuickEdit(text).intent !== 'ambiguous') return 'generate';
+  // A clear change request wins even when phrased as a question.
   if (routeQuickEdit(core).intent !== 'ambiguous') return 'generate';
   if (CHANGE_VERB.test(core)) return 'generate';
 
   // Otherwise, a question (or polite request with no change verb) → ask. No credits spent.
-  const isQuestion = text.endsWith('?') || QUESTION_PREFIX.test(text);
-  if (isQuestion) return 'ask';
-
-  // Plain change verb at the very start (no polite opener) also generates.
-  if (CHANGE_VERB.test(text)) return 'generate';
+  if (text.endsWith('?') || QUESTION_PREFIX.test(text)) return 'ask';
 
   return 'ask';
 }
@@ -47,16 +47,21 @@ export function detectFrameChatIntent(prompt: string): FrameChatIntent {
 export type FrameChatRole = 'user' | 'assistant';
 
 export interface FrameChatGenerationPreview {
-  /** Higgsfield model + output type chosen by routeQuickEdit. */
+  /** Currently selected model + output type. Seeded from routeQuickEdit, overridable in the
+   * clarification step before the user presses Generate. */
   model: string;
   outputType: 'image' | 'video';
   referenceMode: 'frame' | 'segment' | 'first-last';
+  /** The referenceMode routeQuickEdit originally chose — restored when switching back to video so
+   * a drawn-frame reference is still honored (image edits always use 'frame'). */
+  routedReferenceMode?: 'frame' | 'segment' | 'first-last';
   /** Source clip the generation references (for placement on confirm). */
   sourceClipId: string;
   /** Resolved media URL once generated; absent until generation completes. */
   resultUrl?: string;
   resultDurationSec?: number;
-  status: 'proposed' | 'generating' | 'ready' | 'failed' | 'placed';
+  /** 'clarifying' = user is choosing output type + model; 'proposed' = confirmed, ready to run. */
+  status: 'clarifying' | 'proposed' | 'generating' | 'ready' | 'failed' | 'placed';
   error?: string;
 }
 
@@ -83,11 +88,11 @@ export function deserializeThread(raw: string | null): FrameChatMessage[] {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // A generation persisted mid-flight (status 'generating') can never resume after reload —
-    // its in-memory pending entry is gone. Normalize it to 'failed' so the UI offers a resend
-    // instead of showing "Generating…" forever.
+    // A generation persisted while in-flight ('generating') or awaiting a choice ('clarifying')
+    // can't resume after reload — its in-memory pending entry (prompt + drawn frame) is gone.
+    // Normalize to 'failed' so the UI offers a resend instead of a stuck spinner or dead picker.
     return (parsed as FrameChatMessage[]).map((message) =>
-      message.generation?.status === 'generating'
+      message.generation?.status === 'generating' || message.generation?.status === 'clarifying'
         ? { ...message, generation: { ...message.generation, status: 'failed', error: 'Interrupted — resend to retry.' } }
         : message,
     );

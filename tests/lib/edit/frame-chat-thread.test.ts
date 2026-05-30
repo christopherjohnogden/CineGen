@@ -24,12 +24,23 @@ describe('detectFrameChatIntent', () => {
     expect(detectFrameChatIntent('would you remove the logo')).toBe('generate');
     expect(detectFrameChatIntent('can you please darken this')).toBe('generate');
     expect(detectFrameChatIntent('will you turn it into a painting')).toBe('generate');
+    expect(detectFrameChatIntent('please make this blue')).toBe('generate');
+    expect(detectFrameChatIntent('please change the shirt to red')).toBe('generate');
   });
 
   it('keeps polite questions (no change verb) as ask', () => {
     expect(detectFrameChatIntent('can you see the lamp?')).toBe('ask');
     expect(detectFrameChatIntent('can you tell me what he is wearing')).toBe('ask');
     expect(detectFrameChatIntent('could you describe this scene')).toBe('ask');
+  });
+
+  it('leaves plain (no-opener) edits and questions classified as before', () => {
+    // The polite-prefix strip must not alter non-polite inputs.
+    expect(detectFrameChatIntent('change the shirt')).toBe('generate');
+    expect(detectFrameChatIntent('make this red')).toBe('generate');
+    expect(detectFrameChatIntent('remove the logo')).toBe('generate');
+    expect(detectFrameChatIntent('what color is this')).toBe('ask');
+    expect(detectFrameChatIntent('is the shirt blue')).toBe('ask');
   });
 
   it('defaults ambiguous prompts to ask (no credits spent)', () => {

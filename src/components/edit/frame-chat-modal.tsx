@@ -4,6 +4,7 @@ import type { Asset } from '@/types/project';
 import type { Clip } from '@/types/timeline';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { routeQuickEdit } from '@/lib/higgsfield/quick-edit-intent';
+import { modelsFor, defaultModelFor, type FrameChatOutputType } from '@/lib/higgsfield/frame-chat-model-options';
 import { getCutVisionModel } from '@/lib/utils/api-key';
 import {
   detectFrameChatIntent, deserializeThread, frameChatStorageKey, serializeThread,
@@ -113,16 +114,19 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
       // mode (State B) a 'generate' intent falls back to an ask turn so the user still gets a reply.
       const canGenerate = Boolean(clip && asset?.fileRef);
       if (intent === 'generate' && canGenerate) {
+        // Seed sensible defaults from routeQuickEdit, but let the user choose output type + model
+        // before spending credits (status 'clarifying' until they press Generate).
         const route = routeQuickEdit(text);
         const msgId = crypto.randomUUID();
         pendingGenRef.current[msgId] = { prompt: text, drawnPath };
         addMessage({
           id: msgId, role: 'assistant',
-          content: `I can generate that — ${route.reason}. Press Generate to run it.`,
+          content: 'I can generate that — choose how:',
           createdAt: new Date().toISOString(),
           generation: {
             model: route.model, outputType: route.outputType, referenceMode: route.referenceMode,
-            sourceClipId: clip!.id, status: 'proposed',
+            routedReferenceMode: route.referenceMode,
+            sourceClipId: clip!.id, status: 'clarifying',
           },
         });
       } else {
@@ -179,18 +183,40 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
     }
   }, [draft, busy, hasFrame, asset, clip, addMessage]);
 
+  // Clarification: switch output type. Image edits always use the drawn frame ('frame'); video
+  // restores the originally-routed referenceMode. Swap the model to that type's default if the
+  // current model no longer matches the chosen output type.
+  const setGenOutputType = useCallback((msgId: string, outputType: FrameChatOutputType) => {
+    setMessages((prev) => prev.map((m) => {
+      if (m.id !== msgId || !m.generation) return m;
+      const modelStillValid = modelsFor(outputType).some((opt) => opt.id === m.generation!.model);
+      const model = modelStillValid ? m.generation.model : defaultModelFor(outputType);
+      const referenceMode = outputType === 'image' ? 'frame' : (m.generation.routedReferenceMode ?? 'frame');
+      return { ...m, generation: { ...m.generation, outputType, model, referenceMode } };
+    }));
+  }, []);
+
+  const setGenModel = useCallback((msgId: string, model: string) => {
+    setMessages((prev) => prev.map((m) => m.id === msgId && m.generation ? { ...m, generation: { ...m.generation, model } } : m));
+  }, []);
+
   const handleGenerate = useCallback(async (msgId: string) => {
     const msg = messages.find((m) => m.id === msgId);
     if (!msg?.generation || !clip || !asset?.fileRef) return;
+    // Re-entrancy guard: ignore a second click once a run is underway.
+    if (msg.generation.status === 'generating') return;
     const pending = pendingGenRef.current[msgId];
     if (!pending) return;
     setMessages((prev) => prev.map((m) => m.id === msgId && m.generation ? { ...m, generation: { ...m.generation, status: 'generating' } } : m));
     try {
       const sourceStartSec = clip.trimStart;
       const sourceEndSec = clip.duration - clip.trimEnd;
+      // If the user drew on the frame, that annotated still IS the reference — force 'frame' mode
+      // even if the prompt routed to extend ('first-last'), so the drawing is never dropped.
+      const referenceMode = pending.drawnPath ? 'frame' : msg.generation.referenceMode;
       const res = await window.electronAPI.higgsfield.quickEdit({
         fileRef: asset.fileRef, prompt: pending.prompt,
-        model: msg.generation.model, outputType: msg.generation.outputType, referenceMode: msg.generation.referenceMode,
+        model: msg.generation.model, outputType: msg.generation.outputType, referenceMode,
         frameTimeSec: playheadSourceSec, sourceStartSec, sourceEndSec,
         drawnFramePath: pending.drawnPath ?? undefined,
       });
@@ -264,6 +290,37 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
                     </div>
                     {m.generation && (
                       <div className="fcm__gen">
+                        {m.generation.status === 'clarifying' && (
+                          pendingGenRef.current[m.id]
+                            ? <div className="fcm__clarify">
+                                <div className="fcm__seg" role="group" aria-label="Output type">
+                                  {(['image', 'video'] as FrameChatOutputType[]).map((ot) => (
+                                    <button
+                                      key={ot}
+                                      className={`fcm__seg-btn${m.generation!.outputType === ot ? ' is-active' : ''}`}
+                                      onClick={() => setGenOutputType(m.id, ot)}
+                                    >
+                                      {ot === 'image' ? 'Still image' : 'Video'}
+                                    </button>
+                                  ))}
+                                </div>
+                                <select
+                                  className="fcm__select"
+                                  value={m.generation.model}
+                                  onChange={(e) => setGenModel(m.id, e.target.value)}
+                                  aria-label="Model"
+                                >
+                                  {modelsFor(m.generation.outputType).map((opt) => (
+                                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                  ))}
+                                </select>
+                                <button className="fcm__btn fcm__btn--accent" onClick={() => void handleGenerate(m.id)}>
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 L14 9 L21 9 L15 13 L17 20 L12 16 L7 20 L9 13 L3 9 L10 9 Z" /></svg>
+                                  Generate
+                                </button>
+                              </div>
+                            : <span className="fcm__note">Session expired — resend to generate.</span>
+                        )}
                         {m.generation.status === 'proposed' && (
                           pendingGenRef.current[m.id]
                             ? <button className="fcm__btn fcm__btn--accent" onClick={() => void handleGenerate(m.id)}>
