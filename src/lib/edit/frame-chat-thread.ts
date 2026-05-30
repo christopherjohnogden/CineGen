@@ -55,6 +55,11 @@ export interface FrameChatGenerationPreview {
   /** The referenceMode routeQuickEdit originally chose — restored when switching back to video so
    * a drawn-frame reference is still honored (image edits always use 'frame'). */
   routedReferenceMode?: 'frame' | 'segment' | 'first-last';
+  /** The (possibly LLM-enhanced, user-editable) prompt sent to the generator. Seeded with the raw
+   * text, replaced by the enhanced version when ready; the clarify UI lets the user edit it. */
+  prompt?: string;
+  /** True while the prompt is being enhanced by the LLM (clarify UI shows a hint). */
+  enhancing?: boolean;
   /** Source clip the generation references (for placement on confirm). */
   sourceClipId: string;
   /** Resolved media URL once generated; absent until generation completes. */

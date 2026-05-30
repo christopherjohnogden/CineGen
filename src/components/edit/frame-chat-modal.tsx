@@ -35,6 +35,32 @@ async function writeTempImage(dataUrl: string): Promise<string> {
   return outputPath;
 }
 
+const ENHANCE_SYSTEM = [
+  'You rewrite a short video-editing instruction into a vivid, specific prompt for an image/video',
+  'generation model that edits a provided reference frame.',
+  'Keep the user’s intent EXACTLY. Do not invent a new scene, new subjects, or change the shot.',
+  'Describe the requested change concretely and instruct the model to preserve everything else —',
+  'composition, lighting, identity, textures, and the rest of the frame — changing only what is asked.',
+  'Return ONLY the rewritten prompt: one or two sentences, no preamble, no quotes, no markdown.',
+].join(' ');
+
+/** Ask Gemini to expand a terse edit instruction into a richer generation prompt. Returns the
+ * original text on any failure so generation is never blocked. */
+async function enhanceGeneratePrompt(text: string): Promise<string> {
+  try {
+    const res = await window.electronAPI.llm.geminiChat({
+      userMessage: `Rewrite this image/video edit instruction into a stronger generation prompt. Instruction: "${text}"`,
+      model: getCutVisionModel(),
+      systemPrompt: ENHANCE_SYSTEM,
+      purpose: 'enhance-prompt',
+    });
+    const out = (res.message || '').trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+    return out || text;
+  } catch {
+    return text;
+  }
+}
+
 // Prepended to the user's question when they drew on the frame. The red marks are a pointing
 // gesture indicating what the question is about — they are NOT part of the scene.
 const ANNOTATION_GUIDANCE = [
@@ -127,7 +153,17 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
             model: route.model, outputType: route.outputType, referenceMode: route.referenceMode,
             routedReferenceMode: route.referenceMode,
             sourceClipId: clip!.id, status: 'clarifying',
+            prompt: text, enhancing: true,
           },
+        });
+        // Enhance the prompt in the background; drop the result into the editable field. If the
+        // user already edited it (prompt diverged from the raw text), don't clobber their edit.
+        void enhanceGeneratePrompt(text).then((enhanced) => {
+          setMessages((prev) => prev.map((m) => {
+            if (m.id !== msgId || !m.generation) return m;
+            const userEdited = (m.generation.prompt ?? text) !== text;
+            return { ...m, generation: { ...m.generation, enhancing: false, prompt: userEdited ? m.generation.prompt : enhanced } };
+          }));
         });
       } else {
         const visualRefs = drawnPath

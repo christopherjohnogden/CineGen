@@ -22,11 +22,16 @@
       "Bash(sed -n '400,410p' src/components/edit/timeline-editor.tsx)",
       "Bash(sed -n '409,470p' src/lib/editor/timeline-operations.ts)",
       "Bash(git rm *)",
-      "Bash(cd /Users/cogden/Desktop/Coding/CineGen; git checkout -- dist-electron/main.js dist-electron/preload.js dist-electron/workers/media-worker.js tsconfig.tsbuildinfo 2>/dev/null; rm -f dist-electron/models-5OlHuf8t.js .claude/scheduled_tasks.lock 2>/dev/null; echo \"=== clean tree \\(feature-wise\\) ===\"; git status --short)"
+      "Bash(cd /Users/cogden/Desktop/Coding/CineGen; git checkout -- dist-electron/main.js dist-electron/preload.js dist-electron/workers/media-worker.js tsconfig.tsbuildinfo 2>/dev/null; rm -f dist-electron/models-5OlHuf8t.js .claude/scheduled_tasks.lock 2>/dev/null; echo \"=== clean tree \\(feature-wise\\) ===\"; git status --short)",
+      "Bash(cd /Users/cogden/Desktop/Coding/CineGen; git checkout -- dist-electron tsconfig.tsbuildinfo 2>/dev/null; rm -f dist-electron/models-*.js .claude/scheduled_tasks.lock 2>/dev/null; git add src/components/edit/frame-chat-modal.tsx src/components/edit/frame-canvas.tsx src/styles/edit-tab.css && git commit -q -m \"feat\\(frame-chat\\): cinematic edit-bay redesign of the modal *)",
+      "Bash(cd /Users/cogden/Desktop/Coding/CineGen; git checkout -- dist-electron tsconfig.tsbuildinfo 2>/dev/null; rm -f dist-electron/models-*.js .claude/scheduled_tasks.lock 2>/dev/null; git add src/lib/edit/frame-chat-thread.ts src/lib/higgsfield/frame-chat-model-options.ts src/components/edit/frame-chat-modal.tsx src/styles/edit-tab.css tests/lib/edit/frame-chat-thread.test.ts && git commit -q -m \"feat\\(frame-chat\\): ask output type + model before generating *)",
+      "Bash(sed -n '236,246p' electron/ipc/higgsfield.ts)",
+      "Bash(sed -n '318,326p' electron/ipc/higgsfield.ts)"
     ],
     "additionalDirectories": [
       "/tmp",
-      "/Users/cogden/Desktop/Coding/CineGen/.claude"
+      "/Users/cogden/Desktop/Coding/CineGen/.claude",
+      "/Users/cogden/Desktop/Coding/CineGen/dist-electron"
     ]
   }
 }

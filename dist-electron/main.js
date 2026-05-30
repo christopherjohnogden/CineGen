@@ -4549,7 +4549,8 @@ function registerHiggsfieldHandlers() {
       model: params.model,
       prompt: params.prompt,
       mediaType: params.outputType,
-      medias: medias.length > 0 ? medias : void 0
+      medias: medias.length > 0 ? medias : void 0,
+      aspectRatio: params.aspectRatio
     });
   });
   ipcMain.handle("higgsfield:generate", async (_event, params) => {
