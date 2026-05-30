@@ -109,7 +109,33 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
     try { localStorage.setItem(frameChatStorageKey(projectId), serializeThread(messages)); } catch {}
   }, [messages, projectId]);
 
-  useEffect(() => { if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight; }, [messages, busy]);
+  const scrollToBottom = useCallback(() => {
+    const el = threadRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
+  // Keep the thread pinned to the latest message as it grows / streams.
+  useEffect(() => { scrollToBottom(); }, [messages, busy, scrollToBottom]);
+
+  // On open, jump to the most recent message. Content (esp. result/version thumbnails loaded from
+  // localStorage) lays out after the first paint, so scroll across a few frames and again once any
+  // images finish loading — otherwise scrollHeight is stale and we land short of the bottom.
+  useEffect(() => {
+    const raf1 = requestAnimationFrame(() => { scrollToBottom(); requestAnimationFrame(scrollToBottom); });
+    const t = window.setTimeout(scrollToBottom, 250);
+    const el = threadRef.current;
+    const imgs = el ? Array.from(el.querySelectorAll('img, video')) : [];
+    const onLoad = () => scrollToBottom();
+    imgs.forEach((node) => node.addEventListener('load', onLoad, { once: true }));
+    imgs.forEach((node) => node.addEventListener('loadeddata', onLoad, { once: true }));
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.clearTimeout(t);
+      imgs.forEach((node) => { node.removeEventListener('load', onLoad); node.removeEventListener('loadeddata', onLoad); });
+    };
+    // Run once per mount (modal open).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Seed the original frame as version 0. Generated results are appended as v1, v2, … below.
   const seedOriginal = useCallback((url: string) => {
