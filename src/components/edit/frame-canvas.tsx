@@ -145,6 +145,13 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
 
   return (
     <div className="frame-canvas">
+      <div className="frame-canvas__stage" style={{ width, height }}>
+        <img ref={imgRef} src={frameUrl} alt="frame" crossOrigin="anonymous" onLoad={() => setImgLoaded(true)}
+          style={{ position: 'absolute', inset: 0, width, height, objectFit: 'contain', pointerEvents: 'none' }} />
+        <canvas ref={canvasRef} width={width} height={height}
+          style={{ position: 'absolute', inset: 0, width, height, touchAction: 'none', cursor: 'crosshair' }}
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} />
+      </div>
       <div className="frame-canvas__tools">
         <div className="frame-canvas__toolgroup">
           {tools.map((t) => (
@@ -168,13 +175,6 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
           </button>
         </div>
-      </div>
-      <div className="frame-canvas__stage" style={{ width, height }}>
-        <img ref={imgRef} src={frameUrl} alt="frame" crossOrigin="anonymous" onLoad={() => setImgLoaded(true)}
-          style={{ position: 'absolute', inset: 0, width, height, objectFit: 'contain', pointerEvents: 'none' }} />
-        <canvas ref={canvasRef} width={width} height={height}
-          style={{ position: 'absolute', inset: 0, width, height, touchAction: 'none', cursor: 'crosshair' }}
-          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onPointerCancel={onPointerUp} />
       </div>
     </div>
   );
