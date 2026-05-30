@@ -33,6 +33,16 @@ async function writeTempImage(dataUrl: string): Promise<string> {
   return outputPath;
 }
 
+// Prepended to the user's question when they drew on the frame. The red marks are a pointing
+// gesture indicating what the question is about — they are NOT part of the scene.
+const ANNOTATION_GUIDANCE = [
+  'The attached frame has red markings I drew on it (a box, circle, arrow, freehand scribble, or text).',
+  'These markings are NOT part of the scene — they are how I am pointing at the thing I am asking about.',
+  'Treat whatever is inside/under/at the marking as the subject of my question.',
+  'Do not mention, describe, or acknowledge the red markings themselves (never say "a red box", "a red arrow", etc.).',
+  'Answer only about the real content of the image at the marked location.',
+].join(' ');
+
 export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPlaceResult, onClose }: FrameChatModalProps) {
   const [messages, setMessages] = useState<FrameChatMessage[]>(() =>
     deserializeThread(typeof window !== 'undefined' ? localStorage.getItem(frameChatStorageKey(projectId)) : null));
@@ -90,6 +100,7 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
       // flatten() can throw a SecurityError on a tainted canvas; keep it inside the try so a
       // failure surfaces via setError and busy still clears in finally.
       let drawnPath: string | null = null;
+      const didDraw = hasFrame ? canvasRef.current?.hasDrawing() ?? false : false;
       const drawnDataUrl = hasFrame ? canvasRef.current?.flatten() ?? null : null;
       canvasRef.current?.clear();
       if (drawnDataUrl) drawnPath = await writeTempImage(drawnDataUrl);
@@ -114,8 +125,14 @@ export function FrameChatModal({ projectId, clip, asset, playheadSourceSec, onPl
         const visualRefs = drawnPath
           ? [{ label: asset?.name ?? 'frame', kind: 'asset' as const, mediaType: 'image' as const, fileRef: drawnPath }]
           : [];
+        // When the user drew on the frame, the red marks are a POINTING GESTURE at the subject of
+        // their question — not part of the scene. Tell Gemini to answer about what's marked and to
+        // never describe the marks themselves ("a red box/arrow…").
+        const userMessage = didDraw
+          ? `${ANNOTATION_GUIDANCE}\n\nMy question: ${text}`
+          : text;
         const res = await window.electronAPI.llm.geminiChat({
-          userMessage: text,
+          userMessage,
           model: getCutVisionModel(),
           resumeSessionId: sessionIdRef.current,
           visualRefs,

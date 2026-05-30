@@ -6,6 +6,8 @@ export type FrameTool = 'brush' | 'rect' | 'ellipse' | 'arrow' | 'text';
 export interface FrameCanvasHandle {
   /** Composite the frame image + drawing into one PNG data URL. Null if nothing to flatten. */
   flatten: () => string | null;
+  /** True when the user has drawn at least one mark on the frame. */
+  hasDrawing: () => boolean;
   clear: () => void;
 }
 
@@ -33,6 +35,8 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [tool, setTool] = useState<FrameTool>('brush');
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const strokesRef = useRef<Stroke[]>([]);
+  strokesRef.current = strokes;
   const drawingRef = useRef<Stroke | null>(null);
   const [imgLoaded, setImgLoaded] = useState(false);
 
@@ -121,6 +125,7 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
       ctx.drawImage(draw, 0, 0, width, height);
       return out.toDataURL('image/png');
     },
+    hasDrawing: () => strokesRef.current.length > 0,
     clear: () => { setStrokes([]); drawingRef.current = null; },
   }), [imgLoaded, width, height]);
 
