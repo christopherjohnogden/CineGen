@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 
 export type FrameTool = 'brush' | 'rect' | 'ellipse' | 'arrow' | 'text';
 
@@ -47,6 +48,7 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
     ctx.font = '18px sans-serif';
     const all = drawingRef.current ? [...strokes, drawingRef.current] : strokes;
     for (const s of all) {
+      if (!s || !s.points) continue; // defensive: never let a stray stroke crash the canvas
       const pts = s.points;
       if (s.tool === 'brush') {
         ctx.beginPath();
@@ -78,12 +80,12 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
 
   useEffect(() => { redraw(); }, [redraw]);
 
-  const toPoint = (e: React.PointerEvent): { x: number; y: number } => {
+  const toPoint = (e: ReactPointerEvent): { x: number; y: number } => {
     const rect = canvasRef.current!.getBoundingClientRect();
     return { x: (e.clientX - rect.left) * (width / rect.width), y: (e.clientY - rect.top) * (height / rect.height) };
   };
 
-  const onPointerDown = (e: React.PointerEvent) => {
+  const onPointerDown = (e: ReactPointerEvent) => {
     const p = toPoint(e);
     if (tool === 'text') {
       const text = window.prompt('Label text:')?.trim();
@@ -93,14 +95,17 @@ export const FrameCanvas = forwardRef<FrameCanvasHandle, FrameCanvasProps>(funct
     e.currentTarget.setPointerCapture(e.pointerId);
     drawingRef.current = { tool, color: COLOR, points: [p] };
   };
-  const onPointerMove = (e: React.PointerEvent) => {
+  const onPointerMove = (e: ReactPointerEvent) => {
     if (!drawingRef.current) return;
     drawingRef.current.points.push(toPoint(e));
     redraw();
   };
   const onPointerUp = () => {
-    if (drawingRef.current) setStrokes((prev) => [...prev, drawingRef.current!]);
+    // Capture the stroke before clearing the ref — the setStrokes updater runs later, by which
+    // point drawingRef.current is already null (pushing null → crash in redraw on s.points).
+    const finished = drawingRef.current;
     drawingRef.current = null;
+    if (finished) setStrokes((prev) => [...prev, finished]);
   };
 
   useImperativeHandle(ref, () => ({
