@@ -15,11 +15,13 @@ interface SceneAssetsPanelProps {
   onSetKind: (k: 'all' | BreakdownKind) => void;
   onRemove: (tag: string) => void;
   onGenerateRef: (item: DirectorBreakdownItem) => void;
+  onEditDescription: (tag: string, description: string) => void;
+  onRelink: (item: DirectorBreakdownItem) => void;
 }
 
 const KIND_LABEL: Record<BreakdownKind, string> = { character: 'Characters', location: 'Locations', prop: 'Props', vehicle: 'Vehicles' };
 
-export function SceneAssetsPanel({ show, scene, sceneIndex, elements, activeKind, focusName, onSetKind, onRemove, onGenerateRef }: SceneAssetsPanelProps) {
+export function SceneAssetsPanel({ show, scene, sceneIndex, elements, activeKind, focusName, onSetKind, onRemove, onGenerateRef, onEditDescription, onRelink }: SceneAssetsPanelProps) {
   const resolved = resolveSceneAssets(show, sceneIndex, show.breakdown, scene);
   const counts = { character: 0, location: 0, prop: 0, vehicle: 0 } as Record<BreakdownKind, number>;
   resolved.forEach((r) => { counts[r.item.kind] += 1; });
@@ -79,8 +81,23 @@ export function SceneAssetsPanel({ show, scene, sceneIndex, elements, activeKind
                       <span className={`dbk-status dbk-status--${status}`}>{status === 'ai' ? '● AI-added' : status === 'linked' ? '● linked' : '○ missing'}</span>
                       <button type="button" className="director-tab__btn" style={{ padding: '2px 7px', marginLeft: 6 }} title="Remove from scene" onClick={() => onRemove(item.tag)}>✕</button>
                     </div>
-                    {item.blurb && <p className="director-tab__meta" style={{ marginTop: 7 }}>{item.blurb}</p>}
+                    <div
+                      className="director-tab__meta"
+                      contentEditable
+                      suppressContentEditableWarning
+                      spellCheck={false}
+                      style={{ marginTop: 7, outline: 'none' }}
+                      onBlur={(e) => {
+                        const text = e.currentTarget.textContent ?? '';
+                        if (text !== item.description) onEditDescription(item.tag, text);
+                      }}
+                    >
+                      {item.description}
+                    </div>
                     <div className="director-tab__row" style={{ marginTop: 8 }}>
+                      <button type="button" className="director-tab__btn" onClick={() => onRelink(item)}>
+                        {status === 'missing' ? 'Create + link' : 'Re-link'}
+                      </button>
                       <button type="button" className="director-tab__btn" onClick={() => onGenerateRef(item)}>{img ? 'Generate ref' : '+ Add ref'}</button>
                     </div>
                   </div>
