@@ -337,7 +337,7 @@
 .dse-reopen--right { right:0; border-radius:6px 0 0 6px; border-right:none; }
 
 /* ── Screenplay paper + elements ────────────────────────────────── */
-.dse-paperwrap { overflow:auto; padding:24px 0; display:flex; justify-content:center; position:relative; }
+.dse-paperwrap { overflow:auto; padding:24px 0; display:flex; justify-content:center; align-items:flex-start; position:relative; }
 .dse-paper { width:620px; max-width:100%; background:#f4f1ea; color:#16130d; border-radius:4px; box-shadow:0 8px 40px rgba(0,0,0,.5); padding:48px 60px 56px 82px; font-family:'Courier New',Courier,monospace; font-size:14.5px; line-height:1.5; min-height:820px; }
 .dse-el { white-space:pre-wrap; outline:none; }
 .dse-el--scene { font-weight:700; text-transform:uppercase; margin:22px 0 10px; color:#3a2f10; }
@@ -388,7 +388,7 @@
 .dbk-navnum { font-family:'Courier New',monospace; font-size:11px; color:var(--accent); font-weight:700; }
 .dbk-navttl { font-size:12px; color:var(--text-primary); margin-top:3px; line-height:1.3; }
 .dbk-navmeta { font-size:10px; color:var(--text-tertiary); margin-top:4px; display:flex; gap:8px; }
-.dbk-scenecol { overflow:auto; padding:20px 0; display:flex; justify-content:center; }
+.dbk-scenecol { overflow:auto; padding:20px 0; display:flex; justify-content:center; align-items:flex-start; }
 .dbk-assets { border-left:1px solid var(--border-subtle); background:var(--bg-raised); overflow:auto; display:flex; flex-direction:column; }
 .dbk-mark { border-radius:2px; padding:0 1px; cursor:pointer; }
 .dbk-mark--character { background:rgba(157,180,255,.3); box-shadow:inset 0 -2px 0 rgba(157,180,255,.7); }
