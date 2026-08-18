@@ -3,7 +3,7 @@ import type { RefObject } from 'react';
 import type { MeasuredElement } from '@/lib/director/paginate';
 
 export function useMeasuredHeights(
-  containerRef: RefObject<HTMLElement>,
+  containerRef: RefObject<HTMLElement | null>,
   elementIds: string[],
 ): MeasuredElement[] {
   const [measured, setMeasured] = useState<MeasuredElement[]>([]);
