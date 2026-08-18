@@ -50,7 +50,7 @@ export function DirectorShotlistTab({ show, onChange, onShotlist, onSelectClip }
 
           <div>
             <span className="director-tab__label">{scene?.label ?? 'Clips'}</span>
-            <div className="director-tab__board">
+            <div className="director-tab__clipboard">
               {sceneClips.map((clip) => (
                 <button
                   key={clip.id}

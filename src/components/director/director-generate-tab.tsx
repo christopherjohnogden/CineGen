@@ -113,6 +113,21 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
           <label className="director-tab__label" htmlFor="director-constraints">Constraints</label>
           <textarea id="director-constraints" value={clip.constraints} onChange={(event) => patchClip((current) => ({ ...current, constraints: event.target.value }))} />
         </div>
+        <label className="director-tab__row" style={{ alignItems: 'center', fontSize: 12 }}>
+          <input
+            type="checkbox"
+            checked={Boolean(clip.framingRefOn)}
+            onChange={(event) => patchClip((current) => ({ ...current, framingRefOn: event.target.checked }))}
+          />
+          Framing reference
+        </label>
+        {clip.framingRefOn && (
+          <input
+            value={clip.framingRefTag ?? ''}
+            placeholder="@Composition-Tag"
+            onChange={(event) => patchClip((current) => ({ ...current, framingRefTag: event.target.value }))}
+          />
+        )}
         {timingError && <p className="director-tab__warn">{timingError}</p>}
 
         <div>

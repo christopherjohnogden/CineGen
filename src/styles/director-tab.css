@@ -17,33 +17,6 @@
   background: var(--bg-raised);
 }
 
-.director-tab__modes {
-  display: flex;
-  gap: 6px;
-}
-
-.director-tab__mode {
-  padding: 5px 12px;
-  border-radius: 16px;
-  border: 1px solid var(--border-medium);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.director-tab__mode:hover {
-  color: var(--text-primary);
-  border-color: var(--accent);
-}
-
-.director-tab__mode--active {
-  background: var(--accent-dim);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
 .director-tab__llm {
   display: flex;
   align-items: center;
@@ -64,27 +37,6 @@
   font-size: 12px;
   color: var(--text-secondary);
   font-family: 'Space Mono', monospace;
-}
-
-.director-tab__layout {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 320px;
-  min-height: 0;
-  flex: 1;
-}
-
-.director-tab__col {
-  min-height: 0;
-  overflow: auto;
-  padding: 14px 16px;
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.director-tab__col:last-child {
-  border-right: none;
 }
 
 .director-tab__label {
@@ -351,7 +303,7 @@
 .director-tab__badge--missing { background:var(--bg-elevated); color:var(--error); }
 
 /* ── Redesign: shotlist board ───────────────────────── */
-.director-tab__board { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+.director-tab__clipboard { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
 .director-tab__clipcard { text-align:left; border:1px solid var(--border-subtle); border-radius:9px; background:var(--bg-raised); overflow:hidden; cursor:pointer; color:inherit; padding:0; }
 .director-tab__clipcard--active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
 .director-tab__clipcard-body { padding:9px 11px; }
