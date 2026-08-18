@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, type KeyboardEvent } from 'react';
 import type { Screenplay, ScreenplayElement, ScreenplayElementType } from '@/lib/director/screenplay';
 import { nextElementType, typeAfterEnter } from '@/lib/director/screenplay';
 import { generateId } from '@/lib/utils/ids';
@@ -33,7 +33,7 @@ export function ScreenplayEditor({ doc, selectedId, pendingEdits, onChange, onSe
     patch(doc.elements.map((e) => (e.id === id ? { ...e, type } : e)));
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, el: ScreenplayElement) => {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>, el: ScreenplayElement) => {
     if (e.key === 'Tab') {
       e.preventDefault();
       setType(el.id, nextElementType(el.type, e.shiftKey));
@@ -50,6 +50,7 @@ export function ScreenplayEditor({ doc, selectedId, pendingEdits, onChange, onSe
 
   // when a diff is pending, mark which element ids are being replaced/deleted
   const diffTargets = new Set((pendingEdits ?? []).map((ed) => ed.targetElementId).filter(Boolean) as string[]);
+  const hasPendingEdits = !!pendingEdits && pendingEdits.length > 0;
 
   return (
     <div className="dse-paperwrap">
@@ -61,7 +62,7 @@ export function ScreenplayEditor({ doc, selectedId, pendingEdits, onChange, onSe
               <div
                 data-el-id={el.id}
                 className={`dse-el dse-el--${el.type}${el.id === selectedId ? ' dse-el--sel' : ''}${isDiff ? ' dse-el--diffdel' : ''}`}
-                contentEditable={!pendingEdits}
+                contentEditable={!hasPendingEdits}
                 suppressContentEditableWarning
                 spellCheck={false}
                 onFocus={() => onSelect(el.id)}
@@ -78,7 +79,7 @@ export function ScreenplayEditor({ doc, selectedId, pendingEdits, onChange, onSe
             </div>
           );
         })}
-        {pendingEdits && pendingEdits.length > 0 && (
+        {hasPendingEdits && (
           <div className="dse-diffbar">
             <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
             <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
