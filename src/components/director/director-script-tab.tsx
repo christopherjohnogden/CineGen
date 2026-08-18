@@ -5,7 +5,7 @@ import { parseToScreenplay, serializeScreenplay, type Screenplay } from '@/lib/d
 import { applyAssistantEdits, type AssistantEdit, type AssistantResponse } from '@/lib/director/script-assistant';
 import { parseDirectorLlmProvider } from '@/lib/director/cli-provider';
 import { CollapsiblePanel } from './collapsible-panel';
-import { ScreenplayEditor, ELEMENT_TYPES } from './screenplay-editor';
+import { PaginatedEditor, ELEMENT_TYPES } from './paginated-editor';
 import { DirectorScriptAssets } from './director-script-assets';
 import { DirectorScriptChat } from './director-script-chat';
 
@@ -102,7 +102,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
           </CollapsiblePanel>
         )}
 
-        <ScreenplayEditor
+        <PaginatedEditor
           doc={doc}
           selectedId={selectedId}
           pendingEdits={pending}
