@@ -427,7 +427,7 @@ export function DirectorTab() {
           <DirectorScriptTab show={show} onChange={setShow} onBreakdown={() => void runBreakdown()} />
         )}
         {show.mode === 'breakdown' && (
-          <DirectorBreakdownTab show={show} elements={state.elements} onApprove={approveBreakdown} onCreateMissing={createMissing} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
+          <DirectorBreakdownTab show={show} elements={state.elements} onChange={setShow} onApprove={approveBreakdown} onCreateMissing={createMissing} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
         )}
         {show.mode === 'shotlist' && (
           <DirectorShotlistTab show={show} onChange={setShow} onShotlist={(sceneOnly) => void runShotlist(sceneOnly)} onSelectClip={selectClip} />

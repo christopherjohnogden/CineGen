@@ -1,54 +1,80 @@
+import { useState } from 'react';
 import type { Element } from '@/types/elements';
-import type { DirectorShow } from '@/types/director';
-import { findMatchingElement, itemsMissingElements } from '@/lib/director/breakdown';
+import type { BreakdownKind, DirectorBreakdownItem, DirectorShow } from '@/types/director';
+import { parseToScreenplay } from '@/lib/director/screenplay';
+import { splitScenes } from '@/lib/director/scene-split';
+import { SceneScriptView } from './scene-script-view';
+import { SceneAssetsPanel } from './scene-assets-panel';
 
 interface DirectorBreakdownTabProps {
   show: DirectorShow;
   elements: Element[];
+  onChange: (show: DirectorShow) => void;
   onApprove: () => void;
   onCreateMissing: () => void;
   onOpenElements: () => void;
 }
 
-export function DirectorBreakdownTab({ show, elements, onApprove, onCreateMissing, onOpenElements }: DirectorBreakdownTabProps) {
-  const missing = itemsMissingElements(show.breakdown, elements);
+export function DirectorBreakdownTab({ show, elements, onChange, onApprove, onCreateMissing, onOpenElements }: DirectorBreakdownTabProps) {
+  const scenes = splitScenes(parseToScreenplay(show.sourceText));
+  const [sceneIndex, setSceneIndex] = useState(0);
+  const [activeKind, setActiveKind] = useState<'all' | BreakdownKind>('all');
+  const [focusName, setFocusName] = useState<string | undefined>();
+  const scene = scenes[sceneIndex] ?? scenes[0];
+
+  if (!scene) {
+    return <div className="director-tab__stage"><p className="director-tab__empty">Run a breakdown from the Script tab to populate scenes.</p></div>;
+  }
+
+  const removeFromScene = (tag: string) => {
+    const ov = show.sceneAssetOverrides?.[sceneIndex] ?? { added: [], removed: [] };
+    const next = { added: ov.added.filter((t) => t !== tag), removed: [...new Set([...ov.removed, tag])] };
+    onChange({ ...show, sceneAssetOverrides: { ...show.sceneAssetOverrides, [sceneIndex]: next } });
+  };
+
+  const onAssetClick = (kind: BreakdownKind, name: string) => {
+    if (activeKind !== 'all' && activeKind !== kind) setActiveKind(kind);
+    setFocusName(undefined);
+    // set on next tick so the effect re-fires even if the name repeats
+    requestAnimationFrame(() => setFocusName(name));
+  };
 
   return (
-    <div className="director-tab__stage">
-      <div className="director-tab__row" style={{ alignItems: 'center' }}>
-        <span className="director-tab__label" style={{ margin: 0 }}>Breakdown</span>
-        <div className="director-tab__row" style={{ marginLeft: 'auto' }}>
-          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onApprove} disabled={show.breakdown.length === 0 || show.breakdownApproved}>
-            {show.breakdownApproved ? 'Approved' : 'Approve breakdown →'}
-          </button>
-          <button type="button" className="director-tab__btn" onClick={onCreateMissing} disabled={missing.length === 0}>
-            Create missing ({missing.length})
-          </button>
+    <div className="dbk-shell">
+      <aside className="dbk-nav">
+        <div className="director-tab__row" style={{ marginBottom: 10 }}>
+          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onApprove} disabled={show.breakdown.length === 0 || show.breakdownApproved}>{show.breakdownApproved ? 'Approved' : 'Approve →'}</button>
+        </div>
+        <span className="director-tab__label">Scenes</span>
+        {scenes.map((s) => (
+          <div key={s.index} className={`dbk-navitem${s.index === sceneIndex ? ' dbk-navitem--on' : ''}`} onClick={() => { setSceneIndex(s.index); setActiveKind('all'); }}>
+            <div className="dbk-navnum">SC{s.index + 1}</div>
+            <div className="dbk-navttl">{s.heading || '(untitled scene)'}</div>
+          </div>
+        ))}
+        <div className="director-tab__row" style={{ marginTop: 10 }}>
+          <button type="button" className="director-tab__btn" onClick={onCreateMissing}>Create missing</button>
           <button type="button" className="director-tab__btn" onClick={onOpenElements}>Generate refs</button>
         </div>
-      </div>
+      </aside>
 
-      {show.breakdown.length === 0 ? (
-        <p className="director-tab__empty">Run a breakdown from the Script tab to list characters, locations, props, and vehicles.</p>
-      ) : (
-        <div className="director-tab__cards">
-          {show.breakdown.map((item) => {
-            const linked = item.elementId || findMatchingElement(elements, item)?.id;
-            return (
-              <div key={item.id} className="director-tab__card">
-                <span className="director-tab__card-kind">{item.kind}</span>
-                <div className="director-tab__item-title">{item.tag} · {item.name}</div>
-                {item.blurb && <span className="director-tab__meta">{item.blurb}</span>}
-                <div>
-                  <span className={`director-tab__badge ${linked ? 'director-tab__badge--linked' : 'director-tab__badge--missing'}`}>
-                    {linked ? '● linked' : '○ missing'}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <SceneScriptView scene={scene} breakdown={show.breakdown} onAssetClick={onAssetClick} />
+
+      <aside className="dbk-assets">
+        <SceneAssetsPanel
+          show={show}
+          scene={scene}
+          sceneIndex={sceneIndex}
+          elements={elements}
+          activeKind={activeKind}
+          focusName={focusName}
+          onSetKind={setActiveKind}
+          onRemove={removeFromScene}
+          onGenerateRef={() => onOpenElements()}
+          onEditDescription={(tag, description) => onChange({ ...show, breakdown: show.breakdown.map((b) => (b.tag === tag ? { ...b, description } : b)) })}
+          onRelink={() => onOpenElements()}
+        />
+      </aside>
     </div>
   );
 }
