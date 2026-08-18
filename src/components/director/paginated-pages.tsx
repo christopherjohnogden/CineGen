@@ -32,11 +32,13 @@ export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, tra
   const { breakBeforeIds } = paginate(measured, PAGE_CONTENT_H);
   const breakSet = new Set(breakBeforeIds);
 
-  // Lay out the cream page cards behind the flow from the spacer offsets. Only re-runs
-  // when pagination actually changes (break points or item count) — display-only.
+  // Lay out the cream page cards behind the flow from the spacer offsets. Re-runs when
+  // break points, item count, OR any measured height changes — so a card also resizes
+  // when a line wraps within a page (heights change but break points don't). Display-only.
   // Geometry: each card extends PAGE_MARGIN above the first line and below the last of
   // its page, so text never touches the card edge and never falls into the dark gap.
   const breakSignature = breakBeforeIds.join('|');
+  const heightSignature = measured.map((m) => m.height).join('|');
   useLayoutEffect(() => {
     const flow = flowRef.current, pages = pagesRef.current;
     if (!flow || !pages) return;
@@ -58,7 +60,7 @@ export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, tra
       pages.appendChild(pg);
       top = b + PAGE_MARGIN + GAP_ONLY;
     });
-  }, [breakSignature, items.length]);
+  }, [breakSignature, heightSignature, items.length]);
 
   return (
     <div className="dse-paperwrap">
