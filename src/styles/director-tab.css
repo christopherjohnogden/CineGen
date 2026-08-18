@@ -404,3 +404,14 @@
 .dbk-tod { background:#3a3320; color:#e0c060; border-radius:4px; padding:0 5px; margin-left:4px; font-weight:700; font-size:10px; }
 .dbk-status { margin-left:auto; font-size:10px; font-weight:600; padding:2px 7px; border-radius:8px; }
 .dbk-status--linked { background:var(--accent-dim); color:var(--success); } .dbk-status--missing { background:var(--bg-raised); color:var(--error); } .dbk-status--ai { background:#2a2540; color:#c8a0e0; }
+
+/* ── Paginated editor: page cards behind a single flow ──────────── */
+.dse-pageflow { position:relative; width:620px; max-width:100%; margin:0 auto; }
+.dse-pages { position:absolute; inset:0; z-index:0; pointer-events:none; }
+.dse-page { position:absolute; left:0; width:620px; max-width:100%; background:#f4f1ea; border-radius:4px; box-shadow:0 8px 40px rgba(0,0,0,.5); }
+.dse-page-num { position:absolute; top:14px; right:24px; color:#8a8270; font-family:'Courier New',monospace; font-size:11px; }
+/* the flow content sits above the page cards; padding matches the old paper */
+.dse-flowcontent { position:relative; z-index:1; padding:48px 60px 56px 82px; color:#16130d; font-family:'Courier New',Courier,monospace; font-size:14.5px; line-height:1.5; }
+/* inert page-gap spacer with a (CONT'D) marker */
+.dse-spacer { position:relative; height:96px; user-select:none; }
+.dse-contd { position:absolute; top:8px; right:0; color:#8a8270; font-style:italic; font-size:11px; }
