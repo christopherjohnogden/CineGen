@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DirectorShow } from '@/types/director';
 import { extractScriptText, SCRIPT_ACCEPT } from '@/lib/director/look-bible';
 import { parseToScreenplay, serializeScreenplay, type Screenplay } from '@/lib/director/screenplay';
+import { parseFdx } from '@/lib/director/fdx-parser';
 import { applyAssistantEdits, type AssistantEdit, type AssistantResponse } from '@/lib/director/script-assistant';
 import { parseDirectorLlmProvider } from '@/lib/director/cli-provider';
 import { CollapsiblePanel } from './collapsible-panel';
@@ -15,6 +16,11 @@ interface DirectorScriptTabProps {
   onBreakdown: () => void;
 }
 
+function docFromShow(show: DirectorShow): Screenplay {
+  // Prefer structured elements (exact types, stable ids) when present; else parse the text.
+  return show.sourceElements ? { elements: show.sourceElements } : parseToScreenplay(show.sourceText);
+}
+
 export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScriptTabProps) {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
@@ -23,18 +29,20 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
   const [scriptError, setScriptError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [doc, setDocState] = useState<Screenplay>(() => parseToScreenplay(show.sourceText));
+  const [doc, setDocState] = useState<Screenplay>(() => docFromShow(show));
 
   // Re-sync from sourceText ONLY when it changes externally (upload, or another tab),
   // not from our own serialize round-trip. We compare against what we last serialized.
   const lastSerialized = useRef(serializeScreenplay(doc));
   useEffect(() => {
+    // Re-sync when an external change (upload, another tab) makes sourceText differ from what
+    // we last serialized. Adopt sourceElements directly when present (no reparse, stable ids).
     if (show.sourceText !== lastSerialized.current) {
-      const next = parseToScreenplay(show.sourceText);
-      lastSerialized.current = show.sourceText;
+      const next = docFromShow(show);
+      lastSerialized.current = serializeScreenplay(next);
       setDocState(next);
     }
-  }, [show.sourceText]);
+  }, [show.sourceText, show.sourceElements]);
 
   // Debounce the serialize-back to sourceText so we don't round-trip on every keystroke-commit.
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,7 +52,8 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
     flushTimer.current = setTimeout(() => {
       const text = serializeScreenplay(next);
       lastSerialized.current = text;
-      onChange({ ...show, sourceText: text });
+      // Keep sourceElements and sourceText coherent — both written from the same array.
+      onChange({ ...show, sourceElements: next.elements, sourceText: text });
     }, 400);
   };
   useEffect(() => () => { if (flushTimer.current) clearTimeout(flushTimer.current); }, []);
@@ -54,9 +63,24 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
     setScriptError('');
     try {
       const raw = await file.text();
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+      if (ext === 'fdx') {
+        const parsed = parseFdx(raw);
+        if (parsed) {
+          onChange({
+            ...show,
+            sourceElements: parsed.elements,
+            sourceText: serializeScreenplay(parsed),
+            sourceFileName: file.name,
+          });
+          if (fileRef.current) fileRef.current.value = '';
+          return;
+        }
+        // fall through to the plain-text path below on unparseable FDX
+      }
       const text = extractScriptText(file.name, raw);
       if (!text.trim()) throw new Error('That file did not contain readable script text.');
-      onChange({ ...show, sourceText: text, sourceFileName: file.name });
+      onChange({ ...show, sourceText: text, sourceFileName: file.name, sourceElements: undefined });
     } catch (error) {
       setScriptError(error instanceof Error ? error.message : 'Could not read that script.');
     }

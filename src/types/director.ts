@@ -1,3 +1,5 @@
+import type { ScreenplayElement } from '@/lib/director/screenplay';
+
 export type ClipLengthSec = 10 | 15 | 20 | 30;
 export type DirectorMode = 'source' | 'breakdown' | 'shotlist' | 'generate';
 export type BreakdownKind = 'character' | 'location' | 'prop' | 'vehicle';
@@ -146,6 +148,9 @@ export interface DirectorMoodBoard {
 export interface DirectorShow {
   sourceText: string;
   sourceFileName?: string;
+  /** Typed screenplay elements from a structured import (e.g. .fdx). When present, the editor
+   *  uses these directly instead of re-parsing sourceText; kept in sync with sourceText. */
+  sourceElements?: ScreenplayElement[];
   clipLengthSec: ClipLengthSec;
   stylePrefix: string;
   lookBible: DirectorLookBible;
