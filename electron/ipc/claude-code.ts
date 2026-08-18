@@ -226,6 +226,8 @@ async function streamClaudeCodeChat(
     '--tools',
     COPILOT_CHAT_TOOLS,
     '--disable-slash-commands',
+    '--permission-mode',
+    'dontAsk',
   ];
 
   if (canResume && params.resumeSessionId) {

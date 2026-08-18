@@ -1,0 +1,1681 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>YOU WOKE UP EARLY — Shot List</title>
+    <style>
+    :root {
+      --wall: #16211b;
+      --wall-deep: #0e1713;
+      --shelf: #24312a;
+      --ink: #dfe6df;
+      --ink-dim: #8fa093;
+      --oxblood: #6d2b2b;
+      --velvet: #6b6a3a;
+      --amber: #d8a24a;
+      --rule: #2c3a32;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; padding: 0 0 6rem;
+      background: var(--wall-deep);
+      color: var(--ink);
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      line-height: 1.55;
+    }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 0 1.25rem; }
+
+    header.masthead {
+      border-bottom: 1px solid var(--rule);
+      padding: 3.5rem 0 1.75rem;
+      margin-bottom: 2rem;
+    }
+    .eyebrow {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .68rem; letter-spacing: .22em; text-transform: uppercase;
+      color: var(--amber); margin: 0 0 .9rem;
+    }
+    h1 {
+      font-size: clamp(2.4rem, 7vw, 4rem); margin: 0; font-weight: 400;
+      letter-spacing: .14em; text-transform: uppercase; line-height: 1;
+    }
+    .byline { color: var(--ink-dim); margin: .9rem 0 0; font-size: .95rem; font-style: italic; }
+    .stats {
+      display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 1.6rem;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim);
+    }
+    .stats b { color: var(--ink); font-weight: 600; }
+    #bridge {
+      display: inline-flex; align-items: center; gap: .4rem;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim);
+    }
+    #bridge::before {
+      content: ""; width: .45rem; height: .45rem; border-radius: 50%;
+      background: var(--ink-dim); opacity: .5;
+    }
+    #bridge.on { color: var(--amber); }
+    #bridge.on::before { background: var(--amber); opacity: 1; }
+    #allTog {
+      font: inherit; letter-spacing: .1em; text-transform: uppercase;
+      background: transparent; border: 1px solid var(--rule); color: var(--ink-dim);
+      padding: .3rem .7rem; cursor: pointer; margin-left: auto;
+    }
+    #allTog:hover { color: var(--amber); border-color: var(--amber); }
+    #allTog:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+    details.panel {
+      border: 1px solid var(--rule); background: var(--wall);
+      margin-bottom: 1rem;
+    }
+    details.panel > summary {
+      cursor: pointer; padding: .85rem 1.1rem; list-style: none;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; color: var(--amber);
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    }
+    details.panel > summary::-webkit-details-marker { display: none; }
+    details.panel > summary::after { content: "+"; color: var(--ink-dim); font-size: 1rem; }
+    details.panel[open] > summary::after { content: "\2212"; }
+    .panel-inner { padding: 0 1.1rem 1.2rem; border-top: 1px solid var(--rule); }
+
+    pre {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .8rem; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word;
+      margin: 1rem 0 0; color: var(--ink);
+    }
+    .assets {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 1.4rem 1.1rem; margin-top: 1.2rem;
+    }
+    .asset { margin: 0; }
+    .asset img {
+      display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover;
+      background: var(--wall-deep); border: 1px solid var(--rule);
+    }
+    .asset figcaption { display: block; padding-top: .6rem; }
+    .asset .tag {
+      display: block;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      color: var(--amber); font-size: .8rem; word-break: break-all;
+    }
+    .asset .kind {
+      display: block; margin-top: .15rem;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-dim);
+    }
+    .asset .desc { display: block; margin-top: .45rem; font-size: .82rem; color: var(--ink-dim); line-height: 1.45; }
+    .hint { margin: 1rem 0 0; font-size: .85rem; color: var(--ink-dim); font-style: italic; }
+    .hint b { color: var(--amber); font-style: normal; }
+    .hint code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .85em; color: var(--amber); font-style: normal;
+    }
+    pre.cmd {
+      position: relative; margin: .8rem 0 0; padding: .75rem 5.5rem .75rem .85rem;
+      background: var(--wall-deep); border: 1px solid var(--rule);
+      color: var(--ink); font-size: .82rem; cursor: pointer; white-space: pre-wrap;
+      word-break: break-all;
+    }
+    pre.cmd:hover { border-color: var(--amber); }
+    pre.cmd::after {
+      content: "click to copy"; position: absolute; top: .8rem; right: .8rem;
+      font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim);
+    }
+    pre.cmd.ok::after { content: "copied"; color: var(--amber); }
+    #bridge { cursor: pointer; }
+
+    .scene { margin-top: 3rem; }
+    .scene > h2 {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .72rem; letter-spacing: .2em; text-transform: uppercase;
+      color: var(--ink-dim); font-weight: 400;
+      border-bottom: 1px solid var(--rule); padding-bottom: .7rem; margin: 0 0 .25rem;
+    }
+
+    .clip { border-bottom: 1px solid var(--rule); }
+    .clip.done { opacity: .42; }
+    .clip-head {
+      display: flex; align-items: baseline; gap: .85rem; flex-wrap: wrap;
+      padding: 1.05rem 0; cursor: pointer; list-style: none;
+      transition: background .12s;
+    }
+    .clip-head::-webkit-details-marker { display: none; }
+    .clip-head:hover { background: rgba(216, 162, 74, .045); }
+    .clip-head:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+    .tw {
+      flex: 0 0 auto; width: .5rem; height: .5rem; align-self: center;
+      border-right: 1px solid var(--ink-dim); border-bottom: 1px solid var(--ink-dim);
+      transform: rotate(-45deg); transition: transform .16s;
+    }
+    .clip[open] > .clip-head .tw { transform: rotate(45deg); }
+    .clip[open] > .clip-head { border-bottom: 1px dashed var(--rule); }
+
+    .scene > h2 button.scene-tog {
+      float: right; font: inherit; letter-spacing: .14em; text-transform: uppercase;
+      background: transparent; border: 0; color: var(--ink-dim);
+      cursor: pointer; padding: 0; font-size: .68rem;
+    }
+    .scene > h2 button.scene-tog:hover { color: var(--amber); }
+    .scene > h2 button.scene-tog:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+    .clip-head h3 { margin: 0; font-size: 1.15rem; font-weight: 400; flex: 1 1 auto; }
+    .cid {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      color: var(--amber); font-size: .82rem; letter-spacing: .08em;
+      min-width: 2.1rem;
+    }
+    .meta {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .7rem; letter-spacing: .1em; color: var(--ink-dim); white-space: nowrap;
+    }
+    .altbadge {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .58rem; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--ink-dim); border: 1px dashed var(--rule); border-radius: 999px;
+      padding: .16rem .5rem; white-space: nowrap;
+    }
+    .clip.isalt > .clip-head .cid { color: var(--ink-dim); }
+    .shots {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .62rem; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--amber); border: 1px solid var(--rule); border-radius: 999px;
+      padding: .18rem .55rem; white-space: nowrap;
+    }
+    .chk { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+    .chk input {
+      position: absolute; opacity: 0; width: 1rem; height: 1rem; margin: 0; cursor: pointer;
+      pointer-events: none;  /* clicks land on the label so the browser never pre-toggles */
+    }
+    .chk .box {
+      width: .95rem; height: .95rem; border: 1px solid var(--ink-dim); display: block;
+    }
+    .chk input:checked + .box { background: var(--amber); border-color: var(--amber); }
+    .chk input:focus-visible + .box { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+    button.copy {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .66rem; letter-spacing: .14em; text-transform: uppercase;
+      background: transparent; color: var(--ink-dim);
+      border: 1px solid var(--rule); padding: .42rem .8rem; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    button.copy:hover { color: var(--amber); border-color: var(--amber); }
+    button.copy:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+    button.copy.ok { color: var(--amber); border-color: var(--amber); }
+
+    button.queue {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .66rem; letter-spacing: .14em; text-transform: uppercase;
+      background: transparent; color: var(--ink-dim);
+      border: 1px solid var(--rule); padding: .42rem .8rem; cursor: pointer;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    button.queue:hover { color: var(--amber); border-color: var(--amber); }
+    button.queue:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+    button.queue.on { background: var(--amber); border-color: var(--amber); color: var(--wall-deep); }
+    .clip.queued { box-shadow: inset 2px 0 0 var(--amber); }
+    .clip.queued > .clip-head { padding-left: 1rem; }
+    .clip.queued > pre.body { padding-left: 1rem; }
+
+    #bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      background: var(--wall); border-top: 1px solid var(--amber);
+      padding: .85rem 1.25rem;
+      display: none; align-items: center; gap: 1rem; flex-wrap: wrap;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
+    }
+    #bar.show { display: flex; }
+    #bar .count { color: var(--amber); margin-right: auto; }
+    #bar button {
+      font: inherit; text-transform: uppercase;
+      border: 1px solid var(--rule); background: transparent; color: var(--ink-dim);
+      padding: .45rem .9rem; cursor: pointer;
+    }
+    #bar button.primary { background: var(--amber); border-color: var(--amber); color: var(--wall-deep); }
+    #bar button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+    .clip pre.body { color: var(--ink-dim); margin: 0; padding: 1rem 0 1.5rem; }
+
+    .shotmap { margin: .9rem 0 .2rem; border: 1px solid var(--rule); }
+    .sm-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      padding: .55rem .75rem; border-bottom: 1px solid var(--rule);
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .62rem; letter-spacing: .16em; text-transform: uppercase; color: var(--amber);
+    }
+    .sm-btns { display: inline-flex; gap: .3rem; }
+    .sm-row {
+      display: grid; grid-template-columns: 1.6rem 5.2rem minmax(9rem, 13rem) 1fr auto;
+      align-items: baseline; gap: .75rem;
+      padding: .6rem .75rem; border-bottom: 1px solid var(--rule);
+    }
+    .sm-row:last-child { border-bottom: 0; }
+    .sm-row:hover { background: rgba(216, 162, 74, .05); }
+    .sm-n {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .8rem; color: var(--amber);
+    }
+    .sm-t, .sm-f {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .66rem; letter-spacing: .04em; color: var(--ink-dim); white-space: nowrap;
+    }
+    .sm-f { white-space: normal; color: var(--ink); }
+    .sm-g { font-size: .87rem; color: var(--ink-dim); line-height: 1.4; }
+    .sm-g em { display: block; color: var(--ink); font-style: italic; margin-top: .15rem; }
+    @media (max-width: 760px) {
+      .sm-row { grid-template-columns: 1.6rem 1fr auto; }
+      .sm-t { grid-column: 2; }
+      .sm-f { grid-column: 2; }
+      .sm-g { grid-column: 2; }
+      .sm-row > .sm-btns { grid-row: 1 / span 4; grid-column: 3; align-self: center; flex-direction: column; }
+    }
+    button.iso {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .64rem; letter-spacing: .1em; text-transform: uppercase;
+      background: transparent; color: var(--ink-dim);
+      border: 1px solid var(--rule); padding: .3rem .65rem; cursor: pointer;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    button.iso:hover { color: var(--amber); border-color: var(--amber); }
+    button.iso:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+    button.iso.active { background: var(--amber); border-color: var(--amber); color: var(--wall-deep); }
+    .clip.isolated > .clip-head .shots { background: var(--amber); color: var(--wall-deep); border-color: var(--amber); }
+
+    .refbar {
+      display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+      border-top: 1px dashed var(--rule); padding: .8rem 0 .1rem;
+    }
+    .rf-tog { position: relative; display: inline-flex; align-items: center; gap: .45rem; cursor: pointer; }
+    .rf-tog input { position: absolute; opacity: 0; width: 1rem; height: 1rem; margin: 0; pointer-events: none; }
+    .rf-tog .box {
+      width: .95rem; height: .95rem; border: 1px solid var(--ink-dim); display: block; flex: 0 0 auto;
+    }
+    .rf-tog input:checked ~ .box { background: var(--amber); border-color: var(--amber); }
+    .rf-lbl {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-dim);
+    }
+    .rf-tog input:checked ~ .rf-lbl { color: var(--amber); }
+    .rf-tog input:focus-visible + .box { outline: 2px solid var(--amber); outline-offset: 2px; }
+    input.rf-tag {
+      background: var(--wall-deep); color: var(--amber); border: 1px solid var(--rule);
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .74rem; padding: .28rem .5rem; width: 12rem;
+    }
+    input.rf-tag:focus { outline: none; border-color: var(--amber); }
+    input.rf-tag:disabled { opacity: .35; }
+    .rf-hint { font-size: .78rem; color: var(--ink-dim); font-style: italic; }
+    .clip.hasref > .clip-head .shots::after { content: " · ref"; }
+
+    .notes { border-top: 1px dashed var(--rule); padding: .9rem 0 1.3rem; }
+    .nt-head {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .62rem; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--amber); margin-bottom: .5rem;
+    }
+    .nt-hint { color: var(--ink-dim); letter-spacing: .06em; text-transform: none; margin-left: .5rem; }
+    textarea.nt-in {
+      width: 100%; background: var(--wall-deep); color: var(--ink);
+      border: 1px solid var(--rule); padding: .6rem .7rem; resize: vertical;
+      font-family: inherit; font-size: .9rem; line-height: 1.5;
+    }
+    textarea.nt-in:focus { outline: none; border-color: var(--amber); }
+    .nt-bar, .nt-keep { display: flex; align-items: center; gap: .45rem; margin-top: .5rem; flex-wrap: wrap; }
+    .nt-keep[hidden] { display: none; }  /* display:flex would otherwise beat the hidden attribute */
+    .notes button {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .64rem; letter-spacing: .12em; text-transform: uppercase;
+      background: transparent; color: var(--ink-dim);
+      border: 1px solid var(--rule); padding: .35rem .7rem; cursor: pointer;
+    }
+    .notes button:hover { color: var(--amber); border-color: var(--amber); }
+    .notes button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+    .nt-go { color: var(--wall-deep) !important; background: var(--amber) !important; border-color: var(--amber) !important; }
+    .nt-go:disabled { opacity: .5; cursor: default; }
+    .nt-status {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .66rem; color: var(--ink-dim);
+    }
+    .nt-status.err { color: #d98a6a; }
+    .clip.rewritten > .clip-head .shots::after { content: " · edited"; }
+
+    .note {
+      border-left: 2px solid var(--amber); padding: .1rem 0 .1rem 1rem;
+      margin: 1.1rem 0; color: var(--ink-dim); font-size: .92rem;
+    }
+    .note b { color: var(--ink); font-weight: 600; }
+    .note code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: .85em; color: var(--amber);
+    }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    @media (max-width: 620px) {
+      .clip-head h3 { flex-basis: 100%; order: 5; }
+      pre { font-size: .74rem; }
+    }
+    </style>
+    </head>
+    <body>
+    <div class="wrap">
+
+    <header class="masthead">
+      <p class="eyebrow">Two-minute woodland mystery &middot; six 20-second clips</p>
+      <h1>You Woke Up Early</h1>
+      <p class="byline">Interactive AI video shot list</p>
+      <div class="stats">
+        <span><b>6</b> clips</span>
+        <span><b>120</b> sec &middot; 2m 00s</span>
+        <span><b>18</b> shots</span>
+        <span><b>20&ndash;20s</b> per clip</span>
+        <span><b>16:9</b> &middot; 720p</span>
+        <span id="progress"><b>0</b> generated</span>
+        <span id="bridge" class="off" title="Director's-notes bridge">bridge offline</span>
+        <button id="allTog" type="button">Expand all</button>
+      </div>
+    </header>
+
+    <div class="note"><b>Continuity priority.</b> Generate Clips 1a–4a with only the man. Introduce the child for the first time in Clip 5a, then preserve the frame-left child / frame-right man geography through the final reveal.</div>
+
+    <details class="panel">
+      <summary>Global style prefix — prepended automatically to every copy</summary>
+      <div class="panel-inner"><pre id="prefix">VISUAL LANGUAGE — Photorealistic live-action woodland mystery, intimate and restrained, never fantasy spectacle. Natural skin texture, damp fabric, real breath and weight, subtle film grain, gentle halation, softly lifted blacks, fine highlight rolloff; no CGI sheen, no game-engine look.
+CINEMATOGRAPHY — 2.39:1 anamorphic composition, physical vintage spherical lenses with mild edge softness, shallow depth of field used selectively, deliberate locked frames or slow human-operated movement only. Keep the 180-degree shutter feel and natural motion blur.
+LIGHT — Overcast late-morning daylight filtered through a dense deciduous canopy; soft cool top light, faint mist between distant trunks, no visible sun shafts and no artificial light.
+COLOR — Forest greens and wet charcoal dominate, muted skin and weathered olive secondary, graphite-silver accent. Low saturation, cool-neutral grade, white balance near 5000K.
+CONTINUITY — The man is early 30s, lean, tousled dark-brown hair, short stubble, tired brown eyes, faded charcoal henley under a weathered olive field jacket, mud-darkened black jeans and worn brown leather boots. His face, hair, clothing, mud marks and proportions remain identical in all clips. He begins with damp leaves stuck to his right shoulder and jacket back. The forest is the same continuous place: beech and oak trunks, fern understory, wet leaf litter, thin ground mist. The child must never appear before explicitly introduced.
+PERFORMANCE — Underplayed natural acting through breath, eye-lines, hesitation and small involuntary movements; never theatrical fear, mugging or exaggerated panic.
+PHYSICS — Real gravity, footfall weight, foliage contact, cloth movement and contact shadows. Leaves compress under bodies and boots. Mist never moves like smoke.
+TECHNICAL — 24fps, real-time motion, stable identity and anatomy, consistent screen direction. No slow motion, speed ramps, frame interpolation artifacts, morphing, flicker or temporal jumps.
+AUDIO — Diegetic forest ambience, clothing, footsteps, breathing, pencil and spoken dialogue only. No music, narration, subtitles or added cinematic booms.</pre></div>
+    </details>
+
+    <details class="panel" id="howto">
+      <summary>Director's notes &mdash; how to start the bridge</summary>
+      <div class="panel-inner">
+        <p class="hint">The notes field under each clip rewrites a prompt in place. It needs the local
+          bridge running. Open Terminal and paste:</p>
+        <pre class="cmd" id="startcmd">python3 /Users/cogden/Downloads/bridge/director-bridge.py</pre>
+        <p class="hint">Leave that window open while you work; Ctrl-C stops it. Then use the URL it
+          prints &mdash; not the file on disk. The badge at the top reads <b>bridge ready</b> once it
+          connects. If Claude Code says the session expired, run <code>claude</code> once to log back in.</p>
+      </div>
+    </details>
+
+    <details class="panel">
+      <summary>Room geography — the fixed layout every prompt locks to</summary>
+      <div class="panel-inner">
+        <pre>CAMERA-LEFT                    CENTRE                    CAMERA-RIGHT
+    ─────────────────────────────────────────────────────────────────────
+    curtained window               @Coffee-Table             bookshelf
+    (blown-out key)                @Water-Glass              door  &lt;- entrances
+                                                             table lamp (lit)
+    tan leather Chesterfield  ...............................  @Olive-Chair
+    @Peter-Sheet                                              Dr. Jordan
+       looks frame-RIGHT  ------------------->  &lt;------------- looks frame-LEFT
+
+    Camera never crosses the sofa-to-armchair line.
+    Peter holds screen-LEFT and Jordan screen-RIGHT across every cut.
+    When Peter lies down, his HEAD is at the frame-RIGHT end of the sofa.</pre>
+      </div>
+    </details>
+
+    <details class="panel" open>
+      <summary>Asset registry — tag names must match Higgsfield elements exactly</summary>
+      <div class="panel-inner"><div class="assets"></div></div>
+    </details>
+
+    <section class="scene">
+    <h2>SCENE 1 — FOREST FLOOR<button class="scene-tog" type="button">Expand all</button></h2>
+    <div class="clips"><details class="clip" data-id="1a">
+    <summary class="clip-head">
+    <span class="tw" aria-hidden="true"></span>
+    <label class="chk"><input type="checkbox" data-clip="1a"><span class="box"></span></label>
+    <span class="cid">1a</span>
+    <h3>Awakening</h3>
+    <span class="meta">0:00 &middot; 20s</span>
+    <span class="shots">3 shots</span>
+    <button class="copy" data-id="1a">Copy prompt</button>
+    <button class="queue" data-id="1a">Queue</button>
+    </summary>
+    <div class="shotmap">
+      <div class="sm-head"><span>Shots in this prompt &mdash; isolate one for the full 20s or just its own length</span><button class="iso iso-full active" data-id="1a" data-shot="0">Full multishot</button></div>
+      <div class="sm-row">
+        <span class="sm-n">1</span>
+        <span class="sm-t">0:00–0:06</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">His eyelid flutters, opens, struggles to focus; a tiny black ant crosses a leaf beside his temple</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="1a" data-shot="1" data-mode="full">20s</button>
+          <button class="iso" data-id="1a" data-shot="1" data-mode="native">6s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">2</span>
+        <span class="sm-t">0:06–0:13</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">He lies alone in the leaf litter, draws one startled breath, presses both palms into the ground and…</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="1a" data-shot="2" data-mode="full">20s</button>
+          <button class="iso" data-id="1a" data-shot="2" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">3</span>
+        <span class="sm-t">0:13–0:20</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">He turns his head slowly from frame-left to frame-right, listening, then looks upward into the canopy</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="1a" data-shot="3" data-mode="full">20s</button>
+          <button class="iso" data-id="1a" data-shot="3" data-mode="native">7s</button>
+        </span>
+      </div>
+    </div>
+    <pre class="body" id="body-1a">ELEMENTS — @Man + @Forest
+
+FORMAT — 20 SECONDS, THREE SHOTS with hard cuts.
+
+SUBJECT — @Man wakes without knowing where he is. He is foggy rather than panicked; his first need is simply to understand the ground beneath him. Wardrobe and mud match the global continuity description. WB 5000K.
+
+LOCATION — @Forest, on a shallow bed of wet brown leaves beneath old beech and oak trees. Overcast light filters through the canopy. Thin ground mist remains only in the distant background.
+
+ACTION —
+SHOT 1 (0:00–0:06) — EXTREME CLOSE-UP, 100mm macro, locked at ground level on his closed right eye and leaf-streaked cheek. His eyelid flutters, opens, struggles to focus; a tiny black ant crosses a leaf beside his temple. He says nothing. HARD CUT.
+SHOT 2 (0:06–0:13) — HIGH WIDE, 32mm, locked directly above him. He lies alone in the leaf litter, draws one startled breath, presses both palms into the ground and sits halfway up. Wet leaves cling to his right shoulder and back. HARD CUT.
+SHOT 3 (0:13–0:20) — MEDIUM, 50mm, low at his seated eye level. He turns his head slowly from frame-left to frame-right, listening, then looks upward into the canopy. His confusion settles into alertness. HOLD to the end.
+
+STYLE — Wet brown leaves and deep forest green 60% / Weathered olive jacket and muted skin 30% / Tiny silver highlights on moisture 10%.
+
+CONSTRAINTS — 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE adult man present; no child, other person, animal larger than the tiny ant, silhouette, reflection or human-shaped background form. He begins lying down and reaches only a seated position; he does not stand. No wounds, blood, weapons, bags, phones or camping equipment. His eye opens naturally without iris distortion. The overhead shot must not rotate, orbit or crane. Hard cuts only; no dissolve, dream blur, flashback or fade. No text, logos or watermarks.</pre>
+    <div class="refbar" data-id="1a">
+      <label class="rf-tog"><input type="checkbox" class="rf-on" data-id="1a"><span class="box"></span>
+        <span class="rf-lbl">Framing reference</span></label>
+      <input type="text" class="rf-tag" data-id="1a" value="@Framing-Ref" spellcheck="false"
+             aria-label="Element tag for the framing reference">
+      <span class="rf-hint">composition only &mdash; not a first or last frame</span>
+    </div>
+    <div class="notes" data-id="1a">
+      <div class="nt-head">Director's notes <span class="nt-hint">what to change about the take you just watched</span></div>
+      <textarea class="nt-in" rows="2" data-id="1a"
+        placeholder="e.g. the angle is too high, drop to eye level &middot; he says the line too fast, more of a pause before &lsquo;less reliable&rsquo; &middot; too much headroom &middot; the lamp is blowing out"></textarea>
+      <div class="nt-bar">
+        <button class="nt-go" data-id="1a">Rewrite prompt</button>
+        <button class="nt-copy" data-id="1a">Copy request instead</button>
+        <span class="nt-status" data-id="1a"></span>
+      </div>
+      <div class="nt-keep" data-id="1a" hidden>
+        <button class="nt-accept" data-id="1a">Keep rewrite</button>
+        <button class="nt-undo" data-id="1a">Discard</button>
+      </div>
+    </div>
+    </details><details class="clip" data-id="2a">
+    <summary class="clip-head">
+    <span class="tw" aria-hidden="true"></span>
+    <label class="chk"><input type="checkbox" data-clip="2a"><span class="box"></span></label>
+    <span class="cid">2a</span>
+    <h3>No Way Back</h3>
+    <span class="meta">0:20 &middot; 20s</span>
+    <span class="shots">3 shots</span>
+    <button class="copy" data-id="2a">Copy prompt</button>
+    <button class="queue" data-id="2a">Queue</button>
+    </summary>
+    <div class="shotmap">
+      <div class="sm-head"><span>Shots in this prompt &mdash; isolate one for the full 20s or just its own length</span><button class="iso iso-full active" data-id="2a" data-shot="0">Full multishot</button></div>
+      <div class="sm-row">
+        <span class="sm-n">1</span>
+        <span class="sm-t">0:00–0:07</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">Starting seated, he plants one boot, rises unsteadily and brushes leaves from his jacket</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="2a" data-shot="1" data-mode="full">20s</button>
+          <button class="iso" data-id="2a" data-shot="1" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">2</span>
+        <span class="sm-t">0:07–0:14</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">He checks the left jacket pocket, right jacket pocket, then both trouser pockets; all are visibly empty</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="2a" data-shot="2" data-mode="full">20s</button>
+          <button class="iso" data-id="2a" data-shot="2" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">3</span>
+        <span class="sm-t">0:14–0:20</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">Then left, lips parting as if to call out, but he decides against it and swallows</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="2a" data-shot="3" data-mode="full">20s</button>
+          <button class="iso" data-id="2a" data-shot="3" data-mode="native">6s</button>
+        </span>
+      </div>
+    </div>
+    <pre class="body" id="body-2a">ELEMENTS — @Man + @Forest
+
+FORMAT — 20 SECONDS, THREE SHOTS with hard cuts.
+
+SUBJECT — @Man gets to his feet and searches himself for an explanation. He finds no phone, keys or wallet. His breathing is controlled, but the emptiness of his pockets makes the situation real. WB 5000K.
+
+LOCATION — The same patch of @Forest and leaf bed as Clip 1a. The ground slopes gently downward toward frame-right; a pale forked beech trunk remains in the background frame-left to lock geography.
+
+ACTION —
+SHOT 1 (0:00–0:07) — WIDE, 35mm, locked from downhill. Starting seated, he plants one boot, rises unsteadily and brushes leaves from his jacket. He steadies himself against nothing and remains centered. HARD CUT.
+SHOT 2 (0:07–0:14) — TIGHT INSERT, 65mm, handheld but steady on torso and hands. He checks the left jacket pocket, right jacket pocket, then both trouser pockets; all are visibly empty. His movements become one degree faster after each empty pocket. HARD CUT.
+SHOT 3 (0:14–0:20) — MEDIUM CLOSE-UP, 75mm, locked. He looks over his right shoulder, then left, lips parting as if to call out, but he decides against it and swallows. He says nothing. HOLD to the end.
+
+STYLE — Deep moss green and wet charcoal 60% / Olive fabric and subdued skin 30% / Pale beech bark 10%.
+
+CONSTRAINTS — 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE adult man; the child must not appear. His pockets remain empty—no phone, wallet, keys, paper, knife or invented object. Maintain the pale forked beech frame-left and downhill slope frame-right; reversed geography is a failed take. He rises once and stays standing. No stumble into camera, shouting, running or melodramatic panic. No camera orbit, whip pan or drone move. Hard cuts only. No text, logos or watermarks.</pre>
+    <div class="refbar" data-id="2a">
+      <label class="rf-tog"><input type="checkbox" class="rf-on" data-id="2a"><span class="box"></span>
+        <span class="rf-lbl">Framing reference</span></label>
+      <input type="text" class="rf-tag" data-id="2a" value="@Framing-Ref" spellcheck="false"
+             aria-label="Element tag for the framing reference">
+      <span class="rf-hint">composition only &mdash; not a first or last frame</span>
+    </div>
+    <div class="notes" data-id="2a">
+      <div class="nt-head">Director's notes <span class="nt-hint">what to change about the take you just watched</span></div>
+      <textarea class="nt-in" rows="2" data-id="2a"
+        placeholder="e.g. the angle is too high, drop to eye level &middot; he says the line too fast, more of a pause before &lsquo;less reliable&rsquo; &middot; too much headroom &middot; the lamp is blowing out"></textarea>
+      <div class="nt-bar">
+        <button class="nt-go" data-id="2a">Rewrite prompt</button>
+        <button class="nt-copy" data-id="2a">Copy request instead</button>
+        <span class="nt-status" data-id="2a"></span>
+      </div>
+      <div class="nt-keep" data-id="2a" hidden>
+        <button class="nt-accept" data-id="2a">Keep rewrite</button>
+        <button class="nt-undo" data-id="2a">Discard</button>
+      </div>
+    </div>
+    </details></div>
+    </section><section class="scene">
+    <h2>SCENE 2 — DEEPER FOREST<button class="scene-tog" type="button">Expand all</button></h2>
+    <div class="clips"><details class="clip" data-id="3a">
+    <summary class="clip-head">
+    <span class="tw" aria-hidden="true"></span>
+    <label class="chk"><input type="checkbox" data-clip="3a"><span class="box"></span></label>
+    <span class="cid">3a</span>
+    <h3>Deeper In</h3>
+    <span class="meta">0:40 &middot; 20s</span>
+    <span class="shots">3 shots</span>
+    <button class="copy" data-id="3a">Copy prompt</button>
+    <button class="queue" data-id="3a">Queue</button>
+    </summary>
+    <div class="shotmap">
+      <div class="sm-head"><span>Shots in this prompt &mdash; isolate one for the full 20s or just its own length</span><button class="iso iso-full active" data-id="3a" data-shot="0">Full multishot</button></div>
+      <div class="sm-row">
+        <span class="sm-n">1</span>
+        <span class="sm-t">0:00–0:07</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">He walks away from camera along the natural corridor, ducking one low branch and keeping his arms close</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="3a" data-shot="1" data-mode="full">20s</button>
+          <button class="iso" data-id="3a" data-shot="1" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">2</span>
+        <span class="sm-t">0:07–0:14</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">Ferns brush his knees. Bird calls and light insect noise thin out until only his footsteps remain</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="3a" data-shot="2" data-mode="full">20s</button>
+          <button class="iso" data-id="3a" data-shot="2" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">3</span>
+        <span class="sm-t">0:14–0:20</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">He notices the silence, lifts his eyes from the ground and takes two more careful steps before stopping</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="3a" data-shot="3" data-mode="full">20s</button>
+          <button class="iso" data-id="3a" data-shot="3" data-mode="native">6s</button>
+        </span>
+      </div>
+    </div>
+    <pre class="body" id="body-3a">ELEMENTS — @Man + @Forest
+
+FORMAT — 20 SECONDS, THREE SHOTS with hard cuts.
+
+SUBJECT — @Man walks deeper into the woods, choosing forward motion because standing still is worse. His alertness sharpens when the ordinary forest sounds gradually disappear. WB 5000K.
+
+LOCATION — A narrow natural corridor through the same @Forest, not a constructed trail. Tall trunks form vertical layers; waist-high ferns line both sides. The route runs from foreground frame-right toward deep background frame-left.
+
+ACTION —
+SHOT 1 (0:00–0:07) — REAR WIDE TRACKING, 32mm, shoulder-height camera following four meters behind. He walks away from camera along the natural corridor, ducking one low branch and keeping his arms close. His boots compress wet leaves. HARD CUT.
+SHOT 2 (0:07–0:14) — SIDE MEDIUM, 50mm, slow lateral track with him moving screen-right to screen-left. Ferns brush his knees. Bird calls and light insect noise thin out until only his footsteps remain. His pace slows without stopping. HARD CUT.
+SHOT 3 (0:14–0:20) — FRONT CLOSE-UP, 75mm, camera eases backward at his walking pace. He notices the silence, lifts his eyes from the ground and takes two more careful steps before stopping. A small breath hangs in the cool air. HOLD to the end.
+
+STYLE — Layered dark greens and charcoal trunks 60% / Olive jacket and fern brown 30% / Cool mist-grey depth 10%.
+
+CONSTRAINTS — 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE adult man; no child or other human presence. His travel direction stays foreground frame-right toward background frame-left and screen-right to screen-left; do not flip direction between shots. The environment is dense natural woodland, not a road, maintained hiking path, park, campsite or fantasy forest. No sudden sprint, fall, turn toward camera or impossible branch clipping. The forest grows quiet through audio only; vegetation and daylight do not transform. Hard cuts only. No text, logos or watermarks.</pre>
+    <div class="refbar" data-id="3a">
+      <label class="rf-tog"><input type="checkbox" class="rf-on" data-id="3a"><span class="box"></span>
+        <span class="rf-lbl">Framing reference</span></label>
+      <input type="text" class="rf-tag" data-id="3a" value="@Framing-Ref" spellcheck="false"
+             aria-label="Element tag for the framing reference">
+      <span class="rf-hint">composition only &mdash; not a first or last frame</span>
+    </div>
+    <div class="notes" data-id="3a">
+      <div class="nt-head">Director's notes <span class="nt-hint">what to change about the take you just watched</span></div>
+      <textarea class="nt-in" rows="2" data-id="3a"
+        placeholder="e.g. the angle is too high, drop to eye level &middot; he says the line too fast, more of a pause before &lsquo;less reliable&rsquo; &middot; too much headroom &middot; the lamp is blowing out"></textarea>
+      <div class="nt-bar">
+        <button class="nt-go" data-id="3a">Rewrite prompt</button>
+        <button class="nt-copy" data-id="3a">Copy request instead</button>
+        <span class="nt-status" data-id="3a"></span>
+      </div>
+      <div class="nt-keep" data-id="3a" hidden>
+        <button class="nt-accept" data-id="3a">Keep rewrite</button>
+        <button class="nt-undo" data-id="3a">Discard</button>
+      </div>
+    </div>
+    </details><details class="clip" data-id="4a">
+    <summary class="clip-head">
+    <span class="tw" aria-hidden="true"></span>
+    <label class="chk"><input type="checkbox" data-clip="4a"><span class="box"></span></label>
+    <span class="cid">4a</span>
+    <h3>The Scratching Sound</h3>
+    <span class="meta">1:00 &middot; 20s</span>
+    <span class="shots">3 shots</span>
+    <button class="copy" data-id="4a">Copy prompt</button>
+    <button class="queue" data-id="4a">Queue</button>
+    </summary>
+    <div class="shotmap">
+      <div class="sm-head"><span>Shots in this prompt &mdash; isolate one for the full 20s or just its own length</span><button class="iso iso-full active" data-id="4a" data-shot="0">Full multishot</button></div>
+      <div class="sm-row">
+        <span class="sm-n">1</span>
+        <span class="sm-t">0:00–0:06</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">A faint pencil-on-paper scratch begins off-screen frame-left</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="4a" data-shot="1" data-mode="full">20s</button>
+          <button class="iso" data-id="4a" data-shot="1" data-mode="native">6s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">2</span>
+        <span class="sm-t">0:06–0:12</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">It advances carefully and snaps one thin twig</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="4a" data-shot="2" data-mode="full">20s</button>
+          <button class="iso" data-id="4a" data-shot="2" data-mode="native">6s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">3</span>
+        <span class="sm-t">0:12–0:20</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">40mm, slow controlled follow behind his right shoulder as the pencil scratching resumes</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="4a" data-shot="3" data-mode="full">20s</button>
+          <button class="iso" data-id="4a" data-shot="3" data-mode="native">8s</button>
+        </span>
+      </div>
+    </div>
+    <pre class="body" id="body-4a">ELEMENTS — @Man + @Forest + off-screen pencil sound
+
+FORMAT — 20 SECONDS, THREE SHOTS with hard cuts.
+
+SUBJECT — @Man hears a dry rhythmic scratching that does not belong in the forest. Curiosity draws him toward it while his body remains cautious. He never sees its source in this clip. WB 5000K.
+
+LOCATION — The same deep @Forest corridor. A dense screen of ferns and a broad oak trunk blocks the clearing ahead. The unseen source is always off-screen frame-left.
+
+ACTION —
+SHOT 1 (0:00–0:06) — TIGHT CLOSE-UP, 85mm, locked on his face after he has stopped walking. A faint pencil-on-paper scratch begins off-screen frame-left. His eyes shift left before his head follows; he holds his breath. HARD CUT.
+SHOT 2 (0:06–0:12) — INSERT, 70mm, low and locked on his right boot. It advances carefully and snaps one thin twig. The pencil sound stops at the snap. His boot freezes without lifting again. HARD CUT.
+SHOT 3 (0:12–0:20) — OVER-SHOULDER MEDIUM, 40mm, slow controlled follow behind his right shoulder as the pencil scratching resumes. He parts two fern fronds with his left hand and moves toward the broad oak frame-left. The clearing and sound source remain concealed when he reaches the trunk. HOLD to the end.
+
+STYLE — Dense fern and oak green-brown 60% / Olive jacket and natural skin 30% / Pale dry twig and cool mist 10%.
+
+CONSTRAINTS — 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE visible adult man; no child, hand, shadow, drawing, sketchbook or pencil may be shown. The scratching is clearly dry graphite on paper, located off-screen frame-left—not insects, sawing, whispering or music. The twig snaps once under the right boot and does not explode or roll. The child does not speak. The final move is slow and controlled with no whip, rush, rack focus or reveal around the tree. Hard cuts only. No text, logos or watermarks.</pre>
+    <div class="refbar" data-id="4a">
+      <label class="rf-tog"><input type="checkbox" class="rf-on" data-id="4a"><span class="box"></span>
+        <span class="rf-lbl">Framing reference</span></label>
+      <input type="text" class="rf-tag" data-id="4a" value="@Framing-Ref" spellcheck="false"
+             aria-label="Element tag for the framing reference">
+      <span class="rf-hint">composition only &mdash; not a first or last frame</span>
+    </div>
+    <div class="notes" data-id="4a">
+      <div class="nt-head">Director's notes <span class="nt-hint">what to change about the take you just watched</span></div>
+      <textarea class="nt-in" rows="2" data-id="4a"
+        placeholder="e.g. the angle is too high, drop to eye level &middot; he says the line too fast, more of a pause before &lsquo;less reliable&rsquo; &middot; too much headroom &middot; the lamp is blowing out"></textarea>
+      <div class="nt-bar">
+        <button class="nt-go" data-id="4a">Rewrite prompt</button>
+        <button class="nt-copy" data-id="4a">Copy request instead</button>
+        <span class="nt-status" data-id="4a"></span>
+      </div>
+      <div class="nt-keep" data-id="4a" hidden>
+        <button class="nt-accept" data-id="4a">Keep rewrite</button>
+        <button class="nt-undo" data-id="4a">Discard</button>
+      </div>
+    </div>
+    </details></div>
+    </section><section class="scene">
+    <h2>SCENE 3 — HIDDEN CLEARING<button class="scene-tog" type="button">Expand all</button></h2>
+    <div class="clips"><details class="clip" data-id="5a">
+    <summary class="clip-head">
+    <span class="tw" aria-hidden="true"></span>
+    <label class="chk"><input type="checkbox" data-clip="5a"><span class="box"></span></label>
+    <span class="cid">5a</span>
+    <h3>The Child</h3>
+    <span class="meta">1:20 &middot; 20s</span>
+    <span class="shots">3 shots</span>
+    <button class="copy" data-id="5a">Copy prompt</button>
+    <button class="queue" data-id="5a">Queue</button>
+    </summary>
+    <div class="shotmap">
+      <div class="sm-head"><span>Shots in this prompt &mdash; isolate one for the full 20s or just its own length</span><button class="iso iso-full active" data-id="5a" data-shot="0">Full multishot</button></div>
+      <div class="sm-row">
+        <span class="sm-n">1</span>
+        <span class="sm-t">0:00–0:07</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">The clearing is revealed: @Child sits twelve meters away, frame-left, head bowed over @Sketchbook,…</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="5a" data-shot="1" data-mode="full">20s</button>
+          <button class="iso" data-id="5a" data-shot="1" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">2</span>
+        <span class="sm-t">0:07–0:14</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">The pencil moves in short practiced strokes. The child does not look up or react</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="5a" data-shot="2" data-mode="full">20s</button>
+          <button class="iso" data-id="5a" data-shot="2" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">3</span>
+        <span class="sm-t">0:14–0:20</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">Surprise softens his posture. He asks quietly, on-screen, “Are you lost?” The pencil continues…</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="5a" data-shot="3" data-mode="full">20s</button>
+          <button class="iso" data-id="5a" data-shot="3" data-mode="native">6s</button>
+        </span>
+      </div>
+    </div>
+    <pre class="body" id="body-5a">ELEMENTS — @Man + @Child + @Forest + @Sketchbook + @Pencil
+
+FORMAT — 20 SECONDS, THREE SHOTS with hard cuts.
+
+SUBJECT — @Man discovers @Child, about eight years old, quietly drawing. @Child has straight dark hair cut at the jaw, a pale freckled face, an oversized rust-red wool sweater, dark trousers and scuffed black shoes. The child is calm and absorbed; the man is startled by the ordinary sight in an impossible place. WB 5000K.
+
+LOCATION — A small circular clearing inside @Forest. @Child sits frame-left beneath a huge oak with exposed roots; @Man remains frame-right near the clearing edge. A cream-paper @Sketchbook lies open across the child&#x27;s knees and one plain wood @Pencil is in the child&#x27;s right hand. Position lock persists through Clip 6a.
+
+ACTION —
+SHOT 1 (0:00–0:07) — OVER @MAN&#x27;S RIGHT SHOULDER, 40mm, locked from behind the oak. The clearing is revealed: @Child sits twelve meters away, frame-left, head bowed over @Sketchbook, drawing steadily. @Man&#x27;s shoulder stays soft in foreground frame-right. HARD CUT.
+SHOT 2 (0:07–0:14) — MEDIUM PROFILE, 65mm, locked on @Child frame-left facing screen-right. The pencil moves in short practiced strokes. The child does not look up or react. No other person enters the frame. HARD CUT.
+SHOT 3 (0:14–0:20) — MEDIUM CLOSE-UP, 75mm, locked on @Man frame-right looking screen-left toward the child. Surprise softens his posture. He asks quietly, on-screen, “Are you lost?” The pencil continues scratching off-screen; the child gives no answer. HOLD to the end.
+
+STYLE — Deep clearing green and oak-bark brown 60% / Muted olive and cream paper 30% / Child&#x27;s rust-red sweater 10%.
+
+CONSTRAINTS — 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly TWO people in the clearing: one adult man and one child; no parents, hikers, doubles or background figures. @Child remains frame-left facing screen-right; @Man remains frame-right looking screen-left. Reversed screen positions or crossed eye-lines are failed takes. The child must remain focused on the page and must not look up, smile, speak or turn. Exactly ONE sketchbook and ONE pencil, both anchored on the child&#x27;s knees/in right hand; do not duplicate, float or relocate them. The page content is not readable yet. No horror makeup, glowing eyes, ghost transparency or overt supernatural effect. Hard cuts only. No text, subtitles, logos or watermarks.</pre>
+    <div class="refbar" data-id="5a">
+      <label class="rf-tog"><input type="checkbox" class="rf-on" data-id="5a"><span class="box"></span>
+        <span class="rf-lbl">Framing reference</span></label>
+      <input type="text" class="rf-tag" data-id="5a" value="@Framing-Ref" spellcheck="false"
+             aria-label="Element tag for the framing reference">
+      <span class="rf-hint">composition only &mdash; not a first or last frame</span>
+    </div>
+    <div class="notes" data-id="5a">
+      <div class="nt-head">Director's notes <span class="nt-hint">what to change about the take you just watched</span></div>
+      <textarea class="nt-in" rows="2" data-id="5a"
+        placeholder="e.g. the angle is too high, drop to eye level &middot; he says the line too fast, more of a pause before &lsquo;less reliable&rsquo; &middot; too much headroom &middot; the lamp is blowing out"></textarea>
+      <div class="nt-bar">
+        <button class="nt-go" data-id="5a">Rewrite prompt</button>
+        <button class="nt-copy" data-id="5a">Copy request instead</button>
+        <span class="nt-status" data-id="5a"></span>
+      </div>
+      <div class="nt-keep" data-id="5a" hidden>
+        <button class="nt-accept" data-id="5a">Keep rewrite</button>
+        <button class="nt-undo" data-id="5a">Discard</button>
+      </div>
+    </div>
+    </details><details class="clip" data-id="6a">
+    <summary class="clip-head">
+    <span class="tw" aria-hidden="true"></span>
+    <label class="chk"><input type="checkbox" data-clip="6a"><span class="box"></span></label>
+    <span class="cid">6a</span>
+    <h3>The Drawing</h3>
+    <span class="meta">1:40 &middot; 20s</span>
+    <span class="shots">3 shots</span>
+    <button class="copy" data-id="6a">Copy prompt</button>
+    <button class="queue" data-id="6a">Queue</button>
+    </summary>
+    <div class="shotmap">
+      <div class="sm-head"><span>Shots in this prompt &mdash; isolate one for the full 20s or just its own length</span><button class="iso iso-full active" data-id="6a" data-shot="0">Full multishot</button></div>
+      <div class="sm-row">
+        <span class="sm-n">1</span>
+        <span class="sm-t">0:00–0:07</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">A detailed graphite drawing clearly shows the same man lying on wet leaves beneath the forked beech…</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="6a" data-shot="1" data-mode="full">20s</button>
+          <button class="iso" data-id="6a" data-shot="1" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">2</span>
+        <span class="sm-t">0:07–0:14</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">He does not step back or speak. HARD CUT</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="6a" data-shot="2" data-mode="full">20s</button>
+          <button class="iso" data-id="6a" data-shot="2" data-mode="native">7s</button>
+        </span>
+      </div><div class="sm-row">
+        <span class="sm-n">3</span>
+        <span class="sm-t">0:14–0:20</span>
+        <span class="sm-f"></span>
+        <span class="sm-g">The child lifts only their eyes from the page to the man, head nearly still, expression neutral, and…</span>
+        <span class="sm-btns">
+          <button class="iso" data-id="6a" data-shot="3" data-mode="full">20s</button>
+          <button class="iso" data-id="6a" data-shot="3" data-mode="native">6s</button>
+        </span>
+      </div>
+    </div>
+    <pre class="body" id="body-6a">ELEMENTS — @Man + @Child + @Forest + @Sketchbook + @Pencil
+
+FORMAT — 20 SECONDS, THREE SHOTS with hard cuts.
+
+SUBJECT — @Man realizes the child has drawn the exact moment he woke in this forest. @Child finally acknowledges him with eerie matter-of-fact calm, not menace. The man&#x27;s fear registers as stillness and a shallow breath. Wardrobe, positions and eye-lines continue exactly from Clip 5a. WB 5000K.
+
+LOCATION — The same hidden clearing. @Child remains seated frame-left under the oak facing screen-right; @Man stands frame-right facing screen-left. The cream @Sketchbook stays open on the child&#x27;s knees.
+
+ACTION —
+SHOT 1 (0:00–0:07) — INSERT OVER @CHILD&#x27;S SHOULDER, 70mm, locked on @Sketchbook. A detailed graphite drawing clearly shows the same man lying on wet leaves beneath the forked beech from Clip 1a, in the same jacket and position. The child&#x27;s right hand adds the final small leaf beside his face, then the pencil stops. HARD CUT.
+SHOT 2 (0:07–0:14) — CLOSE-UP, 85mm, locked on @Man frame-right looking down and screen-left. Recognition arrives slowly: his brow tightens, his lips close, and he takes one shallow breath. He does not step back or speak. HARD CUT.
+SHOT 3 (0:14–0:20) — MEDIUM CLOSE-UP, 75mm, locked on @Child frame-left. The child lifts only their eyes from the page to the man, head nearly still, expression neutral, and says softly on-screen, “You woke up early.” After the line, the forest remains silent and the child holds the man&#x27;s gaze to the end.
+
+STYLE — Oak shadow and forest green 60% / Graphite, cream paper and muted skin 30% / Rust-red sweater 10%.
+
+CONSTRAINTS — 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly TWO people. Preserve frame-left child/frame-right man and matching eye-lines. The drawing must be monochrome graphite on cream paper and visibly depict the adult man asleep in the established forest; it must not animate, morph, become a photograph, add written words or change between frames. Exactly ONE sketchbook and ONE pencil. The child&#x27;s mouth moves only for the exact line “You woke up early”; no extra dialogue, lip movement, smile, sinister grin or head turn. The man remains silent. No jump scare, supernatural glow, wind blast, camera push-in or music sting. End on a clean held frame with no fade. No text, subtitles, logos or watermarks.</pre>
+    <div class="refbar" data-id="6a">
+      <label class="rf-tog"><input type="checkbox" class="rf-on" data-id="6a"><span class="box"></span>
+        <span class="rf-lbl">Framing reference</span></label>
+      <input type="text" class="rf-tag" data-id="6a" value="@Framing-Ref" spellcheck="false"
+             aria-label="Element tag for the framing reference">
+      <span class="rf-hint">composition only &mdash; not a first or last frame</span>
+    </div>
+    <div class="notes" data-id="6a">
+      <div class="nt-head">Director's notes <span class="nt-hint">what to change about the take you just watched</span></div>
+      <textarea class="nt-in" rows="2" data-id="6a"
+        placeholder="e.g. the angle is too high, drop to eye level &middot; he says the line too fast, more of a pause before &lsquo;less reliable&rsquo; &middot; too much headroom &middot; the lamp is blowing out"></textarea>
+      <div class="nt-bar">
+        <button class="nt-go" data-id="6a">Rewrite prompt</button>
+        <button class="nt-copy" data-id="6a">Copy request instead</button>
+        <span class="nt-status" data-id="6a"></span>
+      </div>
+      <div class="nt-keep" data-id="6a" hidden>
+        <button class="nt-accept" data-id="6a">Keep rewrite</button>
+        <button class="nt-undo" data-id="6a">Discard</button>
+      </div>
+    </div>
+    </details></div>
+    </section>
+
+    </div>
+
+    <div id="bar">
+      <span class="count"><b id="qn">0</b> clips queued &middot; <span id="qs">0</span>s</span>
+      <button id="qclear">Clear</button>
+      <button id="qcopy" class="primary">Copy generation request</button>
+    </div>
+
+    <script>
+    (function () {
+      var KEY = 'you-woke-up-early-shotlist-v1-20260817';
+      var state = {};
+      function load() {
+        try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
+      }
+      function save() {
+        try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+      }
+      function paint() {
+        var n = 0;
+        document.querySelectorAll('input[data-clip]').forEach(function (el) {
+          var on = !!state[el.dataset.clip];
+          el.checked = on;
+          el.closest('.clip').classList.toggle('done', on);
+          if (on) n++;
+        });
+        document.querySelector('#progress b').textContent = n;
+      }
+      load();
+      paint();
+
+      document.addEventListener('change', function (e) {
+        var el = e.target;
+        if (!el.dataset || !el.dataset.clip) return;
+        state[el.dataset.clip] = el.checked;
+        save();
+        paint();
+      });
+
+      var prefix = document.getElementById('prefix').textContent;
+      var META = {"1a": {"title": "Awakening", "secs": 20, "shots": 3, "scene": "SCENE 1 \u2014 FOREST FLOOR", "p": {"subject": "SUBJECT \u2014 @Man wakes without knowing where he is. He is foggy rather than panicked; his first need is simply to understand the ground beneath him. Wardrobe and mud match the global continuity description. WB 5000K.", "location": "LOCATION \u2014 @Forest, on a shallow bed of wet brown leaves beneath old beech and oak trees. Overcast light filters through the canopy. Thin ground mist remains only in the distant background.", "intent": "ACTION \u2014", "shots": [{"n": 1, "from": "0:00", "to": "0:06", "text": "EXTREME CLOSE-UP, 100mm macro, locked at ground level on his closed right eye and leaf-streaked cheek. His eyelid flutters, opens, struggles to focus; a tiny black ant crosses a leaf beside his temple. He says nothing. HARD CUT.", "cam": "", "framing": "", "gist": "His eyelid flutters, opens, struggles to focus; a tiny black ant crosses a leaf beside his temple", "quote": "", "dur": 6}, {"n": 2, "from": "0:06", "to": "0:13", "text": "HIGH WIDE, 32mm, locked directly above him. He lies alone in the leaf litter, draws one startled breath, presses both palms into the ground and sits halfway up. Wet leaves cling to his right shoulder and back. HARD CUT.", "cam": "", "framing": "", "gist": "He lies alone in the leaf litter, draws one startled breath, presses both palms into the ground and\u2026", "quote": "", "dur": 7}, {"n": 3, "from": "0:13", "to": "0:20", "text": "MEDIUM, 50mm, low at his seated eye level. He turns his head slowly from frame-left to frame-right, listening, then looks upward into the canopy. His confusion settles into alertness. HOLD to the end.", "cam": "", "framing": "", "gist": "He turns his head slowly from frame-left to frame-right, listening, then looks upward into the canopy", "quote": "", "dur": 7}], "style": "STYLE \u2014 Wet brown leaves and deep forest green 60% / Weathered olive jacket and muted skin 30% / Tiny silver highlights on moisture 10%.", "lock": "", "constraints": "CONSTRAINTS \u2014 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE adult man present; no child, other person, animal larger than the tiny ant, silhouette, reflection or human-shaped background form. He begins lying down and reaches only a seated position; he does not stand. No wounds, blood, weapons, bags, phones or camping equipment. His eye opens naturally without iris distortion. The overhead shot must not rotate, orbit or crane. Hard cuts only; no dissolve, dream blur, flashback or fade. No text, logos or watermarks."}, "selfpre": false}, "2a": {"title": "No Way Back", "secs": 20, "shots": 3, "scene": "SCENE 1 \u2014 FOREST FLOOR", "p": {"subject": "SUBJECT \u2014 @Man gets to his feet and searches himself for an explanation. He finds no phone, keys or wallet. His breathing is controlled, but the emptiness of his pockets makes the situation real. WB 5000K.", "location": "LOCATION \u2014 The same patch of @Forest and leaf bed as Clip 1a. The ground slopes gently downward toward frame-right; a pale forked beech trunk remains in the background frame-left to lock geography.", "intent": "ACTION \u2014", "shots": [{"n": 1, "from": "0:00", "to": "0:07", "text": "WIDE, 35mm, locked from downhill. Starting seated, he plants one boot, rises unsteadily and brushes leaves from his jacket. He steadies himself against nothing and remains centered. HARD CUT.", "cam": "", "framing": "", "gist": "Starting seated, he plants one boot, rises unsteadily and brushes leaves from his jacket", "quote": "", "dur": 7}, {"n": 2, "from": "0:07", "to": "0:14", "text": "TIGHT INSERT, 65mm, handheld but steady on torso and hands. He checks the left jacket pocket, right jacket pocket, then both trouser pockets; all are visibly empty. His movements become one degree faster after each empty pocket. HARD CUT.", "cam": "", "framing": "", "gist": "He checks the left jacket pocket, right jacket pocket, then both trouser pockets; all are visibly empty", "quote": "", "dur": 7}, {"n": 3, "from": "0:14", "to": "0:20", "text": "MEDIUM CLOSE-UP, 75mm, locked. He looks over his right shoulder, then left, lips parting as if to call out, but he decides against it and swallows. He says nothing. HOLD to the end.", "cam": "", "framing": "", "gist": "Then left, lips parting as if to call out, but he decides against it and swallows", "quote": "", "dur": 6}], "style": "STYLE \u2014 Deep moss green and wet charcoal 60% / Olive fabric and subdued skin 30% / Pale beech bark 10%.", "lock": "", "constraints": "CONSTRAINTS \u2014 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE adult man; the child must not appear. His pockets remain empty\u2014no phone, wallet, keys, paper, knife or invented object. Maintain the pale forked beech frame-left and downhill slope frame-right; reversed geography is a failed take. He rises once and stays standing. No stumble into camera, shouting, running or melodramatic panic. No camera orbit, whip pan or drone move. Hard cuts only. No text, logos or watermarks."}, "selfpre": false}, "3a": {"title": "Deeper In", "secs": 20, "shots": 3, "scene": "SCENE 2 \u2014 DEEPER FOREST", "p": {"subject": "SUBJECT \u2014 @Man walks deeper into the woods, choosing forward motion because standing still is worse. His alertness sharpens when the ordinary forest sounds gradually disappear. WB 5000K.", "location": "LOCATION \u2014 A narrow natural corridor through the same @Forest, not a constructed trail. Tall trunks form vertical layers; waist-high ferns line both sides. The route runs from foreground frame-right toward deep background frame-left.", "intent": "ACTION \u2014", "shots": [{"n": 1, "from": "0:00", "to": "0:07", "text": "REAR WIDE TRACKING, 32mm, shoulder-height camera following four meters behind. He walks away from camera along the natural corridor, ducking one low branch and keeping his arms close. His boots compress wet leaves. HARD CUT.", "cam": "", "framing": "", "gist": "He walks away from camera along the natural corridor, ducking one low branch and keeping his arms close", "quote": "", "dur": 7}, {"n": 2, "from": "0:07", "to": "0:14", "text": "SIDE MEDIUM, 50mm, slow lateral track with him moving screen-right to screen-left. Ferns brush his knees. Bird calls and light insect noise thin out until only his footsteps remain. His pace slows without stopping. HARD CUT.", "cam": "", "framing": "", "gist": "Ferns brush his knees. Bird calls and light insect noise thin out until only his footsteps remain", "quote": "", "dur": 7}, {"n": 3, "from": "0:14", "to": "0:20", "text": "FRONT CLOSE-UP, 75mm, camera eases backward at his walking pace. He notices the silence, lifts his eyes from the ground and takes two more careful steps before stopping. A small breath hangs in the cool air. HOLD to the end.", "cam": "", "framing": "", "gist": "He notices the silence, lifts his eyes from the ground and takes two more careful steps before stopping", "quote": "", "dur": 6}], "style": "STYLE \u2014 Layered dark greens and charcoal trunks 60% / Olive jacket and fern brown 30% / Cool mist-grey depth 10%.", "lock": "", "constraints": "CONSTRAINTS \u2014 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE adult man; no child or other human presence. His travel direction stays foreground frame-right toward background frame-left and screen-right to screen-left; do not flip direction between shots. The environment is dense natural woodland, not a road, maintained hiking path, park, campsite or fantasy forest. No sudden sprint, fall, turn toward camera or impossible branch clipping. The forest grows quiet through audio only; vegetation and daylight do not transform. Hard cuts only. No text, logos or watermarks."}, "selfpre": false}, "4a": {"title": "The Scratching Sound", "secs": 20, "shots": 3, "scene": "SCENE 2 \u2014 DEEPER FOREST", "p": {"subject": "SUBJECT \u2014 @Man hears a dry rhythmic scratching that does not belong in the forest. Curiosity draws him toward it while his body remains cautious. He never sees its source in this clip. WB 5000K.", "location": "LOCATION \u2014 The same deep @Forest corridor. A dense screen of ferns and a broad oak trunk blocks the clearing ahead. The unseen source is always off-screen frame-left.", "intent": "ACTION \u2014", "shots": [{"n": 1, "from": "0:00", "to": "0:06", "text": "TIGHT CLOSE-UP, 85mm, locked on his face after he has stopped walking. A faint pencil-on-paper scratch begins off-screen frame-left. His eyes shift left before his head follows; he holds his breath. HARD CUT.", "cam": "", "framing": "", "gist": "A faint pencil-on-paper scratch begins off-screen frame-left", "quote": "", "dur": 6}, {"n": 2, "from": "0:06", "to": "0:12", "text": "INSERT, 70mm, low and locked on his right boot. It advances carefully and snaps one thin twig. The pencil sound stops at the snap. His boot freezes without lifting again. HARD CUT.", "cam": "", "framing": "", "gist": "It advances carefully and snaps one thin twig", "quote": "", "dur": 6}, {"n": 3, "from": "0:12", "to": "0:20", "text": "OVER-SHOULDER MEDIUM, 40mm, slow controlled follow behind his right shoulder as the pencil scratching resumes. He parts two fern fronds with his left hand and moves toward the broad oak frame-left. The clearing and sound source remain concealed when he reaches the trunk. HOLD to the end.", "cam": "", "framing": "", "gist": "40mm, slow controlled follow behind his right shoulder as the pencil scratching resumes", "quote": "", "dur": 8}], "style": "STYLE \u2014 Dense fern and oak green-brown 60% / Olive jacket and natural skin 30% / Pale dry twig and cool mist 10%.", "lock": "", "constraints": "CONSTRAINTS \u2014 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly ONE visible adult man; no child, hand, shadow, drawing, sketchbook or pencil may be shown. The scratching is clearly dry graphite on paper, located off-screen frame-left\u2014not insects, sawing, whispering or music. The twig snaps once under the right boot and does not explode or roll. The child does not speak. The final move is slow and controlled with no whip, rush, rack focus or reveal around the tree. Hard cuts only. No text, logos or watermarks."}, "selfpre": false}, "5a": {"title": "The Child", "secs": 20, "shots": 3, "scene": "SCENE 3 \u2014 HIDDEN CLEARING", "p": {"subject": "SUBJECT \u2014 @Man discovers @Child, about eight years old, quietly drawing. @Child has straight dark hair cut at the jaw, a pale freckled face, an oversized rust-red wool sweater, dark trousers and scuffed black shoes. The child is calm and absorbed; the man is startled by the ordinary sight in an impossible place. WB 5000K.", "location": "LOCATION \u2014 A small circular clearing inside @Forest. @Child sits frame-left beneath a huge oak with exposed roots; @Man remains frame-right near the clearing edge. A cream-paper @Sketchbook lies open across the child's knees and one plain wood @Pencil is in the child's right hand. Position lock persists through Clip 6a.", "intent": "ACTION \u2014", "shots": [{"n": 1, "from": "0:00", "to": "0:07", "text": "OVER @MAN'S RIGHT SHOULDER, 40mm, locked from behind the oak. The clearing is revealed: @Child sits twelve meters away, frame-left, head bowed over @Sketchbook, drawing steadily. @Man's shoulder stays soft in foreground frame-right. HARD CUT.", "cam": "", "framing": "", "gist": "The clearing is revealed: @Child sits twelve meters away, frame-left, head bowed over @Sketchbook,\u2026", "quote": "", "dur": 7}, {"n": 2, "from": "0:07", "to": "0:14", "text": "MEDIUM PROFILE, 65mm, locked on @Child frame-left facing screen-right. The pencil moves in short practiced strokes. The child does not look up or react. No other person enters the frame. HARD CUT.", "cam": "", "framing": "", "gist": "The pencil moves in short practiced strokes. The child does not look up or react", "quote": "", "dur": 7}, {"n": 3, "from": "0:14", "to": "0:20", "text": "MEDIUM CLOSE-UP, 75mm, locked on @Man frame-right looking screen-left toward the child. Surprise softens his posture. He asks quietly, on-screen, \u201cAre you lost?\u201d The pencil continues scratching off-screen; the child gives no answer. HOLD to the end.", "cam": "", "framing": "", "gist": "Surprise softens his posture. He asks quietly, on-screen, \u201cAre you lost?\u201d The pencil continues\u2026", "quote": "", "dur": 6}], "style": "STYLE \u2014 Deep clearing green and oak-bark brown 60% / Muted olive and cream paper 30% / Child's rust-red sweater 10%.", "lock": "", "constraints": "CONSTRAINTS \u2014 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly TWO people in the clearing: one adult man and one child; no parents, hikers, doubles or background figures. @Child remains frame-left facing screen-right; @Man remains frame-right looking screen-left. Reversed screen positions or crossed eye-lines are failed takes. The child must remain focused on the page and must not look up, smile, speak or turn. Exactly ONE sketchbook and ONE pencil, both anchored on the child's knees/in right hand; do not duplicate, float or relocate them. The page content is not readable yet. No horror makeup, glowing eyes, ghost transparency or overt supernatural effect. Hard cuts only. No text, subtitles, logos or watermarks."}, "selfpre": false}, "6a": {"title": "The Drawing", "secs": 20, "shots": 3, "scene": "SCENE 3 \u2014 HIDDEN CLEARING", "p": {"subject": "SUBJECT \u2014 @Man realizes the child has drawn the exact moment he woke in this forest. @Child finally acknowledges him with eerie matter-of-fact calm, not menace. The man's fear registers as stillness and a shallow breath. Wardrobe, positions and eye-lines continue exactly from Clip 5a. WB 5000K.", "location": "LOCATION \u2014 The same hidden clearing. @Child remains seated frame-left under the oak facing screen-right; @Man stands frame-right facing screen-left. The cream @Sketchbook stays open on the child's knees.", "intent": "ACTION \u2014", "shots": [{"n": 1, "from": "0:00", "to": "0:07", "text": "INSERT OVER @CHILD'S SHOULDER, 70mm, locked on @Sketchbook. A detailed graphite drawing clearly shows the same man lying on wet leaves beneath the forked beech from Clip 1a, in the same jacket and position. The child's right hand adds the final small leaf beside his face, then the pencil stops. HARD CUT.", "cam": "", "framing": "", "gist": "A detailed graphite drawing clearly shows the same man lying on wet leaves beneath the forked beech\u2026", "quote": "", "dur": 7}, {"n": 2, "from": "0:07", "to": "0:14", "text": "CLOSE-UP, 85mm, locked on @Man frame-right looking down and screen-left. Recognition arrives slowly: his brow tightens, his lips close, and he takes one shallow breath. He does not step back or speak. HARD CUT.", "cam": "", "framing": "", "gist": "He does not step back or speak. HARD CUT", "quote": "", "dur": 7}, {"n": 3, "from": "0:14", "to": "0:20", "text": "MEDIUM CLOSE-UP, 75mm, locked on @Child frame-left. The child lifts only their eyes from the page to the man, head nearly still, expression neutral, and says softly on-screen, \u201cYou woke up early.\u201d After the line, the forest remains silent and the child holds the man's gaze to the end.", "cam": "", "framing": "", "gist": "The child lifts only their eyes from the page to the man, head nearly still, expression neutral, and\u2026", "quote": "", "dur": 6}], "style": "STYLE \u2014 Oak shadow and forest green 60% / Graphite, cream paper and muted skin 30% / Rust-red sweater 10%.", "lock": "", "constraints": "CONSTRAINTS \u2014 2.39:1. TOTAL RUNTIME 20 SECONDS. Exactly TWO people. Preserve frame-left child/frame-right man and matching eye-lines. The drawing must be monochrome graphite on cream paper and visibly depict the adult man asleep in the established forest; it must not animate, morph, become a photograph, add written words or change between frames. Exactly ONE sketchbook and ONE pencil. The child's mouth moves only for the exact line \u201cYou woke up early\u201d; no extra dialogue, lip movement, smile, sinister grin or head turn. The man remains silent. No jump scare, supernatural glow, wind blast, camera push-in or music sting. End on a clean held frame with no fade. No text, subtitles, logos or watermarks."}, "selfpre": false}};
+
+      function copyText(text, btn, label) {
+        var done = function () {
+          btn.textContent = 'Copied';
+          btn.classList.add('ok');
+          setTimeout(function () { btn.textContent = label; btn.classList.remove('ok'); }, 1400);
+        };
+        var fallback = function () {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); done(); } catch (err) { btn.textContent = 'Select manually'; }
+          document.body.removeChild(ta);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, fallback);
+        } else { fallback(); }
+      }
+
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('button.copy');
+        if (!btn) return;
+        var cid = btn.dataset.id;
+        var pre = META[cid].selfpre ? '' : ((iso[cid] ? isoPrefix() : prefix) + '\n\n');
+        copyText(pre + bodyFor(cid), btn, 'Copy prompt');
+      });
+
+      // ---- isolate a single angle -------------------------------------------
+      // Rebuilds the prompt so ONE chosen setup holds for the whole duration:
+      // the beats still play in order, but nothing cuts. Beats that the chosen
+      // angle can't see are pushed off-frame rather than dropped, so the take
+      // still fills its runtime.
+      var edits = {};
+      try { edits = JSON.parse(localStorage.getItem(KEY + ':edits') || '{}'); } catch (e) { edits = {}; }
+      var pending = {};
+
+      var iso = {};
+      try { iso = JSON.parse(localStorage.getItem(KEY + ':iso') || '{}'); } catch (e) { iso = {}; }
+      // Older saves stored a bare shot number; normalise to {n, mode}.
+      Object.keys(iso).forEach(function (k) {
+        if (typeof iso[k] === 'number') iso[k] = { n: iso[k], mode: 'full' };
+      });
+
+      function isoOf(id) { return iso[id] || null; }
+      function shotOf(id, n) {
+        var ss = META[id].p.shots.filter(function (x) { return x.n === n; });
+        return ss[0] || null;
+      }
+      // Runtime of the active variant — native mode generates a shorter clip.
+      function secsFor(id) {
+        var a = isoOf(id);
+        if (a && a.mode === 'native') {
+          var sh = shotOf(id, a.n);
+          if (sh) return sh.dur;
+        }
+        return META[id].secs;
+      }
+
+      // The global style prefix and POSITION LOCK both contain cut/segment
+      // vocabulary that contradicts a single take. Rewrite them for isolate mode.
+      function isoPrefix() {
+        return prefix
+          .replace('identical across every cut',
+                   'identical throughout the single continuous take')
+          .replace('Technical: 24fps smooth motion.',
+                   'Editing: NONE. This is ONE continuous unbroken take from a single fixed camera — there are no cuts, no shots, no segments and no angle changes anywhere in it. Technical: 24fps smooth motion.');
+      }
+
+      function isoLock(lock) {
+        return lock
+          .replace(/ in every segment\./g, ' at every moment of the take.')
+          .replace(/A segment with them reversed is a FAILED TAKE\./g,
+                   'Any frame with them reversed is a FAILED TAKE.')
+          .replace(/A segment with this reversed is a FAILED TAKE\./g,
+                   'Any frame with this reversed is a FAILED TAKE.')
+          .replace(/across every cut\./g, 'for the whole take.')
+          .replace(/All coverage in every clip stays/g, 'The framing stays')
+          .replace(/All coverage stays/g, 'The framing stays');
+      }
+
+      // Framing scale of the chosen setup, so beats written for other sizes can be
+      // explicitly de-prioritised instead of tempting a punch-in.
+      // Rank each setup's framing so beats written for a very different size can
+      // be flagged individually — a macro detail left unqualified inside a wide is
+      // the single most reliable way to make the model punch in.
+      function rankOf(cam) {
+        var c = (cam || '').toLowerCase();
+        if (/macro|extreme close/.test(c)) return 4;
+        if (/close-?up|tight|85mm|100mm|135mm/.test(c)) return 3;
+        if (/wide|24mm|30mm|35mm|establishing/.test(c)) return 1;
+        return 2;
+      }
+
+      function scaleOf(cam) {
+        var c = cam.toLowerCase();
+        if (/macro|extreme close/.test(c)) return 'a very tight insert-scale framing';
+        if (/close-?up|tight/.test(c))     return 'a close framing';
+        if (/wide|24mm|30mm|establishing/.test(c)) return 'a wide framing';
+        return 'a medium framing';
+      }
+
+      function isolatedPrompt(id, n, mode) {
+        var p = META[id].p;
+        var sh = shotOf(id, n);
+        if (!sh) return null;
+        var native = mode === 'native';
+        var secs = native ? sh.dur : META[id].secs;
+        var last = native ? ('0:' + (sh.dur < 10 ? '0' : '') + sh.dur)
+                          : p.shots[p.shots.length - 1].to;
+
+        var subject = p.subject
+          .replace(/MULTISHOT\./, 'SINGLE LOCKED SETUP — one continuous take, no cuts.')
+          .replace(/MULTISHOT —/, 'SINGLE LOCKED SETUP —');
+
+        // Beats carry their own framing language ("Static establishing wide",
+        // "Super-macro insert on..."), which would fight the one locked setup.
+        // Strip a leading framing clause when the rest still reads as action.
+        var FRAME = /(establishing|wide|medium|macro|insert|tight|close-?up|profile|reverse|over [^,.]*shoulder|low angle|high angle|overhead|two-shot|same frame|same position|same setup|back to the|split-frame)/i;
+
+        function scrub(t) {
+          for (var pass = 0; pass < 2; pass++) {
+            var m = t.match(/^([^.]{0,95}?)\.\s+(?=[A-Z@])/);
+            if (m && FRAME.test(m[1]) && t.length - m[0].length > 40) {
+              t = t.slice(m[0].length); continue;
+            }
+            m = t.match(/^([^,.]{0,70}?),\s+/);
+            if (m && FRAME.test(m[1]) && t.length - m[0].length > 40) {
+              t = t.slice(m[0].length);
+              t = t.charAt(0).toUpperCase() + t.slice(1); continue;
+            }
+            break;
+          }
+          return t.trim();
+        }
+
+        var target = rankOf(sh.cam);
+        var beats;
+        if (native) {
+          beats = 'THE WHOLE TAKE (0:00–' + last + ') — '
+                + scrub(sh.text.replace(/\s*Hard cut\.\s*$/, '').trim());
+        } else {
+        beats = p.shots.map(function (x, i) {
+          var t = scrub(x.text.replace(/\s*Hard cut\.\s*$/, '').trim());
+          var d = rankOf(x.cam) - target;
+          var note = '';
+          if (d >= 2) {
+            note = ' [This detail was written for a much tighter framing. At THIS framing it stays small, '
+                 + 'soft and unemphasised, and may not read at all — that is intended. It is performed, not '
+                 + 'featured. Do NOT punch in, cut, crop or move the camera to reveal it.]';
+          } else if (d <= -2) {
+            note = ' [This was written for a much wider framing. At THIS framing most of it falls OUTSIDE '
+                 + 'the frame — let it happen off-frame, carried by sound and by what the framing already '
+                 + 'holds. Do NOT pull out, cut, or widen to include it.]';
+          }
+          return 'BEAT ' + (i + 1) + ' of the same take (' + x.from + '–' + x.to
+                 + ', camera unchanged, no cut before or after) — ' + t + note;
+        }).join('\n');
+        }
+
+        var action = native
+          ? ('ACTION \u2014 ' + p.intent
+             + '\nThis is ONE continuous unbroken ' + secs + '-second take from a single fixed camera. It is a '
+             + 'SINGLE MOMENT only \u2014 no shots, no segments, no cuts \u2014 and it does not continue into '
+             + 'whatever follows it in the scene.\n' + beats
+             + '\nThe action above is the ENTIRE content of this clip. Do not add beats, do not carry the scene '
+             + 'past it, and do not compress a longer sequence into ' + secs + ' seconds \u2014 play this one '
+             + 'moment at natural speed and end there. Any framing or lens word inside it is void and is '
+             + 'overridden by the CAMERA block below. Hold one frame to ' + last + '.')
+          : ('ACTION \u2014 ' + p.intent
+          + '\nThis is ONE continuous unbroken take from a single fixed camera, running the full '
+          + secs + ' seconds. It contains NO shots, NO segments and NO cuts. The beats below are moments that '
+          + 'happen in front of one unmoving camera, in order, without interruption.\n' + beats
+          + '\nHOW TO READ THE BEATS: they describe WHAT HAPPENS, never how it is framed. Any framing or lens '
+          + 'word surviving inside them is void and is overridden by the CAMERA block below. Several beats were '
+          + 'originally written for tighter or wider framings than this one; this take is ' + scaleOf(sh.cam)
+          + ', so some described detail will be small, soft, partly obscured or entirely outside the frame. '
+          + 'THAT IS CORRECT AND INTENDED. Do not punch in, push in, cut, crop, reframe, zoom or change lens to '
+          + 'make any detail readable — an unresolvable detail simply plays unresolved, or happens off-frame '
+          + 'and is carried by sound and by the performance inside the frame. Hold one frame to ' + last + '.');
+
+        var camText = sh.cam
+          .replace(/,?\s*(?:so )?the cut back must match\.?/gi, '.')
+          .replace(/\s*all shake gone instantly at the cut[^.]*\./gi, ' Absolutely no shake.')
+          .replace(/\s*matched (?:exactly )?to SHOT \d+[^.]*\./gi, '')
+          .replace(/\s*(?:so the|the) geography (?:reads|is stated)[^.]*\./gi, '')
+          .replace(/\s*at the cut\b/gi, '')
+          .replace(/\s*no reframe\.?$/i, '')
+          .replace(/\s{2,}/g, ' ').trim();
+        if (!/[.!]$/.test(camText)) camText += '.';
+
+        var camera = 'CAMERA — ONE fixed setup for the entire ' + secs
+          + ' seconds, held identically from the first frame to the last: ' + camText
+          + ' This is the ONLY camera position in the prompt. It never changes — no cut, no second angle, '
+          + 'no pan, no tilt, no push, no punch-in, no zoom, no dolly, no crane, no drift, no rack focus, '
+          + 'no reframe and no crop at any point. If the frame changes at any moment, the take has failed.';
+
+        var constraints = p.constraints.replace(
+          'CONSTRAINTS — 16:9.',
+          'CONSTRAINTS — 16:9. SINGLE UNBROKEN TAKE — one locked framing for the full '
+          + secs + ' seconds. Any cut, angle change or reframe is a FAILED TAKE.'
+          + (native ? ' TOTAL RUNTIME IS ' + secs + ' SECONDS — this clip covers ONE moment only and ends '
+                    + 'there; do not extend it, do not continue the scene, and do not speed anything up to '
+                    + 'fit more in.' : ''));
+
+        var head = 'FORMAT — SINGLE UNBROKEN TAKE, ' + secs + ' SECONDS'
+          + (native ? ' (one beat lifted out of a longer sequence and generated on its own).' : '.')
+          + ' This prompt is ONE shot: one camera, one framing, one continuous ' + secs
+          + '-second run with no cuts and no angle changes. Any instruction anywhere below that implies more '
+          + 'than one shot is void. Generate a single continuous take.';
+
+        return [head, subject, p.location, action, camera, p.style, isoLock(p.lock), constraints].join('\n\n');
+      }
+
+      function rawBody(id) {
+        var kept = edits[id + '|' + (isoOf(id) ? (isoOf(id).n + ':' + isoOf(id).mode) : 'full')];
+        if (kept) return kept;
+        var a = isoOf(id);
+        return a ? isolatedPrompt(id, a.n, a.mode)
+                 : document.getElementById('body-' + id).dataset.full;
+      }
+
+      // ---- framing reference ------------------------------------------------
+      // A reference image is read as a keyframe unless you say otherwise, so the
+      // block below is mostly a list of what NOT to take from it. Identity stays
+      // with the character elements; look stays with LOCATION and STYLE.
+      var refs = {};
+      try { refs = JSON.parse(localStorage.getItem(KEY + ':refs') || '{}'); } catch (e) { refs = {}; }
+      function saveRefs() {
+        try { localStorage.setItem(KEY + ':refs', JSON.stringify(refs)); } catch (e) {}
+      }
+      function refOf(id) {
+        var r = refs[id];
+        return (r && r.on && r.tag) ? r : null;
+      }
+
+      function refBlock(tag) {
+        return 'FRAMING REFERENCE — ' + tag + ' is a COMPOSITION REFERENCE ONLY. It is NOT a first frame, '
+          + 'NOT a last frame, NOT a keyframe and NOT a shot to cut to. Nothing in the clip starts on it, '
+          + 'ends on it, or matches it exactly.\n'
+          + '- TAKE FROM IT, and only this: camera height relative to the subjects; camera angle and tilt; '
+          + 'lens compression and how large the subjects sit in frame; where each figure is placed left to '
+          + 'right and how much space is left beside them; headroom; how much of each body is in frame and '
+          + 'where the bottom of frame cuts them; the depth relationship between foreground, subject and '
+          + 'background.\n'
+          + '- IGNORE IN IT, completely: the people and their faces, hair, build and wardrobe; the lighting, '
+          + 'exposure, colour and grade; the room, furniture, set dressing and props; the season, time of day '
+          + 'and weather; the expressions, poses and whatever action is frozen in it; any text, logo, letterbox '
+          + 'bar, watermark or grain in it.\n'
+          + '- IDENTITY comes ONLY from the character elements tagged in SUBJECT. Any person visible in ' + tag
+          + ' is a placeholder for framing and must not influence how anyone looks. Do not copy their face, '
+          + 'hair, age, build or clothing.\n'
+          + '- WORLD comes ONLY from the LOCATION and STYLE blocks in this prompt. If ' + tag + ' disagrees '
+          + 'with them about the room, the light or the colour, this prompt wins every time.\n'
+          + '- The subjects MOVE inside that framing and the scene plays normally. ' + tag + ' describes where '
+          + 'the camera sits, not a pose to hold or a picture to recreate.';
+      }
+
+      function applyRef(id, body) {
+        var r = refOf(id);
+        // (isoOf is used below to tell a single framing from multishot coverage.)
+        if (!r) return body;
+        var tag = r.tag.trim();
+        if (tag.charAt(0) !== '@') tag = '@' + tag;
+
+        var out = body;
+
+        // Slot the block in after LOCATION so it reads before any action.
+        var marker = '\n\nACTION —';
+        var at = out.indexOf(marker);
+        if (at !== -1) {
+          out = out.slice(0, at) + '\n\n' + refBlock(tag) + out.slice(at);
+        } else {
+          out = out + '\n\n' + refBlock(tag);
+        }
+
+        // Point CAMERA at it. A single-framing clip can match the reference
+        // outright; a multishot clip has its own sizes per shot, so there the
+        // reference sets the geometry they all sit inside instead.
+        var single = !!isoOf(id);
+        var lead = single
+          ? ('\nCAMERA — MATCH THE FRAMING OF ' + tag + ' (composition only, as defined above): same camera '
+             + 'height, same angle, same subject size in frame, same left-to-right placement, same headroom. '
+             + 'Where the description below disagrees with ' + tag + ' about framing, ' + tag + ' wins. Then: ')
+          : ('\nCAMERA — ' + tag + ' is the ANCHOR FRAMING for this clip. Take its camera height, its angle, '
+             + 'and its left-to-right placement of the subjects as the geometry every shot below sits inside. '
+             + 'The shot SIZES below still stand as written — a wide stays wide and a close-up stays close — '
+             + 'but they are all framed from the same position and eye level as ' + tag + '. Then: ');
+        out = out.replace(/\nCAMERA — /, lead);
+
+        // And restate the hard rule where the hard rules are.
+        out = out.replace('CONSTRAINTS — 16:9.',
+          'CONSTRAINTS — 16:9. ' + tag + ' is a framing reference ONLY — never a first frame, last frame or '
+          + 'freeze, never a face or wardrobe source, never a lighting or set source. Reproducing it as a '
+          + 'picture, or letting anyone in it change how the cast looks, is a FAILED TAKE.');
+
+        return out;
+      }
+
+      function bodyFor(id) {
+        return applyRef(id, rawBody(id));
+      }
+
+      document.querySelectorAll('pre.body').forEach(function (el) {
+        el.dataset.full = el.textContent;
+      });
+
+      function paintIso(id) {
+        var a = isoOf(id);
+        var det = document.querySelector('.clip[data-id="' + id + '"]');
+        det.classList.toggle('isolated', !!a);
+        det.querySelectorAll('button.iso').forEach(function (b) {
+          var isFull = b.dataset.shot === '0';
+          b.classList.toggle('active', a
+            ? (!isFull && Number(b.dataset.shot) === a.n && b.dataset.mode === a.mode)
+            : isFull);
+        });
+        document.getElementById('body-' + id).textContent = bodyFor(id);
+        det.querySelector('.shots').textContent = a
+          ? ('Shot ' + a.n + ' \u00b7 ' + secsFor(id) + 's')
+          : (META[id].shots === 0 ? 'held single'
+                     : META[id].shots + (META[id].shots === 1 ? ' shot' : ' shots'));
+      }
+      function paintRef(id) {
+        var r = refs[id] || { on: false, tag: '@Framing-Ref' };
+        var det = document.querySelector('.clip[data-id="' + id + '"]');
+        var box = det.querySelector('.rf-on');
+        var tag = det.querySelector('.rf-tag');
+        box.checked = !!r.on;
+        tag.value = r.tag || '@Framing-Ref';
+        tag.disabled = !r.on;
+        det.classList.toggle('hasref', !!refOf(id));
+        document.getElementById('body-' + id).textContent = bodyFor(id);
+      }
+
+      document.addEventListener('click', function (e) {
+        var t = e.target.closest('.rf-tog');
+        if (!t) return;
+        e.preventDefault();
+        var id = t.querySelector('.rf-on').dataset.id;
+        var r = refs[id] || { on: false, tag: '@Framing-Ref' };
+        r.on = !r.on;
+        refs[id] = r;
+        saveRefs();
+        paintRef(id);
+      });
+
+      document.addEventListener('input', function (e) {
+        var el = e.target.closest('.rf-tag');
+        if (!el) return;
+        var id = el.dataset.id;
+        var r = refs[id] || { on: true, tag: '' };
+        r.tag = el.value;
+        refs[id] = r;
+        saveRefs();
+        document.querySelector('.clip[data-id="' + id + '"]').classList.toggle('hasref', !!refOf(id));
+        document.getElementById('body-' + id).textContent = bodyFor(id);
+      });
+
+      Object.keys(META).forEach(function (id) { paintIso(id); paintEdit(id); paintRef(id); });
+
+      document.addEventListener('click', function (e) {
+        var b = e.target.closest('button.iso');
+        if (!b) return;
+        var id = b.dataset.id, n = Number(b.dataset.shot), mode = b.dataset.mode || 'full';
+        var cur = isoOf(id);
+        if (n === 0 || (cur && cur.n === n && cur.mode === mode)) {
+          delete iso[id];                    // clicking the active button returns to full multishot
+        } else {
+          iso[id] = { n: n, mode: mode };
+        }
+        try { localStorage.setItem(KEY + ':iso', JSON.stringify(iso)); } catch (err) {}
+        delete pending[id];
+        showKeep(id, false);
+        setStatus(id, '');
+        paintIso(id);
+        paintEdit(id);
+        paintRef(id);
+        paintQueue();
+      });
+
+      // ---- director's notes -------------------------------------------------
+      // Talks to a local bridge (director-bridge.py) that shells out to headless
+      // Claude Code. No API key, nothing leaves the machine. If the bridge isn't
+      // running, the same request can be copied out and pasted into Claude by hand.
+      // The bridge falls back through these ports if 8765 is taken by something
+      // else, so the page probes them rather than assuming one.
+      var PORTS = [8765, 8766, 8767, 8768, 8769];
+      var BASE = null;   // resolved once the bridge answers
+
+      function base() {
+        // If the page is being served BY the bridge, that's the answer already.
+        if (location.protocol.indexOf('http') === 0 && location.port) {
+          return location.protocol + '//' + location.hostname + ':' + location.port;
+        }
+        return BASE;
+      }
+      var BRIDGE = function () { return base() + '/rewrite'; };
+
+      // Show whether the local bridge is up, so a failed rewrite isn't a surprise.
+      // A port can be held by something that accepts the connection and then
+      // never replies, so every probe needs its own timeout or the whole scan
+      // stalls behind it.
+      function probe(origin) {
+        var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 1200);
+        var opts = { cache: 'no-store' };
+        if (ctl) opts.signal = ctl.signal;
+        return fetch(origin + '/health', opts)
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) { clearTimeout(timer); return (d && d.ok) ? origin : null; })
+          .catch(function () { clearTimeout(timer); return null; });
+      }
+
+      function pingBridge() {
+        var el = document.getElementById('bridge');
+        var known = base();
+        var candidates = known ? [known]
+          : PORTS.map(function (p) { return 'http://127.0.0.1:' + p; });
+
+        var settled = false, left = candidates.length;
+
+        function finish(hit) {
+          if (hit && !location.port) BASE = hit;
+          var up = !!hit;
+          el.classList.toggle('on', up);
+          var port = up ? hit.split(':').pop() : '';
+          el.textContent = up
+            ? ('bridge ready' + (port === '8765' ? '' : ' \u00b7 ' + port))
+            : 'bridge offline';
+          el.title = up ? "Director's notes will rewrite in place."
+                        : 'Click for the command that starts the bridge.';
+        }
+
+        // First one to answer wins; don't wait on ports that never reply.
+        candidates.forEach(function (origin) {
+          probe(origin).then(function (r) {
+            if (r && !settled) { settled = true; finish(r); }
+            if (--left === 0 && !settled) finish(null);
+          });
+        });
+      }
+      pingBridge();
+      setInterval(pingBridge, 15000);
+
+      // The start command is one click to copy, and the offline badge jumps to it.
+      var cmdEl = document.getElementById('startcmd');
+      if (cmdEl) {
+        cmdEl.addEventListener('click', function () {
+          var t = cmdEl.textContent;
+          var done = function () {
+            cmdEl.classList.add('ok');
+            setTimeout(function () { cmdEl.classList.remove('ok'); }, 1400);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(t).then(done, done);
+          } else {
+            var ta = document.createElement('textarea');
+            ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); done(); } catch (e) {}
+            document.body.removeChild(ta);
+          }
+        });
+      }
+
+      document.getElementById('bridge').addEventListener('click', function () {
+        var panel = document.getElementById('howto');
+        if (!panel) return;
+        panel.open = true;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+
+      function variantKey(id) {
+        var a = isoOf(id);
+        return a ? (a.n + ':' + a.mode) : 'full';
+      }
+      function editKey(id) { return id + '|' + variantKey(id); }
+      function saveEdits() {
+        try { localStorage.setItem(KEY + ':edits', JSON.stringify(edits)); } catch (e) {}
+      }
+
+      function rewriteRequest(id, note) {
+        return 'You are rewriting one Seedance video prompt. Below is the current prompt, then the '
+          + "director's note about what to change.\n\n"
+          + 'RULES:\n'
+          + '- Return ONLY the rewritten prompt. No preamble, no explanation, no code fences.\n'
+          + '- Keep the exact section structure and section names already present.\n'
+          + '- Change ONLY what the note asks for, plus anything that would directly contradict it. '
+          + 'Leave every other line byte-identical.\n'
+          + '- Never alter, rename or remove any @Element tag.\n'
+          + '- Preserve the POSITION LOCK block and the total runtime unless the note explicitly changes them.\n'
+          + '- Keep the same voice: concrete, physical, specific. No new framing vocabulary that contradicts '
+          + 'the CAMERA block.\n\n'
+          + '=== CURRENT PROMPT ===\n' + bodyFor(id)
+          + "\n\n=== DIRECTOR'S NOTE ===\n" + note + '\n\n=== REWRITTEN PROMPT ===';
+      }
+
+      function setStatus(id, msg, isErr) {
+        var el = document.querySelector('.nt-status[data-id="' + id + '"]');
+        el.textContent = msg || '';
+        el.classList.toggle('err', !!isErr);
+      }
+
+      function showKeep(id, on) {
+        document.querySelector('.nt-keep[data-id="' + id + '"]').hidden = !on;
+      }
+
+      function paintEdit(id) {
+        var det = document.querySelector('.clip[data-id="' + id + '"]');
+        det.classList.toggle('rewritten', !!edits[editKey(id)]);
+        document.getElementById('body-' + id).textContent = bodyFor(id);
+      }
+
+      document.addEventListener('click', function (e) {
+        var go = e.target.closest('.nt-go');
+        if (go) {
+          var id = go.dataset.id;
+          var note = document.querySelector('.nt-in[data-id="' + id + '"]').value.trim();
+          if (!note) { setStatus(id, 'Type a note first.', true); return; }
+          go.disabled = true;
+          setStatus(id, 'Rewriting\u2026');
+          if (!base()) {
+            setStatus(id, 'Bridge not running. Start Director Bridge.app, or use "Copy request instead".', true);
+            go.disabled = false;
+            return;
+          }
+          fetch(BRIDGE(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id, request: rewriteRequest(id, note) })
+          }).then(function (r) {
+            if (!r.ok) throw new Error('bridge returned ' + r.status);
+            return r.json();
+          }).then(function (d) {
+            if (d.error) throw new Error(d.error);
+            pending[id] = d.prompt;
+            document.getElementById('body-' + id).textContent = d.prompt;
+            setStatus(id, 'Rewritten \u2014 keep it?');
+            showKeep(id, true);
+          }).catch(function (err) {
+            setStatus(id, 'Bridge not reachable (' + err.message + '). Use "Copy request instead".', true);
+          }).then(function () { go.disabled = false; });
+          return;
+        }
+
+        var cp = e.target.closest('.nt-copy');
+        if (cp) {
+          var id2 = cp.dataset.id;
+          var note2 = document.querySelector('.nt-in[data-id="' + id2 + '"]').value.trim();
+          if (!note2) { setStatus(id2, 'Type a note first.', true); return; }
+          copyText(rewriteRequest(id2, note2), cp, 'Copy request instead');
+          setStatus(id2, 'Copied \u2014 paste it to Claude, then paste the result back over the prompt.');
+          return;
+        }
+
+        var ok = e.target.closest('.nt-accept');
+        if (ok) {
+          var id3 = ok.dataset.id;
+          if (pending[id3]) {
+            edits[editKey(id3)] = pending[id3];
+            delete pending[id3];
+            saveEdits();
+            paintEdit(id3);
+            document.querySelector('.nt-in[data-id="' + id3 + '"]').value = '';
+            setStatus(id3, 'Kept. Copy and Queue now use this version.');
+            showKeep(id3, false);
+          }
+          return;
+        }
+
+        var un = e.target.closest('.nt-undo');
+        if (un) {
+          var id4 = un.dataset.id;
+          delete pending[id4];
+          delete edits[editKey(id4)];
+          saveEdits();
+          paintEdit(id4);
+          setStatus(id4, 'Reverted to the original prompt.');
+          showKeep(id4, false);
+          return;
+        }
+      });
+
+      // ---- generation queue ----------------------------------------------
+      // This file is a static document and cannot call Higgsfield itself.
+      // Queue clips, copy the request, paste it to Claude, and Claude runs
+      // the generation with the reference elements attached.
+      var queue = [];
+      try { queue = JSON.parse(localStorage.getItem(KEY + ':queue') || '[]'); } catch (e) { queue = []; }
+
+      function saveQueue() {
+        try { localStorage.setItem(KEY + ':queue', JSON.stringify(queue)); } catch (e) {}
+      }
+      function paintQueue() {
+        document.querySelectorAll('button.queue').forEach(function (b) {
+          var on = queue.indexOf(b.dataset.id) !== -1;
+          b.classList.toggle('on', on);
+          b.textContent = on ? 'Queued' : 'Queue';
+          b.closest('.clip').classList.toggle('queued', on);
+        });
+        var secs = queue.reduce(function (t, id) { return t + (META[id] ? secsFor(id) : 0); }, 0);
+        document.getElementById('qn').textContent = queue.length;
+        document.getElementById('qs').textContent = secs;
+        document.getElementById('bar').classList.toggle('show', queue.length > 0);
+      }
+      paintQueue();
+
+      document.addEventListener('click', function (e) {
+        var b = e.target.closest('button.queue');
+        if (!b) return;
+        var i = queue.indexOf(b.dataset.id);
+        if (i === -1) { queue.push(b.dataset.id); } else { queue.splice(i, 1); }
+        saveQueue();
+        paintQueue();
+      });
+
+      document.getElementById('qclear').addEventListener('click', function () {
+        queue = [];
+        saveQueue();
+        paintQueue();
+      });
+
+      // ---- collapse / expand -----------------------------------------------
+      // Controls live inside <summary>, so their clicks must not toggle the row.
+      // The row header holds controls, so <summary>'s native toggle is switched
+      // off entirely and both the row and the checkbox are driven from state.
+      // (A checkbox flips before its click event fires, so preventDefault alone
+      // would silently revert it.)
+      document.addEventListener('click', function (e) {
+        var head = e.target.closest('.clip-head');
+        if (!head) return;
+        e.preventDefault();
+        var det = head.closest('.clip');
+
+        var lbl = e.target.closest('label.chk');
+        if (lbl) {
+          var inp = lbl.querySelector('input');
+          inp.checked = !state[det.dataset.id];
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+          setTimeout(paint, 0);  // a keyboard toggle reverts after handlers; re-assert
+          return;
+        }
+        if (e.target.closest('button')) return;  // copy/queue have their own handlers
+
+        det.open = !det.open;
+        saveOpen();
+      });
+
+      var OPEN = KEY + ':open';
+      var open = [];
+      try { open = JSON.parse(localStorage.getItem(OPEN) || '[]'); } catch (e) { open = []; }
+      document.querySelectorAll('.clip').forEach(function (d) {
+        if (open.indexOf(d.dataset.id) !== -1) d.open = true;
+      });
+
+      function saveOpen() {
+        var ids = [];
+        document.querySelectorAll('.clip').forEach(function (d) {
+          if (d.open) ids.push(d.dataset.id);
+        });
+        try { localStorage.setItem(OPEN, JSON.stringify(ids)); } catch (e) {}
+        syncLabels();
+      }
+
+      function syncLabels() {
+        document.querySelectorAll('.scene').forEach(function (sec) {
+          var all = sec.querySelectorAll('.clip');
+          var shut = sec.querySelectorAll('.clip:not([open])').length;
+          var b = sec.querySelector('.scene-tog');
+          if (b) b.textContent = shut === 0 ? 'Collapse all' : 'Expand all';
+        });
+        var anyShut = document.querySelectorAll('.clip:not([open])').length;
+        document.getElementById('allTog').textContent = anyShut === 0 ? 'Collapse all' : 'Expand all';
+      }
+
+      document.addEventListener('toggle', function (e) {
+        if (e.target.classList && e.target.classList.contains('clip')) saveOpen();
+      }, true);
+
+      document.querySelectorAll('.scene-tog').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var sec = b.closest('.scene');
+          var expand = sec.querySelectorAll('.clip:not([open])').length > 0;
+          sec.querySelectorAll('.clip').forEach(function (d) { d.open = expand; });
+          saveOpen();
+        });
+      });
+
+      document.getElementById('allTog').addEventListener('click', function () {
+        var expand = document.querySelectorAll('.clip:not([open])').length > 0;
+        document.querySelectorAll('.clip').forEach(function (d) { d.open = expand; });
+        saveOpen();
+      });
+
+      syncLabels();
+
+      document.getElementById('qcopy').addEventListener('click', function () {
+        var order = [];
+        document.querySelectorAll('.clip').forEach(function (el) {
+          if (queue.indexOf(el.dataset.id) !== -1) order.push(el.dataset.id);
+        });
+        var secs = order.reduce(function (t, id) { return t + secsFor(id); }, 0);
+        var head = 'Generate these You Woke Up Early clips in Higgsfield with Seedance, '
+          + '16:9, 720p, at the runtime stated on each clip below, reference elements attached. '
+          + 'Show me the credit cost first and wait for my go-ahead before spending anything.'
+          + '\n\n' + order.length + ' clips queued, ' + secs + 's total: ' + order.join(', ');
+        var body = order.map(function (id) {
+          var a = isoOf(id);
+          var lbl = a ? ('isolated to shot ' + a.n + ', single take'
+                         + (a.mode === 'native' ? ', native length' : ', held for the full clip'))
+                      : (META[id].shots === 0 ? 'held single'
+                     : META[id].shots + (META[id].shots === 1 ? ' shot' : ' shots'));
+          return '\n\n===== CLIP ' + id + ' \u2014 ' + META[id].title
+            + ' (' + secsFor(id) + 's, ' + lbl + ') =====\n\n'
+            + (META[id].selfpre ? '' : ((a ? isoPrefix() : prefix) + '\n\n')) + bodyFor(id);
+        }).join('');
+        copyText(head + body, this, 'Copy generation request');
+      });
+    })();
+    </script>
+    </body>
+    </html>

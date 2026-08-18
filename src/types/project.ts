@@ -3,6 +3,7 @@ import type { Timeline } from './timeline';
 import type { ExportJob } from './export';
 import type { WorkflowNodeData } from './workflow';
 import type { Element } from './elements';
+import type { DirectorShow } from './director';
 
 export interface Asset {
   id: string;
@@ -66,4 +67,5 @@ export interface ProjectSnapshot {
   activeTimelineId?: string;
   exports?: ExportJob[];
   elements?: Element[];
+  director?: DirectorShow;
 }

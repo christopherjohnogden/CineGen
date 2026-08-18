@@ -1,7 +1,7 @@
 # Upcoming Release — Feature Changelog
 
 > **Status:** Draft — update this file as work continues, then copy into a GitHub Release when you ship.  
-> **Last updated:** May 28, 2026
+> **Last updated:** August 18, 2026
 
 Use this document to announce what’s new in the next CineGen update. Items marked **(committed)** are already on `main`; items marked **(in progress)** include local/uncommitted work from the current session.
 
@@ -9,6 +9,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## Highlights
 
+- **Director tab:** script-to-Seedance 2.5 shotlist with takes and nested Edit media-pool folders
 - **New fal.ai video models:** Seedance 2.0 (text/image + reference-to-video)
 - **Multi-shot workflows:** “Shot Prompt” renamed to **Multi Prompt** (matches Kling 3 API)
 - **fal.ai model audit:** 39 cloud models reviewed; inputs, outputs, and routing aligned with official API schemas
@@ -18,6 +19,16 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 ---
 
 ## New Features
+
+### Director tab **(in progress)**
+- New workspace tab between **Spaces** and **Edit** that turns a script or idea into timed Seedance 2.5 clips
+- Breakdown reviews characters/locations/props/vehicles, matches existing Elements by `@Tag` / name, and creates only missing ones
+- Shotlist compiler uses Seedance heading grammar (`SHOT n (0:00–0:07)`); isolate the selected beat as full multishot, held to clip length, or native length without creating a second clip
+- Generate queues takes per variant into `Director / Scene / Clip / Full|Shot N` media-pool folders (`S09_2-9b_T01`, `S09_2-9b_S3x20_T01`)
+- Look bible builder: upload a script, pick a Seedance genre, type film references, drop mood-board stills — **Look notes** live-updates from those refs and stays editable; **Rewrite with LLM** expands the same field
+- Breakdown / shotlist / look bible / rewrite run through a picked **Claude, Codex, or Gemini CLI** (same install detect as Copilot) — no fal key required
+- Director CLI jobs use headless Claude `--permission-mode dontAsk`, show errors instead of spinning **Writing…**, and time out / cancel if the CLI hangs
+- Look bible style prefix, director notes Keep/Discard rewrite, and a Seedance 2.5 video adapter (future model versions are extra adapters, not UI rewrites)
 
 ### LLM tab: Acoustic-emotional clip analysis **(in progress)**
 

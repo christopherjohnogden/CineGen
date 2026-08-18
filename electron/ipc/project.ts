@@ -85,6 +85,22 @@ function defaultSnapshot(id: string, name: string) {
     mediaFolders: [],
     exports: [],
     elements: [],
+    director: {
+      sourceText: '',
+      clipLengthSec: 20,
+      stylePrefix: '',
+      aspectRatio: '16:9',
+      adapterId: 'seedance-2.5',
+      resolution: '720p',
+      generateAudio: true,
+      genre: 'auto',
+      mode: 'source',
+      breakdown: [],
+      breakdownApproved: false,
+      scenes: [],
+      clips: [],
+      jobStatus: null,
+    },
   };
 }
 

@@ -166,6 +166,7 @@ export interface FullProjectState {
     }>;
     activeSpaceId?: string;
     openSpaceIds?: string[];
+    director?: unknown;
   };
   elements: ElementRow[];
   exports: ExportJobRow[];
@@ -574,6 +575,7 @@ export function getWorkflowState(
       openSpaceIds: Array.isArray(record.openSpaceIds)
         ? record.openSpaceIds.filter((value): value is string => typeof value === 'string')
         : undefined,
+      director: record.director,
     };
   }
   return {
@@ -601,6 +603,7 @@ export function saveWorkflowState(
         spaces: workflow.spaces ?? [],
         activeSpaceId: workflow.activeSpaceId ?? null,
         openSpaceIds: workflow.openSpaceIds ?? [],
+        director: workflow.director ?? null,
       }),
     ],
   );

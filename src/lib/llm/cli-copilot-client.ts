@@ -64,3 +64,19 @@ export function subscribeCliCopilotStream(
       return () => {};
   }
 }
+
+export async function cancelCliCopilotChat(provider: CliLlmProviderId, requestId: string): Promise<void> {
+  switch (provider) {
+    case 'claude-code':
+      await window.electronAPI.llm.claudeCodeCancel(requestId);
+      return;
+    case 'codex':
+      await window.electronAPI.llm.codexCancel(requestId);
+      return;
+    case 'gemini':
+      await window.electronAPI.llm.geminiCancel(requestId);
+      return;
+    default:
+      return;
+  }
+}

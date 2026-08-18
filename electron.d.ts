@@ -273,6 +273,7 @@ export interface ElectronAPI {
       model: string;
       outputType: 'image' | 'video';
       referenceValue?: string;
+      params?: Record<string, unknown>;
     }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
   };
   copilot: {

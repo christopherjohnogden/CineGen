@@ -72,6 +72,23 @@ function timestamp() {
   return new Date().toISOString();
 }
 
+const EMPTY_DIRECTOR = {
+  sourceText: '',
+  clipLengthSec: 20,
+  stylePrefix: '',
+  aspectRatio: '16:9',
+  adapterId: 'seedance-2.5',
+  resolution: '720p',
+  generateAudio: true,
+  genre: 'auto',
+  mode: 'source',
+  breakdown: [],
+  breakdownApproved: false,
+  scenes: [],
+  clips: [],
+  jobStatus: null,
+};
+
 function assertId(value, label = 'id') {
   if (typeof value !== 'string' || !SAFE_ID.test(value)) {
     throw new HttpError(400, `Invalid ${label}.`, 'INVALID_ID');
@@ -179,9 +196,11 @@ function createDefaultProjectState(name) {
       spaces: [{ id: spaceId, name: 'Space 1', createdAt: now, nodes: [], edges: [] }],
       activeSpaceId: spaceId,
       openSpaceIds: [spaceId],
+      director: EMPTY_DIRECTOR,
     },
     elements: [],
     exports: [],
+    director: EMPTY_DIRECTOR,
   };
 }
 
@@ -282,6 +301,7 @@ class ProjectStore {
       workflow: state.workflow && typeof state.workflow === 'object' ? state.workflow : previous.workflow,
       elements: Array.isArray(state.elements) ? state.elements : previous.elements,
       exports: Array.isArray(state.exports) ? state.exports : previous.exports,
+      director: state.director !== undefined ? state.director : previous.director,
     };
     await writeJsonAtomic(this.projectPath(id), next);
     const index = await this.readIndex();
@@ -550,6 +570,7 @@ function buildRpcHandlers(store) {
     activeTimelineId: state.activeTimelineId,
     exports: state.exports,
     elements: state.elements,
+    director: state.director ?? state.workflow?.director ?? EMPTY_DIRECTOR,
   });
 
   const handlers = new Map([

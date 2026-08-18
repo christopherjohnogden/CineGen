@@ -7,9 +7,10 @@ export interface LlmCopilotNavStatus {
   hasUnreadResponse: boolean;
 }
 
-const TABS: { id: ProjectTab; label: string }[] = [
+export const PROJECT_TABS: { id: ProjectTab; label: string }[] = [
   { id: 'elements', label: 'Elements' },
   { id: 'create', label: 'Spaces' },
+  { id: 'director', label: 'Director' },
   { id: 'edit', label: 'Edit' },
   { id: 'llm', label: 'LLM' },
   { id: 'export', label: 'Export' },
@@ -48,7 +49,7 @@ export function TopTabs({
       </div>
 
       <div className="top-nav__tabs">
-        {TABS.map(({ id, label }) => {
+        {PROJECT_TABS.map(({ id, label }) => {
           const isLlm = id === 'llm';
           const showThinking = isLlm && llmCopilotStatus?.isThinking;
           const showReady = isLlm && !showThinking && llmCopilotStatus?.hasUnreadResponse;

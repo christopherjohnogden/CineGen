@@ -251,6 +251,7 @@ test('Claude, Codex, and Gemini use fixed argv and renderer-compatible SSE strea
   }
   const claudeSpec = specs.find((spec) => spec.provider === 'claude-code');
   assert.equal(claudeSpec.args[claudeSpec.args.indexOf('--tools') + 1], '');
+  assert.equal(claudeSpec.args[claudeSpec.args.indexOf('--permission-mode') + 1], 'dontAsk');
   const codexSpec = specs.find((spec) => spec.provider === 'codex');
   assert.deepEqual(codexSpec.args.slice(codexSpec.args.indexOf('-s'), codexSpec.args.indexOf('-s') + 2), ['-s', 'read-only']);
   const geminiSpec = specs.find((spec) => spec.provider === 'gemini');

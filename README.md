@@ -45,6 +45,10 @@ Segment objects from images with text, click, or box prompts. Red overlay, white
 
 ![SAM3 Segmentation](screenshots/spaces_sam3_2.png)
 
+### Director
+
+Turn a script or idea into a production record: breakdown, Elements, timed Seedance 2.5 shotlist, isolate-to-full or isolate-to-native regeneration, and takes filed under Scene / Clip / Variant folders in the Edit media pool.
+
 ### Edit — Dual Viewer
 
 Multi-track NLE with source and timeline viewers, transport controls, and waveform display.
@@ -99,6 +103,18 @@ A full-canvas node editor (React Flow) for building AI generation pipelines. Pre
 - **Built-in timeline** — preview and arrange generated clips directly on the canvas, then import to the full editor
 - Connect nodes with edges, configure parameters in the inspector, and run the entire workflow or individual nodes
 - History, search, and workflow save/load panels in the toolbar
+
+### Director
+
+A production page between Spaces and Edit. Paste or **upload a script**, set clip length (10 / 15 / 20 / 30s), and build a look bible before anything mutates the project.
+
+- **Script** — paste or upload `.txt`, `.md`, `.fountain`, or Final Draft `.fdx`
+- **Look bible** — Seedance genre, film-reference chips, mood-board stills; Look notes fill from those refs and stay editable, or **Rewrite with LLM** to expand them
+- **LLM** — pick Claude, Codex, or Gemini CLI in the Director toolbar for breakdown, shotlist, look bible, and rewrite
+- **Breakdown** — scenes plus characters, locations, props, and vehicles with `@Tags`; match existing Elements or create missing ones
+- **Shotlist** — timed beats in Seedance heading grammar; isolate one shot as a 20s hold or its native 5–8s length without making a second clip
+- **Generate** — Seedance 2.5 takes (full or isolated) queued into nested Edit media-pool folders named like `S09_2-9b_T03`
+- **Notes** — rewrite the active variant from director notes with Keep / Discard
 
 ### Edit — Non-Linear Editor
 

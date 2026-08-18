@@ -481,6 +481,7 @@ function buildClaudeSpec(params, command, context) {
     '--model', params.model,
     '--tools', '',
     '--disable-slash-commands',
+    '--permission-mode', 'dontAsk',
   ];
   if (canResume) {
     args.push('--resume', params.resumeSessionId);

@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest';
+import { PROJECT_TABS } from '@/components/workspace/top-tabs';
+import { createEmptyDirectorShow } from '@/lib/director/create-show';
+import { directorJobIsRunning } from '@/lib/director/director-state';
+import { directorFromSnapshot, directorFromUnknown, directorFromWorkflow } from '@/lib/director/snapshot';
+import { prepareDirectorGeneration } from '@/lib/director/generate';
+import type { DirectorClip, DirectorScene } from '@/types/director';
+
+describe('director tab wiring', () => {
+  it('places Director between Spaces and Edit', () => {
+    expect(PROJECT_TABS.map((tab) => tab.id)).toEqual([
+      'elements', 'create', 'director', 'edit', 'llm', 'export',
+    ]);
+  });
+});
+
+describe('director snapshot', () => {
+  it('round-trips a show through snapshot and workflow extras', () => {
+    const show = { ...createEmptyDirectorShow(), sourceText: 'You woke up early.' };
+    expect(directorFromUnknown(show).sourceText).toBe('You woke up early.');
+    expect(directorFromSnapshot({ director: show }).sourceText).toBe('You woke up early.');
+    expect(directorFromWorkflow({ director: show }).sourceText).toBe('You woke up early.');
+    expect(directorFromSnapshot({}).clipLengthSec).toBe(20);
+    expect(directorFromUnknown({
+      sourceText: 'x',
+      clipLengthSec: 20,
+      breakdown: [],
+      scenes: [],
+      clips: [],
+    }).llmProvider).toBe('claude-code');
+    expect(directorFromUnknown({
+      ...createEmptyDirectorShow(),
+      llmProvider: 'gemini',
+    }).llmProvider).toBe('gemini');
+    expect(directorFromUnknown({
+      ...createEmptyDirectorShow(),
+      jobStatus: { type: 'look-bible', message: 'Writing look bible…' },
+    }).jobStatus).toBeNull();
+  });
+});
+
+describe('director job spinner', () => {
+  it('treats look-bible errors as idle so Rewrite is clickable', () => {
+    expect(directorJobIsRunning({
+      ...createEmptyDirectorShow(),
+      jobStatus: { type: 'look-bible', message: 'Writing look bible…' },
+    }, 'look-bible')).toBe(true);
+    expect(directorJobIsRunning({
+      ...createEmptyDirectorShow(),
+      jobStatus: { type: 'look-bible', message: 'Claude Code: timed out', error: true },
+    }, 'look-bible')).toBe(false);
+  });
+});
+
+describe('director generate folders', () => {
+  it('assigns the take asset to the variant folder', () => {
+    const scene: DirectorScene = {
+      id: 's9', number: 9, label: 'SCENE 9 — THE BOY', summary: '', elementIds: [], clipIds: [],
+    };
+    const clip: DirectorClip = {
+      id: '2-9b', title: 'He turns', seconds: 20, sceneId: 's9',
+      beats: [
+        { n: 1, from: '0:00', to: '0:07', dur: 7, text: 'a' },
+        { n: 2, from: '0:07', to: '0:14', dur: 7, text: 'b' },
+        { n: 3, from: '0:14', to: '0:20', dur: 6, text: 'c' },
+      ],
+      subject: 's', location: 'l', style: 'st', constraints: 'c', elementTags: [],
+      activeVariant: { kind: 'full' }, bodyEdits: {}, takes: [],
+    };
+    const prepared = prepareDirectorGeneration({
+      show: createEmptyDirectorShow(),
+      scene,
+      clip,
+      folders: [],
+    });
+    expect(prepared.asset.folderId).toBe(prepared.variantFolderId);
+    expect(prepared.asset.name).toMatch(/^S09_2-9b_T01$/);
+    expect(prepared.take.number).toBe(1);
+    expect(prepared.request.params.multi_shots).toBe(true);
+  });
+});

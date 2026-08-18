@@ -35,6 +35,23 @@ const CREATE_PROJECTS_INDEX = `
 CREATE INDEX IF NOT EXISTS idx_projects_workspace_updated
 ON projects (workspace_id, updated_at)`;
 
+const EMPTY_DIRECTOR = {
+  sourceText: "",
+  clipLengthSec: 20,
+  stylePrefix: "",
+  aspectRatio: "16:9",
+  adapterId: "seedance-2.5",
+  resolution: "720p",
+  generateAudio: true,
+  genre: "auto",
+  mode: "source",
+  breakdown: [],
+  breakdownApproved: false,
+  scenes: [],
+  clips: [],
+  jobStatus: null,
+};
+
 function now(): string {
   return new Date().toISOString();
 }
@@ -104,9 +121,11 @@ export function createDefaultProjectState(name: string): ProjectState {
       spaces: [{ id: spaceId, name: "Space 1", createdAt, nodes: [], edges: [] }],
       activeSpaceId: spaceId,
       openSpaceIds: [spaceId],
+      director: EMPTY_DIRECTOR,
     },
     elements: [],
     exports: [],
+    director: EMPTY_DIRECTOR,
   };
 }
 
@@ -160,6 +179,7 @@ function legacySnapshot(state: ProjectState) {
     activeTimelineId: state.activeTimelineId,
     exports: arrayValue(state.exports, []),
     elements: arrayValue(state.elements, []),
+    director: state.director ?? (workflow as Record<string, unknown>).director ?? EMPTY_DIRECTOR,
   };
 }
 
@@ -211,6 +231,7 @@ export function createProjectStore(db: D1Database, workspaceId: string) {
       timelines: arrayValue(state.timelines, arrayValue(previous.timelines, [])),
       elements: arrayValue(state.elements, arrayValue(previous.elements, [])),
       exports: arrayValue(state.exports, arrayValue(previous.exports, [])),
+      director: state.director !== undefined ? state.director : previous.director,
       workflow: state.workflow && typeof state.workflow === "object"
         ? state.workflow
         : previous.workflow,

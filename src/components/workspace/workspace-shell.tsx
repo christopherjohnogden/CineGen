@@ -8,6 +8,10 @@ import type { Clip, Timeline } from '@/types/timeline';
 import type { WorkflowNodeData, WorkflowRun } from '@/types/workflow';
 import type { ExportJob } from '@/types/export';
 import type { Element } from '@/types/elements';
+import type { DirectorShow } from '@/types/director';
+import { createEmptyDirectorShow } from '@/lib/director/create-show';
+import { directorFromSnapshot, directorFromWorkflow } from '@/lib/director/snapshot';
+import { DirectorTab } from '@/components/director/director-tab';
 import { createDefaultTimeline } from '@/lib/editor/timeline-operations';
 import { migrateSequenceToTimelines } from '@/lib/editor/timeline-migration';
 import { TopTabs, type LlmCopilotNavStatus } from './top-tabs';
@@ -81,6 +85,7 @@ type WorkspaceAction =
   | { type: 'ADD_ELEMENT'; element: Element }
   | { type: 'UPDATE_ELEMENT'; elementId: string; updates: Partial<Element> }
   | { type: 'REMOVE_ELEMENT'; elementId: string }
+  | { type: 'SET_DIRECTOR'; director: DirectorShow }
   | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
   | { type: 'HYDRATE'; payload: HydratePayload }
   | { type: 'UNDO' }
@@ -98,6 +103,7 @@ interface HydratePayload {
   activeTimelineId: string;
   exports: ExportJob[];
   elements: Element[];
+  director: DirectorShow;
 }
 
 interface LlmJumpRequest {
@@ -312,7 +318,7 @@ function resolveActiveSpace(
    ------------------------------------------------------------------ */
 
 const TAB_STORAGE_KEY = 'cinegen_active_tab';
-const VALID_TABS = new Set(['elements', 'create', 'edit', 'llm', 'export']);
+const VALID_TABS = new Set(['elements', 'create', 'director', 'edit', 'llm', 'export']);
 
 const defaultTimeline = createDefaultTimeline('Timeline 1');
 const defaultSpace = createWorkflowSpace('Space 1');
@@ -339,6 +345,7 @@ const initialState: WorkspaceState = {
   runningNodeIds: new Set(),
   exports: [],
   elements: [],
+  director: createEmptyDirectorShow(),
 };
 
 function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
@@ -626,6 +633,9 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case 'REMOVE_ELEMENT':
       return { ...state, elements: state.elements.filter((el) => el.id !== action.elementId) };
 
+    case 'SET_DIRECTOR':
+      return { ...state, director: action.director };
+
     case 'HYDRATE': {
       const hydratedTimelines = action.payload.timelines;
       const hydratedSpaces = normalizeWorkflowSpaces(action.payload.spaces, action.payload.nodes, action.payload.edges);
@@ -650,6 +660,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         openTimelineIds: new Set(hydratedTimelines.map((tl: { id: string }) => tl.id)),
         exports: action.payload.exports,
         elements: action.payload.elements,
+        director: action.payload.director,
       };
     }
 
@@ -670,6 +681,7 @@ const UNDOABLE_ACTIONS: WorkspaceAction['type'][] = [
   'ADD_FOLDER', 'UPDATE_FOLDER', 'REMOVE_FOLDER',
   'SET_TIMELINE', 'ADD_TIMELINE', 'REMOVE_TIMELINE', 'CLOSE_TIMELINE', 'OPEN_TIMELINE',
   'ADD_ELEMENT', 'UPDATE_ELEMENT', 'REMOVE_ELEMENT',
+  'SET_DIRECTOR',
 ];
 
 interface HistoryState {
@@ -776,6 +788,7 @@ const PERSIST_ACTIONS: WorkspaceAction['type'][] = [
   'SET_TIMELINE', 'ADD_TIMELINE', 'REMOVE_TIMELINE', 'CLOSE_TIMELINE', 'OPEN_TIMELINE', 'SET_ACTIVE_TIMELINE',
   'SET_NODE_RESULT', 'ADD_GENERATION', 'ADD_EXPORT', 'UPDATE_EXPORT',
   'ADD_ELEMENT', 'UPDATE_ELEMENT', 'REMOVE_ELEMENT',
+  'SET_DIRECTOR',
   'UNDO', 'REDO',
 ];
 
@@ -1542,13 +1555,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const activeTimelineId = (dbState.activeTimelineId as string) ?? timelines[0]?.id ?? '';
           const elements = (dbState.elements as Record<string, unknown>[]).map(elementFromRow);
           const exports = (dbState.exports as Record<string, unknown>[]).map(exportFromRow);
+          const director = directorFromWorkflow(workflowState);
 
-          if (nodes.length || edges.length || spaces.length || assets.length) {
-            historyDispatch({
-              type: 'HYDRATE',
-              payload: { nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports, elements },
-            });
-          }
+          historyDispatch({
+            type: 'HYDRATE',
+            payload: { nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports, elements, director },
+          });
         })
         .catch(() => {})
         .finally(() => setHydrationComplete(true));
@@ -1583,13 +1595,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const exports = (snapshot.exports ?? []) as ExportJob[];
           const elements = (snapshot.elements ?? []) as Element[];
           const mediaFolders = (snapshot.mediaFolders ?? []) as MediaFolder[];
+          const director = directorFromSnapshot(snapshot);
 
-          if (nodes.length || edges.length || spaces.length || assets.length) {
-            historyDispatch({
-              type: 'HYDRATE',
-              payload: { nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports, elements },
-            });
-          }
+          historyDispatch({
+            type: 'HYDRATE',
+            payload: { nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports, elements, director },
+          });
         })
         .catch(() => {})
         .finally(() => setHydrationComplete(true));
@@ -1655,6 +1666,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             spaces: serializableSpaces,
             activeSpaceId: state.activeSpaceId,
             openSpaceIds: [...state.openSpaceIds],
+            director: state.director,
           },
           elements: state.elements.map((el) => ({
             id: el.id,
@@ -1697,6 +1709,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           activeTimelineId: state.activeTimelineId,
           exports: state.exports,
           elements: state.elements,
+          director: state.director,
         }).catch(() => {});
       }
     }, SAVE_DEBOUNCE_MS);
@@ -1716,6 +1729,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     state.activeTimelineId,
     state.exports,
     state.elements,
+    state.director,
   ]);
 
   return (
@@ -1732,6 +1746,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
       <main className="workspace-content">
         {state.activeTab === 'elements' && <ElementsTab />}
         {state.activeTab === 'create' && <CreateTab />}
+        {state.activeTab === 'director' && <DirectorTab />}
         {state.activeTab === 'edit' && <EditTab llmJumpRequest={llmJumpRequest} />}
         <div className={`workspace-tab-panel${state.activeTab === 'llm' ? ' workspace-tab-panel--active' : ''}`}>
           <LLMTab

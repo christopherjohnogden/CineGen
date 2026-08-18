@@ -1,0 +1,429 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DirectorMode, DirectorShow } from '@/types/director';
+import type { Element } from '@/types/elements';
+import { useWorkspace } from '@/components/workspace/workspace-shell';
+import { DirectorSourcePanel } from './director-source-panel';
+import { DirectorBoard } from './director-board';
+import { DirectorInspector } from './director-inspector';
+import { createEmptyDirectorShow } from '@/lib/director/create-show';
+import {
+  findMatchingElement,
+  itemsMissingElements,
+  mergeBreakdownItems,
+  parseBreakdownPayload,
+} from '@/lib/director/breakdown';
+import { mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
+import { BREAKDOWN_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
+import {
+  breakdownJobInput,
+  lookBibleJobInput,
+  shotlistDensity,
+  shotlistJobInput,
+} from '@/lib/director/job-inputs';
+import { applyWrittenLook } from '@/lib/director/look-bible';
+import { parseDirectorLlmProvider, pickInstalledDirectorLlm } from '@/lib/director/cli-provider';
+import { runDirectorJsonJob } from '@/lib/director/run-llm';
+import { cancelCliCopilotChat } from '@/lib/llm/cli-copilot-client';
+import { DirectorLlmPicker, type DirectorCliInfo } from './director-llm-picker';
+import {
+  CLI_LLM_PROVIDER_IDS,
+  type CliLlmProviderId,
+} from '@/lib/llm/claude-code-session';
+import {
+  appendDirectorTake,
+  directorJobIsRunning,
+  discardPendingRewrite,
+  keepPendingRewrite,
+  selectedClip,
+  selectedScene,
+  updateDirectorClip,
+  updateDirectorTake,
+} from '@/lib/director/director-state';
+import {
+  clipsForGenerateScope,
+  generationPreflight,
+  prepareDirectorGeneration,
+  runtimeSeconds,
+} from '@/lib/director/generate';
+import { getDirectorAdapter } from '@/lib/director/video-adapter';
+import { variantKey } from '@/lib/director/slate';
+import { generateId, timestamp } from '@/lib/utils/ids';
+import '@/styles/director-tab.css';
+
+const MODES: { id: DirectorMode; label: string }[] = [
+  { id: 'source', label: 'Source' },
+  { id: 'breakdown', label: 'Breakdown' },
+  { id: 'shotlist', label: 'Shotlist' },
+  { id: 'generate', label: 'Generate' },
+];
+
+const EMPTY_CLI_PROVIDERS: Record<CliLlmProviderId, DirectorCliInfo> = {
+  'claude-code': { id: 'claude-code', installed: false },
+  codex: { id: 'codex', installed: false },
+  gemini: { id: 'gemini', installed: false },
+};
+
+export function DirectorTab() {
+  const { state, dispatch } = useWorkspace();
+  const show = state.director ?? createEmptyDirectorShow();
+  const showRef = useRef(show);
+  const foldersRef = useRef(state.mediaFolders);
+  showRef.current = show;
+  foldersRef.current = state.mediaFolders;
+
+  const [selectedBeatN, setSelectedBeatN] = useState(1);
+  const [preflight, setPreflight] = useState('Seedance 2.5');
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [cliProviders, setCliProviders] = useState<Record<CliLlmProviderId, DirectorCliInfo>>(EMPTY_CLI_PROVIDERS);
+
+  const setShow = useCallback((director: DirectorShow) => {
+    dispatch({ type: 'SET_DIRECTOR', director });
+  }, [dispatch]);
+
+  const setJob = useCallback((type: NonNullable<DirectorShow['jobStatus']>['type'], message: string) => {
+    const requestId = crypto.randomUUID();
+    setShow({ ...showRef.current, jobStatus: { type, message, requestId } });
+    return requestId;
+  }, [setShow]);
+
+  const failJob = useCallback((type: NonNullable<DirectorShow['jobStatus']>['type'], error: unknown, fallback: string) => {
+    setShow({
+      ...showRef.current,
+      jobStatus: { type, message: error instanceof Error ? error.message : fallback, error: true },
+    });
+  }, [setShow]);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI.llm.cliDetect().then(({ providers }) => {
+      if (cancelled) return;
+      const next = { ...EMPTY_CLI_PROVIDERS };
+      for (const provider of providers) {
+        if (CLI_LLM_PROVIDER_IDS.includes(provider.id)) next[provider.id] = provider;
+      }
+      setCliProviders(next);
+      const nextProvider = pickInstalledDirectorLlm(
+        parseDirectorLlmProvider(showRef.current.llmProvider),
+        providers,
+      );
+      if (nextProvider !== showRef.current.llmProvider) {
+        setShow({ ...showRef.current, llmProvider: nextProvider });
+      }
+    }).catch(() => {
+      if (!cancelled) setCliProviders(EMPTY_CLI_PROVIDERS);
+    });
+    return () => { cancelled = true; };
+  }, [setShow]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const adapter = getDirectorAdapter(show.adapterId);
+    const clips = clipsForGenerateScope(show.clips, 'queued', show.selectedClipId, show.selectedSceneId);
+    const run = async () => {
+      let connected: boolean | undefined;
+      let error: string | undefined;
+      try {
+        const status = await window.electronAPI.higgsfield.accountStatus();
+        connected = status.connected;
+        error = status.error;
+      } catch (err) {
+        connected = false;
+        error = err instanceof Error ? err.message : 'Higgsfield unavailable';
+      }
+      if (cancelled) return;
+      const result = generationPreflight({
+        clipCount: clips.length || show.clips.filter((clip) => !clip.altOf).length,
+        seconds: runtimeSeconds(clips.length ? clips : show.clips),
+        adapterLabel: adapter.label,
+        higgsfieldConnected: connected,
+        higgsfieldError: error,
+      });
+      setPreflight(result.summary);
+      setWarnings(result.warnings);
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [show.adapterId, show.clips, show.selectedClipId, show.selectedSceneId]);
+
+  const runBreakdown = useCallback(async () => {
+    const current = showRef.current;
+    const requestId = setJob('breakdown', 'Breaking down script…');
+    try {
+      const existing = state.elements.map((element) => `${element.type} ${element.name}`).join(', ');
+      const payload = await runDirectorJsonJob(
+        BREAKDOWN_SYSTEM_PROMPT,
+        breakdownJobInput(current, existing),
+        parseDirectorLlmProvider(current.llmProvider),
+        requestId,
+      );
+      const parsed = parseBreakdownPayload(payload);
+      setShow({
+        ...current,
+        breakdown: mergeBreakdownItems(current.breakdown, parsed.items, state.elements),
+        scenes: parsed.scenes.length > 0 ? parsed.scenes : current.scenes,
+        breakdownApproved: false,
+        mode: 'breakdown',
+        jobStatus: null,
+        selectedSceneId: parsed.scenes[0]?.id ?? current.selectedSceneId,
+      });
+    } catch (error) {
+      failJob('breakdown', error, 'Breakdown failed');
+    }
+  }, [failJob, setJob, setShow, state.elements]);
+
+  const linkMissingElements = useCallback((current: DirectorShow, approved: boolean): DirectorShow => {
+    const missing = itemsMissingElements(current.breakdown, state.elements);
+    const created = new Map<string, string>();
+    for (const item of missing) {
+      const element: Element = {
+        id: generateId(),
+        name: item.name,
+        type: item.kind,
+        description: [item.description, item.blurb].filter(Boolean).join('\n'),
+        images: [],
+        createdAt: timestamp(),
+        updatedAt: timestamp(),
+      };
+      dispatch({ type: 'ADD_ELEMENT', element });
+      created.set(item.id, element.id);
+    }
+    return {
+      ...current,
+      breakdownApproved: approved || current.breakdownApproved,
+      mode: approved ? 'shotlist' : current.mode,
+      breakdown: current.breakdown.map((item) => ({
+        ...item,
+        elementId: created.get(item.id) ?? item.elementId ?? findMatchingElement(state.elements, item)?.id,
+      })),
+    };
+  }, [dispatch, state.elements]);
+
+  const createMissing = useCallback(() => {
+    setShow(linkMissingElements(showRef.current, false));
+  }, [linkMissingElements, setShow]);
+
+  const approveBreakdown = useCallback(() => {
+    setShow(linkMissingElements(showRef.current, true));
+  }, [linkMissingElements, setShow]);
+
+  const runShotlist = useCallback(async (sceneOnly: boolean) => {
+    const current = showRef.current;
+    const scene = selectedScene(current);
+    const requestId = setJob('shotlist', sceneOnly ? `Shotlisting ${scene?.label ?? 'scene'}…` : 'Shotlisting show…');
+    try {
+      const payload = await runDirectorJsonJob(
+        shotlistSystemPrompt(current.clipLengthSec, shotlistDensity(current)),
+        shotlistJobInput(current, scene, sceneOnly),
+        parseDirectorLlmProvider(current.llmProvider),
+        requestId,
+      );
+      const parsed = parseShotlistPayload(payload, sceneOnly ? scene?.id : undefined);
+      const merged = mergeShotlist(current.scenes, current.clips, parsed);
+      setShow({
+        ...current,
+        stylePrefix: current.stylePrefix.trim()
+          ? current.stylePrefix
+          : (parsed.stylePrefix?.trim() ? parsed.stylePrefix : current.stylePrefix),
+        scenes: merged.scenes,
+        clips: merged.clips,
+        mode: 'shotlist',
+        jobStatus: parsed.errors[0] ? { type: 'shotlist', message: parsed.errors[0], error: true } : null,
+        selectedClipId: merged.clips[0]?.id ?? current.selectedClipId,
+        selectedSceneId: merged.clips[0]?.sceneId ?? current.selectedSceneId,
+      });
+    } catch (error) {
+      failJob('shotlist', error, 'Shotlist failed');
+    }
+  }, [failJob, setJob, setShow]);
+
+  const generateOne = useCallback(async (clipId: string) => {
+    const current = showRef.current;
+    const clip = current.clips.find((entry) => entry.id === clipId);
+    const scene = clip ? current.scenes.find((entry) => entry.id === clip.sceneId) : undefined;
+    if (!clip || !scene) return;
+    const prepared = prepareDirectorGeneration({
+      show: current,
+      scene,
+      clip,
+      folders: foldersRef.current,
+    });
+    foldersRef.current = [...foldersRef.current, ...prepared.foldersToAdd];
+    for (const folder of prepared.foldersToAdd) {
+      dispatch({ type: 'ADD_FOLDER', folder });
+    }
+    dispatch({ type: 'ADD_ASSET', asset: prepared.asset });
+    setShow(appendDirectorTake({
+      ...showRef.current,
+      mode: 'generate',
+      selectedClipId: clip.id,
+      selectedTakeId: prepared.take.id,
+      jobStatus: { type: 'generate', message: `Generating ${prepared.asset.name}…` },
+    }, clip.id, prepared.take));
+
+    try {
+      const result = await window.electronAPI.higgsfield.generate({
+        prompt: prepared.request.prompt,
+        model: prepared.request.modelId,
+        outputType: 'video',
+        params: prepared.request.params,
+      });
+      dispatch({
+        type: 'UPDATE_ASSET',
+        asset: {
+          id: prepared.asset.id,
+          url: result.url,
+          fileRef: result.url,
+          duration: result.durationSec ?? prepared.request.durationSec,
+          metadata: { generating: false, generatedVia: 'director', higgsfieldModel: prepared.request.modelId },
+        },
+      });
+      setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, { status: 'done' }));
+    } catch (error) {
+      dispatch({
+        type: 'UPDATE_ASSET',
+        asset: {
+          id: prepared.asset.id,
+          name: `${prepared.asset.name} failed`,
+          metadata: { generating: false, error: true, generatedVia: 'director' },
+        },
+      });
+      setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Generation failed',
+      }));
+    }
+  }, [dispatch, setShow]);
+
+  const runGenerate = useCallback(async (scope: 'active' | 'queued' | 'scene') => {
+    const current = showRef.current;
+    const targets = clipsForGenerateScope(current.clips, scope, current.selectedClipId, selectedScene(current)?.id);
+    if (targets.length === 0) return;
+    setShow({ ...current, mode: 'generate', jobStatus: { type: 'generate', message: `Generating ${targets.length} clip${targets.length === 1 ? '' : 's'}…` } });
+    for (const clip of targets) {
+      await generateOne(clip.id);
+    }
+    setShow({ ...showRef.current, jobStatus: null });
+  }, [generateOne, setShow]);
+
+  const runRewrite = useCallback(async (notes: string) => {
+    const current = showRef.current;
+    const clip = selectedClip(current);
+    if (!clip || !notes.trim()) return;
+    const requestId = setJob('rewrite', 'Rewriting active variant…');
+    try {
+      const adapter = getDirectorAdapter(current.adapterId);
+      const compiled = adapter.buildRequest({ show: current, clip, variant: clip.activeVariant });
+      const payload = await runDirectorJsonJob(
+        NOTES_REWRITE_SYSTEM_PROMPT,
+        `NOTES:\n${notes.trim()}\n\nCURRENT BODY:\n${compiled.prompt}`,
+        parseDirectorLlmProvider(current.llmProvider),
+        requestId,
+      );
+      const body = payload && typeof payload === 'object' && typeof (payload as { body?: unknown }).body === 'string'
+        ? (payload as { body: string }).body
+        : '';
+      if (!body) throw new Error('Rewrite did not return a body.');
+      setShow(updateDirectorClip({ ...showRef.current, jobStatus: null }, clip.id, (entry) => ({
+        ...entry,
+        pendingRewrite: { variantKey: variantKey(entry.activeVariant), body },
+      })));
+    } catch (error) {
+      failJob('rewrite', error, 'Rewrite failed');
+    }
+  }, [failJob, setJob, setShow]);
+
+  const runLookBible = useCallback(async () => {
+    const current = showRef.current;
+    const requestId = setJob('look-bible', 'Writing look bible…');
+    try {
+      const payload = await runDirectorJsonJob(
+        LOOK_BIBLE_SYSTEM_PROMPT,
+        lookBibleJobInput(current),
+        parseDirectorLlmProvider(current.llmProvider),
+        requestId,
+      );
+      const stylePrefix = payload && typeof payload === 'object' && typeof (payload as { stylePrefix?: unknown }).stylePrefix === 'string'
+        ? (payload as { stylePrefix: string }).stylePrefix.trim()
+        : '';
+      if (!stylePrefix) throw new Error('Look bible did not return a prefix.');
+      setShow({ ...applyWrittenLook(showRef.current, stylePrefix), jobStatus: null });
+    } catch (error) {
+      failJob('look-bible', error, 'Look bible failed');
+    }
+  }, [failJob, setJob, setShow]);
+
+  const cancelLookBible = useCallback(() => {
+    const current = showRef.current;
+    const requestId = current.jobStatus?.requestId;
+    if (requestId) {
+      void cancelCliCopilotChat(parseDirectorLlmProvider(current.llmProvider), requestId);
+    }
+    setShow({ ...current, jobStatus: { type: 'look-bible', message: 'Cancelled', error: true } });
+  }, [setShow]);
+
+  const clip = selectedClip(show);
+
+  return (
+    <div className="director-tab">
+      <div className="director-tab__toolbar">
+        <div className="director-tab__modes">
+          {MODES.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              className={`director-tab__mode${show.mode === mode.id ? ' director-tab__mode--active' : ''}`}
+              onClick={() => setShow({ ...show, mode: mode.id })}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+        {show.jobStatus && <span className="director-tab__status">{show.jobStatus.message}</span>}
+        <DirectorLlmPicker
+          provider={parseDirectorLlmProvider(show.llmProvider)}
+          providers={cliProviders}
+          onChange={(llmProvider) => setShow({ ...show, llmProvider })}
+        />
+      </div>
+      <div className="director-tab__layout">
+        <DirectorSourcePanel
+          show={show}
+          elements={state.elements}
+          lookBibleWriting={directorJobIsRunning(show, 'look-bible')}
+          lookBibleError={show.jobStatus?.type === 'look-bible' && show.jobStatus.error ? show.jobStatus.message : ''}
+          onChange={setShow}
+          onBreakdown={() => void runBreakdown()}
+          onApprove={approveBreakdown}
+          onCreateMissing={createMissing}
+          onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })}
+          onWriteLookBible={() => void runLookBible()}
+          onCancelLookBible={cancelLookBible}
+        />
+        <DirectorBoard
+          show={show}
+          assets={state.assets}
+          selectedBeatN={clip?.beats.some((beat) => beat.n === selectedBeatN) ? selectedBeatN : clip?.beats[0]?.n ?? 1}
+          onChange={setShow}
+          onSelectBeat={setSelectedBeatN}
+        />
+        <DirectorInspector
+          show={show}
+          preflight={preflight}
+          warnings={warnings}
+          onChange={setShow}
+          onShotlist={(sceneOnly) => void runShotlist(sceneOnly)}
+          onGenerate={(scope) => void runGenerate(scope)}
+          onRewrite={(notes) => void runRewrite(notes)}
+          onKeepRewrite={() => {
+            const current = selectedClip(show);
+            if (current) setShow(keepPendingRewrite(show, current.id));
+          }}
+          onDiscardRewrite={() => {
+            const current = selectedClip(show);
+            if (current) setShow(discardPendingRewrite(show, current.id));
+          }}
+        />
+      </div>
+    </div>
+  );
+}

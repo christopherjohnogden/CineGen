@@ -1,0 +1,314 @@
+.director-tab {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 0;
+}
+
+.director-tab__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  background: var(--bg-raised);
+}
+
+.director-tab__modes {
+  display: flex;
+  gap: 6px;
+}
+
+.director-tab__mode {
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-medium);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.director-tab__mode:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.director-tab__mode--active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.director-tab__llm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.director-tab__llm .director-tab__label {
+  margin: 0;
+}
+
+.director-tab__llm select {
+  width: auto;
+  min-width: 148px;
+}
+
+.director-tab__status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: 'Space Mono', monospace;
+}
+
+.director-tab__layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  min-height: 0;
+  flex: 1;
+}
+
+.director-tab__col {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px;
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.director-tab__col:last-child {
+  border-right: none;
+}
+
+.director-tab__label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.director-tab textarea,
+.director-tab input,
+.director-tab select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.director-tab textarea {
+  resize: vertical;
+  min-height: 88px;
+  line-height: 1.45;
+}
+
+.director-tab__prompt {
+  min-height: 180px;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+}
+
+.director-tab__row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.director-tab__btn {
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.director-tab__btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.director-tab__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.director-tab__btn--accent {
+  background: var(--accent);
+  color: var(--bg-base);
+  border-color: var(--accent);
+}
+
+.director-tab__btn--accent:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: var(--bg-base);
+}
+
+.director-tab__item,
+.director-tab__clip,
+.director-tab__beat {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.director-tab__item--active,
+.director-tab__clip--active,
+.director-tab__beat--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.director-tab__item-title,
+.director-tab__clip-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.director-tab__meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.director-tab__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.director-tab__takes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.director-tab__take {
+  min-width: 44px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.director-tab__take--active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.director-tab__take--hero {
+  background: var(--accent-dim);
+}
+
+.director-tab__viewer {
+  background: #000;
+  border-radius: var(--radius-sm);
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.director-tab__viewer video {
+  width: 100%;
+  max-height: 240px;
+}
+
+.director-tab__empty {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.director-tab__warn {
+  font-size: 12px;
+  color: var(--error);
+}
+
+.director-tab__ok {
+  font-size: 12px;
+  color: var(--success);
+}
+
+.director-tab__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.director-tab__file-input {
+  display: none;
+}
+
+.director-tab__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.director-tab__chip {
+  padding: 4px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.director-tab__chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.director-tab__boards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.director-tab__board {
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #000;
+  cursor: pointer;
+}
+
+.director-tab__board img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

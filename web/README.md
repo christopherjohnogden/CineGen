@@ -90,6 +90,7 @@ Web data defaults to `web/.data`; desktop data remains in the Electron applicati
 ## Capability behavior
 
 - Editing, timelines, project management, media import/processing, sync, export, cloud workflows, vision, hosted cut planning, and browser event streams have web server implementations.
+- The **Director** tab is the same `src/` UI on web; breakdown/shotlist LLM jobs use the web LLM RPC, and Seedance 2.5 generation uses the server-side Higgsfield CLI when configured. Director show state persists in the project snapshot (`director`) and in the sqlite workflow extra blob.
 - The hosted cut workflow uses deterministic project-index retrieval; desktop-only story-graph/local reranking is not run on the server.
 - Ollama and Claude Code/Codex/Gemini CLI chat run on the server when their runtimes are reachable. Missing tools are reported as unavailable; CLI visual references remain unsupported.
 - Higgsfield generation and Quick Edit use a server-side Higgsfield CLI when configured. Device login/logout is disabled unless explicitly enabled on a trusted local server.

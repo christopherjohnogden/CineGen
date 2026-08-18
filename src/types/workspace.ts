@@ -4,8 +4,9 @@ import type { Timeline } from './timeline';
 import type { ExportJob } from './export';
 import type { WorkflowNodeData, WorkflowRun } from './workflow';
 import type { Element } from './elements';
+import type { DirectorShow } from './director';
 
-export type ProjectTab = 'elements' | 'create' | 'edit' | 'llm' | 'export' | 'settings';
+export type ProjectTab = 'elements' | 'create' | 'director' | 'edit' | 'llm' | 'export' | 'settings';
 
 export interface WorkflowSpace {
   id: string;
@@ -31,4 +32,5 @@ export interface WorkspaceState {
   runningNodeIds: Set<string>;
   exports: ExportJob[];
   elements: Element[];
+  director: DirectorShow;
 }
