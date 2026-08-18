@@ -29,3 +29,6 @@ target
 
 # Local browser verification artifacts
 .playwright-cli/
+
+# Playwright MCP browser scratch
+.playwright-mcp/

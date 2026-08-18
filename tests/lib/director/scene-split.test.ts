@@ -12,6 +12,12 @@ describe('parseHeading', () => {
     expect(parseHeading('INT. FOREST - CONTINUOUS').timeOfDay).toBe('CONTINUOUS');
     expect(parseHeading('INT. VOID').timeOfDay).toBeUndefined();
   });
+  it('handles combined INT/EXT headings', () => {
+    const r = parseHeading('INT/EXT. CAR - DAY');
+    expect(r.intExt).toBe('INT/EXT');
+    expect(r.timeOfDay).toBe('DAY');
+    expect(r.place).toBe('CAR');
+  });
 });
 
 describe('splitScenes', () => {

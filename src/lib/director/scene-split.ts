@@ -11,7 +11,7 @@ export interface ScriptScene {
 const TIME_WORDS = /\b(DAY|NIGHT|DUSK|DAWN|MORNING|AFTERNOON|EVENING|CONTINUOUS|LATER|MOMENTS LATER|SAME)\b/i;
 
 export function parseHeading(heading: string): { intExt?: string; timeOfDay?: string; place: string } {
-  const intExtMatch = heading.match(/^\s*(INT|EXT|EST|INT\.?\/EXT|I\.?\/E)\b/i);
+  const intExtMatch = heading.match(/^\s*(INT\.?\/EXT|I\.?\/E|INT|EXT|EST)\b/i);
   const intExt = intExtMatch ? intExtMatch[1].toUpperCase().replace(/\.$/, '') : undefined;
   // time-of-day: last ' - XXX' segment or a recognized time word
   let timeOfDay: string | undefined;
@@ -25,8 +25,8 @@ export function parseHeading(heading: string): { intExt?: string; timeOfDay?: st
     if (w) timeOfDay = w[1].toUpperCase();
   }
   // place: strip int/ext prefix and trailing time segment
-  let place = heading.replace(/^\s*(INT|EXT|EST|INT\.?\/EXT|I\.?\/E)\.?\s*/i, '');
-  if (dash.length > 1 && timeOfDay) place = dash.slice(0, -1).join(' - ').replace(/^\s*(INT|EXT|EST|INT\.?\/EXT|I\.?\/E)\.?\s*/i, '');
+  let place = heading.replace(/^\s*(INT\.?\/EXT|I\.?\/E|INT|EXT|EST)\.?\s*/i, '');
+  if (dash.length > 1 && timeOfDay) place = dash.slice(0, -1).join(' - ').replace(/^\s*(INT\.?\/EXT|I\.?\/E|INT|EXT|EST)\.?\s*/i, '');
   place = place.trim();
   return { intExt, timeOfDay, place };
 }
