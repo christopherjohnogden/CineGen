@@ -280,7 +280,7 @@
 .director-tab__drawer-inner { display:flex; flex-wrap:wrap; gap:16px; padding:14px 16px; align-items:flex-end; }
 
 /* ── Redesign: workbench (rail + stage) ─────────────── */
-.director-tab__workbench { display:grid; grid-template-columns:240px minmax(0,1fr); min-height:0; flex:1; }
+.director-tab__workbench { display:grid; grid-template-columns:240px minmax(0,1fr); grid-template-rows:minmax(0,1fr); min-height:0; flex:1; }
 .director-tab__workbench--norail { grid-template-columns:minmax(0,1fr); }
 .director-tab__rail { min-height:0; overflow:auto; padding:12px; border-right:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:8px; background:var(--bg-raised); }
 .director-tab__stage { min-height:0; overflow:auto; padding:16px 20px; display:flex; flex-direction:column; gap:14px; }
