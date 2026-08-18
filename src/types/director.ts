@@ -166,6 +166,10 @@ export interface DirectorShow {
   } | null;
   /** Claude / Codex / Gemini CLI used for breakdown, shotlist, look bible, and rewrite. */
   llmProvider: 'claude-code' | 'codex' | 'gemini';
+  /** Per-scene manual asset overrides (asset tags). sceneIndex -> added/removed. */
+  sceneAssetOverrides?: Record<number, { added: string[]; removed: string[] }>;
+  /** Background-LLM per-scene asset suggestions (asset tags). sceneIndex -> tags. */
+  sceneAssetSuggestions?: Record<number, string[]>;
 }
 
 export const CLIP_LENGTHS: ClipLengthSec[] = [10, 15, 20, 30];
