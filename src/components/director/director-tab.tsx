@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DirectorMode, DirectorShow } from '@/types/director';
 import type { Element } from '@/types/elements';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
-import { DirectorSourcePanel } from './director-source-panel';
-import { DirectorBoard } from './director-board';
-import { DirectorInspector } from './director-inspector';
+import { DirectorStructureRail } from './director-structure-rail';
+import { DirectorScriptTab } from './director-script-tab';
+import { DirectorBreakdownTab } from './director-breakdown-tab';
+import { DirectorShotlistTab } from './director-shotlist-tab';
+import { DirectorGenerateTab } from './director-generate-tab';
+import { DirectorSetupDrawer } from './director-setup-drawer';
+import { DirectorLookBiblePanel } from './director-look-bible';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import {
   findMatchingElement,
@@ -50,13 +54,6 @@ import { variantKey } from '@/lib/director/slate';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import '@/styles/director-tab.css';
 
-const MODES: { id: DirectorMode; label: string }[] = [
-  { id: 'source', label: 'Source' },
-  { id: 'breakdown', label: 'Breakdown' },
-  { id: 'shotlist', label: 'Shotlist' },
-  { id: 'generate', label: 'Generate' },
-];
-
 const EMPTY_CLI_PROVIDERS: Record<CliLlmProviderId, DirectorCliInfo> = {
   'claude-code': { id: 'claude-code', installed: false },
   codex: { id: 'codex', installed: false },
@@ -75,6 +72,26 @@ export function DirectorTab() {
   const [preflight, setPreflight] = useState('Seedance 2.5');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cliProviders, setCliProviders] = useState<Record<CliLlmProviderId, DirectorCliInfo>>(EMPTY_CLI_PROVIDERS);
+  const [openDrawer, setOpenDrawer] = useState<'setup' | 'look' | null>(null);
+
+  const TABS: { id: DirectorMode; label: string }[] = [
+    { id: 'source', label: 'Script' },
+    { id: 'breakdown', label: 'Breakdown' },
+    { id: 'shotlist', label: 'Shotlist' },
+    { id: 'generate', label: 'Generate' },
+  ];
+
+  const selectScene = (sceneId: string) => {
+    const first = show.clips.find((row) => row.sceneId === sceneId);
+    setShow({ ...show, selectedSceneId: sceneId, selectedClipId: first?.id ?? show.selectedClipId });
+  };
+  const selectClip = (sceneId: string, clipId: string) => {
+    setShow({ ...show, selectedSceneId: sceneId, selectedClipId: clipId });
+    const target = show.clips.find((row) => row.id === clipId);
+    setSelectedBeatN(target?.beats[0]?.n ?? 1);
+  };
+  const nonAltClipCount = show.clips.filter((clip) => !clip.altOf).length;
+  const withRail = show.mode === 'shotlist' || show.mode === 'generate';
 
   const setShow = useCallback((director: DirectorShow) => {
     dispatch({ type: 'SET_DIRECTOR', director });
@@ -361,68 +378,71 @@ export function DirectorTab() {
     setShow({ ...current, jobStatus: { type: 'look-bible', message: 'Cancelled', error: true } });
   }, [setShow]);
 
-  const clip = selectedClip(show);
-
   return (
     <div className="director-tab">
       <div className="director-tab__toolbar">
-        <div className="director-tab__modes">
-          {MODES.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              className={`director-tab__mode${show.mode === mode.id ? ' director-tab__mode--active' : ''}`}
-              onClick={() => setShow({ ...show, mode: mode.id })}
-            >
-              {mode.label}
+        <div className="director-tab__stagetabs">
+          {TABS.map((tab) => (
+            <button key={tab.id} type="button"
+              className={`director-tab__stab${show.mode === tab.id ? ' director-tab__stab--active' : ''}`}
+              onClick={() => setShow({ ...show, mode: tab.id })}>
+              {tab.label}
+              {tab.id === 'source' && show.sourceText.trim() && <span className="director-tab__stab-dot" />}
+              {tab.id === 'breakdown' && show.breakdown.length > 0 && <span className="director-tab__stab-badge">{show.breakdown.length}</span>}
+              {tab.id === 'shotlist' && nonAltClipCount > 0 && <span className="director-tab__stab-badge">{nonAltClipCount}</span>}
             </button>
           ))}
         </div>
         {show.jobStatus && <span className="director-tab__status">{show.jobStatus.message}</span>}
-        <DirectorLlmPicker
-          provider={parseDirectorLlmProvider(show.llmProvider)}
-          providers={cliProviders}
-          onChange={(llmProvider) => setShow({ ...show, llmProvider })}
-        />
+        <div className="director-tab__row" style={{ marginLeft: 'auto', alignItems: 'center' }}>
+          <button type="button" className="director-tab__btn" onClick={() => setOpenDrawer((d) => d === 'setup' ? null : 'setup')}>⚙ Setup</button>
+          <button type="button" className="director-tab__btn" onClick={() => setOpenDrawer((d) => d === 'look' ? null : 'look')}>🎨 Look bible</button>
+          <DirectorLlmPicker
+            provider={parseDirectorLlmProvider(show.llmProvider)}
+            providers={cliProviders}
+            onChange={(llmProvider) => setShow({ ...show, llmProvider })}
+          />
+        </div>
       </div>
-      <div className="director-tab__layout">
-        <DirectorSourcePanel
-          show={show}
-          elements={state.elements}
-          lookBibleWriting={directorJobIsRunning(show, 'look-bible')}
-          lookBibleError={show.jobStatus?.type === 'look-bible' && show.jobStatus.error ? show.jobStatus.message : ''}
-          onChange={setShow}
-          onBreakdown={() => void runBreakdown()}
-          onApprove={approveBreakdown}
-          onCreateMissing={createMissing}
-          onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })}
-          onWriteLookBible={() => void runLookBible()}
-          onCancelLookBible={cancelLookBible}
-        />
-        <DirectorBoard
-          show={show}
-          assets={state.assets}
-          selectedBeatN={clip?.beats.some((beat) => beat.n === selectedBeatN) ? selectedBeatN : clip?.beats[0]?.n ?? 1}
-          onChange={setShow}
-          onSelectBeat={setSelectedBeatN}
-        />
-        <DirectorInspector
-          show={show}
-          preflight={preflight}
-          warnings={warnings}
-          onChange={setShow}
-          onShotlist={(sceneOnly) => void runShotlist(sceneOnly)}
-          onGenerate={(scope) => void runGenerate(scope)}
-          onRewrite={(notes) => void runRewrite(notes)}
-          onKeepRewrite={() => {
-            const current = selectedClip(show);
-            if (current) setShow(keepPendingRewrite(show, current.id));
-          }}
-          onDiscardRewrite={() => {
-            const current = selectedClip(show);
-            if (current) setShow(discardPendingRewrite(show, current.id));
-          }}
-        />
+
+      <div className={`director-tab__drawer${openDrawer === 'setup' ? ' director-tab__drawer--open' : ''}`}>
+        <DirectorSetupDrawer show={show} onChange={setShow} />
+      </div>
+      <div className={`director-tab__drawer${openDrawer === 'look' ? ' director-tab__drawer--open' : ''}`}>
+        <div className="director-tab__drawer-inner" style={{ maxWidth: 420 }}>
+          <DirectorLookBiblePanel
+            show={show}
+            writing={directorJobIsRunning(show, 'look-bible')}
+            error={show.jobStatus?.type === 'look-bible' && show.jobStatus.error ? show.jobStatus.message : ''}
+            onChange={setShow}
+            onWrite={() => void runLookBible()}
+            onCancel={cancelLookBible}
+          />
+        </div>
+      </div>
+
+      <div className={`director-tab__workbench${withRail ? '' : ' director-tab__workbench--norail'}`}>
+        {withRail && <DirectorStructureRail show={show} onSelectScene={selectScene} onSelectClip={selectClip} />}
+        {show.mode === 'source' && (
+          <DirectorScriptTab show={show} onChange={setShow} onBreakdown={() => void runBreakdown()} />
+        )}
+        {show.mode === 'breakdown' && (
+          <DirectorBreakdownTab show={show} elements={state.elements} onApprove={approveBreakdown} onCreateMissing={createMissing} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
+        )}
+        {show.mode === 'shotlist' && (
+          <DirectorShotlistTab show={show} onChange={setShow} onShotlist={(sceneOnly) => void runShotlist(sceneOnly)} onSelectClip={selectClip} />
+        )}
+        {show.mode === 'generate' && (
+          <DirectorGenerateTab
+            show={show} assets={state.assets} preflight={preflight} warnings={warnings}
+            selectedBeatN={selectedBeatN} onSelectBeat={setSelectedBeatN}
+            onChange={setShow}
+            onGenerate={(scope) => void runGenerate(scope)}
+            onRewrite={(notes) => void runRewrite(notes)}
+            onKeepRewrite={() => { const current = selectedClip(show); if (current) setShow(keepPendingRewrite(show, current.id)); }}
+            onDiscardRewrite={() => { const current = selectedClip(show); if (current) setShow(discardPendingRewrite(show, current.id)); }}
+          />
+        )}
       </div>
     </div>
   );
