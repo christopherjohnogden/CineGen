@@ -411,7 +411,9 @@
 .dse-page { position:absolute; left:0; width:620px; max-width:100%; background:#f4f1ea; border-radius:4px; box-shadow:0 8px 40px rgba(0,0,0,.5); }
 .dse-page-num { position:absolute; top:14px; right:24px; color:#8a8270; font-family:'Courier New',monospace; font-size:11px; }
 /* the flow content sits above the page cards; padding matches the old paper */
-.dse-flowcontent { position:relative; z-index:1; padding:48px 60px 56px 82px; color:#16130d; font-family:'Courier New',Courier,monospace; font-size:14.5px; line-height:1.5; }
+/* top/bottom padding = PAGE_MARGIN (44px) so the first/last page's content sits inside the card. */
+.dse-flowcontent { position:relative; z-index:1; padding:44px 60px 44px 82px; color:#16130d; font-family:'Courier New',Courier,monospace; font-size:14.5px; line-height:1.5; }
 /* inert page-gap spacer with a (CONT'D) marker */
-.dse-spacer { position:relative; height:96px; user-select:none; }
-.dse-contd { position:absolute; top:8px; right:0; color:#8a8270; font-style:italic; font-size:11px; }
+/* height + contd offset are set inline from JS constants (SPACER_H / PAGE_MARGIN) to stay in sync. */
+.dse-spacer { position:relative; user-select:none; }
+.dse-contd { position:absolute; right:0; color:#8a8270; font-style:italic; font-size:11px; }
