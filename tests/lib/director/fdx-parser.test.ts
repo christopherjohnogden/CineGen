@@ -58,4 +58,21 @@ describe('parseFdx', () => {
     expect(text).toMatch(/MAYA/);
     expect(text.split('\n').length).toBeGreaterThan(3);
   });
+
+  it('unwraps DualDialogue into sequential character/dialogue', () => {
+    const dual = `<FinalDraft><Content>
+      <Paragraph Type="Scene Heading"><Text>INT. ROOM - DAY</Text></Paragraph>
+      <DualDialogue>
+        <Paragraph Type="Character"><Text>A</Text></Paragraph>
+        <Paragraph Type="Dialogue"><Text>Hi.</Text></Paragraph>
+        <Paragraph Type="Character"><Text>B</Text></Paragraph>
+        <Paragraph Type="Dialogue"><Text>Hey.</Text></Paragraph>
+      </DualDialogue>
+    </Content></FinalDraft>`;
+    const doc = parseFdx(dual)!;
+    expect(doc.elements.map((e) => `${e.type}:${e.text}`)).toEqual([
+      'scene:INT. ROOM - DAY',
+      'character:A', 'dialogue:Hi.', 'character:B', 'dialogue:Hey.',
+    ]);
+  });
 });

@@ -33,7 +33,10 @@ function paragraphText(inner: string): string {
 
 export function parseFdx(raw: string): Screenplay | null {
   try {
-    const paras = raw.match(/<Paragraph\b[^>]*>[\s\S]*?<\/Paragraph>/gi);
+    // Dual dialogue wraps nested <Paragraph>s; unwrap it so the inner paragraphs parse
+    // as sequential character/dialogue (per spec: dual dialogue collapses to sequential).
+    const unwrapped = raw.replace(/<\/?DualDialogue\b[^>]*>/gi, '');
+    const paras = unwrapped.match(/<Paragraph\b[^>]*>[\s\S]*?<\/Paragraph>/gi);
     if (!paras || paras.length === 0) return null;
     const elements: ScreenplayElement[] = [];
     for (const p of paras) {
