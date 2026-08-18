@@ -16,6 +16,10 @@ export interface DirectorBreakdownItem {
   description: string;
   blurb?: string;
   elementId?: string;
+  /** Locations only. Time of day parsed from / recorded on the scene heading. */
+  timeOfDay?: string;
+  /** Locations only. INT / EXT. */
+  intExt?: string;
   /** Characters only. One flowing paragraph of observable behaviour, adapted per clip. */
   actingProfile?: string;
   /** Characters only. Locked vocal identity, pasted verbatim wherever they speak. */

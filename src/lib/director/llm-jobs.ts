@@ -59,6 +59,8 @@ Return ONLY JSON with this shape:
     }
   ]
 }
+For every location, record the time of day and INT/EXT from its scene heading in the description (e.g. "INT, DAY").
+Extract set dressing and furniture as props — sofas, armchairs, tables, shelves, lamps, curtains, rugs — not only objects a character handles. A furnished room implies its furniture as props.
 Write actingProfile and voice for characters only; omit both on locations, props and vehicles.
 Match existing element names when they are provided. Use @Tags in Pascal-case-with-hyphens.
 Do not write shotlists or prompts.`;
