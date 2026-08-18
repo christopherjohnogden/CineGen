@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import type { Screenplay, ScreenplayElement, ScreenplayElementType } from '@/lib/director/screenplay';
 import { nextElementType, typeAfterEnter } from '@/lib/director/screenplay';
 import { generateId } from '@/lib/utils/ids';
@@ -57,8 +57,10 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
   const { breakBeforeIds } = paginate(measured, PAGE_CONTENT_H);
   const breakSet = new Set(breakBeforeIds);
 
-  // lay out the cream page cards behind the flow from the spacer offsets
-  const [, force] = useState(0);
+  // lay out the cream page cards behind the flow from the spacer offsets.
+  // Only re-runs when pagination actually changes (break points or element count),
+  // not on every keystroke — the backdrop is display-only.
+  const breakSignature = breakBeforeIds.join('|');
   useLayoutEffect(() => {
     const flow = flowRef.current, pages = pagesRef.current;
     if (!flow || !pages) return;
@@ -76,8 +78,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
       pages.appendChild(pg);
       top = b + GAP;
     });
-  }); // runs every render after DOM settles; cheap (reads offsets, writes backdrop)
-  void force;
+  }, [breakSignature, doc.elements.length]);
 
   return (
     <div className="dse-paperwrap">
