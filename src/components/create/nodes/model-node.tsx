@@ -37,6 +37,22 @@ interface PortEntry {
   required: boolean;
 }
 
+function modelOutputBadge(outputType: string): string {
+  if (outputType === 'video') return 'VID';
+  if (outputType === 'audio') return 'AUD';
+  if (outputType === 'text') return 'TXT';
+  if (outputType === 'model3d') return '3D';
+  return 'IMG';
+}
+
+function modelOutputLabel(outputType: string): string {
+  if (outputType === 'video') return 'Video';
+  if (outputType === 'audio') return 'Audio';
+  if (outputType === 'text') return 'Text';
+  if (outputType === 'model3d') return '3D Model';
+  return 'Result';
+}
+
 function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
   const { updateNodeData, getEdges, getNode } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
@@ -48,6 +64,17 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
   const status = data.result?.status ?? 'idle';
   const url = data.result?.url;
   const accentColor = CATEGORY_COLORS[modelDef.category];
+  const outputPorts = modelDef.outputs?.length
+    ? modelDef.outputs.map((output) => ({
+        handleId: output.id,
+        portType: output.portType,
+        label: output.label,
+      }))
+    : [{
+        handleId: modelDef.outputType,
+        portType: modelDef.outputType,
+        label: modelOutputLabel(modelDef.outputType),
+      }];
 
   const elementField = modelDef.inputs.find((f) => f.fieldType === 'element-list');
   const elementCount = elementField ? (data.config._elementCount as number ?? 0) : 0;
@@ -85,6 +112,7 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
 
   const isAudio = modelDef.outputType === 'audio';
   const isText = modelDef.outputType === 'text';
+  const isModel3d = modelDef.outputType === 'model3d';
   const isRunning = status === 'running';
   const reportedProgress = typeof data.result?.progress === 'number' ? data.result.progress : undefined;
   const [progress, setProgress] = useState(0);
@@ -226,7 +254,7 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
   );
 
   const handleAddToTimeline = useCallback(() => {
-    if (!activeUrl) return;
+    if (!activeUrl || modelDef.outputType === 'model3d') return;
     const isVideo = modelDef.outputType === 'video';
     const isAudioOutput = modelDef.outputType === 'audio';
     const fallbackDuration = isVideo ? (Number(data.config.duration) || 5) : 5;
@@ -348,10 +376,10 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
       <div className="cinegen-node__content">
         <div className="model-node__header">
           <span className="model-node__category-badge" style={{ background: accentColor }}>
-            {modelDef.outputType === 'video' ? 'VID' : modelDef.outputType === 'audio' ? 'AUD' : modelDef.outputType === 'text' ? 'TXT' : 'IMG'}
+            {modelOutputBadge(modelDef.outputType)}
           </span>
           <span className="model-node__name">{modelDef.name}</span>
-          {activeUrl && (
+          {activeUrl && !isModel3d && (
             <button
               type="button"
               className="model-node__add-timeline-btn nodrag"
@@ -509,6 +537,46 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3">
                   <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
                 </svg>
+              </div>
+            )
+          ) : isModel3d ? (
+            /* ── Download-only 3D asset layout ── */
+            activeUrl ? (
+              <div className="model-node__asset-card nodrag nowheel">
+                <div className="model-node__asset-icon" aria-hidden="true">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2 21 7 12 12 3 7 12 2Z" />
+                    <path d="m3 7 9 5 9-5" />
+                    <path d="M3 7v10l9 5 9-5V7" />
+                    <path d="M12 12v10" />
+                  </svg>
+                </div>
+                <div className="model-node__asset-copy">
+                  <span className="model-node__asset-title">3D asset ready</span>
+                  <span className="model-node__asset-description">Open or download the generated model file.</span>
+                </div>
+                <a
+                  className="model-node__asset-download"
+                  href={activeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  Download
+                </a>
+              </div>
+            ) : (
+              <div className="model-node__asset-card model-node__asset-card--empty">
+                <div className="model-node__asset-icon" aria-hidden="true">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2 21 7 12 12 3 7 12 2Z" />
+                    <path d="m3 7 9 5 9-5" />
+                    <path d="M3 7v10l9 5 9-5V7" />
+                    <path d="M12 12v10" />
+                  </svg>
+                </div>
+                <span className="model-node__asset-description">3D output will appear here.</span>
               </div>
             )
           ) : (
@@ -708,19 +776,22 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
         />
       ))}
 
-      <Handle
-        type="source"
-        position={Position.Right}
-        id={modelDef.outputType}
-        style={{
-          background: PORT_COLORS[modelDef.outputType],
-          width: 12,
-          height: 12,
-          borderRadius: '50%',
-          border: '2px solid var(--bg-raised)',
-          top: HEADER_HEIGHT + PORT_SPACING / 2,
-        }}
-      />
+      {outputPorts.map((port, i) => (
+        <Handle
+          key={`out-${port.handleId}`}
+          type="source"
+          position={Position.Right}
+          id={port.handleId}
+          style={{
+            background: PORT_COLORS[port.portType],
+            width: 12,
+            height: 12,
+            borderRadius: '50%',
+            border: '2px solid var(--bg-raised)',
+            top: HEADER_HEIGHT + PORT_SPACING * i + PORT_SPACING / 2,
+          }}
+        />
+      ))}
 
       {portInputs.map((port, i) => (
         <span
@@ -732,14 +803,17 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
         </span>
       ))}
 
-      <span
-        className="model-node__port-label model-node__port-label--right"
-        style={{ top: HEADER_HEIGHT + PORT_SPACING / 2 }}
-      >
-        {modelDef.outputType === 'video' ? 'Video' : modelDef.outputType === 'audio' ? 'Audio' : modelDef.outputType === 'text' ? 'Text' : 'Result'}
-      </span>
+      {outputPorts.map((port, i) => (
+        <span
+          key={`label-out-${port.handleId}`}
+          className="model-node__port-label model-node__port-label--right"
+          style={{ top: HEADER_HEIGHT + PORT_SPACING * i + PORT_SPACING / 2 }}
+        >
+          {port.label}
+        </span>
+      ))}
 
-      {fullscreen && activeUrl && (
+      {fullscreen && activeUrl && !isModel3d && (
         <FullscreenModal
           url={activeUrl}
           type={modelDef.outputType as 'image' | 'video' | 'audio'}

@@ -25,6 +25,8 @@ interface ClipCardProps {
   onRemove?: (clipId: string) => void;
   onMove?: (clipId: string, newStartTime: number, trackId?: string) => void;
   onMoveStart?: (clipId: string, startX: number, initStartTime: number, duplicate: boolean) => void;
+  onDuplicate?: (clipId: string, newStartTime: number) => void;
+  onDuplicateDrag?: (clipId: string, ghostLeft: number | null) => void;
   onTrimPreview?: (clipId: string, sourceTime: number) => void;
   onTrimPreviewEnd?: () => void;
   onMoveSnap?: (snapX: number | null) => void;
@@ -71,6 +73,8 @@ export const ClipCard = memo(function ClipCard({
   onRemove,
   onMove,
   onMoveStart,
+  onDuplicate,
+  onDuplicateDrag,
   onTrimPreview,
   onTrimPreviewEnd,
   onMoveSnap,
@@ -92,6 +96,7 @@ export const ClipCard = memo(function ClipCard({
 }: ClipCardProps) {
   const actionRef = useRef<
     | { kind: 'trim'; side: 'left' | 'right'; startX: number; initTrimStart: number; initTrimEnd: number; initStartTime: number }
+    | { kind: 'move'; startX: number; initStartTime: number; latestStartTime: number; duplicate: boolean; moved: boolean }
     | null
   >(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -226,7 +231,22 @@ export const ClipCard = memo(function ClipCard({
       e.preventDefault();
 
       // Move/duplicate is handled at the TimelineEditor level for smooth drag behavior.
-      onMoveStart?.(clip.id, e.clientX, clip.startTime, e.altKey);
+      if (onMoveStart) {
+        onMoveStart(clip.id, e.clientX, clip.startTime, e.altKey);
+        return;
+      }
+
+      // Simpler timeline surfaces can use the local fallback without owning a
+      // document-level drag coordinator.
+      e.currentTarget.setPointerCapture(e.pointerId);
+      actionRef.current = {
+        kind: 'move',
+        startX: e.clientX,
+        initStartTime: clip.startTime,
+        latestStartTime: clip.startTime,
+        duplicate: e.altKey,
+        moved: false,
+      };
     },
     [clip, onSelect, onMove, onMoveStart, activeTool, onAdvancedMouseDown],
   );
@@ -275,9 +295,22 @@ export const ClipCard = memo(function ClipCard({
           onTrim?.(clip.id, clip.trimStart, newTrimEnd);
           onTrimPreview?.(clip.id, clip.duration - newTrimEnd);
         }
+      } else {
+        if (Math.abs(dx) < 2 && !action.moved) return;
+        const raw = Math.max(0, action.initStartTime + dt);
+        const snapped = snapMoveTime?.(raw, clip.id);
+        const newStartTime = snapped?.time ?? snapTime(raw);
+        action.latestStartTime = newStartTime;
+        action.moved = true;
+        onMoveSnap?.(snapped?.snapped ? newStartTime * pixelsPerSecond : null);
+        if (action.duplicate) {
+          onDuplicateDrag?.(clip.id, newStartTime * pixelsPerSecond);
+        } else {
+          onMove?.(clip.id, newStartTime);
+        }
       }
     },
-    [clip.id, clip.duration, clip.trimStart, clip.trimEnd, pixelsPerSecond, snapTime, snapMoveTime, onTrim, onTrimPreview, onMoveSnap],
+    [clip.id, clip.duration, clip.trimStart, clip.trimEnd, pixelsPerSecond, snapTime, snapMoveTime, onTrim, onTrimPreview, onMoveSnap, onMove, onDuplicateDrag],
   );
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -285,9 +318,18 @@ export const ClipCard = memo(function ClipCard({
     if (action?.kind === 'trim') {
       onTrimPreviewEnd?.();
       onMoveSnap?.(null);
+    } else if (action?.kind === 'move') {
+      if (action.duplicate) {
+        if (action.moved) onDuplicate?.(clip.id, action.latestStartTime);
+        onDuplicateDrag?.(clip.id, null);
+      }
+      onMoveSnap?.(null);
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
     }
     actionRef.current = null;
-  }, [onMoveSnap, onTrimPreviewEnd]);
+  }, [clip.id, onDuplicate, onDuplicateDrag, onMoveSnap, onTrimPreviewEnd]);
 
   const volumeFromClientY = useCallback((clientY: number) => {
     const cardEl = cardRef.current;
@@ -354,6 +396,7 @@ export const ClipCard = memo(function ClipCard({
       onPointerDown={handleMoveDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onDoubleClick={() => onDoubleClick?.(clip.id)}
       onContextMenu={(e) => {
         e.preventDefault();

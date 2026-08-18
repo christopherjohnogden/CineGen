@@ -3,7 +3,13 @@ import { fal } from '@fal-ai/client';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { generateHiggsfield, type HiggsfieldMediaType, type HiggsfieldMedia } from './higgsfield.js';
+import {
+  generateHiggsfield,
+  type HiggsfieldGenerateParams,
+  type HiggsfieldMedia,
+  type HiggsfieldOutputKind,
+  type HiggsfieldResult,
+} from './higgsfield.js';
 
 // --- kie.ai client (moved from lib/kie/client.ts) ---
 
@@ -98,37 +104,201 @@ async function generateWithKie(
 
 // --- Higgsfield client wrapper ---
 
+const HIGGSFIELD_MEDIA_ROLES = new Set<HiggsfieldMedia['role']>([
+  'image', 'start_image', 'end_image', 'video', 'audio',
+]);
+
+const HIGGSFIELD_MEDIA_PARAM_ROLES: Record<string, HiggsfieldMedia['role'] | 'legacy-image'> = {
+  // Exact CLI role keys and their common URL aliases.
+  image: 'image',
+  start_image: 'start_image',
+  start_image_url: 'start_image',
+  end_image: 'end_image',
+  end_image_url: 'end_image',
+  video: 'video',
+  video_url: 'video',
+  audio: 'audio',
+  audio_url: 'audio',
+
+  // Model-schema media params returned by `higgsfield model get`.
+  input_images: 'image',
+  input_image: 'image',
+  input_video: 'video',
+  input_audio: 'audio',
+  sketch: 'image',
+  ref_image: 'image',
+  urls: 'video',
+
+  // Legacy CineGen fields. Video nodes historically treat these as first-frame inputs.
+  image_url: 'legacy-image',
+  imageUrl: 'legacy-image',
+  image_urls: 'legacy-image',
+};
+
+function localMediaPath(value: string): string {
+  if (!value.startsWith('local-media://file')) return value;
+  try {
+    return decodeURIComponent(value.slice('local-media://file'.length));
+  } catch {
+    return value.slice('local-media://file'.length);
+  }
+}
+
+function mediaRoleFromValue(
+  value: Record<string, unknown>,
+  fallback: HiggsfieldMedia['role'],
+): { role: HiggsfieldMedia['role']; explicit: boolean } {
+  const explicitRole = value.role ?? value.media_role ?? value.mediaRole;
+  if (typeof explicitRole === 'string' && HIGGSFIELD_MEDIA_ROLES.has(explicitRole as HiggsfieldMedia['role'])) {
+    return { role: explicitRole as HiggsfieldMedia['role'], explicit: true };
+  }
+  const kind = String(value.type ?? value.kind ?? value.media_type ?? value.mediaType ?? value.mime_type ?? '').toLowerCase();
+  if (kind === 'start_image' || kind === 'start-image') return { role: 'start_image', explicit: true };
+  if (kind === 'end_image' || kind === 'end-image') return { role: 'end_image', explicit: true };
+  if (kind.includes('audio')) return { role: 'audio', explicit: true };
+  if (kind.includes('video')) return { role: 'video', explicit: true };
+  if (kind.includes('image')) return { role: 'image', explicit: true };
+  return { role: fallback, explicit: false };
+}
+
+function inferMediaRoleFromReference(
+  value: string,
+  fallback: HiggsfieldMedia['role'],
+): HiggsfieldMedia['role'] {
+  const normalized = value.split(/[?#]/, 1)[0].toLowerCase();
+  if (normalized.startsWith('data:audio/') || /\.(?:aac|aif|aiff|flac|m4a|mp3|oga|ogg|opus|wav|wma)$/.test(normalized)) {
+    return 'audio';
+  }
+  if (normalized.startsWith('data:video/') || /\.(?:avi|flv|m4v|mkv|mov|mp4|mpeg|mpg|webm|wmv)$/.test(normalized)) {
+    return 'video';
+  }
+  return fallback;
+}
+
+function fallbackMediaRoleForOutput(outputKind: HiggsfieldOutputKind): HiggsfieldMedia['role'] {
+  if (outputKind === 'video') return 'start_image';
+  if (outputKind === 'text') return 'video';
+  if (outputKind === 'audio') return 'audio';
+  return 'image';
+}
+
+function mediaReferencesFromValue(
+  value: unknown,
+  fallbackRole: HiggsfieldMedia['role'],
+  inferRoleFromExtension = false,
+): HiggsfieldMedia[] {
+  if (typeof value === 'string') {
+    const normalized = localMediaPath(value).trim();
+    const role = inferRoleFromExtension
+      ? inferMediaRoleFromReference(normalized, fallbackRole)
+      : fallbackRole;
+    return normalized ? [{ value: normalized, role }] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => mediaReferencesFromValue(entry, fallbackRole, inferRoleFromExtension));
+  }
+  if (!value || typeof value !== 'object') return [];
+
+  const record = value as Record<string, unknown>;
+  const roleDescriptor = mediaRoleFromValue(record, fallbackRole);
+  if (Array.isArray(record.allUrls)) {
+    return record.allUrls.flatMap((entry) => mediaReferencesFromValue(
+      entry,
+      roleDescriptor.role,
+      inferRoleFromExtension && !roleDescriptor.explicit,
+    ));
+  }
+
+  const candidate = record.value
+    ?? record.url
+    ?? record.fileRef
+    ?? record.path
+    ?? record.id
+    ?? record.uuid
+    ?? record.media_id
+    ?? record.mediaId
+    ?? record.frontalImageUrl;
+  return mediaReferencesFromValue(
+    candidate,
+    roleDescriptor.role,
+    inferRoleFromExtension && !roleDescriptor.explicit,
+  );
+}
+
+/**
+ * Split schema-driven workflow inputs into CLI media flags and ordinary `--name value` params.
+ * Kept pure/exported so the complete provider contract is covered without spawning the CLI.
+ */
+export function buildHiggsfieldWorkflowRequest(
+  model: string,
+  input: Record<string, unknown>,
+  outputKind: HiggsfieldOutputKind,
+): HiggsfieldGenerateParams {
+  const medias: HiggsfieldMedia[] = [];
+  const genericParams: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined || value === null) continue;
+
+    if (key === 'medias' || key === 'higgsfield_media_inputs') {
+      medias.push(...mediaReferencesFromValue(
+        value,
+        fallbackMediaRoleForOutput(outputKind),
+        true,
+      ));
+      continue;
+    }
+
+    const mappedRole = HIGGSFIELD_MEDIA_PARAM_ROLES[key];
+    if (mappedRole) {
+      const role = mappedRole === 'legacy-image'
+        ? (outputKind === 'video' ? 'start_image' : 'image')
+        : mappedRole;
+      medias.push(...mediaReferencesFromValue(value, role));
+      continue;
+    }
+
+    // Every non-null schema parameter is forwarded verbatim. The CLI transport owns JSON
+    // serialization for arrays/objects and preserves false/zero scalar values.
+    genericParams[key] = value;
+  }
+
+  return {
+    model,
+    mediaType: outputKind,
+    ...(medias.length > 0 ? { medias } : {}),
+    ...(Object.keys(genericParams).length > 0 ? { params: genericParams } : {}),
+  };
+}
+
+export function normalizeHiggsfieldWorkflowResult(
+  result: HiggsfieldResult,
+): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  if (result.url) output.url = result.url;
+  if (result.urls) output.urls = result.urls;
+  if (result.text) output.text = result.text;
+  if (result.durationSec !== undefined) output.duration = result.durationSec;
+
+  return {
+    output,
+    ...(result.url ? { url: result.url } : {}),
+    ...(result.urls ? { urls: result.urls } : {}),
+    ...(result.text ? { text: result.text } : {}),
+    ...(result.jobId ? { jobId: result.jobId } : {}),
+    model: result.model,
+    mediaType: result.mediaType,
+    outputKind: result.outputKind,
+  };
+}
+
 async function generateWithHiggsfield(
   model: string,
   input: Record<string, unknown>,
-  outputType: HiggsfieldMediaType,
+  outputKind: HiggsfieldOutputKind,
 ): Promise<Record<string, unknown>> {
-  const prompt = typeof input.prompt === 'string' ? input.prompt : '';
-
-  // Map common workflow input keys to Higgsfield medias[{ value, role }]. Video models take frame
-  // roles (start_image/end_image); image models take a generic image role. The CLI auto-uploads
-  // local file paths, so values may be local paths, upload UUIDs, prior job ids, or https URLs.
-  const medias: HiggsfieldMedia[] = [];
-  const pushMedia = (value: unknown, role: HiggsfieldMedia['role']) => {
-    if (typeof value === 'string' && value.length > 0) medias.push({ value, role });
-  };
-  pushMedia(input.start_image_url ?? input.image_url ?? input.imageUrl, outputType === 'video' ? 'start_image' : 'image');
-  pushMedia(input.end_image_url, 'end_image');
-  if (Array.isArray(input.image_urls)) {
-    for (const v of input.image_urls as unknown[]) pushMedia(v, outputType === 'video' ? 'start_image' : 'image');
-  }
-
-  const result = await generateHiggsfield({
-    model,
-    prompt,
-    mediaType: outputType,
-    medias: medias.length > 0 ? medias : undefined,
-    aspectRatio: typeof input.aspect_ratio === 'string' ? input.aspect_ratio : undefined,
-    durationSec: typeof input.duration === 'number' ? input.duration : undefined,
-  });
-
-  // Normalize to the { output: { url } } shape downstream code already reads.
-  return { output: { url: result.url, duration: result.durationSec }, url: result.url };
+  const result = await generateHiggsfield(buildHiggsfieldWorkflowRequest(model, input, outputKind));
+  return normalizeHiggsfieldWorkflowResult(result);
 }
 
 // --- RunPod client ---
@@ -361,13 +531,13 @@ export function registerWorkflowHandlers(): void {
     nodeId: string;
     nodeType: string;
     modelId: string;
+    outputType?: HiggsfieldOutputKind;
     inputs: Record<string, unknown>;
   }) => {
-    const { apiKey, kieKey, runpodKey, runpodEndpointId, podUrl, nodeId, nodeType, modelId, inputs: rawInputs } = params;
-
-    // Upload any local-media:// URLs to fal storage before sending to cloud APIs
-    if (apiKey) configureFal(apiKey);
-    const inputs = await resolveLocalMediaUrls(rawInputs);
+    const {
+      apiKey, kieKey, runpodKey, runpodEndpointId, podUrl,
+      nodeId, nodeType, modelId, outputType: requestedOutputType, inputs: rawInputs,
+    } = params;
 
     // Dynamically import models registry
     const { ALL_MODELS, resolveVideoModelEndpoint, sanitizeVideoInputsForEndpoint } = await import('../../src/lib/fal/models.js');
@@ -383,11 +553,22 @@ export function registerWorkflowHandlers(): void {
       if (modelId.startsWith('fal-ai/')) {
         const key = apiKey;
         if (!key) throw new Error('No fal.ai API key provided. Add one in Settings.');
+        configureFal(key);
+        const inputs = await resolveLocalMediaUrls(rawInputs);
         const result = await generateWithFal(modelId, inputs, key);
         const data = (result as Record<string, unknown>).data ?? result;
         return data;
       }
       throw new Error(`Unknown model: ${modelId}`);
+    }
+
+    const provider = (modelDef as { provider?: string }).provider;
+    let inputs = rawInputs;
+    if (provider !== 'higgsfield') {
+      // Non-Higgsfield cloud providers require HTTPS inputs. Higgsfield instead receives local
+      // paths directly through its CLI media flags, where the CLI performs its own upload.
+      if (apiKey) configureFal(apiKey);
+      inputs = await resolveLocalMediaUrls(rawInputs);
     }
 
     // Use the passed modelId (which may be altId for edit endpoints) if it looks like an API path,
@@ -405,8 +586,6 @@ export function registerWorkflowHandlers(): void {
 
     let result: unknown;
 
-    const provider = (modelDef as { provider?: string }).provider;
-
     if (provider === 'kie') {
       const key = kieKey;
       if (!key) throw new Error('No kie.ai API key provided. Add one in Settings.');
@@ -423,8 +602,18 @@ export function registerWorkflowHandlers(): void {
     } else if (provider === 'higgsfield') {
       // The higgsfield CLI owns auth (device login); no token is threaded here. A "session expired"
       // CLI error surfaces as a connect-Higgsfield message from runHiggsfieldCli.
-      const outputType = (modelDef as { outputType?: string }).outputType === 'video' ? 'video' : 'image';
-      result = await generateWithHiggsfield(apiModelId, inputs, outputType);
+      const registryOutputType = (modelDef as { outputType?: string }).outputType;
+      const outputKind: HiggsfieldOutputKind = requestedOutputType
+        ?? (registryOutputType === 'video'
+          ? 'video'
+          : registryOutputType === 'audio'
+            ? 'audio'
+            : registryOutputType === 'text'
+              ? 'text'
+              : registryOutputType === '3d' || registryOutputType === 'model3d' || registryOutputType === 'model'
+                ? '3d'
+                : 'image');
+      result = await generateWithHiggsfield(apiModelId, inputs, outputKind);
     } else {
       const key = apiKey;
       if (!key) throw new Error('No fal.ai API key provided. Add one in Settings.');

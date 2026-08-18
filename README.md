@@ -212,6 +212,28 @@ The packaged output goes to the `release/` directory.
 | `npm test` | Run tests |
 | `npm run test:watch` | Run tests in watch mode |
 
+### Web development
+
+The near-parity browser build reuses the editor, timeline, workflow, and project UI in `src/`, so shared UI changes flow to both Electron and web. Its server and data directory are separate from the desktop app.
+
+```bash
+npm --prefix web install
+npm --prefix web run dev
+```
+
+Open `http://localhost:5174`. See the [CineGen Web guide](web/README.md) for production commands, tests, environment variables, capability fallbacks, data isolation, and deployment security notes. The desktop commands above are unchanged.
+
+### Hosted Codex Site
+
+The `site/` package wraps the same shared CineGen editor for Codex Sites. It uses hosted project and media storage while leaving Electron and the localhost server untouched.
+
+```bash
+npm --prefix site install
+npm --prefix site run dev
+```
+
+See the [CineGen Cloud Site guide](site/README.md) for its storage model, commands, and the desktop-only capabilities that need a separate compute service.
+
 ---
 
 ## API Keys

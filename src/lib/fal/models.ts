@@ -1,5 +1,6 @@
 import type { ModelDefinition } from '@/types/workflow';
 import { KIE_MODEL_REGISTRY } from '@/lib/kie/models';
+import { HIGGSFIELD_MODEL_REGISTRY } from '@/lib/higgsfield/model-catalog';
 import {
   KLING_V3_QUALITY_OPTS,
   LTX23_QUALITY_OPTS,
@@ -1121,82 +1122,6 @@ export const POD_MODEL_REGISTRY: Record<string, ModelDefinition> = {
       { id: 'temperature', portType: 'number', label: 'Temperature', required: false, falParam: 'temperature', fieldType: 'range', default: 1, min: 0, max: 2, step: 0.1 },
       { id: 'max_tokens', portType: 'number', label: 'Max Tokens', required: false, falParam: 'max_tokens', fieldType: 'number', default: 1024, min: 1, max: 128000, step: 1 },
       { id: 'reasoning', portType: 'number', label: 'Reasoning', required: false, falParam: 'reasoning', fieldType: 'toggle', default: false },
-    ],
-  },
-};
-
-// Aspect-ratio options shared by Higgsfield models.
-const HIGGSFIELD_ASPECT_OPTS = [
-  { value: '1:1', label: '1:1' }, { value: '16:9', label: '16:9' }, { value: '9:16', label: '9:16' },
-  { value: '4:3', label: '4:3' }, { value: '3:4', label: '3:4' },
-];
-
-/**
- * Higgsfield model nodes. Routed through the higgsfield CLI (provider: 'higgsfield'); ids are the
- * real CLI job_set_type values. The client normalizes output to { output: { url } }, so
- * responseMapping.path is 'output.url'. Reference media flows via image_url / start_image_url /
- * end_image_url, which the CLI wrapper maps to medias[{ value, role }] and auto-uploads.
- */
-export const HIGGSFIELD_MODEL_REGISTRY: Record<string, ModelDefinition> = {
-  'hf-soul-v2': {
-    id: 'text2image_soul_v2', nodeType: 'hf-soul-v2', name: 'Higgsfield Soul V2',
-    category: 'image', description: 'Portraits / fashion / UGC / character stills', outputType: 'image',
-    provider: 'higgsfield', responseMapping: { path: 'output.url' },
-    inputs: [
-      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-      { id: 'image_url', portType: 'image', label: 'Reference', required: false, falParam: 'image_url', fieldType: 'port' },
-      { id: 'aspect_ratio', portType: 'text', label: 'Aspect', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '1:1', options: HIGGSFIELD_ASPECT_OPTS },
-    ],
-  },
-  'hf-nano-banana-pro': {
-    id: 'nano_banana_2', nodeType: 'hf-nano-banana-pro', name: 'Nano Banana Pro (Higgsfield)',
-    category: 'image', description: 'Top-quality 4K image, text & diagrams', outputType: 'image',
-    provider: 'higgsfield', responseMapping: { path: 'output.url' },
-    inputs: [
-      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-      { id: 'image_url', portType: 'image', label: 'Reference', required: false, falParam: 'image_url', fieldType: 'port' },
-      { id: 'aspect_ratio', portType: 'text', label: 'Aspect', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '1:1', options: HIGGSFIELD_ASPECT_OPTS },
-    ],
-  },
-  'hf-gpt-image-2': {
-    id: 'gpt_image_2', nodeType: 'hf-gpt-image-2', name: 'GPT Image 2 (Higgsfield)',
-    category: 'image', description: 'General / design image generation', outputType: 'image',
-    provider: 'higgsfield', responseMapping: { path: 'output.url' },
-    inputs: [
-      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-      { id: 'image_url', portType: 'image', label: 'Reference', required: false, falParam: 'image_url', fieldType: 'port' },
-      { id: 'aspect_ratio', portType: 'text', label: 'Aspect', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '1:1', options: HIGGSFIELD_ASPECT_OPTS },
-    ],
-  },
-  'hf-seedance-2': {
-    id: 'seedance_2_0', nodeType: 'hf-seedance-2', name: 'Seedance 2.0 (Higgsfield)',
-    category: 'video', description: 'Reference-driven, multi-shot, motion-heavy video', outputType: 'video',
-    provider: 'higgsfield', responseMapping: { path: 'output.url' },
-    inputs: [
-      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-      { id: 'start_image_url', portType: 'image', label: 'First Frame', required: false, falParam: 'start_image_url', fieldType: 'port' },
-      { id: 'end_image_url', portType: 'image', label: 'Last Frame', required: false, falParam: 'end_image_url', fieldType: 'port' },
-      { id: 'aspect_ratio', portType: 'text', label: 'Aspect', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: HIGGSFIELD_ASPECT_OPTS },
-    ],
-  },
-  'hf-kling-3': {
-    id: 'kling3_0', nodeType: 'hf-kling-3', name: 'Kling v3.0 (Higgsfield)',
-    category: 'video', description: 'Multi-shot video with audio & motion transfer', outputType: 'video',
-    provider: 'higgsfield', responseMapping: { path: 'output.url' },
-    inputs: [
-      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-      { id: 'start_image_url', portType: 'image', label: 'First Frame', required: false, falParam: 'start_image_url', fieldType: 'port' },
-      { id: 'aspect_ratio', portType: 'text', label: 'Aspect', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: HIGGSFIELD_ASPECT_OPTS },
-    ],
-  },
-  'hf-veo-3-1': {
-    id: 'veo3_1', nodeType: 'hf-veo-3-1', name: 'Veo 3.1 (Higgsfield)',
-    category: 'video', description: 'Google Veo 3.1 video', outputType: 'video',
-    provider: 'higgsfield', responseMapping: { path: 'output.url' },
-    inputs: [
-      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-      { id: 'start_image_url', portType: 'image', label: 'First Frame', required: false, falParam: 'start_image_url', fieldType: 'port' },
-      { id: 'aspect_ratio', portType: 'text', label: 'Aspect', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: HIGGSFIELD_ASPECT_OPTS },
     ],
   },
 };

@@ -1630,7 +1630,7 @@ input[type='range']::-moz-range-track {
 .np {
   position: fixed;
   z-index: 100;
-  width: 300px;
+  width: min(340px, calc(100vw - 24px));
   background: #111418;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
@@ -1718,6 +1718,7 @@ input[type='range']::-moz-range-track {
   transition: color 0.12s, border-color 0.12s;
   text-align: center;
   margin-bottom: -1px;
+  white-space: nowrap;
 }
 .np__tab:hover { color: var(--text-secondary); background: none; }
 .np__tab--active {
@@ -1821,8 +1822,12 @@ input[type='range']::-moz-range-track {
   color: #fb923c;
   background: rgba(251, 146, 60, 0.1);
 }
+.np__provider--higgsfield {
+  color: #f08bdc;
+  background: rgba(240, 139, 220, 0.1);
+}
 
-/* Type badge VID / IMG / AUD */
+/* Type badge VID / IMG / AUD / TXT / 3D */
 .np__badge {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -1835,6 +1840,8 @@ input[type='range']::-moz-range-track {
 .np__badge--image  { color: #7ec8a0; background: rgba(126, 200, 160, 0.12); }
 .np__badge--image-edit { color: #a07ec8; background: rgba(160, 126, 200, 0.12); }
 .np__badge--audio  { color: #7eaec8; background: rgba(126, 174, 200, 0.12); }
+.np__badge--text   { color: #b8b2a8; background: rgba(184, 178, 168, 0.12); }
+.np__badge--model3d { color: #cf7d60; background: rgba(207, 125, 96, 0.12); }
 
 .np__empty {
   padding: 24px 14px;
@@ -7763,6 +7770,76 @@ input[type='range']::-moz-range-track {
   border-radius: 4px;
 }
 
+.model-node__asset-card {
+  min-height: 112px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(145deg, rgba(207, 125, 96, 0.12), transparent 58%),
+    var(--bg-void);
+  padding: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.model-node__asset-card--empty {
+  color: var(--text-tertiary);
+}
+
+.model-node__asset-icon {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(207, 125, 96, 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(207, 125, 96, 0.1);
+  color: var(--port-model);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.model-node__asset-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.model-node__asset-title {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-node__asset-description {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.model-node__asset-download {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  border: 1px solid rgba(207, 125, 96, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(207, 125, 96, 0.12);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.model-node__asset-download:hover {
+  border-color: var(--port-model);
+  background: rgba(207, 125, 96, 0.2);
+}
+
 /* ── Audio Player (compact music node) ── */
 .audio-player {
   border-radius: var(--radius-sm);
@@ -9086,11 +9163,27 @@ input[type='range']::-moz-range-track {
 .inspector__field--toggle {
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .inspector__field-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.inspector__required {
+  margin-left: 2px;
+  color: var(--error);
+}
+
+.inspector__field-description {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.inspector__field--toggle .inspector__field-description {
+  flex-basis: 100%;
 }
 
 .inspector__select {
@@ -9139,6 +9232,25 @@ input[type='range']::-moz-range-track {
   outline: none;
 }
 
+.inspector__textarea--json {
+  min-height: 116px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.inspector__textarea--error,
+.inspector__textarea--error:focus {
+  border-color: var(--error);
+}
+
+.inspector__json-error {
+  color: var(--error);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .inspector__range-row {
   display: flex;
   align-items: center;
@@ -9185,6 +9297,11 @@ input[type='range']::-moz-range-track {
 .inspector__number-input:focus {
   border-color: var(--accent);
   outline: none;
+}
+
+.inspector__number-input--full {
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .inspector__seed-row {

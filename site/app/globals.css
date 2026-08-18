@@ -1,0 +1,16 @@
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  background: #08090c;
+}
+
+.cinegen-site-loading {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  color: #d4a054;
+  font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}

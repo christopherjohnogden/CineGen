@@ -1,0 +1,6172 @@
+{
+  "schemaVersion": 1,
+  "cli": {
+    "version": "0.1.28",
+    "commit": "e7a475eb57e8824321309a9f5add6a88181b3079",
+    "builtAt": "2026-05-04T23:07:49Z"
+  },
+  "models": [
+    {
+      "display_name": "3D Rigging",
+      "job_set_type": "3d_rigging",
+      "type": "3d",
+      "params": [
+        {
+          "name": "animation_action_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enable_animation",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_safety_checker",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "height_meters",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model_url",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Brain Activity",
+      "job_set_type": "brain_activity",
+      "type": "text",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Bytedance Image Upscale",
+      "job_set_type": "bytedance_image_upscale",
+      "type": "image",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "remove_bg",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "4k",
+          "required": false,
+          "enum": [
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Bytedance Video Upscale",
+      "job_set_type": "bytedance_video_upscale",
+      "type": "video",
+      "params": [
+        {
+          "name": "duration",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "fps",
+          "type": "integer",
+          "default": 24,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model_version",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "pro"
+          ]
+        },
+        {
+          "name": "preset",
+          "type": "string",
+          "default": "common",
+          "required": false,
+          "enum": [
+            "common",
+            "aigc",
+            "short_series",
+            "ugc",
+            "old_film"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1080p",
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio 2.5",
+      "job_set_type": "cinematic_studio_2_5",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "auto",
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio 3.0",
+      "job_set_type": "cinematic_studio_3_0",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "enhance_prompt",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "genre",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "action",
+            "horror",
+            "comedy",
+            "noir",
+            "drama",
+            "epic"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "multi_prompt",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "multi_shot_mode",
+          "type": "string",
+          "default": "custom",
+          "required": false,
+          "enum": [
+            "auto",
+            "custom"
+          ]
+        },
+        {
+          "name": "multi_shots",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "preset_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "prompt_language",
+          "type": "string",
+          "default": "zh",
+          "required": false,
+          "enum": [
+            "en",
+            "zh"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "4k"
+          ]
+        },
+        {
+          "name": "speedramp",
+          "type": "object",
+          "default": "auto",
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio Image",
+      "job_set_type": "cinematic_studio_image",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "21:9"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "camera_aperture_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "camera_focal_length_id",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "camera_lens_id",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "camera_model_id",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio Soul Cast",
+      "job_set_type": "cinematic_studio_soul_cast",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "5:4",
+            "4:5",
+            "21:9",
+            "9:21"
+          ]
+        },
+        {
+          "name": "budget",
+          "type": "integer",
+          "default": 50,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio Soul Location",
+      "job_set_type": "cinematic_studio_soul_location",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "21:9",
+            "9:21"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio Video",
+      "job_set_type": "cinematic_studio_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "string",
+          "default": 5,
+          "required": false,
+          "enum": [
+            "5",
+            "10"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "slow_motion",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "sound",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio Video 3.5",
+      "job_set_type": "cinematic_studio_video_3_5",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "camera_aperture_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "camera_focal_length_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "camera_lens_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "camera_model_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "camera_style",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "color_grading",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 15,
+          "required": false
+        },
+        {
+          "name": "enhance_prompt",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "genre",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "action",
+            "horror",
+            "comedy",
+            "noir",
+            "drama",
+            "epic"
+          ]
+        },
+        {
+          "name": "light_scheme",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "multi_prompt",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "multi_shot_mode",
+          "type": "string",
+          "default": "custom",
+          "required": false,
+          "enum": [
+            "auto",
+            "custom"
+          ]
+        },
+        {
+          "name": "multi_shots",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "prompt_language",
+          "type": "string",
+          "default": "zh",
+          "required": false,
+          "enum": [
+            "en",
+            "zh"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        },
+        {
+          "name": "style_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "style_prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Cinema Studio 4.0",
+      "job_set_type": "cinematic_studio_video_4_0",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "bitrate_mode",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "high"
+          ]
+        },
+        {
+          "name": "camera_aperture_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "camera_lens_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "camera_model_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "color_palette",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "enhance_prompt",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "era_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "extension_mode",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "film_era",
+          "type": "null",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "genre",
+          "type": "null",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "genre_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "height",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "light",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "light_custom",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "light_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false,
+          "enum": [
+            "std",
+            "fast"
+          ]
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "default",
+          "required": false,
+          "enum": [
+            "default",
+            "video_edit",
+            "video_extension"
+          ]
+        },
+        {
+          "name": "multi_prompt",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "multi_shot_mode",
+          "type": "string",
+          "default": "custom",
+          "required": false,
+          "enum": [
+            "auto",
+            "custom"
+          ]
+        },
+        {
+          "name": "multi_shots",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "pacing_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "preset_id",
+          "type": "null",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "prompt_language",
+          "type": "string",
+          "default": "zh",
+          "required": false,
+          "enum": [
+            "en",
+            "zh"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        },
+        {
+          "name": "speedramp",
+          "type": "object",
+          "default": "auto",
+          "required": false
+        },
+        {
+          "name": "use_blur",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "use_eye_mask",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "use_transparency",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Cinematic Studio Video V2",
+      "job_set_type": "cinematic_studio_video_v2",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "cfg_scale",
+          "type": "number",
+          "default": 0.5,
+          "required": false
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "genre",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "action",
+            "horror",
+            "comedy",
+            "western",
+            "suspense",
+            "intimate",
+            "spectacle"
+          ]
+        },
+        {
+          "name": "kling_element_ids",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false,
+          "enum": [
+            "pro",
+            "std"
+          ]
+        },
+        {
+          "name": "multi_prompt",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "multi_shot_mode",
+          "type": "string",
+          "default": "custom",
+          "required": false,
+          "enum": [
+            "auto",
+            "custom"
+          ]
+        },
+        {
+          "name": "multi_shots",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "preset_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "sound",
+          "type": "string",
+          "default": "on",
+          "required": false,
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        {
+          "name": "speedramp",
+          "type": "object",
+          "default": "auto",
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Clipify",
+      "job_set_type": "clipify",
+      "type": "video",
+      "params": [
+        {
+          "name": "clip_aspect",
+          "type": "string",
+          "default": "9:16",
+          "required": false,
+          "enum": [
+            "9:16",
+            "1:1",
+            "16:9"
+          ]
+        },
+        {
+          "name": "clips_num",
+          "type": "integer",
+          "default": 10,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "max_height",
+          "type": "integer",
+          "default": 1080,
+          "required": false
+        },
+        {
+          "name": "segment_seconds",
+          "type": "integer",
+          "default": 10,
+          "required": false
+        },
+        {
+          "name": "subtitle_case",
+          "type": "string",
+          "default": "as-is",
+          "required": false,
+          "enum": [
+            "lower",
+            "upper",
+            "as-is"
+          ]
+        },
+        {
+          "name": "subtitle_font",
+          "type": "string",
+          "default": "notosans",
+          "required": false
+        },
+        {
+          "name": "subtitle_highlight_hex",
+          "type": "string",
+          "default": "#FFE84D",
+          "required": false
+        },
+        {
+          "name": "subtitle_position",
+          "type": "string",
+          "default": "bottom",
+          "required": false,
+          "enum": [
+            "bottom",
+            "center",
+            "top"
+          ]
+        },
+        {
+          "name": "track_face_crop",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "urls",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Draw To Video",
+      "job_set_type": "draw_to_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enhancer",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "ref_image",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        },
+        {
+          "name": "sketch",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "video",
+          "type": "object",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "dubbing",
+      "job_set_type": "dubbing",
+      "type": "video",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_video",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "target_language",
+          "type": "string",
+          "default": null,
+          "required": true,
+          "enum": [
+            "eng",
+            "cmn",
+            "fra",
+            "hin",
+            "ita",
+            "jpn",
+            "kor",
+            "por",
+            "rus",
+            "tur",
+            "spa",
+            "deu",
+            "ara",
+            "pol",
+            "ind",
+            "fil",
+            "swe",
+            "fin"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Explainer Video",
+      "job_set_type": "explainer_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "height",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "items",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "subtitles",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "FLUX.2",
+      "job_set_type": "flux_2",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "pro",
+          "required": false,
+          "enum": [
+            "pro",
+            "flex",
+            "max"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "FLUX.2 Pro Outpaint",
+      "job_set_type": "flux_2_pro_outpaint",
+      "type": "image",
+      "params": [
+        {
+          "name": "expand_bottom",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "expand_left",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "expand_right",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "expand_top",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "FLUX 3 Video",
+      "job_set_type": "flux_3_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "2:1",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Flux Kontext",
+      "job_set_type": "flux_kontext",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Gemini Omni Flash",
+      "job_set_type": "gemini_omni",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 8,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "GPT Image 2",
+      "job_set_type": "gpt_image_2",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "high",
+          "required": false,
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Grok Image",
+      "job_set_type": "grok_image",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "1:2",
+            "2:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false,
+          "enum": [
+            "std",
+            "quality"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Grok Video",
+      "job_set_type": "grok_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Grok Video 1.5",
+      "job_set_type": "grok_video_v15",
+      "type": "video",
+      "params": [
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Happy Horse Video",
+      "job_set_type": "happy_horse_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Hunyuan 3D v3.1 Text to 3D",
+      "job_set_type": "hunyuan3d_v3_1_text_to_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "enable_pbr",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "face_count",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "generate_type",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Hunyuan3D v3 Image to 3D",
+      "job_set_type": "hunyuan3d_v3_image_to_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "enable_pbr",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "face_count",
+          "type": "integer",
+          "default": 500000,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "generate_type",
+          "type": "string",
+          "default": "Normal",
+          "required": false,
+          "enum": [
+            "Normal",
+            "LowPoly",
+            "Geometry"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "polygon_type",
+          "type": "string",
+          "default": "triangle",
+          "required": false,
+          "enum": [
+            "triangle",
+            "quadrilateral"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Image Auto",
+      "job_set_type": "image_auto",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Image Background Remover",
+      "job_set_type": "image_background_remover",
+      "type": "image",
+      "params": [
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Image Decompose",
+      "job_set_type": "image_decompose",
+      "type": "image",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "granular",
+          "required": false,
+          "enum": [
+            "granular",
+            "standard"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Image to 3D",
+      "job_set_type": "image_to_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "animation_action_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enable_animation",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_pbr",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enable_rigging",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_safety_checker",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "pose_mode",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "rigging_height_meters",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "should_remesh",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "should_texture",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "symmetry_mode",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "target_polycount",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture_image_url",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture_prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "topology",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Inworld Text to Speech",
+      "job_set_type": "inworld_text_to_speech",
+      "type": "audio",
+      "params": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "voice",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Kimodo",
+      "job_set_type": "kimodo",
+      "type": "3d",
+      "params": [
+        {
+          "name": "diffusion_steps",
+          "type": "integer",
+          "default": 10,
+          "required": false
+        },
+        {
+          "name": "duration",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "durations",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enhancer",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model_version",
+          "type": "string",
+          "default": "ardy-core",
+          "required": false,
+          "enum": [
+            "ardy-core",
+            "ardy-core-h8"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompts",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "seed",
+          "type": "integer",
+          "default": 42,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Kling O1 Image",
+      "job_set_type": "kling_omni_image",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "auto",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "21:9"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Kling 2.6 Video",
+      "job_set_type": "kling2_6",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "string",
+          "default": 5,
+          "required": false,
+          "enum": [
+            "5",
+            "10"
+          ]
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "sound",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Kling v3.0",
+      "job_set_type": "kling3_0",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false,
+          "enum": [
+            "pro",
+            "std",
+            "4k"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "sound",
+          "type": "string",
+          "default": "on",
+          "required": false,
+          "enum": [
+            "on",
+            "off"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Kling 3.0 Motion Control",
+      "job_set_type": "kling3_0_motion_control",
+      "type": "video",
+      "params": [
+        {
+          "name": "background_source",
+          "type": "string",
+          "default": "input_image",
+          "required": false,
+          "enum": [
+            "input_image",
+            "input_video"
+          ]
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false,
+          "enum": [
+            "std",
+            "pro"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Kling 3.0 Turbo",
+      "job_set_type": "kling3_0_turbo",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "LLM Generation",
+      "job_set_type": "llm_text",
+      "type": "video",
+      "params": [
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "reasoning_effort",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "system_prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "user_prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Marketing Studio Image",
+      "job_set_type": "marketing_studio_image",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Marketing Studio Video",
+      "job_set_type": "marketing_studio_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "ad_reference_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "9:16",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "avatar_ids",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "avatars",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 15,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "hook_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "ugc",
+          "required": false
+        },
+        {
+          "name": "product_ids",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        },
+        {
+          "name": "setting_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "specific_mode",
+          "type": "string",
+          "default": "default",
+          "required": false,
+          "enum": [
+            "default",
+            "web_product",
+            "from_storyboard"
+          ]
+        },
+        {
+          "name": "storyboard_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "web_product_ids",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "web_product_type",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Meshy 5 Remesh",
+      "job_set_type": "meshy_v5_remesh",
+      "type": "3d",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model_url",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "origin_at",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "resize_height",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "target_polycount",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "topology",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Meshy 6 Text to 3D",
+      "job_set_type": "meshy_v6_text_to_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "animation_action_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enable_animation",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_pbr",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_prompt_expansion",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_rigging",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_safety_checker",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "full",
+          "required": false
+        },
+        {
+          "name": "model_type",
+          "type": "string",
+          "default": "standard",
+          "required": false
+        },
+        {
+          "name": "pose_mode",
+          "type": "string",
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "rigging_height_meters",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "should_remesh",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "symmetry_mode",
+          "type": "string",
+          "default": "auto",
+          "required": false
+        },
+        {
+          "name": "target_polycount",
+          "type": "integer",
+          "default": 30000,
+          "required": false
+        },
+        {
+          "name": "texture_image_url",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture_prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "topology",
+          "type": "string",
+          "default": "triangle",
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "MiniMax H3",
+      "job_set_type": "minimax_h3",
+      "type": "video",
+      "params": [
+        {
+          "name": "aigc_watermark",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 4,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "height",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "2K",
+          "required": false,
+          "enum": [
+            "768P",
+            "2K"
+          ]
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Minimax Hailuo",
+      "job_set_type": "minimax_hailuo",
+      "type": "video",
+      "params": [
+        {
+          "name": "duration",
+          "type": "string",
+          "default": 6,
+          "required": false,
+          "enum": [
+            "6",
+            "10"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "minimax-2.3",
+          "required": false,
+          "enum": [
+            "minimax",
+            "minimax-fast",
+            "minimax-2.3",
+            "minimax-2.3-fast"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "768",
+          "required": false,
+          "enum": [
+            "512",
+            "768",
+            "1080"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Mirelo Text to Audio",
+      "job_set_type": "mirelo_text_to_audio",
+      "type": "audio",
+      "params": [
+        {
+          "name": "duration",
+          "type": "number",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "MS Image",
+      "job_set_type": "ms_image",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "avatars",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "brand_kit_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "product_ids",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "low",
+          "required": false,
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false
+        },
+        {
+          "name": "style_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Multi-Image to 3D",
+      "job_set_type": "multi_image_to_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "animation_action_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enable_animation",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_pbr",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enable_rigging",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "enable_safety_checker",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "pose_mode",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "rigging_height_meters",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "should_remesh",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "should_texture",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "symmetry_mode",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "target_polycount",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture_image_url",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture_prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "topology",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana",
+      "job_set_type": "nano_banana",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana Pro",
+      "job_set_type": "nano_banana_2",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana Pro",
+      "job_set_type": "nano_banana_2_ai_stylist",
+      "type": "image",
+      "params": [
+        {
+          "name": "background_preset_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "outfit_preset_ids",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "pose_preset_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "user_outfit_ids",
+          "type": "array",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana 2 Lite",
+      "job_set_type": "nano_banana_2_lite",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false
+        },
+        {
+          "name": "thinking",
+          "type": "string",
+          "default": "HIGH",
+          "required": false,
+          "enum": [
+            "MINIMAL",
+            "HIGH"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana Pro",
+      "job_set_type": "nano_banana_2_relight",
+      "type": "image",
+      "params": [
+        {
+          "name": "brightness",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "color",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "light_quality",
+          "type": "string",
+          "default": null,
+          "required": true,
+          "enum": [
+            "hard",
+            "sharp",
+            "soft"
+          ]
+        },
+        {
+          "name": "light_source",
+          "type": "string",
+          "default": null,
+          "required": true,
+          "enum": [
+            "mdl",
+            "mdr",
+            "mul",
+            "mur",
+            "bml",
+            "fml",
+            "fmr",
+            "bmm",
+            "mml",
+            "mmr",
+            "fmm",
+            "bmr",
+            "mdm",
+            "mum",
+            "bdr",
+            "fdl",
+            "bur",
+            "ful",
+            "bdl",
+            "fdr",
+            "bul",
+            "fur",
+            "bdm",
+            "fdm",
+            "bum",
+            "fum"
+          ]
+        },
+        {
+          "name": "remove_bg",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana Pro",
+      "job_set_type": "nano_banana_2_shots",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana Pro",
+      "job_set_type": "nano_banana_2_skin_enhancer",
+      "type": "image",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "preset_id",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "remove_bg",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Nano Banana 2",
+      "job_set_type": "nano_banana_flash",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "OpenAI Hazel",
+      "job_set_type": "openai_hazel",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "3:2",
+            "2:3",
+            "auto"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "medium",
+          "required": false,
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Outpaint",
+      "job_set_type": "outpaint",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "21:9",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Qwen Audio 3.0 TTS Flash",
+      "job_set_type": "qwen_audio_tts",
+      "type": "audio",
+      "params": [
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "mp3",
+          "required": false,
+          "enum": [
+            "wav",
+            "mp3",
+            "pcm",
+            "ogg_opus"
+          ]
+        },
+        {
+          "name": "instruction",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "language",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "pitch_rate",
+          "type": "number",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "sample_rate",
+          "type": "string",
+          "default": 24000,
+          "required": false,
+          "enum": [
+            "8000",
+            "16000",
+            "22050",
+            "24000",
+            "44100",
+            "48000"
+          ]
+        },
+        {
+          "name": "seed",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "speech_rate",
+          "type": "number",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "voice_id",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "voice_type",
+          "type": "string",
+          "default": null,
+          "required": true,
+          "enum": [
+            "preset",
+            "element"
+          ]
+        },
+        {
+          "name": "volume",
+          "type": "integer",
+          "default": 50,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Angles",
+      "job_set_type": "qwen_camera_control",
+      "type": "image",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "height",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "move_forward_level",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "remove_bg",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "rotate_degree",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "vertical_angle",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "width",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Recraft V4.1",
+      "job_set_type": "recraft_v4_1",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "3:2",
+            "2:3",
+            "16:9",
+            "9:16",
+            "21:9"
+          ]
+        },
+        {
+          "name": "background_color",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "colors",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model_type",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "vector",
+            "utility",
+            "utility_vector"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Reframe",
+      "job_set_type": "reframe",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": null,
+          "required": true,
+          "enum": [
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "3D Objects",
+      "job_set_type": "sam_3_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "detection_threshold",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "export_textured_glb",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "3D Body",
+      "job_set_type": "sam_3_3d_body",
+      "type": "3d",
+      "params": [
+        {
+          "name": "export_meshes",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "include_3d_keypoints",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "include_mhr_params",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Remove Background",
+      "job_set_type": "sam_3_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "apply_mask",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "frames_count",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Seed Audio 1.0",
+      "job_set_type": "seed_audio",
+      "type": "audio",
+      "params": [
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "expression_intensity",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "wav",
+          "required": false,
+          "enum": [
+            "wav",
+            "mp3",
+            "pcm",
+            "ogg_opus"
+          ]
+        },
+        {
+          "name": "loudness_rate",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mood",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "pitch_rate",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "sample_rate",
+          "type": "string",
+          "default": 24000,
+          "required": false,
+          "enum": [
+            "8000",
+            "16000",
+            "24000",
+            "32000",
+            "44100",
+            "48000"
+          ]
+        },
+        {
+          "name": "speech_rate",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "voice_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "voice_style",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "voice_type",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "voices",
+          "type": "array",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Seedance 2.0",
+      "job_set_type": "seedance_2_0",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "auto",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1",
+            "21:9"
+          ]
+        },
+        {
+          "name": "bitrate_mode",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "high"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "genre",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "action",
+            "horror",
+            "comedy",
+            "noir",
+            "drama",
+            "epic"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false,
+          "enum": [
+            "std",
+            "fast"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p",
+            "4k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Seedance 2.0 Mini",
+      "job_set_type": "seedance_2_0_mini",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "auto",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1",
+            "21:9"
+          ]
+        },
+        {
+          "name": "bitrate_mode",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "high"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "genre",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "action",
+            "horror",
+            "comedy",
+            "noir",
+            "drama",
+            "epic"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Seedance 2.5",
+      "job_set_type": "seedance_2_5",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "bitrate_mode",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "high"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "enhance_prompt",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "extension_mode",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "genre",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "action",
+            "horror",
+            "comedy",
+            "noir",
+            "drama",
+            "epic"
+          ]
+        },
+        {
+          "name": "height",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "std",
+          "required": false,
+          "enum": [
+            "std",
+            "fast"
+          ]
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "default",
+          "required": false,
+          "enum": [
+            "default",
+            "video_edit",
+            "video_extension"
+          ]
+        },
+        {
+          "name": "multi_prompt",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "multi_shot_mode",
+          "type": "string",
+          "default": "custom",
+          "required": false,
+          "enum": [
+            "auto",
+            "custom"
+          ]
+        },
+        {
+          "name": "multi_shots",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "preset_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "prompt_language",
+          "type": "string",
+          "default": "zh",
+          "required": false,
+          "enum": [
+            "en",
+            "zh"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        },
+        {
+          "name": "speedramp",
+          "type": "object",
+          "default": "auto",
+          "required": false
+        },
+        {
+          "name": "use_blur",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "use_eye_mask",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "use_transparency",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Seedance 1.5 Pro",
+      "job_set_type": "seedance1_5",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "auto",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "1:1",
+            "21:9"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "string",
+          "default": 4,
+          "required": false,
+          "enum": [
+            "4",
+            "8",
+            "12"
+          ]
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Seedream 4.5",
+      "job_set_type": "seedream_v4_5",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "4:3",
+            "16:9",
+            "3:2",
+            "21:9",
+            "3:4",
+            "9:16",
+            "2:3"
+          ]
+        },
+        {
+          "name": "input_images",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "basic",
+          "required": false,
+          "enum": [
+            "basic",
+            "high"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Seedream 5.0 Lite",
+      "job_set_type": "seedream_v5_lite",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "21:9"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "basic",
+          "required": false,
+          "enum": [
+            "basic",
+            "high"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Seedream 5.0 Pro",
+      "job_set_type": "seedream_v5_pro",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "3:2",
+            "2:3",
+            "21:9"
+          ]
+        },
+        {
+          "name": "height",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "is_inpaint",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "remove_bg",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1k",
+            "1.5k",
+            "2k"
+          ]
+        },
+        {
+          "name": "width",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Sonilo Music",
+      "job_set_type": "sonilo_music",
+      "type": "audio",
+      "params": [
+        {
+          "name": "duration",
+          "type": "number",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Soul Cast",
+      "job_set_type": "soul_cast",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "5:4",
+            "4:5",
+            "21:9",
+            "9:21"
+          ]
+        },
+        {
+          "name": "budget",
+          "type": "integer",
+          "default": 50,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "soul_cinema_studio",
+      "job_set_type": "soul_cinema_studio",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "21:9"
+          ]
+        },
+        {
+          "name": "custom_reference_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enhance_prompt",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1.5k",
+            "2k"
+          ]
+        },
+        {
+          "name": "style_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Soul Cinematic",
+      "job_set_type": "soul_cinematic",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "21:9"
+          ]
+        },
+        {
+          "name": "custom_reference_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1.5k",
+            "2k"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Soul Location",
+      "job_set_type": "soul_location",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "21:9",
+            "9:21"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Sync Lipsync 3",
+      "job_set_type": "sync_so",
+      "type": "video",
+      "params": [
+        {
+          "name": "active_speaker_detection",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_audio",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "input_video",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "occlusion_detection_enabled",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "sync_mode",
+          "type": "string",
+          "default": "bounce",
+          "required": false,
+          "enum": [
+            "bounce",
+            "loop",
+            "cut_off",
+            "silence",
+            "remap"
+          ]
+        },
+        {
+          "name": "temperature",
+          "type": "number",
+          "default": 0.5,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Higgsfield Soul 2.0",
+      "job_set_type": "text2image_soul_v2",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3"
+          ]
+        },
+        {
+          "name": "custom_reference_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "2k",
+          "required": false,
+          "enum": [
+            "1.5k",
+            "2k"
+          ]
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Text to Speech V2",
+      "job_set_type": "text2speech_v2",
+      "type": "audio",
+      "params": [
+        {
+          "name": "batch_size",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "emotion",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "mp3",
+          "required": false,
+          "enum": [
+            "mp3",
+            "wav"
+          ]
+        },
+        {
+          "name": "language_boost",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "af",
+            "ar",
+            "bg",
+            "ca",
+            "cs",
+            "da",
+            "de",
+            "el",
+            "en",
+            "es",
+            "fa",
+            "fi",
+            "fil",
+            "fr",
+            "he",
+            "hi",
+            "hr",
+            "hu",
+            "id",
+            "it",
+            "ja",
+            "ko",
+            "ms",
+            "nl",
+            "nn",
+            "no",
+            "pl",
+            "pt",
+            "ro",
+            "ru",
+            "sk",
+            "sl",
+            "sv",
+            "ta",
+            "th",
+            "tr",
+            "uk",
+            "vi",
+            "yue",
+            "zh"
+          ]
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": null,
+          "required": true,
+          "enum": [
+            "elevenlabs",
+            "minimax",
+            "seed_speech",
+            "vibe_voice",
+            "cozy_voice"
+          ]
+        },
+        {
+          "name": "pitch",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "sample_rate",
+          "type": "string",
+          "default": 32000,
+          "required": false,
+          "enum": [
+            "8000",
+            "16000",
+            "22050",
+            "24000",
+            "32000",
+            "44100"
+          ]
+        },
+        {
+          "name": "speed",
+          "type": "number",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "stability",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "text_normalization",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "voice_id",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "voice_type",
+          "type": "string",
+          "default": null,
+          "required": true,
+          "enum": [
+            "preset",
+            "element"
+          ]
+        },
+        {
+          "name": "volume",
+          "type": "number",
+          "default": 1,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Topaz",
+      "job_set_type": "topaz_image",
+      "type": "image",
+      "params": [
+        {
+          "name": "denoise",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "face_enhancement",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "face_enhancement_creativity",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "face_enhancement_strength",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "Standard V2",
+          "required": false,
+          "enum": [
+            "Standard V2",
+            "Low Resolution V2",
+            "CGI",
+            "High Fidelity V2",
+            "Text Refine"
+          ]
+        },
+        {
+          "name": "output_height",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "output_width",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "sharpen",
+          "type": "number",
+          "default": 0,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Topaz",
+      "job_set_type": "topaz_image_generative",
+      "type": "image",
+      "params": [
+        {
+          "name": "autoprompt",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "creativity",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        },
+        {
+          "name": "denoise",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "face_enhancement",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "face_enhancement_creativity",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "face_enhancement_strength",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "Redefine",
+          "required": false,
+          "enum": [
+            "Standard MAX",
+            "Redefine",
+            "Recovery",
+            "Recovery V2"
+          ]
+        },
+        {
+          "name": "output_height",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "output_width",
+          "type": "integer",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": "",
+          "required": false
+        },
+        {
+          "name": "sharpen",
+          "type": "number",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "texture",
+          "type": "integer",
+          "default": 1,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Topaz",
+      "job_set_type": "topaz_video",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "21:9",
+            "16:9",
+            "4:3",
+            "1:1",
+            "3:4",
+            "9:16"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "enhancement",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "frame_interpolation",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "frame_rate",
+          "type": "number",
+          "default": 30,
+          "required": false
+        },
+        {
+          "name": "frames_count",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_height",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_video",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_video_size",
+          "type": "integer",
+          "default": 0,
+          "required": false
+        },
+        {
+          "name": "input_width",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1080p",
+          "required": false,
+          "enum": [
+            "1080p",
+            "2160p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Text to 3D",
+      "job_set_type": "tripo_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "auto_size",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "face_limit",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "geometry_quality",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "detailed"
+          ]
+        },
+        {
+          "name": "negative_prompt",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "pbr",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "texture_quality",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "detailed"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Tripo H3.1 Image to 3D",
+      "job_set_type": "tripo_h3_1_image_to_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "auto_size",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "face_limit",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "geometry_quality",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "detailed"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "orientation",
+          "type": "string",
+          "default": "default",
+          "required": false,
+          "enum": [
+            "default",
+            "align_image"
+          ]
+        },
+        {
+          "name": "pbr",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "quad",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "texture_alignment",
+          "type": "string",
+          "default": "original_image",
+          "required": false,
+          "enum": [
+            "original_image",
+            "geometry"
+          ]
+        },
+        {
+          "name": "texture_quality",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "detailed"
+          ]
+        },
+        {
+          "name": "texture_seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Tripo H3.1 Multiview to 3D",
+      "job_set_type": "tripo_h3_1_multiview_to_3d",
+      "type": "3d",
+      "params": [
+        {
+          "name": "auto_size",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "face_limit",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "geometry_quality",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "detailed"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "orientation",
+          "type": "string",
+          "default": "default",
+          "required": false,
+          "enum": [
+            "default",
+            "align_image"
+          ]
+        },
+        {
+          "name": "pbr",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "quad",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "texture",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "texture_alignment",
+          "type": "string",
+          "default": "original_image",
+          "required": false,
+          "enum": [
+            "original_image",
+            "geometry"
+          ]
+        },
+        {
+          "name": "texture_quality",
+          "type": "string",
+          "default": "standard",
+          "required": false,
+          "enum": [
+            "standard",
+            "detailed"
+          ]
+        },
+        {
+          "name": "texture_seed",
+          "type": "object",
+          "default": null,
+          "required": false
+        }
+      ]
+    },
+    {
+      "display_name": "Google Veo 3",
+      "job_set_type": "veo3",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "veo-3-fast",
+          "required": false,
+          "enum": [
+            "veo-3-preview",
+            "veo-3-fast"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Google Veo 3.1",
+      "job_set_type": "veo3_1",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "string",
+          "default": 8,
+          "required": false,
+          "enum": [
+            "4",
+            "6",
+            "8"
+          ]
+        },
+        {
+          "name": "input_image",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "string",
+          "default": "veo-3-1-fast",
+          "required": false,
+          "enum": [
+            "veo-3-1-preview",
+            "veo-3-1-fast"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "basic",
+          "required": false,
+          "enum": [
+            "basic",
+            "high",
+            "ultra"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Google Veo 3.1 Lite",
+      "job_set_type": "veo3_1_lite",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "auto"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "string",
+          "default": 8,
+          "required": false,
+          "enum": [
+            "4",
+            "6",
+            "8"
+          ]
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Video Background Remover",
+      "job_set_type": "video_background_remover",
+      "type": "video",
+      "params": [
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Video Deflicker",
+      "job_set_type": "video_deflicker",
+      "type": "video",
+      "params": [
+        {
+          "name": "duration",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_video",
+          "type": "object",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "Video Upscale",
+      "job_set_type": "video_upscale",
+      "type": "video",
+      "params": [
+        {
+          "name": "duration",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_video",
+          "type": "object",
+          "default": null,
+          "required": true
+        }
+      ]
+    },
+    {
+      "display_name": "voice_change",
+      "job_set_type": "voice_change",
+      "type": "video",
+      "params": [
+        {
+          "name": "folder_id",
+          "type": "object",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "input_video",
+          "type": "object",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "voice_id",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "voice_type",
+          "type": "string",
+          "default": "preset",
+          "required": false,
+          "enum": [
+            "preset",
+            "element"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Wan 2.6 Video",
+      "job_set_type": "wan2_6",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "string",
+          "default": 5,
+          "required": false,
+          "enum": [
+            "5",
+            "10",
+            "15"
+          ]
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Wan 2.7",
+      "job_set_type": "wan2_7",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "16:9",
+          "required": false,
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Wan 3.0",
+      "job_set_type": "wan3_0",
+      "type": "video",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "auto",
+          "required": false,
+          "enum": [
+            "auto",
+            "16:9",
+            "9:16",
+            "1:1",
+            "4:3",
+            "3:4"
+          ]
+        },
+        {
+          "name": "duration",
+          "type": "integer",
+          "default": 5,
+          "required": false
+        },
+        {
+          "name": "enable_thinking",
+          "type": "boolean",
+          "default": false,
+          "required": false
+        },
+        {
+          "name": "generate_audio",
+          "type": "boolean",
+          "default": true,
+          "required": false
+        },
+        {
+          "name": "medias",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        }
+      ]
+    },
+    {
+      "display_name": "Z Image",
+      "job_set_type": "z_image",
+      "type": "image",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16"
+          ]
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        }
+      ]
+    }
+  ]
+}

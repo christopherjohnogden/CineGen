@@ -83,13 +83,22 @@ describe('calculateTimelineDuration', () => {
 });
 
 describe('addClipToTrack', () => {
-  it('adds a clip to the flat clips array', () => {
+  it('adds linked video and audio clips to the flat clips array', () => {
     const tl = makeTimeline();
     const result = addClipToTrack(tl, 'v1', { id: 'a1', name: 'test.mp4', type: 'video', url: '', duration: 5, createdAt: '' } as any, 2);
-    expect(result.clips).toHaveLength(1);
-    expect(result.clips[0].trackId).toBe('v1');
-    expect(result.clips[0].startTime).toBe(2);
+    expect(result.clips).toHaveLength(2);
+    expect(result.clips.find((clip) => clip.trackId === 'v1')?.startTime).toBe(2);
+    expect(result.clips.find((clip) => clip.trackId === 'a1')?.startTime).toBe(2);
     expect(result.duration).toBe(7);
+  });
+
+  it('uses the five-second still-image default when metadata duration is zero', () => {
+    const tl = makeTimeline();
+    const result = addClipToTrack(tl, 'v1', {
+      id: 'still-1', name: 'still.png', type: 'image', url: '', duration: 0, createdAt: '',
+    } as any, 1);
+    expect(result.clips[0].duration).toBe(5);
+    expect(result.duration).toBe(6);
   });
 });
 

@@ -1,6 +1,6 @@
-export type PortType = 'text' | 'image' | 'video' | 'audio' | 'media' | 'number' | 'config' | 'model' | 'multi_prompt' | 'composition_plan';
+export type PortType = 'text' | 'image' | 'video' | 'audio' | 'model3d' | 'media' | 'number' | 'config' | 'model' | 'multi_prompt' | 'composition_plan';
 
-export type NodeCategory = 'utility' | 'image' | 'video' | 'image-edit' | 'audio' | 'text';
+export type NodeCategory = 'utility' | 'image' | 'video' | 'image-edit' | 'audio' | 'text' | 'model3d';
 
 export type UtilityNodeType = 'prompt' | 'duration' | 'assetOutput' | 'multiPrompt' | 'shotPrompt' | 'element' | 'compositionPlan' | 'musicPrompt' | 'filePicker';
 
@@ -10,6 +10,8 @@ export interface PortDefinition {
   id: string;
   type: PortType;
   label: string;
+  multiple?: boolean;
+  mediaRole?: 'image' | 'start_image' | 'end_image' | 'video' | 'audio';
 }
 
 export interface NodeTypeDefinition {
@@ -28,12 +30,26 @@ export interface ModelInputField {
   label: string;
   required: boolean;
   falParam: string;
-  fieldType: 'port' | 'text' | 'textarea' | 'number' | 'select' | 'range' | 'toggle' | 'element-list';
+  fieldType: 'port' | 'text' | 'textarea' | 'number' | 'select' | 'range' | 'toggle' | 'json' | 'element-list';
   options?: { value: string; label: string }[];
   default?: unknown;
   min?: number;
   max?: number;
   step?: number;
+  description?: string;
+  placeholder?: string;
+  schemaType?: 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'null';
+  multiple?: boolean;
+  mediaRole?: 'image' | 'start_image' | 'end_image' | 'video' | 'audio';
+  minItems?: number;
+  maxItems?: number;
+}
+
+export interface ModelOutputField {
+  id: string;
+  portType: PortType;
+  label: string;
+  responsePath?: string;
 }
 
 export interface ModelDefinition {
@@ -41,10 +57,11 @@ export interface ModelDefinition {
   altId?: string;
   nodeType: string;
   name: string;
-  category: 'image' | 'video' | 'image-edit' | 'audio' | 'text';
+  category: 'image' | 'video' | 'image-edit' | 'audio' | 'text' | 'model3d';
   description: string;
   inputs: ModelInputField[];
-  outputType: 'image' | 'video' | 'audio' | 'text';
+  outputType: 'image' | 'video' | 'audio' | 'text' | 'model3d';
+  outputs?: ModelOutputField[];
   provider?: 'fal' | 'kie' | 'local' | 'runpod' | 'pod' | 'higgsfield';
   runpodEndpointId?: string;
   podRoute?: string;  // e.g. 'sdxl', 'flux', 'qwen-edit', 'ltx', 'wan-t2v', 'wan-i2v'

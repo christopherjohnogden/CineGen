@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ImageCompare } from './image-compare';
 import { detectAutoSegmentObjects, sortAutoSegmentObjectsForPrompting } from '@/lib/vision/auto-segment';
+import { resolveSam3ApiUrl, sam3ImageSource } from '@/lib/media/sam3-api';
 
 interface Sam3ModalProps {
   imageUrl: string;
@@ -268,7 +269,7 @@ const Spinner = () => (
 );
 
 export function Sam3Modal({ imageUrl, onAcceptSelected, onAcceptAll, onClose }: Sam3ModalProps) {
-  const [serverPort, setServerPort] = useState<number | null>(null);
+  const [apiUrl, setApiUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>('text');
@@ -300,7 +301,6 @@ export function Sam3Modal({ imageUrl, onAcceptSelected, onAcceptAll, onClose }: 
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  const apiUrl = serverPort ? `http://localhost:${serverPort}` : null;
   const selectedMaskData = masks[selectedMask];
   const displayedImageRect = computeContainedImageRect(stageSize, imageSize);
   const geometryPrompts = promptHistory.filter((prompt): prompt is Extract<LocalPrompt, { kind: 'point' | 'box' }> => (
@@ -317,30 +317,24 @@ export function Sam3Modal({ imageUrl, onAcceptSelected, onAcceptAll, onClose }: 
     (async () => {
       try {
         console.log('[sam3-modal] Starting SAM 3 server...');
-        const { port } = await window.electronAPI.sam3.start();
-        console.log('[sam3-modal] Server started on port:', port);
+        const endpoint = await window.electronAPI.sam3.start();
+        const nextApiUrl = resolveSam3ApiUrl(endpoint);
+        console.log('[sam3-modal] Server started:', nextApiUrl);
         if (cancelled) return;
-        setServerPort(port);
+        setApiUrl(nextApiUrl);
 
         await new Promise(r => setTimeout(r, 1000));
         if (cancelled) return;
 
-        let imagePath = imageUrl;
-        if (imageUrl.startsWith('local-media://file')) {
-          imagePath = decodeURIComponent(imageUrl.replace('local-media://file', ''));
-        }
-
-        const res = await fetch(`http://localhost:${port}/set-image`, {
+        const res = await fetch(`${nextApiUrl}/set-image`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(
-            imagePath.startsWith('http') ? { image_url: imagePath } : { image_path: imagePath }
-          ),
+          body: JSON.stringify(sam3ImageSource(imageUrl)),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Failed to load image');
         setImageSize({ width: data.width, height: data.height });
-        await fetch(`http://localhost:${port}/segment`, {
+        await fetch(`${nextApiUrl}/segment`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ type: 'confidence', threshold: 0.3 }),

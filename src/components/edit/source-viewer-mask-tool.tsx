@@ -3,6 +3,7 @@ import type { Asset } from '@/types/project';
 import type { Clip } from '@/types/timeline';
 import { getApiKey } from '@/lib/utils/api-key';
 import { toFileUrl } from '@/lib/utils/file-url';
+import { resolveSam3ApiUrl, toSam3MediaReference } from '@/lib/media/sam3-api';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import {
   type AutoSegmentObject,
@@ -616,7 +617,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
   const [frameMaskCandidates, setFrameMaskCandidates] = useState<MaskCandidate[]>([]);
   const [frameMaskCandidatePreviews, setFrameMaskCandidatePreviews] = useState<Record<number, string>>({});
   const [selectedMaskCandidateIndex, setSelectedMaskCandidateIndex] = useState<number | null>(null);
-  const [localServerPort, setLocalServerPort] = useState<number | null>(null);
+  const [localApiUrl, setLocalApiUrl] = useState<string | null>(null);
   const [localVideoSessionId, setLocalVideoSessionId] = useState<string | null>(null);
   const [detectionThreshold, setDetectionThreshold] = useState(0.1);
   const [edgeBlur, setEdgeBlur] = useState(2);
@@ -735,17 +736,18 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
 
           if (!videoPath) throw new Error('Could not resolve a local file path for this asset.');
 
-          const { port } = await window.electronAPI.sam3.start();
+          const endpoint = await window.electronAPI.sam3.start();
+          const nextApiUrl = resolveSam3ApiUrl(endpoint);
           if (cancelled) return;
-          setLocalServerPort(port);
+          setLocalApiUrl(nextApiUrl);
           await new Promise((r) => setTimeout(r, 800));
           if (cancelled) return;
 
           // Start a video session (uses Sam3VideoPredictor for tracked masks)
-          const res = await fetch(`http://localhost:${port}/video/start-session`, {
+          const res = await fetch(`${nextApiUrl}/video/start-session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_path: videoPath }),
+            body: JSON.stringify({ video_path: toSam3MediaReference(videoPath) }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.detail || 'Failed to start video session');
@@ -959,9 +961,9 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
 
   /* ── Local video segmentation ── */
   const restartLocalSession = useCallback(async () => {
-    if (!localServerPort || !localVideoSessionId) return null;
+    if (!localApiUrl || !localVideoSessionId) return null;
 
-    await fetch(`http://localhost:${localServerPort}/video/close-session`, {
+    await fetch(`${localApiUrl}/video/close-session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: localVideoSessionId }),
@@ -972,19 +974,19 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
       videoPath = decodeURIComponent(videoPath.replace('local-media://file', ''));
     }
 
-    const startRes = await fetch(`http://localhost:${localServerPort}/video/start-session`, {
+    const startRes = await fetch(`${localApiUrl}/video/start-session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ video_path: videoPath }),
+      body: JSON.stringify({ video_path: toSam3MediaReference(videoPath) }),
     });
     const startData = await startRes.json();
     if (!startRes.ok) throw new Error(startData.detail || 'Failed to restart video session');
     setLocalVideoSessionId(startData.session_id);
     return startData.session_id as string;
-  }, [asset.fileRef, asset.url, localServerPort, localVideoSessionId]);
+  }, [asset.fileRef, asset.url, localApiUrl, localVideoSessionId]);
 
   const replayLocalImagePrompts = useCallback(async (history: CloudPrompt[]) => {
-    if (!localServerPort || !localInputPath) return null;
+    if (!localApiUrl || !localInputPath) return null;
 
     const extracted = await window.electronAPI.media.extractFrame({
       inputPath: localInputPath,
@@ -1001,10 +1003,10 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
         : prompt.frameIndex === currentFrameIndex
     ));
 
-    const setImageRes = await fetch(`http://localhost:${localServerPort}/set-image`, {
+    const setImageRes = await fetch(`${localApiUrl}/set-image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_path: extracted.outputPath }),
+      body: JSON.stringify({ image_path: toSam3MediaReference(extracted.outputPath) }),
     });
     const setImageData = await setImageRes.json();
     if (!setImageRes.ok) {
@@ -1031,7 +1033,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
       }
 
       if (!body) continue;
-      const res = await fetch(`http://localhost:${localServerPort}/segment`, {
+      const res = await fetch(`${localApiUrl}/segment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -1043,7 +1045,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
       latestData = data as Record<string, unknown>;
     }
 
-    const thresholdRes = await fetch(`http://localhost:${localServerPort}/segment`, {
+    const thresholdRes = await fetch(`${localApiUrl}/segment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'confidence', threshold: detectionThreshold }),
@@ -1055,11 +1057,11 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
 
     const finalData = (thresholdData as Record<string, unknown>) ?? latestData;
     return { frameSourceUrl, finalData };
-  }, [currentFrameIndex, currentTime, detectionThreshold, localInputPath, localServerPort]);
+  }, [currentFrameIndex, currentTime, detectionThreshold, localApiUrl, localInputPath]);
 
   const replayLocalPrompts = useCallback(async (history: CloudPrompt[]) => {
     const sessionId = await restartLocalSession();
-    if (!sessionId || !localServerPort) return null;
+    if (!sessionId || !localApiUrl) return null;
 
     let latestPromptData: Record<string, unknown> | null = null;
     for (const prompt of history) {
@@ -1092,7 +1094,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
         body.box_labels = [prompt.positive ? 1 : 0];
       }
 
-      const promptRes = await fetch(`http://localhost:${localServerPort}/video/add-prompt`, {
+      const promptRes = await fetch(`${localApiUrl}/video/add-prompt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -1105,7 +1107,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
     }
 
     return { sessionId, latestPromptData };
-  }, [currentFrameIndex, localServerPort, restartLocalSession]);
+  }, [currentFrameIndex, localApiUrl, restartLocalSession]);
 
   const getTrackingPromptHistory = useCallback((history: CloudPrompt[]) => {
     const selectedPrompt = maskCandidateToPrompt(selectedMaskCandidate, currentFrameIndex, videoSize);
@@ -1142,7 +1144,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
   }, [clearFramePreview]);
 
   const previewLocalFrameHistory = useCallback(async (history: CloudPrompt[]): Promise<FramePreviewResult | null> => {
-    if (!localServerPort || !localVideoSessionId) return null;
+    if (!localApiUrl || !localVideoSessionId) return null;
 
     const previewResult = await replayLocalImagePrompts(history);
     const rawMasks = Array.isArray(previewResult?.finalData?.masks) ? previewResult.finalData.masks : [];
@@ -1164,7 +1166,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
       selectedMaskCandidateIndex: maskCandidate?.index ?? null,
       rawMaskUrlOverride: null,
     };
-  }, [currentFrameIndex, localServerPort, localVideoSessionId, replayLocalImagePrompts, videoSize]);
+  }, [currentFrameIndex, localApiUrl, localVideoSessionId, replayLocalImagePrompts, videoSize]);
 
   const previewCloudFrameHistory = useCallback(async (history: CloudPrompt[]): Promise<FramePreviewResult | null> => {
     const apiKey = getApiKey();
@@ -1245,7 +1247,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
   }, [backend, previewCloudFrameHistory, previewLocalFrameHistory]);
 
   const runLocalFramePreview = useCallback(async (history: CloudPrompt[]) => {
-    if (!localServerPort || !localVideoSessionId) return false;
+    if (!localApiUrl || !localVideoSessionId) return false;
 
     if (history.length === 0) {
       clearFramePreview();
@@ -1263,10 +1265,10 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
     } finally {
       setRunning(false);
     }
-  }, [applyFramePreviewResult, clearFramePreview, localServerPort, localVideoSessionId, previewLocalFrameHistory]);
+  }, [applyFramePreviewResult, clearFramePreview, localApiUrl, localVideoSessionId, previewLocalFrameHistory]);
 
   const runLocalClipTracking = useCallback(async () => {
-    if (!localServerPort || !localVideoSessionId) return false;
+    if (!localApiUrl || !localVideoSessionId) return false;
     if (promptHistory.length === 0) return false;
 
     setRunning(true);
@@ -1275,7 +1277,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
       const replayResult = await replayLocalPrompts(getTrackingPromptHistory(promptHistory));
       if (!replayResult) return false;
 
-      const propRes = await fetch(`http://localhost:${localServerPort}/video/propagate`, {
+      const propRes = await fetch(`${localApiUrl}/video/propagate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1298,7 +1300,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
     } finally {
       setRunning(false);
     }
-  }, [getTrackingPromptHistory, localServerPort, localVideoSessionId, promptHistory, replayLocalPrompts]);
+  }, [getTrackingPromptHistory, localApiUrl, localVideoSessionId, promptHistory, replayLocalPrompts]);
 
   /* ── Cloud segmentation ── */
   const runCloudFramePreview = useCallback(async (history: CloudPrompt[]) => {

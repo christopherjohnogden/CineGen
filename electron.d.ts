@@ -37,6 +37,7 @@ export interface ElectronAPI {
       nodeId: string;
       nodeType: string;
       modelId: string;
+      outputType?: 'image' | 'video' | 'audio' | 'text' | '3d';
       inputs: Record<string, unknown>;
     }) => Promise<unknown>;
     pollJob: (id: string) => Promise<{ status: string; result?: unknown }>;
@@ -396,9 +397,9 @@ export interface ElectronAPI {
     }) => void) => (() => void);
   };
   sam3: {
-    start: () => Promise<{ port: number }>;
+    start: () => Promise<{ port: number; running?: boolean; baseUrl?: string }>;
     stop: () => Promise<void>;
-    getPort: () => Promise<{ port: number; running: boolean }>;
+    getPort: () => Promise<{ port: number; running: boolean; baseUrl?: string }>;
   };
   localModel: {
     run: (params: { nodeType: string; inputs: Record<string, unknown> }) => Promise<{ jobId: string }>;

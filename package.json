@@ -8,6 +8,8 @@
   "type": "module",
   "scripts": {
     "build:native": "node scripts/build-native-avf.mjs",
+    "higgsfield:catalog": "node scripts/higgsfield/update-model-catalog.mjs",
+    "higgsfield:catalog:check": "node scripts/higgsfield/update-model-catalog.mjs --check",
     "dev": "npm run build:native && vite",
     "build": "npm run build:native && vite build",
     "preview": "npm run build && electron .",

@@ -1,0 +1,4 @@
+.data/
+dist/
+tmp/
+*.log

@@ -7,6 +7,11 @@ export function toFileUrl(pathOrUrl: string | undefined | null): string {
   if (!pathOrUrl) return '';
   if (/^(https?|blob|data|file|local-media):/.test(pathOrUrl)) return pathOrUrl;
 
+  // The web server owns root-relative media references. Keep them browser-native
+  // instead of accidentally translating them into Electron's local protocol.
+  // Electron never emits these references, so desktop file handling is unchanged.
+  if (pathOrUrl.startsWith('/media/')) return pathOrUrl;
+
   // Normalize Windows backslashes and ensure we always build a valid URL pathname.
   const normalized = pathOrUrl.replace(/\\/g, '/');
   const pathname = normalized.startsWith('/') ? normalized : `/${normalized}`;

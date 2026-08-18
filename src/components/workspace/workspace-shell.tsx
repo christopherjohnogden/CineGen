@@ -941,6 +941,14 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     const next = [...nextJobs];
     const unchanged = currentJobs.length === next.length && currentJobs.every((job, index) => job === next[index]);
     if (unchanged) return;
+    // Media jobs often finish in the same browser task. Keep the event-facing
+    // ref ahead of React's next render so each completion removes its job from
+    // the result of the previous completion instead of from a stale snapshot.
+    assetsRef.current = assetsRef.current.map((entry) => (
+      entry.id === assetId
+        ? { ...entry, metadata: { ...(entry.metadata ?? {}), processingJobs: next } }
+        : entry
+    ));
     wrappedDispatch({
       type: 'UPDATE_ASSET',
       asset: { id: assetId, metadata: { processingJobs: next } },
@@ -1335,8 +1343,9 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         remoteUrl,
         localPathHint,
       }).then((result) => {
-        if ('error' in result && result.error) {
-          console.warn(`[workspace] Skipped persist for generated asset ${asset.id}:`, result.error);
+        if (!('path' in result)) {
+          const error = result.error || 'Generated asset could not be persisted.';
+          console.warn(`[workspace] Skipped persist for generated asset ${asset.id}:`, error);
           wrappedDispatch({
             type: 'UPDATE_ASSET',
             asset: {
@@ -1344,7 +1353,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
               metadata: {
                 ...(asset.metadata ?? {}),
                 localPersistStatus: 'failed',
-                localPersistError: result.error,
+                localPersistError: error,
               },
             },
           });

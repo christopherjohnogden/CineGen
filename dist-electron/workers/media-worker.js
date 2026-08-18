@@ -1,11 +1,10 @@
-var _a;
-import { parentPort } from "worker_threads";
-import { spawn } from "child_process";
-import { createRequire } from "node:module";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-const JOB_PRIORITY = {
+import { parentPort as V } from "worker_threads";
+import { spawn as C } from "child_process";
+import { createRequire as Y } from "node:module";
+import N from "node:fs";
+import M from "node:path";
+import { fileURLToPath as K } from "node:url";
+const J = {
   extract_metadata: 0,
   generate_thumbnail: 1,
   compute_waveform: 2,
@@ -13,10 +12,7 @@ const JOB_PRIORITY = {
   generate_proxy: 4,
   sync_compute_offset: 0,
   sync_batch_match: 0
-};
-const MAX_CONCURRENT_JOBS = 3;
-const MAX_CONCURRENCY_COST = 2;
-const JOB_COST = {
+}, W = 3, Q = 2, L = {
   extract_metadata: 0,
   generate_thumbnail: 1,
   compute_waveform: 1,
@@ -24,208 +20,170 @@ const JOB_COST = {
   generate_proxy: 2,
   sync_compute_offset: 2,
   sync_batch_match: 2
-};
-const LIGHT_FFMPEG_THREADS = "1";
-const PROXY_FFMPEG_THREADS = "2";
-const THUMBNAIL_FALLBACK_OFFSET_SECONDS = 0.1;
-const FILMSTRIP_FRAME_COUNT = 18;
-const FILMSTRIP_FRAME_WIDTH = 160;
-const VIDEO_EXTS = /* @__PURE__ */ new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".mxf", ".m4v"]);
-let ffmpegPath = "";
-let ffprobePath = "";
-let fpcalcPath = "";
-const queue = [];
-const activeJobs = /* @__PURE__ */ new Map();
-const require$1 = createRequire(import.meta.url);
-const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-function resolveNativeAddonPath() {
-  const candidates = [
-    process.resourcesPath ? path.join(process.resourcesPath, "native", "cinegen_avfoundation.node") : null,
-    path.resolve(process.cwd(), "native", "avfoundation", "build", "Release", "cinegen_avfoundation.node"),
-    path.resolve(moduleDir, "../../native/avfoundation/build/Release/cinegen_avfoundation.node"),
-    path.resolve(moduleDir, "../native/avfoundation/build/Release/cinegen_avfoundation.node")
-  ].filter((candidate) => Boolean(candidate));
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}, B = "1", Z = "2", j = 0.1, tt = 18, et = 160, at = /* @__PURE__ */ new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".mxf", ".m4v"]);
+let F = "", k = "", b = "";
+const x = [], h = /* @__PURE__ */ new Map(), rt = Y(import.meta.url), q = M.dirname(K(import.meta.url));
+function ot() {
+  return [
+    process.resourcesPath ? M.join(process.resourcesPath, "native", "cinegen_avfoundation.node") : null,
+    M.resolve(process.cwd(), "native", "avfoundation", "build", "Release", "cinegen_avfoundation.node"),
+    M.resolve(q, "../../native/avfoundation/build/Release/cinegen_avfoundation.node"),
+    M.resolve(q, "../native/avfoundation/build/Release/cinegen_avfoundation.node")
+  ].filter((e) => !!e).find((e) => N.existsSync(e)) ?? null;
 }
-let nativeAddon = null;
+let R = null;
 if (process.platform === "darwin") {
-  const addonPath = resolveNativeAddonPath();
-  if (addonPath) {
+  const t = ot();
+  if (t)
     try {
-      nativeAddon = require$1(addonPath);
-      console.log("[media-worker] AVFoundation addon loaded:", addonPath);
-    } catch (error) {
-      console.error("[media-worker] Failed to load AVFoundation addon:", error);
+      R = rt(t), console.log("[media-worker] AVFoundation addon loaded:", t);
+    } catch (e) {
+      console.error("[media-worker] Failed to load AVFoundation addon:", e);
     }
-  } else {
+  else
     console.warn("[media-worker] AVFoundation addon not found, falling back to ffmpeg");
-  }
 }
-function send(msg) {
-  var _a2;
-  (_a2 = parentPort) == null ? void 0 : _a2.postMessage(msg);
+function I(t) {
+  var e;
+  (e = V) == null || e.postMessage(t);
 }
-function enqueue(job) {
-  const priority = JOB_PRIORITY[job.type];
-  const idx = queue.findIndex((q) => JOB_PRIORITY[q.type] > priority);
-  if (idx === -1) {
-    queue.push(job);
-  } else {
-    queue.splice(idx, 0, job);
-  }
+function nt(t) {
+  const e = J[t.type], n = x.findIndex((r) => J[r.type] > e);
+  n === -1 ? x.push(t) : x.splice(n, 0, t);
 }
-function processQueue() {
-  while (activeJobs.size < MAX_CONCURRENT_JOBS && queue.length > 0) {
-    const activeCost = Array.from(activeJobs.values()).reduce(
-      (sum, active) => sum + JOB_COST[active.job.type],
+function $() {
+  for (; h.size < W && x.length > 0; ) {
+    const t = Array.from(h.values()).reduce(
+      (r, f) => r + L[f.job.type],
       0
+    ), e = x.findIndex(
+      (r) => t + L[r.type] <= Q
     );
-    const nextIndex = queue.findIndex(
-      (queuedJob) => activeCost + JOB_COST[queuedJob.type] <= MAX_CONCURRENCY_COST
-    );
-    if (nextIndex === -1) break;
-    const [job] = queue.splice(nextIndex, 1);
-    runJob(job);
+    if (e === -1) break;
+    const [n] = x.splice(e, 1);
+    pt(n);
   }
 }
-function spawnAsync(bin, args, jobId) {
-  const child = spawn(bin, args);
-  const stdoutChunks = [];
-  let stderr = "";
-  const promise = new Promise((resolve, reject) => {
-    var _a2, _b;
-    (_a2 = child.stdout) == null ? void 0 : _a2.on("data", (chunk) => stdoutChunks.push(chunk));
-    (_b = child.stderr) == null ? void 0 : _b.on("data", (chunk) => {
-      stderr += chunk.toString();
+function T(t, e, n) {
+  const r = C(t, e), f = [];
+  let d = "";
+  return { promise: new Promise((a, u) => {
+    var m, _;
+    (m = r.stdout) == null || m.on("data", (l) => f.push(l)), (_ = r.stderr) == null || _.on("data", (l) => {
+      d += l.toString();
+    }), r.on("error", (l) => u(l)), r.on("close", (l) => {
+      a({ stdout: Buffer.concat(f), stderr: d, code: l });
     });
-    child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
-      resolve({ stdout: Buffer.concat(stdoutChunks), stderr, code });
-    });
-  });
-  return { promise, child };
+  }), child: r };
 }
-function isVideoInput(inputPath) {
-  return VIDEO_EXTS.has(path.extname(inputPath).toLowerCase());
+function X(t) {
+  return at.has(M.extname(t).toLowerCase());
 }
-async function probeDuration(job) {
-  var _a2;
-  const args = [
+async function G(t) {
+  var i;
+  const e = [
     "-v",
     "quiet",
     "-print_format",
     "json",
     "-show_format",
-    job.inputPath
-  ];
-  const { promise, child } = spawnAsync(ffprobePath, args, job.id);
-  activeJobs.set(job.id, { process: child, job });
-  const { stdout, code } = await promise;
-  if (code !== 0) {
-    throw new Error(`ffprobe exited with code ${code}`);
-  }
+    t.inputPath
+  ], { promise: n, child: r } = T(k, e, t.id);
+  h.set(t.id, { process: r, job: t });
+  const { stdout: f, code: d } = await n;
+  if (d !== 0)
+    throw new Error(`ffprobe exited with code ${d}`);
   try {
-    const parsed = JSON.parse(stdout.toString());
-    return parseFloat(((_a2 = parsed.format) == null ? void 0 : _a2.duration) ?? "0") || 0;
+    const a = JSON.parse(f.toString());
+    return parseFloat(((i = a.format) == null ? void 0 : i.duration) ?? "0") || 0;
   } catch {
     throw new Error("Failed to parse ffprobe duration");
   }
 }
-async function extractMetadata(job) {
-  var _a2, _b, _c, _d, _e;
-  const args = [
+async function st(t) {
+  var l, p, P, y, o;
+  const e = [
     "-v",
     "quiet",
     "-print_format",
     "json",
     "-show_format",
     "-show_streams",
-    job.inputPath
-  ];
-  const { promise, child } = spawnAsync(ffprobePath, args, job.id);
-  activeJobs.set(job.id, { process: child, job });
-  const { stdout, code } = await promise;
-  if (code !== 0) {
-    throw new Error(`ffprobe exited with code ${code}`);
-  }
-  let parsed;
+    t.inputPath
+  ], { promise: n, child: r } = T(k, e, t.id);
+  h.set(t.id, { process: r, job: t });
+  const { stdout: f, code: d } = await n;
+  if (d !== 0)
+    throw new Error(`ffprobe exited with code ${d}`);
+  let i;
   try {
-    parsed = JSON.parse(stdout.toString());
+    i = JSON.parse(f.toString());
   } catch {
     throw new Error("Failed to parse ffprobe JSON output");
   }
-  const videoStream = (_a2 = parsed.streams) == null ? void 0 : _a2.find((s) => s.codec_type === "video");
-  const audioStream = (_b = parsed.streams) == null ? void 0 : _b.find((s) => s.codec_type === "audio");
-  let fps = 0;
-  if (videoStream == null ? void 0 : videoStream.r_frame_rate) {
-    const parts = videoStream.r_frame_rate.split("/");
-    if (parts.length === 2) {
-      const num = parseFloat(parts[0]);
-      const den = parseFloat(parts[1]);
-      fps = den !== 0 ? num / den : 0;
-    } else {
-      fps = parseFloat(parts[0]) || 0;
-    }
+  const a = (l = i.streams) == null ? void 0 : l.find((s) => s.codec_type === "video"), u = (p = i.streams) == null ? void 0 : p.find((s) => s.codec_type === "audio");
+  let m = 0;
+  if (a != null && a.r_frame_rate) {
+    const s = a.r_frame_rate.split("/");
+    if (s.length === 2) {
+      const g = parseFloat(s[0]), w = parseFloat(s[1]);
+      m = w !== 0 ? g / w : 0;
+    } else
+      m = parseFloat(s[0]) || 0;
   }
-  const metadata = {
-    duration: parseFloat(((_c = parsed.format) == null ? void 0 : _c.duration) ?? "0"),
-    width: (videoStream == null ? void 0 : videoStream.width) ?? 0,
-    height: (videoStream == null ? void 0 : videoStream.height) ?? 0,
-    fps: Math.round(fps * 100) / 100,
-    codec: (videoStream == null ? void 0 : videoStream.codec_name) ?? "",
-    fileSize: parseInt(((_d = parsed.format) == null ? void 0 : _d.size) ?? "0", 10),
-    bitrate: parseInt(((_e = parsed.format) == null ? void 0 : _e.bit_rate) ?? "0", 10),
-    audioChannels: (audioStream == null ? void 0 : audioStream.channels) ?? 0,
-    audioCodec: (audioStream == null ? void 0 : audioStream.codec_name) ?? ""
+  return {
+    duration: parseFloat(((P = i.format) == null ? void 0 : P.duration) ?? "0"),
+    width: (a == null ? void 0 : a.width) ?? 0,
+    height: (a == null ? void 0 : a.height) ?? 0,
+    fps: Math.round(m * 100) / 100,
+    codec: (a == null ? void 0 : a.codec_name) ?? "",
+    fileSize: parseInt(((y = i.format) == null ? void 0 : y.size) ?? "0", 10),
+    bitrate: parseInt(((o = i.format) == null ? void 0 : o.bit_rate) ?? "0", 10),
+    audioChannels: (u == null ? void 0 : u.channels) ?? 0,
+    audioCodec: (u == null ? void 0 : u.codec_name) ?? ""
   };
-  return metadata;
 }
-async function generateThumbnail(job) {
-  if (nativeAddon && isVideoInput(job.inputPath)) {
-    activeJobs.set(job.id, { job });
+async function it(t) {
+  if (R && X(t.inputPath)) {
+    h.set(t.id, { job: t });
     try {
-      nativeAddon.generateThumbnail(job.inputPath, job.outputPath, 0.5);
-      return { outputPath: job.outputPath };
+      return R.generateThumbnail(t.inputPath, t.outputPath, 0.5), { outputPath: t.outputPath };
     } finally {
-      activeJobs.delete(job.id);
+      h.delete(t.id);
     }
   }
-  let seekTime = THUMBNAIL_FALLBACK_OFFSET_SECONDS;
+  let e = j;
   try {
-    const duration = await probeDuration(job);
-    if (duration > 0) {
-      seekTime = Math.max(0, duration * 0.5);
-    }
+    const a = await G(t);
+    a > 0 && (e = Math.max(0, a * 0.5));
   } catch {
   }
-  const args = [
+  const n = [
     "-y",
     "-threads",
-    LIGHT_FFMPEG_THREADS,
+    B,
     "-ss",
-    `${seekTime}`,
+    `${e}`,
     "-i",
-    job.inputPath,
+    t.inputPath,
     "-frames:v",
     "1",
     "-q:v",
     "2",
-    job.outputPath
-  ];
-  const { promise, child } = spawnAsync(ffmpegPath, args, job.id);
-  activeJobs.set(job.id, { process: child, job });
-  const { code, stderr } = await promise;
-  if (code !== 0) {
-    throw new Error(`ffmpeg thumbnail exited with code ${code}: ${stderr}`);
-  }
-  return { outputPath: job.outputPath };
+    t.outputPath
+  ], { promise: r, child: f } = T(F, n, t.id);
+  h.set(t.id, { process: f, job: t });
+  const { code: d, stderr: i } = await r;
+  if (d !== 0)
+    throw new Error(`ffmpeg thumbnail exited with code ${d}: ${i}`);
+  return { outputPath: t.outputPath };
 }
-async function computeWaveform(job) {
-  const args = [
+async function ct(t) {
+  const e = [
     "-threads",
-    LIGHT_FFMPEG_THREADS,
+    B,
     "-i",
-    job.inputPath,
+    t.inputPath,
     "-vn",
     "-f",
     "f32le",
@@ -234,293 +192,232 @@ async function computeWaveform(job) {
     "-ar",
     "8000",
     "pipe:1"
-  ];
-  const child = spawn(ffmpegPath, args);
-  activeJobs.set(job.id, { process: child, job });
-  const pcmChunks = [];
-  const promise = new Promise((resolve, reject) => {
-    var _a2, _b;
-    (_a2 = child.stdout) == null ? void 0 : _a2.on("data", (chunk) => pcmChunks.push(chunk));
-    (_b = child.stderr) == null ? void 0 : _b.on("data", () => {
+  ], n = C(F, e);
+  h.set(t.id, { process: n, job: t });
+  const r = [], d = await new Promise((o, s) => {
+    var g, w;
+    (g = n.stdout) == null || g.on("data", (c) => r.push(c)), (w = n.stderr) == null || w.on("data", () => {
+    }), n.on("error", (c) => s(c)), n.on("close", (c) => {
+      c !== 0 ? s(new Error(`ffmpeg waveform exited with code ${c}`)) : o(Buffer.concat(r));
     });
-    child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`ffmpeg waveform exited with code ${code}`));
-      } else {
-        resolve(Buffer.concat(pcmChunks));
-      }
-    });
-  });
-  const pcmBuffer = await promise;
-  const sampleCount = Math.floor(pcmBuffer.length / 4);
-  const durationSec = sampleCount / 8e3;
-  const TARGET_PEAKS = Math.max(2e3, Math.round(durationSec * 500));
-  const samplesPerPeak = Math.max(1, Math.floor(sampleCount / TARGET_PEAKS));
-  const rawPeaks = [];
-  for (let i = 0; i < sampleCount; i += samplesPerPeak) {
-    let peak = 0;
-    const end = Math.min(i + samplesPerPeak, sampleCount);
-    for (let j = i; j < end; j++) {
-      const val = Math.abs(pcmBuffer.readFloatLE(j * 4));
-      if (val > peak) peak = val;
+  }), i = Math.floor(d.length / 4), a = i / 8e3, u = Math.max(2e3, Math.round(a * 500)), m = Math.max(1, Math.floor(i / u)), _ = [];
+  for (let o = 0; o < i; o += m) {
+    let s = 0;
+    const g = Math.min(o + m, i);
+    for (let w = o; w < g; w++) {
+      const c = Math.abs(d.readFloatLE(w * 4));
+      c > s && (s = c);
     }
-    rawPeaks.push(peak);
+    _.push(s);
   }
-  const globalMax = rawPeaks.reduce((max, value) => value > max ? value : max, 0.01);
-  const peaks = rawPeaks.map((value) => Math.round(value / globalMax * 1e3) / 1e3);
-  fs.mkdirSync(path.dirname(job.outputPath), { recursive: true });
-  fs.writeFileSync(job.outputPath, JSON.stringify(peaks));
-  const inlineSummaryTarget = Math.max(1200, Math.min(4096, Math.round(durationSec * 24)));
-  let summaryPeaks = peaks;
-  if (peaks.length > inlineSummaryTarget) {
-    const binSize = peaks.length / inlineSummaryTarget;
-    summaryPeaks = [];
-    for (let i = 0; i < inlineSummaryTarget; i++) {
-      const start = Math.floor(i * binSize);
-      const end = Math.min(Math.floor((i + 1) * binSize), peaks.length);
-      let max = 0;
-      let sum = 0;
-      let count = 0;
-      for (let j = start; j < end; j++) {
-        const value = peaks[j];
-        sum += value;
-        count++;
-        if (value > max) max = value;
+  const l = _.reduce((o, s) => s > o ? s : o, 0.01), p = _.map((o) => Math.round(o / l * 1e3) / 1e3);
+  N.mkdirSync(M.dirname(t.outputPath), { recursive: !0 }), N.writeFileSync(t.outputPath, JSON.stringify(p));
+  const P = Math.max(1200, Math.min(4096, Math.round(a * 24)));
+  let y = p;
+  if (p.length > P) {
+    const o = p.length / P;
+    y = [];
+    for (let s = 0; s < P; s++) {
+      const g = Math.floor(s * o), w = Math.min(Math.floor((s + 1) * o), p.length);
+      let c = 0, E = 0, v = 0;
+      for (let A = g; A < w; A++) {
+        const S = p[A];
+        E += S, v++, S > c && (c = S);
       }
-      const mean = count > 0 ? sum / count : 0;
-      summaryPeaks.push(Math.round((mean * 0.72 + max * 0.28) * 1e3) / 1e3);
+      const O = v > 0 ? E / v : 0;
+      y.push(Math.round((O * 0.72 + c * 0.28) * 1e3) / 1e3);
     }
   }
-  return { peaks: summaryPeaks, peaksPath: job.outputPath };
+  return { peaks: y, peaksPath: t.outputPath };
 }
-async function generateFilmstrip(job) {
-  if (nativeAddon && isVideoInput(job.inputPath)) {
-    activeJobs.set(job.id, { job });
+async function dt(t) {
+  if (R && X(t.inputPath)) {
+    h.set(t.id, { job: t });
     try {
-      const frames = nativeAddon.generateFilmstripFrames(
-        job.inputPath,
-        path.dirname(job.outputPath),
-        path.basename(job.outputPath, path.extname(job.outputPath)),
-        FILMSTRIP_FRAME_COUNT,
-        FILMSTRIP_FRAME_WIDTH
-      );
-      return { frames };
+      return { frames: R.generateFilmstripFrames(
+        t.inputPath,
+        M.dirname(t.outputPath),
+        M.basename(t.outputPath, M.extname(t.outputPath)),
+        tt,
+        et
+      ) };
     } finally {
-      activeJobs.delete(job.id);
+      h.delete(t.id);
     }
   }
-  const duration = await probeDuration(job);
-  if (duration <= 0) {
+  const e = await G(t);
+  if (e <= 0)
     throw new Error("Cannot generate filmstrip: duration is 0");
-  }
-  const MAX_FILMSTRIP_FRAMES = 120;
-  const N = Math.min(Math.ceil(duration), MAX_FILMSTRIP_FRAMES);
-  const sampleRate = duration / N;
-  const filterComplex = `fps=1/${Math.max(1, Math.floor(sampleRate))},scale=160:-2,tile=${N}x1`;
-  const ffmpegArgs = [
+  const r = Math.min(Math.ceil(e), 120), f = e / r, d = `fps=1/${Math.max(1, Math.floor(f))},scale=160:-2,tile=${r}x1`, i = [
     "-y",
     "-threads",
-    LIGHT_FFMPEG_THREADS,
+    B,
     "-i",
-    job.inputPath,
+    t.inputPath,
     "-vf",
-    filterComplex,
+    d,
     "-frames:v",
     "1",
-    job.outputPath
-  ];
-  const ffmpegChild = spawn(ffmpegPath, ffmpegArgs);
-  activeJobs.set(job.id, { process: ffmpegChild, job });
-  const ffmpegResult = await new Promise((resolve, reject) => {
-    var _a2, _b;
-    const stdoutChunks = [];
-    let stderr = "";
-    (_a2 = ffmpegChild.stdout) == null ? void 0 : _a2.on("data", (chunk) => stdoutChunks.push(chunk));
-    (_b = ffmpegChild.stderr) == null ? void 0 : _b.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    ffmpegChild.on("error", (err) => reject(err));
-    ffmpegChild.on("close", (code) => {
-      resolve({ stdout: Buffer.concat(stdoutChunks), stderr, code });
+    t.outputPath
+  ], a = C(F, i);
+  h.set(t.id, { process: a, job: t });
+  const u = await new Promise((m, _) => {
+    var P, y;
+    const l = [];
+    let p = "";
+    (P = a.stdout) == null || P.on("data", (o) => l.push(o)), (y = a.stderr) == null || y.on("data", (o) => {
+      p += o.toString();
+    }), a.on("error", (o) => _(o)), a.on("close", (o) => {
+      m({ stdout: Buffer.concat(l), stderr: p, code: o });
     });
   });
-  if (ffmpegResult.code !== 0) {
+  if (u.code !== 0)
     throw new Error(
-      `ffmpeg filmstrip exited with code ${ffmpegResult.code}: ${ffmpegResult.stderr}`
+      `ffmpeg filmstrip exited with code ${u.code}: ${u.stderr}`
     );
-  }
-  return { outputPath: job.outputPath };
+  return { outputPath: t.outputPath };
 }
-async function generateProxy(job) {
-  var _a2;
-  const probeArgs = [
+async function ut(t) {
+  var m;
+  const e = [
     "-v",
     "quiet",
     "-print_format",
     "json",
     "-show_format",
-    job.inputPath
-  ];
-  const { promise: probeProm, child: probeChild } = spawnAsync(
-    ffprobePath,
-    probeArgs,
-    job.id
+    t.inputPath
+  ], { promise: n, child: r } = T(
+    k,
+    e,
+    t.id
   );
-  activeJobs.set(job.id, { process: probeChild, job });
-  const probeResult = await probeProm;
-  let totalDuration = 0;
+  h.set(t.id, { process: r, job: t });
+  const f = await n;
+  let d = 0;
   try {
-    const probeJson = JSON.parse(probeResult.stdout.toString());
-    totalDuration = parseFloat(((_a2 = probeJson.format) == null ? void 0 : _a2.duration) ?? "0");
+    const _ = JSON.parse(f.stdout.toString());
+    d = parseFloat(((m = _.format) == null ? void 0 : m.duration) ?? "0");
   } catch {
   }
-  const runProxyEncode = async (videoArgs) => {
-    const ffmpegArgs = [
+  const i = async (_) => {
+    const l = [
       "-y",
       "-threads",
-      PROXY_FFMPEG_THREADS,
+      Z,
       "-i",
-      job.inputPath,
+      t.inputPath,
       "-vf",
       "scale=960:-2",
-      ...videoArgs,
+      ..._,
       "-c:a",
       "aac",
       "-b:a",
       "128k",
-      job.outputPath
-    ];
-    const ffmpegChild = spawn(ffmpegPath, ffmpegArgs);
-    activeJobs.set(job.id, { process: ffmpegChild, job });
-    return new Promise((resolve, reject) => {
-      var _a3, _b;
-      const stdoutChunks = [];
-      let stderr = "";
-      (_a3 = ffmpegChild.stdout) == null ? void 0 : _a3.on("data", (chunk) => stdoutChunks.push(chunk));
-      (_b = ffmpegChild.stderr) == null ? void 0 : _b.on("data", (chunk) => {
-        const text = chunk.toString();
-        stderr += text;
-        if (totalDuration > 0) {
-          const timeMatch = text.match(/time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
-          if (timeMatch) {
-            const hours = parseInt(timeMatch[1], 10);
-            const minutes = parseInt(timeMatch[2], 10);
-            const seconds = parseInt(timeMatch[3], 10);
-            const centis = parseInt(timeMatch[4], 10);
-            const currentTime = hours * 3600 + minutes * 60 + seconds + centis / 100;
-            const progress = Math.min(
-              Math.round(currentTime / totalDuration * 100),
+      t.outputPath
+    ], p = C(F, l);
+    return h.set(t.id, { process: p, job: t }), new Promise((P, y) => {
+      var g, w;
+      const o = [];
+      let s = "";
+      (g = p.stdout) == null || g.on("data", (c) => o.push(c)), (w = p.stderr) == null || w.on("data", (c) => {
+        const E = c.toString();
+        if (s += E, d > 0) {
+          const v = E.match(/time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
+          if (v) {
+            const O = parseInt(v[1], 10), A = parseInt(v[2], 10), S = parseInt(v[3], 10), H = parseInt(v[4], 10), U = O * 3600 + A * 60 + S + H / 100, z = Math.min(
+              Math.round(U / d * 100),
               100
             );
-            send({ type: "job:progress", jobId: job.id, progress });
+            I({ type: "job:progress", jobId: t.id, progress: z });
           }
         }
-      });
-      ffmpegChild.on("error", (err) => reject(err));
-      ffmpegChild.on("close", (code) => {
-        resolve({ stdout: Buffer.concat(stdoutChunks), stderr, code });
+      }), p.on("error", (c) => y(c)), p.on("close", (c) => {
+        P({ stdout: Buffer.concat(o), stderr: s, code: c });
       });
     });
-  };
-  const preferredVideoArgs = process.platform === "darwin" ? ["-c:v", "h264_videotoolbox", "-allow_sw", "1", "-b:v", "5M", "-maxrate", "8M"] : ["-c:v", "libx264", "-crf", "23", "-preset", "veryfast"];
-  let result = await runProxyEncode(preferredVideoArgs);
-  if (result.code !== 0 && process.platform === "darwin") {
-    result = await runProxyEncode(["-c:v", "libx264", "-crf", "23", "-preset", "veryfast"]);
-  }
-  if (result.code !== 0) {
-    throw new Error(`ffmpeg proxy exited with code ${result.code}: ${result.stderr}`);
-  }
-  return { outputPath: job.outputPath };
+  }, a = process.platform === "darwin" ? ["-c:v", "h264_videotoolbox", "-allow_sw", "1", "-b:v", "5M", "-maxrate", "8M"] : ["-c:v", "libx264", "-crf", "23", "-preset", "veryfast"];
+  let u = await i(a);
+  if (u.code !== 0 && process.platform === "darwin" && (u = await i(["-c:v", "libx264", "-crf", "23", "-preset", "veryfast"])), u.code !== 0)
+    throw new Error(`ffmpeg proxy exited with code ${u.code}: ${u.stderr}`);
+  return { outputPath: t.outputPath };
 }
-async function runJob(job) {
+async function pt(t) {
   try {
-    let result;
-    switch (job.type) {
+    let e;
+    switch (t.type) {
       case "extract_metadata":
-        result = await extractMetadata(job);
+        e = await st(t);
         break;
       case "generate_thumbnail":
-        result = await generateThumbnail(job);
+        e = await it(t);
         break;
       case "compute_waveform":
-        result = await computeWaveform(job);
+        e = await ct(t);
         break;
       case "generate_filmstrip":
-        result = await generateFilmstrip(job);
+        e = await dt(t);
         break;
       case "generate_proxy":
-        result = await generateProxy(job);
+        e = await ut(t);
         break;
       case "sync_compute_offset": {
-        const { computeSyncOffset } = await import("./audio-sync-DgsPyiU0.js");
-        result = await computeSyncOffset(
-          job.sourceFilePath,
-          job.targetFilePath,
-          ffmpegPath,
-          ffprobePath,
-          fpcalcPath
+        const { computeSyncOffset: n } = await import("./audio-sync-dZi5Ub6p.js");
+        e = await n(
+          t.sourceFilePath,
+          t.targetFilePath,
+          F,
+          k,
+          b
         );
         break;
       }
       case "sync_batch_match": {
-        const { computeBatchMatch } = await import("./audio-sync-DgsPyiU0.js");
-        result = await computeBatchMatch(
-          job.videoAssets,
-          job.audioAssets,
-          ffmpegPath,
-          ffprobePath,
-          fpcalcPath,
-          (progress) => {
-            send({
+        const { computeBatchMatch: n } = await import("./audio-sync-dZi5Ub6p.js");
+        e = await n(
+          t.videoAssets,
+          t.audioAssets,
+          F,
+          k,
+          b,
+          (r) => {
+            I({
               type: "sync:batch-progress",
-              jobId: job.id,
-              ...progress
+              jobId: t.id,
+              ...r
             });
           }
         );
         break;
       }
     }
-    activeJobs.delete(job.id);
-    send({ type: "job:complete", jobId: job.id, result });
-  } catch (err) {
-    activeJobs.delete(job.id);
-    send({
+    h.delete(t.id), I({ type: "job:complete", jobId: t.id, result: e });
+  } catch (e) {
+    h.delete(t.id), I({
       type: "job:error",
-      jobId: job.id,
-      error: err instanceof Error ? err.message : String(err)
+      jobId: t.id,
+      error: e instanceof Error ? e.message : String(e)
     });
   }
-  processQueue();
+  $();
 }
-(_a = parentPort) == null ? void 0 : _a.on("message", (msg) => {
-  var _a2;
-  switch (msg.type) {
+var D;
+(D = V) == null || D.on("message", (t) => {
+  var e;
+  switch (t.type) {
     case "config":
-      ffmpegPath = msg.ffmpegPath;
-      ffprobePath = msg.ffprobePath;
-      fpcalcPath = msg.fpcalcPath;
-      send({ type: "ready" });
+      F = t.ffmpegPath, k = t.ffprobePath, b = t.fpcalcPath, I({ type: "ready" });
       break;
     case "job:submit":
-      enqueue(msg.job);
-      processQueue();
+      nt(t.job), $();
       break;
     case "job:cancel": {
-      const queueIdx = queue.findIndex((j) => j.id === msg.jobId);
-      if (queueIdx !== -1) {
-        queue.splice(queueIdx, 1);
-        send({ type: "job:error", jobId: msg.jobId, error: "Cancelled" });
+      const n = x.findIndex((f) => f.id === t.jobId);
+      if (n !== -1) {
+        x.splice(n, 1), I({ type: "job:error", jobId: t.jobId, error: "Cancelled" });
         break;
       }
-      const active = activeJobs.get(msg.jobId);
-      if (active) {
-        (_a2 = active.process) == null ? void 0 : _a2.kill("SIGTERM");
-        activeJobs.delete(msg.jobId);
-        send({ type: "job:error", jobId: msg.jobId, error: "Cancelled" });
-        processQueue();
-      }
+      const r = h.get(t.jobId);
+      r && ((e = r.process) == null || e.kill("SIGTERM"), h.delete(t.jobId), I({ type: "job:error", jobId: t.jobId, error: "Cancelled" }), $());
       break;
     }
   }

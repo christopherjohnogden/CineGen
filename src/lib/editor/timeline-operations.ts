@@ -84,7 +84,7 @@ export function addClipToTrack(
     trackId,
     name: asset.name,
     startTime: Math.max(0, startTime),
-    duration: asset.duration ?? 5,
+    duration: typeof asset.duration === 'number' && asset.duration > 0 ? asset.duration : 5,
     trimStart: 0,
     trimEnd: 0,
     speed: 1,

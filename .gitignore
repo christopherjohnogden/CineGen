@@ -26,3 +26,6 @@ target
 
 # Superpowers brainstorm artifacts
 .superpowers/
+
+# Local browser verification artifacts
+.playwright-cli/

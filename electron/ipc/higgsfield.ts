@@ -22,6 +22,7 @@ import path from 'node:path';
 export { HIGGSFIELD_MODELS } from '../../src/lib/higgsfield/higgsfield-models.js';
 
 export type HiggsfieldMediaType = 'image' | 'video';
+export type HiggsfieldOutputKind = HiggsfieldMediaType | 'audio' | 'text' | '3d';
 
 /** A reference input. role maps to a CLI media flag; value is a local path, upload UUID, or job id. */
 export interface HiggsfieldMedia {
@@ -31,18 +32,37 @@ export interface HiggsfieldMedia {
 
 export interface HiggsfieldGenerateParams {
   model: string;                 // real Higgsfield model id (e.g. 'seedance_2_0')
-  prompt: string;
-  mediaType: HiggsfieldMediaType;
+  /** Optional because many utility, enhancement, audio, and 3D models do not accept a prompt. */
+  prompt?: string;
+  /** Kept as mediaType for compatibility with the existing Quick Edit and Copilot callers. */
+  mediaType: HiggsfieldOutputKind;
   medias?: HiggsfieldMedia[];
   aspectRatio?: string;
   durationSec?: number;
   count?: number;                // 1-4
-  extra?: Record<string, string | number>; // additional --name value params
+  /** Schema-driven model params. Arrays and objects are serialized as JSON CLI values. */
+  params?: Record<string, unknown>;
+  /** Backward-compatible alias for older callers. `params` wins when the same key is present. */
+  extra?: Record<string, unknown>;
+}
+
+export interface HiggsfieldOutput {
+  kind: HiggsfieldOutputKind;
+  url?: string;
+  text?: string;
 }
 
 export interface HiggsfieldResult {
-  url: string;
-  mediaType: HiggsfieldMediaType;
+  /** First URL, retained for existing image/video callers. */
+  url?: string;
+  /** Every URL returned when a request creates more than one output. */
+  urls?: string[];
+  /** Text returned by text-output models. */
+  text?: string;
+  /** Retained for existing callers; now covers every Higgsfield output kind. */
+  mediaType: HiggsfieldOutputKind;
+  outputKind: HiggsfieldOutputKind;
+  outputs: HiggsfieldOutput[];
   durationSec?: number;
   jobId?: string;
   model: string;
@@ -56,6 +76,9 @@ const MEDIA_ROLE_FLAG: Record<HiggsfieldMedia['role'], string> = {
   audio: '--audio',
 };
 
+const PARAM_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
+const RESERVED_PARAM_NAMES = new Set(['json', 'wait', 'no_color']);
+
 // --- Pure helpers (unit-tested) -------------------------------------------------
 
 /**
@@ -63,42 +86,120 @@ const MEDIA_ROLE_FLAG: Record<HiggsfieldMedia['role'], string> = {
  * Always includes `--wait --json` so the call blocks until the job finishes and emits machine JSON.
  */
 export function buildCreateArgs(params: HiggsfieldGenerateParams): string[] {
-  const args = ['generate', 'create', params.model, '--prompt', params.prompt.trim()];
+  const args = ['generate', 'create', params.model];
+  const genericParams: Record<string, unknown> = { ...params.extra, ...params.params };
+
+  const appendParam = (name: string, value: unknown): void => {
+    if (value === undefined || value === null) return;
+    if (!PARAM_NAME_PATTERN.test(name) || RESERVED_PARAM_NAMES.has(name)) {
+      throw new Error(`Invalid Higgsfield parameter name: ${name}`);
+    }
+
+    let serialized: string;
+    if (typeof value === 'string') {
+      serialized = name === 'prompt' ? value.trim() : value;
+    } else if (typeof value === 'number') {
+      if (!Number.isFinite(value)) throw new Error(`Higgsfield parameter ${name} must be finite`);
+      serialized = String(value);
+    } else if (typeof value === 'boolean') {
+      serialized = value ? 'true' : 'false';
+    } else if (typeof value === 'object') {
+      try {
+        const json = JSON.stringify(value);
+        if (json === undefined) throw new Error('not JSON serializable');
+        serialized = json;
+      } catch (error) {
+        throw new Error(`Higgsfield parameter ${name} must be JSON serializable`, { cause: error });
+      }
+    } else {
+      throw new Error(`Higgsfield parameter ${name} has an unsupported value type`);
+    }
+    args.push(`--${name}`, serialized);
+  };
+
+  const prompt = params.prompt !== undefined ? params.prompt : genericParams.prompt;
+  delete genericParams.prompt;
+  appendParam('prompt', prompt);
+
   for (const media of params.medias ?? []) {
     if (!media.value) continue;
     args.push(MEDIA_ROLE_FLAG[media.role], media.value);
   }
-  if (params.aspectRatio) args.push('--aspect_ratio', params.aspectRatio);
-  if (typeof params.durationSec === 'number' && params.durationSec > 0) args.push('--duration', String(params.durationSec));
-  if (typeof params.count === 'number' && params.count >= 1) args.push('--count', String(params.count));
-  for (const [key, value] of Object.entries(params.extra ?? {})) {
-    args.push(`--${key}`, String(value));
+
+  if (params.aspectRatio !== undefined) {
+    delete genericParams.aspect_ratio;
+    appendParam('aspect_ratio', params.aspectRatio);
+  }
+  if (params.durationSec !== undefined) {
+    delete genericParams.duration;
+    if (params.durationSec > 0) appendParam('duration', params.durationSec);
+  }
+  if (params.count !== undefined) {
+    delete genericParams.count;
+    if (params.count >= 1) appendParam('count', params.count);
+  }
+  for (const [key, value] of Object.entries(genericParams)) {
+    appendParam(key, value);
   }
   args.push('--wait', '--json');
   return args;
 }
 
-/** Pull a media URL out of the CLI's JSON result, tolerant of envelope shape. Pure. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Pull every media URL out of the CLI's JSON result, tolerant of envelope shape. Pure. */
+export function extractMediaUrls(value: unknown, depth = 0): string[] {
+  if (depth > 12) return [];
+  if (typeof value === 'string') return /^https?:\/\//i.test(value) ? [value] : [];
+  if (Array.isArray(value)) {
+    return [...new Set(value.flatMap((entry) => extractMediaUrls(entry, depth + 1)))];
+  }
+  if (!isRecord(value)) return [];
+
+  const urls: string[] = [];
+  for (const key of ['url', 'video_url', 'image_url', 'audio_url', 'model_url', 'output_url', 'result_url']) {
+    const candidate = value[key];
+    if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate)) urls.push(candidate);
+  }
+  for (const key of ['output', 'result', 'data', 'job', 'results', 'outputs', 'medias', 'jobs', 'items']) {
+    urls.push(...extractMediaUrls(value[key], depth + 1));
+  }
+  return [...new Set(urls)];
+}
+
+/** Pull the first media URL out of the CLI's JSON result. Retained for compatibility. */
 export function extractMediaUrl(record: Record<string, unknown>): string | undefined {
-  const direct = record.url ?? record.video_url ?? record.image_url ?? record.output_url ?? record.result_url;
-  if (typeof direct === 'string' && direct) return direct;
-  for (const key of ['output', 'result', 'data', 'job']) {
-    const nested = record[key];
-    if (nested && typeof nested === 'object') {
-      const found = extractMediaUrl(nested as Record<string, unknown>);
+  return extractMediaUrls(record)[0];
+}
+
+/** Pull a text result out of common Higgsfield response envelopes. Pure. */
+export function extractTextOutput(value: unknown, depth = 0): string | undefined {
+  if (depth > 12) return undefined;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text && !/^https?:\/\//i.test(text) ? text : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = extractTextOutput(entry, depth + 1);
       if (found) return found;
     }
+    return undefined;
   }
-  for (const key of ['results', 'outputs', 'medias', 'jobs', 'items']) {
-    const arr = record[key];
-    if (Array.isArray(arr) && arr.length > 0) {
-      const first = arr[0];
-      if (typeof first === 'string' && first.startsWith('http')) return first;
-      if (first && typeof first === 'object') {
-        const found = extractMediaUrl(first as Record<string, unknown>);
-        if (found) return found;
-      }
+  if (!isRecord(value)) return undefined;
+
+  for (const key of ['text', 'output_text', 'result_text', 'response_text', 'answer', 'content']) {
+    const candidate = value[key];
+    if (typeof candidate === 'string') {
+      const text = candidate.trim();
+      if (text && !/^https?:\/\//i.test(text)) return text;
     }
+  }
+  for (const key of ['output', 'result', 'data', 'job', 'results', 'outputs', 'items']) {
+    const found = extractTextOutput(value[key], depth + 1);
+    if (found) return found;
   }
   return undefined;
 }
@@ -111,8 +212,11 @@ export function parseGenerateJson(
   const trimmed = stdout.trim();
   if (!trimmed) throw new Error('Higgsfield CLI returned no output');
 
-  const normalize = (obj: unknown): Record<string, unknown> =>
-    (Array.isArray(obj) ? { results: obj } : obj as Record<string, unknown>);
+  const normalize = (obj: unknown): Record<string, unknown> => {
+    if (Array.isArray(obj)) return { results: obj };
+    if (isRecord(obj)) return obj;
+    return { result: obj };
+  };
 
   // The `--wait --json` output is normally a single (possibly pretty-printed, multi-line) JSON
   // value — array or object. Parse the whole thing first.
@@ -142,15 +246,25 @@ export function parseGenerateJson(
     throw new Error(typeof record.error === 'string' ? record.error : 'Higgsfield generation failed');
   }
 
-  const url = extractMediaUrl(parsed);
-  if (!url) throw new Error('Higgsfield generation finished without a media URL');
+  const urls = extractMediaUrls(parsed);
+  const url = urls[0];
+  const text = extractTextOutput(parsed);
+  if (!url && !text) throw new Error('Higgsfield generation finished without a media URL or text output');
 
   const duration = record.duration ?? (record.output as Record<string, unknown> | undefined)?.duration;
   const jobId = record.job_id ?? record.id ?? record.jobId;
+  const outputKind = params.mediaType;
+  const outputs: HiggsfieldOutput[] = urls.map((outputUrl) => ({ kind: outputKind, url: outputUrl }));
+  if (text) outputs.push({ kind: 'text', text });
   return {
-    url,
-    mediaType: params.mediaType,
-    durationSec: typeof duration === 'number' ? duration : undefined,
+    ...(url ? { url, urls } : {}),
+    ...(text ? { text } : {}),
+    mediaType: outputKind,
+    outputKind,
+    outputs,
+    durationSec: typeof duration === 'number'
+      ? duration
+      : (typeof duration === 'string' && Number.isFinite(Number(duration)) ? Number(duration) : undefined),
     jobId: typeof jobId === 'string' ? jobId : undefined,
     model: params.model,
   };
@@ -341,15 +455,27 @@ export function registerHiggsfieldHandlers(): void {
   // Prompt-only (text→media) generation, optionally with a reference media value (local path or
   // https URL the CLI accepts). Used by the copilot generate_media skill action.
   ipcMain.handle('higgsfield:generate', async (_event, params: {
-    prompt: string;
+    prompt?: string;
     model: string;
-    outputType: HiggsfieldMediaType;
+    outputType: HiggsfieldOutputKind;
     referenceValue?: string;
+    medias?: HiggsfieldMedia[];
+    params?: Record<string, unknown>;
   }): Promise<HiggsfieldResult> => {
-    const medias: HiggsfieldMedia[] | undefined = params.referenceValue
-      ? [{ value: params.referenceValue, role: params.outputType === 'video' ? 'start_image' : 'image' }]
-      : undefined;
-    return generateHiggsfield({ model: params.model, prompt: params.prompt, mediaType: params.outputType, medias });
+    const medias: HiggsfieldMedia[] = [...(params.medias ?? [])];
+    if (params.referenceValue) {
+      medias.push({
+        value: params.referenceValue,
+        role: params.outputType === 'video' ? 'start_image' : 'image',
+      });
+    }
+    return generateHiggsfield({
+      model: params.model,
+      prompt: params.prompt,
+      mediaType: params.outputType,
+      medias: medias.length > 0 ? medias : undefined,
+      params: params.params,
+    });
   });
 
   // Browser-based device login. Resolves when the CLI exits (user completed or aborted in browser).

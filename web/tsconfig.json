@@ -1,0 +1,28 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "incremental": false,
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": ["vite/client", "node"]
+  },
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "../src/**/*.ts",
+    "../src/**/*.tsx",
+    "../electron.d.ts"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../dist",
+    "../dist-electron",
+    "dist"
+  ]
+}

@@ -130,11 +130,21 @@ function buildModelNodeDefinitions(): Record<string, NodeTypeDefinition> {
   for (const model of Object.values(ALL_MODELS)) {
     const inputs: PortDefinition[] = model.inputs
       .filter((f) => f.fieldType === 'port')
-      .map((f) => ({ id: f.id, type: f.portType, label: f.label }));
+      .map((f) => ({
+        id: f.id,
+        type: f.portType,
+        label: f.label,
+        ...(f.multiple ? { multiple: true } : {}),
+        ...(f.mediaRole ? { mediaRole: f.mediaRole } : {}),
+      }));
 
-    const outputs: PortDefinition[] = [
-      { id: model.outputType, type: model.outputType, label: model.outputType },
-    ];
+    const outputs: PortDefinition[] = model.outputs?.length
+      ? model.outputs.map((output) => ({
+          id: output.id,
+          type: output.portType,
+          label: output.label,
+        }))
+      : [{ id: model.outputType, type: model.outputType, label: model.outputType }];
 
     const defaultData: Record<string, unknown> = { __modelId: model.id };
     for (const field of model.inputs) {
@@ -172,6 +182,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   video: 'var(--port-video)',
   'image-edit': 'var(--port-config)',
   audio: 'var(--port-audio)',
+  model3d: 'var(--port-model)',
 };
 
 export const PORT_COLORS: Record<string, string> = {
@@ -179,6 +190,7 @@ export const PORT_COLORS: Record<string, string> = {
   image: 'var(--port-image)',
   video: 'var(--port-video)',
   audio: 'var(--port-audio)',
+  model3d: 'var(--port-model)',
   number: 'var(--port-number)',
   config: 'var(--port-config)',
   model: 'var(--port-model)',

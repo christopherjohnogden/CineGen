@@ -1,16 +1,40 @@
 
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useWorkspace, getActiveTimeline } from '@/components/workspace/workspace-shell';
 import { ExportSettings } from './export-settings';
 import { RenderProgress } from './render-progress';
 import type { ExportPreset, ExportJob } from '@/types/export';
+import { clipEffectiveDuration, clipEndTime } from '@/types/timeline';
 
 export function ExportTab() {
   const { state, dispatch } = useWorkspace();
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  const hasClips = getActiveTimeline(state).clips.length > 0;
+  const activeTimeline = getActiveTimeline(state);
+  const exportClips = useMemo(() => {
+    const assetsById = new Map(state.assets.map((asset) => [asset.id, asset]));
+    return activeTimeline.clips.flatMap((clip) => {
+      const asset = assetsById.get(clip.assetId);
+      const inputPath = asset?.fileRef || asset?.url;
+      const duration = clipEffectiveDuration(clip);
+      if (!asset || !inputPath || duration <= 0) return [];
+      return [{
+        inputPath,
+        startTime: clip.startTime,
+        duration,
+        trimStart: clip.trimStart,
+        speed: clip.speed || 1,
+        volume: clip.volume ?? 1,
+        type: asset.type,
+      }];
+    });
+  }, [activeTimeline.clips, state.assets]);
+  const hasClips = exportClips.length > 0;
+  const totalDuration = Math.max(
+    activeTimeline.duration,
+    ...activeTimeline.clips.map(clipEndTime),
+  );
   const activeJob = state.exports.find(
     (e) => e.status === 'queued' || e.status === 'rendering'
   );
@@ -18,12 +42,17 @@ export function ExportTab() {
 
   const handleRender = useCallback(async (preset: ExportPreset, fps: 24 | 30 | 60) => {
     try {
-      const job = await window.electronAPI.export.start({ preset, fps });
+      const job = await window.electronAPI.export.start({
+        preset,
+        fps,
+        clips: exportClips,
+        totalDuration,
+      });
       dispatch({ type: 'ADD_EXPORT', exportJob: job });
     } catch (error) {
       console.error('Failed to start render:', error);
     }
-  }, [dispatch]);
+  }, [dispatch, exportClips, totalDuration]);
 
   useEffect(() => {
     if (!activeJob) {

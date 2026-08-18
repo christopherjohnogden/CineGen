@@ -13,6 +13,83 @@ interface NodeInspectorProps {
   data: WorkflowNodeData;
 }
 
+function InspectorFieldLabel({ field }: { field: ModelInputField }) {
+  return (
+    <>
+      <label className="inspector__field-label">
+        {field.label}
+        {field.required && <span className="inspector__required" aria-label="required">*</span>}
+      </label>
+      {field.description && (
+        <span className="inspector__field-description">{field.description}</span>
+      )}
+    </>
+  );
+}
+
+function modelOutputBadge(outputType: string): string {
+  if (outputType === 'video') return 'VID';
+  if (outputType === 'audio') return 'AUD';
+  if (outputType === 'text') return 'TXT';
+  if (outputType === 'model3d') return '3D';
+  return 'IMG';
+}
+
+function formatJsonValue(value: unknown): string {
+  const resolved = value === undefined ? null : value;
+  if (typeof resolved === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(resolved), null, 2);
+    } catch {
+      return resolved;
+    }
+  }
+  return JSON.stringify(resolved, null, 2) ?? 'null';
+}
+
+function JsonInspectorField({ field, value, onChange }: {
+  field: ModelInputField;
+  value: unknown;
+  onChange: (val: unknown) => void;
+}) {
+  const serializedValue = formatJsonValue(value === undefined ? field.default : value);
+  const [draft, setDraft] = useState(serializedValue);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = `inspector-json-error-${field.id}`;
+
+  useEffect(() => {
+    setDraft(serializedValue);
+    setError(null);
+  }, [serializedValue]);
+
+  return (
+    <div className="inspector__field">
+      <InspectorFieldLabel field={field} />
+      <textarea
+        className={`inspector__textarea inspector__textarea--json${error ? ' inspector__textarea--error' : ''}`}
+        rows={5}
+        value={draft}
+        placeholder={field.placeholder}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? errorId : undefined}
+        spellCheck={false}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          try {
+            const parsed = JSON.parse(next);
+            setError(null);
+            onChange(parsed);
+          } catch {
+            setError('Enter valid JSON.');
+          }
+        }}
+      />
+      {error && <span id={errorId} className="inspector__json-error">{error}</span>}
+    </div>
+  );
+}
+
 function InspectorField({ field, value, onChange }: {
   field: ModelInputField;
   value: unknown;
@@ -21,7 +98,7 @@ function InspectorField({ field, value, onChange }: {
   if (field.fieldType === 'select' && field.options) {
     return (
       <div className="inspector__field">
-        <label className="inspector__field-label">{field.label}</label>
+        <InspectorFieldLabel field={field} />
         <select
           className="inspector__select"
           value={String(value ?? field.default ?? '')}
@@ -38,7 +115,7 @@ function InspectorField({ field, value, onChange }: {
   if (field.fieldType === 'range') {
     return (
       <div className="inspector__field">
-        <label className="inspector__field-label">{field.label}</label>
+        <InspectorFieldLabel field={field} />
         <div className="inspector__range-row">
           <input
             type="range"
@@ -55,29 +132,34 @@ function InspectorField({ field, value, onChange }: {
   }
 
   if (field.fieldType === 'number') {
-    const isRandom = field.id === 'seed' && Number(value ?? field.default) === -1;
+    const isSeed = field.id === 'seed';
+    const isRandom = isSeed && Number(value ?? field.default) === -1;
+    const numberInput = (
+      <input
+        type="number"
+        className={`inspector__number-input${isSeed ? '' : ' inspector__number-input--full'}`}
+        value={Number(value ?? field.default ?? 0)}
+        min={field.min} max={field.max} step={field.step}
+        placeholder={field.placeholder}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    );
     return (
       <div className="inspector__field">
-        <label className="inspector__field-label">{field.label}</label>
-        <div className="inspector__seed-row">
-          <label className="inspector__checkbox-label">
-            <input
-              type="checkbox"
-              checked={isRandom}
-              onChange={(e) => onChange(e.target.checked ? -1 : 0)}
-            />
-            Random
-          </label>
-          {!isRandom && (
-            <input
-              type="number"
-              className="inspector__number-input"
-              value={Number(value ?? field.default ?? 0)}
-              min={field.min} max={field.max} step={field.step}
-              onChange={(e) => onChange(Number(e.target.value))}
-            />
-          )}
-        </div>
+        <InspectorFieldLabel field={field} />
+        {isSeed ? (
+          <div className="inspector__seed-row">
+            <label className="inspector__checkbox-label">
+              <input
+                type="checkbox"
+                checked={isRandom}
+                onChange={(e) => onChange(e.target.checked ? -1 : 0)}
+              />
+              Random
+            </label>
+            {!isRandom && numberInput}
+          </div>
+        ) : numberInput}
       </div>
     );
   }
@@ -85,11 +167,12 @@ function InspectorField({ field, value, onChange }: {
   if (field.fieldType === 'text') {
     return (
       <div className="inspector__field">
-        <label className="inspector__field-label">{field.label}</label>
+        <InspectorFieldLabel field={field} />
         <input
           type="text"
           className="inspector__text-input"
           value={String(value ?? field.default ?? '')}
+          placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}
         />
       </div>
@@ -99,11 +182,12 @@ function InspectorField({ field, value, onChange }: {
   if (field.fieldType === 'textarea') {
     return (
       <div className="inspector__field">
-        <label className="inspector__field-label">{field.label}</label>
+        <InspectorFieldLabel field={field} />
         <textarea
           className="inspector__textarea"
           rows={3}
           value={String(value ?? field.default ?? '')}
+          placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}
         />
       </div>
@@ -121,9 +205,17 @@ function InspectorField({ field, value, onChange }: {
             onChange={(e) => onChange(e.target.checked)}
           />
           {field.label}
+          {field.required && <span className="inspector__required" aria-label="required">*</span>}
         </label>
+        {field.description && (
+          <span className="inspector__field-description">{field.description}</span>
+        )}
       </div>
     );
+  }
+
+  if (field.fieldType === 'json') {
+    return <JsonInspectorField field={field} value={value} onChange={onChange} />;
   }
 
   return null;
@@ -182,7 +274,7 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
     <div className="node-inspector">
       <div className="node-inspector__header">
         <span className="node-inspector__badge" style={{ background: accentColor }}>
-          {modelDef.outputType === 'video' ? 'VID' : modelDef.outputType === 'audio' ? 'AUD' : modelDef.outputType === 'text' ? 'TXT' : 'IMG'}
+          {modelOutputBadge(modelDef.outputType)}
         </span>
         <span className="node-inspector__name">{modelDef.name}</span>
       </div>

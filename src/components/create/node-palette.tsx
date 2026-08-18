@@ -9,23 +9,25 @@ interface NodePaletteProps {
   onClose: () => void;
 }
 
-type Tab = 'all' | 'cloud' | 'local' | 'runpod' | 'pod';
+type Tab = 'all' | 'cloud' | 'higgsfield' | 'local' | 'runpod' | 'pod';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'all',    label: 'All'    },
-  { id: 'cloud',  label: 'Cloud'  },
-  { id: 'local',  label: 'Local'  },
-  { id: 'runpod', label: 'RunPod' },
-  { id: 'pod',    label: 'Pod'    },
+  { id: 'all',        label: 'All'        },
+  { id: 'cloud',      label: 'Cloud'      },
+  { id: 'higgsfield', label: 'Higgsfield' },
+  { id: 'local',      label: 'Local'      },
+  { id: 'runpod',     label: 'RunPod'     },
+  { id: 'pod',        label: 'Pod'        },
 ];
 
-const CATEGORY_ORDER: NodeCategory[] = ['utility', 'text', 'image', 'image-edit', 'video', 'audio'];
+const CATEGORY_ORDER: NodeCategory[] = ['utility', 'text', 'image', 'image-edit', 'video', 'model3d', 'audio'];
 const CATEGORY_LABELS: Record<NodeCategory, string> = {
   utility:      'UTILITY',
   text:         'TEXT / LLM',
   image:        'IMAGE',
   'image-edit': 'IMAGE EDIT',
   video:        'VIDEO',
+  model3d:      '3D',
   audio:        'AUDIO',
 };
 
@@ -35,7 +37,16 @@ const PROVIDER_LABEL: Record<string, string> = {
   local:  'local',
   runpod: 'runpod',
   pod:    'pod',
+  higgsfield: 'higgsfield',
 };
+
+function modelTypeBadge(outputType: string): string {
+  if (outputType === 'video') return 'VID';
+  if (outputType === 'audio') return 'AUD';
+  if (outputType === 'text') return 'TXT';
+  if (outputType === 'model3d') return '3D';
+  return 'IMG';
+}
 
 export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
   const [search, setSearch] = useState('');
@@ -56,6 +67,10 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
         if (!n.isModel) return false;
         return provider === 'fal' || provider === 'kie' || provider === 'higgsfield';
       }
+      if (tab === 'higgsfield') {
+        if (!n.isModel) return false;
+        return provider === 'higgsfield';
+      }
       if (tab === 'local') {
         if (!n.isModel) return false;
         return provider === 'local';
@@ -72,8 +87,14 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
       return true;
     });
 
-    const filtered = search
-      ? entries.filter((n) => n.label.toLowerCase().includes(search.toLowerCase()))
+    const query = search.trim().toLowerCase();
+    const filtered = query
+      ? entries.filter((n) => {
+          const model = ALL_MODELS[n.type];
+          return n.label.toLowerCase().includes(query)
+            || model?.id.toLowerCase().includes(query)
+            || model?.description.toLowerCase().includes(query);
+        })
       : entries;
 
     return CATEGORY_ORDER
@@ -204,13 +225,14 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
                 const provider = modelDef ? (modelDef.provider ?? 'fal') : null;
                 const providerLabel = provider ? PROVIDER_LABEL[provider] ?? provider : null;
                 const typeBadge = node.isModel
-                  ? (node.category === 'video' ? 'VID' : node.category === 'audio' ? 'AUD' : 'IMG')
+                  ? modelTypeBadge(modelDef?.outputType ?? node.category)
                   : null;
 
                 return (
                   <button
                     key={node.type}
                     className={`np__item${idx === selectedIndex ? ' np__item--selected' : ''}`}
+                    title={modelDef ? `${modelDef.name} · ${modelDef.id}` : node.label}
                     onClick={() => onSelect(node.type)}
                     onMouseEnter={() => setSelectedIndex(idx)}
                   >

@@ -5,6 +5,7 @@ import {
   decodeLocalMediaUrl,
   getAssetRemoteUrl,
   isGeneratedMediaPath,
+  isWebProjectMediaPath,
   looksLikeLocalFilePath,
   resolveExistingLocalPath,
 } from '@/lib/media/asset-local-storage';
@@ -41,6 +42,21 @@ describe('asset-local-storage', () => {
 
   it('detects generated media paths', () => {
     expect(isGeneratedMediaPath('/Users/me/Documents/CINEGEN/p1/media/generated/a.mp4')).toBe(true);
+    expect(isGeneratedMediaPath('https://cinegen.example/media/projects/p1/generated/a.mp4')).toBe(true);
+  });
+
+  it('detects browser media already owned by a web project', () => {
+    expect(isWebProjectMediaPath('https://cinegen.example/media/projects/p1/imported/a/video.mp4')).toBe(true);
+    expect(isWebProjectMediaPath('/media/projects/p1/generated/a.mp4')).toBe(true);
+    expect(isWebProjectMediaPath('https://example.com/unrelated/video.mp4')).toBe(false);
+  });
+
+  it('does not re-persist browser media already owned by the web project', () => {
+    expect(assetNeedsGeneratedPersist({
+      ...baseAsset,
+      fileRef: 'https://cinegen.example/media/projects/p1/imported/a/video.mp4',
+      url: 'https://cinegen.example/media/projects/p1/imported/a/video.mp4',
+    })).toBe(false);
   });
 
   it('skips bare filenames and blob URLs as local paths', () => {

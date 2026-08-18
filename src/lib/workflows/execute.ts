@@ -621,21 +621,24 @@ async function runNodes(
  * Resolve standard port inputs from edges.
  */
 function resolveInputs(
-  portDefs: { id: string }[],
+  portDefs: { id: string; multiple?: boolean }[],
   edges: Edge[],
   nodeId: string,
   results: Map<string, Record<string, unknown>>,
 ): Record<string, unknown> {
   const inputs: Record<string, unknown> = {};
   for (const input of portDefs) {
-    const incomingEdge = edges.find(
+    const incomingEdges = edges.filter(
       (e) => e.target === nodeId && e.targetHandle === input.id,
     );
-    if (incomingEdge) {
+    const values = incomingEdges.flatMap((incomingEdge) => {
       const sourceResult = results.get(incomingEdge.source);
-      if (sourceResult && incomingEdge.sourceHandle) {
-        inputs[input.id] = sourceResult[incomingEdge.sourceHandle];
-      }
+      if (!sourceResult || !incomingEdge.sourceHandle) return [];
+      const value = sourceResult[incomingEdge.sourceHandle];
+      return value === undefined ? [] : [value];
+    });
+    if (values.length > 0) {
+      inputs[input.id] = input.multiple ? values : values[0];
     }
   }
   return inputs;
@@ -825,8 +828,41 @@ async function executeModelNode(
       const configValue = data.config[field.id];
       const value = portValue ?? configValue ?? field.default;
 
-      if (value === undefined || value === null) continue;
+      const isMissing = value === undefined
+        || value === null
+        || (typeof value === 'string' && value.trim() === '')
+        || (Array.isArray(value) && value.length === 0);
+      if (isMissing) {
+        if (field.required) {
+          throw new Error(`${field.label} is required.`);
+        }
+        continue;
+      }
       if (field.id === 'seed' && value === -1) continue;
+
+      if (modelDef.provider === 'higgsfield' && field.mediaRole) {
+        const mediaInputs = Array.isArray(falInputs.higgsfield_media_inputs)
+          ? falInputs.higgsfield_media_inputs as Array<{ value: string; role: string }>
+          : [];
+        const candidates = Array.isArray(value) ? value : [value];
+        for (const candidate of candidates) {
+          if (typeof candidate === 'string' && candidate.trim()) {
+            mediaInputs.push({ value: candidate, role: field.mediaRole });
+          } else if (candidate && typeof candidate === 'object') {
+            const element = candidate as { frontalImageUrl?: string; allUrls?: string[] };
+            const urls = field.multiple && Array.isArray(element.allUrls)
+              ? element.allUrls
+              : [element.frontalImageUrl];
+            for (const url of urls) {
+              if (typeof url === 'string' && url.trim()) {
+                mediaInputs.push({ value: url, role: field.mediaRole });
+              }
+            }
+          }
+        }
+        if (mediaInputs.length > 0) falInputs.higgsfield_media_inputs = mediaInputs;
+        continue;
+      }
 
       // If the value is an ElementData object (from element port connections),
       // extract the flat URL list for array-type params or the frontal URL for single params
@@ -1051,6 +1087,7 @@ async function executeModelNode(
           nodeId,
           nodeType,
           modelId: effectiveModelId,
+          outputType: modelDef.outputType === 'model3d' ? '3d' : modelDef.outputType,
           inputs: apiInputs,
         });
       }
@@ -1341,7 +1378,13 @@ async function executeModelNode(
       dispatch.setNodeResult(nodeId, { status: 'complete', text: textValue });
     } else {
       // Local models return a file path — convert to a local-media:// URL
-      const rawPath = extractUrl(result, modelDef.responseMapping.path);
+      const returnedUrlsValue = modelDef.provider === 'higgsfield'
+        ? (extractValue(result, 'urls') ?? extractValue(result, 'output.urls'))
+        : undefined;
+      const returnedUrls = Array.isArray(returnedUrlsValue)
+        ? [...new Set(returnedUrlsValue.filter((value): value is string => typeof value === 'string' && value.length > 0))]
+        : [];
+      const rawPath = returnedUrls.at(-1) ?? extractUrl(result, modelDef.responseMapping.path);
       const url = rawPath
         ? (rawPath.startsWith('/') ? `local-media://file${rawPath}` : rawPath)
         : extractUrl(result, 'resultUrls.0')
@@ -1374,7 +1417,11 @@ async function executeModelNode(
 
         results.set(nodeId, { [modelDef.outputType]: url });
         dispatch.setNodeResult(nodeId, { status: 'complete', url });
-        if (url) dispatch.addGeneration(nodeId, url);
+        if (returnedUrls.length > 0) {
+          for (const returnedUrl of returnedUrls) dispatch.addGeneration(nodeId, returnedUrl);
+        } else if (url) {
+          dispatch.addGeneration(nodeId, url);
+        }
       }
     }
   } catch (error) {

@@ -66,7 +66,14 @@ export function resolveExistingLocalPath(asset: Asset): string | null {
 
 export function isGeneratedMediaPath(fileRef: string): boolean {
   const normalized = fileRef.replace(/\\/g, '/');
-  return normalized.includes('/media/generated/');
+  return normalized.includes('/media/generated/')
+    || /\/media\/projects\/[A-Za-z0-9_-]+\/generated\//.test(normalized);
+}
+
+/** Browser media already copied into a web project's owned media directory. */
+export function isWebProjectMediaPath(fileRef: string): boolean {
+  const normalized = fileRef.replace(/\\/g, '/');
+  return /\/media\/projects\/[A-Za-z0-9_-]+\/(?:imported|generated)\//.test(normalized);
 }
 
 /** True when the asset should be copied/downloaded into project media/generated. */
@@ -83,6 +90,7 @@ export function assetNeedsGeneratedPersist(asset: Asset): boolean {
   const remoteUrl = getAssetRemoteUrl(asset);
   const localPath = resolveExistingLocalPath(asset);
 
+  if (asset.fileRef?.trim() && isWebProjectMediaPath(asset.fileRef)) return false;
   if (localPath && isGeneratedMediaPath(localPath)) return false;
   if (asset.fileRef?.trim() && isGeneratedMediaPath(asset.fileRef)) return false;
 

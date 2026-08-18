@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateArgs, parseGenerateJson, extractMediaUrl, parseConnectionState } from '../../../electron/ipc/higgsfield';
+import {
+  buildCreateArgs,
+  parseGenerateJson,
+  extractMediaUrl,
+  extractMediaUrls,
+  extractTextOutput,
+  parseConnectionState,
+} from '../../../electron/ipc/higgsfield';
+import {
+  buildHiggsfieldWorkflowRequest,
+  normalizeHiggsfieldWorkflowResult,
+} from '../../../electron/ipc/workflows';
 
 describe('buildCreateArgs', () => {
   it('builds a minimal text-to-video create command with --wait --json', () => {
@@ -37,6 +48,53 @@ describe('buildCreateArgs', () => {
     expect(args).not.toContain('--image');
     expect(args).not.toContain('--duration');
   });
+
+  it('supports models without a prompt', () => {
+    expect(buildCreateArgs({
+      model: 'image_background_remover',
+      mediaType: 'image',
+      medias: [{ value: './source.png', role: 'image' }],
+    })).toEqual([
+      'generate', 'create', 'image_background_remover',
+      '--image', './source.png', '--wait', '--json',
+    ]);
+  });
+
+  it('serializes every non-null schema param while preserving false and zero', () => {
+    const args = buildCreateArgs({
+      model: 'schema_driven_model',
+      mediaType: 'video',
+      params: {
+        prompt: '  keep intentional detail  ',
+        generate_audio: false,
+        temperature: 0,
+        multi_shots: [{ prompt: 'wide', duration: 2 }],
+        config: { mode: 'fast', strength: 0 },
+        optional_value: null,
+      },
+    });
+
+    expect(args).toEqual([
+      'generate', 'create', 'schema_driven_model',
+      '--prompt', 'keep intentional detail',
+      '--generate_audio', 'false',
+      '--temperature', '0',
+      '--multi_shots', '[{"prompt":"wide","duration":2}]',
+      '--config', '{"mode":"fast","strength":0}',
+      '--wait', '--json',
+    ]);
+  });
+
+  it('lets the new params map override the legacy extra map', () => {
+    const args = buildCreateArgs({
+      model: 'm', mediaType: 'audio',
+      extra: { voice: 'old', stability: 0 },
+      params: { voice: 'new', stability: false },
+    });
+    expect(args).toContain('--voice');
+    expect(args[args.indexOf('--voice') + 1]).toBe('new');
+    expect(args[args.indexOf('--stability') + 1]).toBe('false');
+  });
 });
 
 describe('extractMediaUrl', () => {
@@ -55,6 +113,28 @@ describe('extractMediaUrl', () => {
 
   it('returns undefined when no url present', () => {
     expect(extractMediaUrl({ state: 'running' })).toBeUndefined();
+  });
+
+  it('collects every unique URL without traversing request params', () => {
+    expect(extractMediaUrls({
+      results: [
+        { result_url: 'https://a/one.png', params: { image_url: 'https://a/input.png' } },
+        { output: { url: 'https://a/two.png' } },
+        { result_url: 'https://a/one.png' },
+      ],
+    })).toEqual(['https://a/one.png', 'https://a/two.png']);
+  });
+});
+
+describe('extractTextOutput', () => {
+  it('reads direct, nested, and streamed-array text result shapes', () => {
+    expect(extractTextOutput({ text: 'analysis complete' })).toBe('analysis complete');
+    expect(extractTextOutput({ output: { output_text: 'nested result' } })).toBe('nested result');
+    expect(extractTextOutput({ results: [{ status: 'running' }, { result: 'final answer' }] })).toBe('final answer');
+  });
+
+  it('does not treat output URLs as text', () => {
+    expect(extractTextOutput({ result: 'https://a/result.txt' })).toBeUndefined();
   });
 });
 
@@ -120,6 +200,153 @@ describe('parseGenerateJson', () => {
     const r = parseGenerateJson(real, { model: 'nano_banana_2', mediaType: 'image' });
     expect(r.url).toBe('https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_apple.png');
     expect(r.jobId).toBe('0316caff-f73c-43d3-be1e-fa113bcb95d3');
+  });
+
+  it.each(['image', 'video', 'audio', '3d'] as const)('preserves the %s output kind for URL results', (mediaType) => {
+    const r = parseGenerateJson(
+      '{"status":"completed","result_url":"https://a/output.bin"}',
+      { model: 'model', mediaType },
+    );
+    expect(r.mediaType).toBe(mediaType);
+    expect(r.outputKind).toBe(mediaType);
+    expect(r.url).toBe('https://a/output.bin');
+    expect(r.outputs).toEqual([{ kind: mediaType, url: 'https://a/output.bin' }]);
+  });
+
+  it('returns text-output models without requiring a media URL', () => {
+    const r = parseGenerateJson(
+      '{"status":"completed","output":{"text":"Detected sustained attention"},"id":"text-job"}',
+      { model: 'brain_activity', mediaType: 'text' },
+    );
+    expect(r.url).toBeUndefined();
+    expect(r.text).toBe('Detected sustained attention');
+    expect(r.mediaType).toBe('text');
+    expect(r.outputs).toEqual([{ kind: 'text', text: 'Detected sustained attention' }]);
+    expect(r.jobId).toBe('text-job');
+  });
+
+  it('keeps all URLs while retaining the first-url compatibility field', () => {
+    const r = parseGenerateJson(JSON.stringify([
+      { status: 'completed', result_url: 'https://a/one.png' },
+      { status: 'completed', result_url: 'https://a/two.png' },
+    ]), { model: 'multi', mediaType: 'image' });
+    expect(r.url).toBe('https://a/one.png');
+    expect(r.urls).toEqual(['https://a/one.png', 'https://a/two.png']);
+  });
+});
+
+describe('schema-driven workflow adapter', () => {
+  it('turns model media params into typed CLI refs and forwards every other value', () => {
+    const request = buildHiggsfieldWorkflowRequest('all_inputs', {
+      medias: [
+        { value: 'generic.png', role: 'end_image' },
+        { url: 'voice.wav', type: 'audio' },
+      ],
+      higgsfield_media_inputs: [
+        { value: 'renderer-first.png', role: 'start_image' },
+        { value: 'renderer-audio.wav', role: 'audio' },
+      ],
+      input_images: ['one.png', { id: 'upload-two' }],
+      input_image: 'single.png',
+      input_video: 'source.mp4',
+      input_audio: 'voice-2.wav',
+      video: { fileRef: 'motion.mp4' },
+      sketch: 'sketch.png',
+      ref_image: 'reference.png',
+      urls: ['clip-a.mp4', 'clip-b.mp4'],
+      start_image_url: 'first.png',
+      end_image_url: 'last.png',
+      generate_audio: false,
+      temperature: 0,
+      object_config: { strength: 0 },
+      omitted: null,
+    }, 'video');
+
+    expect(request.params).toEqual({
+      generate_audio: false,
+      temperature: 0,
+      object_config: { strength: 0 },
+    });
+    expect(request.medias).toEqual([
+      { value: 'generic.png', role: 'end_image' },
+      { value: 'voice.wav', role: 'audio' },
+      { value: 'renderer-first.png', role: 'start_image' },
+      { value: 'renderer-audio.wav', role: 'audio' },
+      { value: 'one.png', role: 'image' },
+      { value: 'upload-two', role: 'image' },
+      { value: 'single.png', role: 'image' },
+      { value: 'source.mp4', role: 'video' },
+      { value: 'voice-2.wav', role: 'audio' },
+      { value: 'motion.mp4', role: 'video' },
+      { value: 'sketch.png', role: 'image' },
+      { value: 'reference.png', role: 'image' },
+      { value: 'clip-a.mp4', role: 'video' },
+      { value: 'clip-b.mp4', role: 'video' },
+      { value: 'first.png', role: 'start_image' },
+      { value: 'last.png', role: 'end_image' },
+    ]);
+  });
+
+  it('preserves legacy image-url behavior and resolves local-media paths for the CLI', () => {
+    const video = buildHiggsfieldWorkflowRequest('legacy-video', {
+      image_url: 'local-media://file/tmp/first%20frame.png',
+      image_urls: ['second.png'],
+      prompt: 'animate',
+    }, 'video');
+    expect(video.medias).toEqual([
+      { value: '/tmp/first frame.png', role: 'start_image' },
+      { value: 'second.png', role: 'start_image' },
+    ]);
+    expect(video.params).toEqual({ prompt: 'animate' });
+
+    const image = buildHiggsfieldWorkflowRequest('legacy-image', { image_url: 'ref.png' }, 'image');
+    expect(image.medias).toEqual([{ value: 'ref.png', role: 'image' }]);
+  });
+
+  it('infers raw media roles by extension and falls back according to the output kind', () => {
+    expect(buildHiggsfieldWorkflowRequest('video-model', {
+      medias: ['frame.png', 'motion.mp4?download=1', 'voice.wav'],
+    }, 'video').medias).toEqual([
+      { value: 'frame.png', role: 'start_image' },
+      { value: 'motion.mp4?download=1', role: 'video' },
+      { value: 'voice.wav', role: 'audio' },
+    ]);
+
+    expect(buildHiggsfieldWorkflowRequest('brain-activity', {
+      medias: ['untyped-upload-id'],
+    }, 'text').medias).toEqual([{ value: 'untyped-upload-id', role: 'video' }]);
+    expect(buildHiggsfieldWorkflowRequest('audio-model', {
+      medias: ['untyped-upload-id'],
+    }, 'audio').medias).toEqual([{ value: 'untyped-upload-id', role: 'audio' }]);
+    expect(buildHiggsfieldWorkflowRequest('mesh-model', {
+      medias: ['untyped-upload-id'],
+    }, '3d').medias).toEqual([{ value: 'untyped-upload-id', role: 'image' }]);
+  });
+
+  it('keeps explicit structured roles authoritative over file extensions', () => {
+    expect(buildHiggsfieldWorkflowRequest('structured', {
+      higgsfield_media_inputs: [
+        { value: 'looks-like-video.mp4', role: 'end_image' },
+        { value: 'looks-like-audio.wav', role: 'start_image' },
+      ],
+    }, 'video').medias).toEqual([
+      { value: 'looks-like-video.mp4', role: 'end_image' },
+      { value: 'looks-like-audio.wav', role: 'start_image' },
+    ]);
+  });
+
+  it('normalizes both URL and text results to the renderer workflow envelope', () => {
+    expect(normalizeHiggsfieldWorkflowResult({
+      url: 'https://a/audio.mp3', urls: ['https://a/audio.mp3'], mediaType: 'audio', outputKind: 'audio',
+      outputs: [{ kind: 'audio', url: 'https://a/audio.mp3' }], durationSec: 3, jobId: 'j1', model: 'tts',
+    })).toMatchObject({
+      output: { url: 'https://a/audio.mp3', urls: ['https://a/audio.mp3'], duration: 3 },
+      url: 'https://a/audio.mp3', mediaType: 'audio', outputKind: 'audio', jobId: 'j1', model: 'tts',
+    });
+
+    expect(normalizeHiggsfieldWorkflowResult({
+      text: 'done', mediaType: 'text', outputKind: 'text', outputs: [{ kind: 'text', text: 'done' }], model: 'brain',
+    })).toMatchObject({ output: { text: 'done' }, text: 'done', mediaType: 'text', outputKind: 'text' });
   });
 });
 
