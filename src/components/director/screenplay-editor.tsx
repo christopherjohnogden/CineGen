@@ -49,7 +49,12 @@ export function ScreenplayEditor({ doc, selectedId, pendingEdits, onChange, onSe
   };
 
   // when a diff is pending, mark which element ids are being replaced/deleted
-  const diffTargets = new Set((pendingEdits ?? []).map((ed) => ed.targetElementId).filter(Boolean) as string[]);
+  const diffTargets = new Set(
+    (pendingEdits ?? [])
+      .filter((ed) => ed.op === 'replace' || ed.op === 'delete')
+      .map((ed) => ed.targetElementId)
+      .filter(Boolean) as string[],
+  );
   const hasPendingEdits = !!pendingEdits && pendingEdits.length > 0;
 
   return (

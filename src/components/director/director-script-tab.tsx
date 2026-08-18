@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DirectorShow } from '@/types/director';
 import { extractScriptText, SCRIPT_ACCEPT } from '@/lib/director/look-bible';
 import { parseToScreenplay, serializeScreenplay, type Screenplay } from '@/lib/director/screenplay';
@@ -23,9 +23,31 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
   const [scriptError, setScriptError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const doc = useMemo<Screenplay>(() => parseToScreenplay(show.sourceText), [show.sourceText]);
+  const [doc, setDocState] = useState<Screenplay>(() => parseToScreenplay(show.sourceText));
 
-  const setDoc = (next: Screenplay) => onChange({ ...show, sourceText: serializeScreenplay(next) });
+  // Re-sync from sourceText ONLY when it changes externally (upload, or another tab),
+  // not from our own serialize round-trip. We compare against what we last serialized.
+  const lastSerialized = useRef(serializeScreenplay(doc));
+  useEffect(() => {
+    if (show.sourceText !== lastSerialized.current) {
+      const next = parseToScreenplay(show.sourceText);
+      lastSerialized.current = show.sourceText;
+      setDocState(next);
+    }
+  }, [show.sourceText]);
+
+  // Debounce the serialize-back to sourceText so we don't round-trip on every keystroke-commit.
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setDoc = (next: Screenplay) => {
+    setDocState(next);
+    if (flushTimer.current) clearTimeout(flushTimer.current);
+    flushTimer.current = setTimeout(() => {
+      const text = serializeScreenplay(next);
+      lastSerialized.current = text;
+      onChange({ ...show, sourceText: text });
+    }, 400);
+  };
+  useEffect(() => () => { if (flushTimer.current) clearTimeout(flushTimer.current); }, []);
 
   const loadScript = async (file: File | undefined) => {
     if (!file) return;
