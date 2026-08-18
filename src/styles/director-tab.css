@@ -312,3 +312,56 @@
   object-fit: cover;
   display: block;
 }
+
+/* ── Redesign: stage tabs ───────────────────────────── */
+.director-tab__stagetabs { display:flex; gap:4px; background:var(--bg-input); padding:4px; border-radius:12px; }
+.director-tab__stab { display:flex; align-items:center; gap:7px; padding:6px 15px; border:none; border-radius:9px; background:transparent; color:var(--text-secondary); font-size:12.5px; font-weight:600; cursor:pointer; }
+.director-tab__stab:hover { color:var(--text-primary); }
+.director-tab__stab--active { background:var(--accent); color:var(--bg-base); }
+.director-tab__stab-badge { background:var(--border-medium); color:var(--text-secondary); border-radius:8px; font-size:10px; padding:0 6px; font-weight:700; }
+.director-tab__stab--active .director-tab__stab-badge { background:rgba(255,255,255,.25); color:var(--bg-base); }
+.director-tab__stab-dot { width:6px; height:6px; border-radius:50%; background:var(--success); }
+
+/* ── Redesign: toolbar drawers ──────────────────────── */
+.director-tab__drawer { max-height:0; overflow:hidden; transition:max-height .2s ease; background:var(--bg-raised); border-bottom:1px solid var(--border-subtle); }
+.director-tab__drawer--open { max-height:480px; }
+.director-tab__drawer-inner { display:flex; flex-wrap:wrap; gap:16px; padding:14px 16px; align-items:flex-end; }
+
+/* ── Redesign: workbench (rail + stage) ─────────────── */
+.director-tab__workbench { display:grid; grid-template-columns:240px minmax(0,1fr); min-height:0; flex:1; }
+.director-tab__workbench--norail { grid-template-columns:minmax(0,1fr); }
+.director-tab__rail { min-height:0; overflow:auto; padding:12px; border-right:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:8px; background:var(--bg-raised); }
+.director-tab__stage { min-height:0; overflow:auto; padding:16px 20px; display:flex; flex-direction:column; gap:14px; }
+
+/* ── Redesign: structure rail tree ──────────────────── */
+.director-tab__scene { border:1px solid var(--border-subtle); border-radius:var(--radius-sm); background:var(--bg-base); overflow:hidden; }
+.director-tab__scene-head { width:100%; text-align:left; padding:8px 10px; display:flex; justify-content:space-between; align-items:center; background:transparent; border:none; color:inherit; cursor:pointer; }
+.director-tab__scene-head:hover { background:var(--bg-elevated); }
+.director-tab__scene--active > .director-tab__scene-head { background:var(--accent-dim); }
+.director-tab__rail-clip { width:100%; text-align:left; padding:6px 10px 6px 20px; font-size:12px; color:var(--text-secondary); border:none; border-top:1px solid var(--border-subtle); background:transparent; cursor:pointer; display:flex; justify-content:space-between; }
+.director-tab__rail-clip:hover { background:var(--bg-elevated); color:var(--text-primary); }
+.director-tab__rail-clip--active { background:var(--accent-dim); color:var(--accent); }
+
+/* ── Redesign: breakdown cards ──────────────────────── */
+.director-tab__cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; }
+.director-tab__card { border:1px solid var(--border-subtle); border-radius:9px; background:var(--bg-raised); padding:12px; }
+.director-tab__card-kind { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); font-weight:700; }
+.director-tab__badge { display:inline-block; font-size:10px; padding:2px 7px; border-radius:8px; font-weight:600; margin-top:8px; }
+.director-tab__badge--linked { background:var(--accent-dim); color:var(--success); }
+.director-tab__badge--missing { background:var(--bg-elevated); color:var(--error); }
+
+/* ── Redesign: shotlist board ───────────────────────── */
+.director-tab__board { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+.director-tab__clipcard { text-align:left; border:1px solid var(--border-subtle); border-radius:9px; background:var(--bg-raised); overflow:hidden; cursor:pointer; color:inherit; padding:0; }
+.director-tab__clipcard--active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.director-tab__clipcard-body { padding:9px 11px; }
+
+/* ── Redesign: script editor + formatted view ───────── */
+.director-tab__editor { width:100%; flex:1; min-height:320px; background:var(--bg-input); border:1px solid var(--border-medium); border-radius:var(--radius-sm); padding:16px 18px; color:var(--text-primary); font-family:'Space Mono',monospace; font-size:12.5px; line-height:1.7; resize:none; white-space:pre-wrap; }
+.director-tab__fmt { flex:1; min-height:320px; overflow:auto; background:var(--bg-input); border:1px solid var(--border-medium); border-radius:var(--radius-sm); padding:20px 48px; }
+.director-tab__fmt-scene { color:var(--accent); font-weight:700; margin-top:16px; }
+.director-tab__fmt-cue { text-align:center; color:var(--text-primary); font-weight:600; margin-top:12px; }
+.director-tab__fmt-dialogue { max-width:340px; margin:0 auto; color:var(--text-primary); }
+.director-tab__fmt-paren { max-width:280px; margin:0 auto; color:var(--text-secondary); font-style:italic; }
+.director-tab__fmt-transition { text-align:right; color:var(--text-secondary); font-weight:600; margin-top:12px; }
+.director-tab__fmt-action { color:var(--text-primary); margin-top:4px; }
