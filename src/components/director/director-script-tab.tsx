@@ -115,14 +115,16 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
   // A pending create (Draft/Brainstorm) latches us into the editor+chat view — the chat
   // delivers the seed — rather than staying on (or flipping back to) the empty state.
   const isEmpty = !creating && (docKind === 'beatsheet' ? beatSheet.beats.length === 0 : (!show.sourceText.trim() && !show.sourceElements));
+  // Latch `creating` so a freshly-blank doc drops into the editor rather than re-showing
+  // the empty state (a blank doc is otherwise indistinguishable from "no doc").
   const newScreenplay = () => {
-    setCreating(false);
     setCreateSeed(undefined);
+    setCreating(true);
     onChange({ ...show, docKind: 'screenplay', sourceText: '', sourceElements: undefined });
   };
   const newBeatSheet = () => {
-    setCreating(false);
     setCreateSeed(undefined);
+    setCreating(true);
     onChange({ ...show, docKind: 'beatsheet', beatSheet: emptyBeatSheet(), sourceText: '' });
   };
   const createFromPrompt = (idea: string, kind: 'screenplay' | 'beatsheet', mode: 'draft' | 'brainstorm') => {
