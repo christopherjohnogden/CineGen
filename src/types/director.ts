@@ -27,6 +27,8 @@ export interface DirectorBreakdownItem {
   actingProfile?: string;
   /** Characters only. Locked vocal identity, pasted verbatim wherever they speak. */
   voice?: string;
+  /** When the lazy per-character enrichment (actingProfile+voice) was written. */
+  enrichedAt?: number;
 }
 
 export interface DirectorBeat {
