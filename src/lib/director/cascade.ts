@@ -130,3 +130,26 @@ export function pruneRemovedScenes(show: DirectorShow, next: DirectorShow): Dire
 
   return { ...show, clips, breakdown };
 }
+
+function remapIndexMap<T>(map: Record<number, T> | undefined, prevKeys: string[], nextKeys: string[]): Record<number, T> | undefined {
+  if (!map) return map;
+  const out: Record<number, T> = {};
+  for (const [k, v] of Object.entries(map)) {
+    const oldIdx = Number(k);
+    const key = prevKeys[oldIdx];
+    if (key === undefined) continue;
+    const newIdx = nextKeys.indexOf(key);
+    if (newIdx >= 0) out[newIdx] = v;
+  }
+  return out;
+}
+
+/** Rewrite the index-keyed per-scene maps so each entry follows its scene after
+ *  an insert/remove. Entries whose scene vanished are dropped. */
+export function remapSceneIndexMaps(show: DirectorShow, prevKeys: string[], nextKeys: string[]): DirectorShow {
+  return {
+    ...show,
+    sceneAssetOverrides: remapIndexMap(show.sceneAssetOverrides, prevKeys, nextKeys),
+    sceneAssetSuggestions: remapIndexMap(show.sceneAssetSuggestions, prevKeys, nextKeys),
+  };
+}

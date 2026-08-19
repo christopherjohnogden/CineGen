@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sceneHashes, diffScenes, scenesForKeys, pruneRemovedScenes } from '@/lib/director/cascade';
+import { sceneHashes, diffScenes, scenesForKeys, pruneRemovedScenes, remapSceneIndexMaps } from '@/lib/director/cascade';
 import type { DirectorShow, DirectorScene, DirectorBreakdownItem, DirectorClip } from '@/types/director';
 
 const show = (over: Partial<DirectorShow>): DirectorShow => ({
@@ -155,6 +155,26 @@ describe('scenesForKeys', () => {
 
 const item = (o: Partial<DirectorBreakdownItem>): DirectorBreakdownItem =>
   ({ id: o.name!, kind: 'character', name: 'x', tag: '@x', description: '', ...o });
+
+describe('remapSceneIndexMaps', () => {
+  it('moves overrides to follow their scene when a scene is inserted at the front', () => {
+    const prevKeys = ['A', 'B'];
+    const nextKeys = ['NEW', 'A', 'B']; // inserted at index 0
+    const s = show({
+      sceneAssetOverrides: { 0: { added: ['@x'], removed: [] }, 1: { added: ['@y'], removed: [] } },
+      sceneAssetSuggestions: { 1: ['@z'] },
+    });
+    const out = remapSceneIndexMaps(s, prevKeys, nextKeys);
+    expect(out.sceneAssetOverrides).toEqual({ 1: { added: ['@x'], removed: [] }, 2: { added: ['@y'], removed: [] } });
+    expect(out.sceneAssetSuggestions).toEqual({ 2: ['@z'] });
+  });
+
+  it('drops entries whose scene was removed', () => {
+    const s = show({ sceneAssetOverrides: { 0: { added: ['@x'], removed: [] }, 1: { added: ['@y'], removed: [] } } });
+    const out = remapSceneIndexMaps(s, ['A', 'B'], ['A']); // B removed
+    expect(out.sceneAssetOverrides).toEqual({ 0: { added: ['@x'], removed: [] } });
+  });
+});
 
 describe('pruneRemovedScenes', () => {
   it('drops clips whose scene is gone and items no surviving scene references', () => {
