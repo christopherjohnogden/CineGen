@@ -351,6 +351,8 @@ function createDefaultProcessRunner() {
       if (settled) return;
       try {
         handlers.onStdout(chunk);
+        // The answer is complete — don't wait out the CLI's MCP teardown.
+        if (handlers.isComplete?.()) terminate();
       } catch (error) {
         terminate();
         finish(() => reject(error));
@@ -481,6 +483,9 @@ function buildClaudeSpec(params, command, context) {
     '--model', params.model,
     '--tools', '',
     '--disable-slash-commands',
+    // No --mcp-config accompanies this, so zero MCP servers load. These jobs never use
+    // them and booting/tearing down the user's fleet dominated the call's wall clock.
+    '--strict-mcp-config',
     '--permission-mode', 'dontAsk',
   ];
   if (canResume) {
@@ -574,6 +579,10 @@ function createCliAccumulator(provider, requestId, emit, limits) {
   let lastCodexText = '';
   let authFailed = false;
   let lastResult;
+  // Set once the CLI has emitted its final `result` line and we hold a usable answer.
+  // The process can linger for many seconds afterwards tearing down MCP servers, so the
+  // runner stops the child as soon as this flips instead of waiting for exit.
+  let complete = false;
   const appendToken = (token, { replace = false } = {}) => {
     if (!token) return;
     fullContent = replace ? token : fullContent + token;
@@ -622,6 +631,9 @@ function createCliAccumulator(provider, requestId, emit, limits) {
         if (text) appendToken(text, { replace: true });
       } else if (object.type === 'result' && !fullContent.trim() && typeof object.result === 'string') {
         appendToken(object.result, { replace: true });
+      }
+      if (object.type === 'result' && fullContent.trim() && !authFailed) {
+        complete = true;
       }
       return;
     }
@@ -695,6 +707,10 @@ function createCliAccumulator(provider, requestId, emit, limits) {
           statusCode: 502,
         });
       }
+    },
+    /** True once the CLI's answer is fully in hand; the runner may stop the child. */
+    isComplete() {
+      return complete;
     },
     finish(exit, resumed) {
       parser.finish();
