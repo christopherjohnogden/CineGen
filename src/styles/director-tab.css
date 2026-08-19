@@ -454,6 +454,14 @@
 /* ── Beat-sheet editor ──────────────────────────────── */
 .dbs-wrap { flex:1; overflow:auto; padding:20px; display:flex; flex-direction:column; align-items:center; gap:14px; }
 .dbs-list { width:640px; max-width:100%; display:flex; flex-direction:column; gap:14px; }
+/* Drag-to-reorder: the .dbs-beat wrapper is the drag target; .dbs-drag is the grab handle. */
+.dbs-beat { position:relative; }
+.dbs-beat--dragging { opacity:.4; }
+/* Blue insertion line shown above the card the dragged beat would land before. */
+.dbs-beat--dropbefore::before { content:''; position:absolute; left:0; right:0; top:-8px; height:2px; border-radius:2px; background:var(--accent); box-shadow:0 0 8px var(--accent); }
+.dbs-drag { cursor:grab; color:var(--text-tertiary); font-size:16px; line-height:1; padding:0 2px; user-select:none; }
+.dbs-drag:hover { color:var(--text-secondary); }
+.dbs-drag:active { cursor:grabbing; }
 .dbs-card { background:var(--bg-raised); border:1px solid var(--border-subtle); border-radius:12px; padding:14px 16px; }
 .dbs-card--diffadd { border-color:var(--success); box-shadow:0 0 0 1px var(--success); }
 .dbs-card--diffdel { border-color:var(--error); opacity:.7; text-decoration:line-through; }

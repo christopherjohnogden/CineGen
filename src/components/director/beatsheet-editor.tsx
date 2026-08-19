@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Beat, BeatSheet } from '@/lib/director/beatsheet';
 import { renumberBeats } from '@/lib/director/beatsheet';
 import type { BeatEdit } from '@/lib/director/script-assistant';
@@ -32,6 +33,25 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
     [next[i], next[j]] = [next[j], next[i]];
     patch(next);
   };
+  // Move the beat with id `dragId` to sit immediately before `beforeId` (or to the end when
+  // `beforeId` is null). Used by drag-to-reorder; renumber happens in patch().
+  const reorder = (dragId: string, beforeId: string | null) => {
+    if (dragId === beforeId) return;
+    const from = beats.findIndex((b) => b.id === dragId);
+    if (from < 0) return;
+    const without = beats.filter((b) => b.id !== dragId);
+    const insertAt = beforeId ? without.findIndex((b) => b.id === beforeId) : without.length;
+    if (beforeId && insertAt < 0) return;
+    without.splice(insertAt, 0, beats[from]);
+    patch(without);
+  };
+
+  // Native HTML5 drag-and-drop reorder. A card only becomes draggable while its handle is
+  // held (dragHandleId), so text selection inside the fields still works normally.
+  const [dragHandleId, setDragHandleId] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropBeforeId, setDropBeforeId] = useState<string | null>(null); // null = drop at end
+  const endDrag = () => { setDragId(null); setDropBeforeId(null); setDragHandleId(null); };
 
   const hasPending = !!pendingBeatEdits && pendingBeatEdits.length > 0;
   const beatIds = new Set(beats.map((b) => b.id));
@@ -94,9 +114,33 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
         {beats.length === 0 && !hasPending && <p className="director-tab__empty">No beats yet — add one, or ask the assistant to draft the beat sheet.</p>}
         {unanchoredAdds.map(renderAddCard)}
         {beats.map((b) => (
-          <div key={b.id}>
+          <div
+            key={b.id}
+            className={`dbs-beat${dropBeforeId === b.id ? ' dbs-beat--dropbefore' : ''}${dragId === b.id ? ' dbs-beat--dragging' : ''}`}
+            draggable={dragHandleId === b.id && !hasPending}
+            onDragStart={(e) => { setDragId(b.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', b.id); }}
+            onDragEnd={endDrag}
+            onDragOver={(e) => {
+              if (!dragId || dragId === b.id) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              // Drop before this card if hovering its top half, otherwise before the next one.
+              const r = e.currentTarget.getBoundingClientRect();
+              const after = e.clientY > r.top + r.height / 2;
+              const idx = beats.findIndex((x) => x.id === b.id);
+              setDropBeforeId(after ? (beats[idx + 1]?.id ?? null) : b.id);
+            }}
+            onDrop={(e) => { e.preventDefault(); if (dragId) reorder(dragId, dropBeforeId); endDrag(); }}
+          >
             <div className={`dbs-card${delTargets.has(b.id) ? ' dbs-card--diffdel' : ''}${b.id === selectedBeatId ? ' director-tab__item--active' : ''}`} onFocusCapture={() => onSelect(b.id)}>
               <div className="dbs-head">
+                <span
+                  className="dbs-drag"
+                  title="Drag to reorder"
+                  onMouseDown={() => setDragHandleId(b.id)}
+                  onMouseUp={() => setDragHandleId(null)}
+                  aria-hidden="true"
+                >⠿</span>
                 <span className="dbs-num">BEAT {b.n}</span>
                 <input value={b.location} placeholder="INT./EXT. Location" onChange={(e) => setField(b.id, 'location', e.target.value)} disabled={hasPending} />
                 <button type="button" className="director-tab__btn" onClick={() => move(b.id, -1)} disabled={hasPending} title="Move up">↑</button>
