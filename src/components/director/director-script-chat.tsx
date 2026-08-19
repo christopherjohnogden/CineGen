@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { invokeCliCopilotChat } from '@/lib/llm/cli-copilot-client';
 import type { Screenplay } from '@/lib/director/screenplay';
+import type { DirectorChatMessage } from '@/types/director';
 import {
   SCRIPT_ASSISTANT_SYSTEM_PROMPT, BEATSHEET_ASSISTANT_SYSTEM_PROMPT,
   buildAssistantMessage, buildBeatsheetMessage, parseAssistantResponse,
@@ -19,20 +20,30 @@ interface DirectorScriptChatProps {
   onProposeBeatEdits: (res: import('@/lib/director/script-assistant').AssistantResponse) => void;
   initialMessage?: { idea: string; mode: 'draft' | 'brainstorm' };
   onInitialConsumed?: () => void;
+  /** Persisted chat thread, owned by the parent (stored on the show) so it survives the
+   *  panel unmounting and app refreshes. */
+  messages: DirectorChatMessage[];
+  onMessagesChange: (messages: DirectorChatMessage[]) => void;
 }
 
-interface ChatMsg { role: 'user' | 'ai'; text: string }
-
-export function DirectorScriptChat({ doc, provider, selectedId, selectedText, onProposeEdits, docKind, beatSheet, onProposeBeatEdits, initialMessage, onInitialConsumed }: DirectorScriptChatProps) {
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+export function DirectorScriptChat({ doc, provider, selectedId, selectedText, onProposeEdits, docKind, beatSheet, onProposeBeatEdits, initialMessage, onInitialConsumed, messages, onMessagesChange }: DirectorScriptChatProps) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  // A ref mirror of the latest thread so an in-flight send() appends onto the freshest
+  // array even though `messages` is a prop (no functional-updater form available).
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const appendMessage = (m: DirectorChatMessage) => {
+    const next = [...messagesRef.current, m];
+    messagesRef.current = next;
+    onMessagesChange(next);
+  };
 
   const send = async (override?: { text: string; mode?: 'draft' | 'brainstorm' }) => {
     const text = (override?.text ?? draft).trim();
     if (!text || busy) return;
     setDraft('');
-    setMessages((m) => [...m, { role: 'user', text }]);
+    appendMessage({ role: 'user', text });
     setBusy(true);
     try {
       const isBeat = docKind === 'beatsheet';
@@ -65,10 +76,10 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
         }
       }
       const count = isBeat ? res.beatEdits?.length : res.edits?.length;
-      setMessages((m) => [...m, { role: 'ai', text: res.reply + (count ? `\n(proposed ${count} change${count === 1 ? '' : 's'})` : '') }]);
+      appendMessage({ role: 'ai', text: res.reply + (count ? `\n(proposed ${count} change${count === 1 ? '' : 's'})` : '') });
       if (!brainstorm) { if (isBeat) { if (res.beatEdits?.length) onProposeBeatEdits(res); } else { if (res.edits?.length) onProposeEdits(res); } }
     } catch (err) {
-      setMessages((m) => [...m, { role: 'ai', text: err instanceof Error ? err.message : 'Assistant failed.' }]);
+      appendMessage({ role: 'ai', text: err instanceof Error ? err.message : 'Assistant failed.' });
     } finally {
       setBusy(false);
     }

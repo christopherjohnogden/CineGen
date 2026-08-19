@@ -146,6 +146,13 @@ export interface DirectorMoodBoard {
   url: string;
 }
 
+/** One turn of the Script Assistant chat. Persisted on the show so the thread survives
+ *  the panel closing/reopening and app refreshes. */
+export interface DirectorChatMessage {
+  role: 'user' | 'ai';
+  text: string;
+}
+
 export interface DirectorShow {
   sourceText: string;
   sourceFileName?: string;
@@ -156,6 +163,8 @@ export interface DirectorShow {
   docKind?: 'screenplay' | 'beatsheet';
   /** Beat-sheet store (present when docKind === 'beatsheet'); kept in sync with sourceText. */
   beatSheet?: BeatSheet;
+  /** Persisted Script Assistant chat thread — survives panel close/reopen and refresh. */
+  chatMessages?: DirectorChatMessage[];
   clipLengthSec: ClipLengthSec;
   stylePrefix: string;
   lookBible: DirectorLookBible;

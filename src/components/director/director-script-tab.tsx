@@ -143,7 +143,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
     setSelectedId(undefined);
     setPending(undefined);
     setPendingBeats(undefined);
-    onChange({ ...show, docKind: undefined, sourceText: '', sourceElements: undefined, beatSheet: undefined, sourceFileName: undefined });
+    onChange({ ...show, docKind: undefined, sourceText: '', sourceElements: undefined, beatSheet: undefined, sourceFileName: undefined, chatMessages: undefined });
   };
 
   return (
@@ -208,6 +208,8 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
                 onProposeBeatEdits={(res: AssistantResponse) => setPendingBeats(res.beatEdits)}
                 initialMessage={createSeed}
                 onInitialConsumed={() => setCreateSeed(undefined)}
+                messages={show.chatMessages ?? []}
+                onMessagesChange={(m) => onChange({ ...show, chatMessages: m })}
               />
             </CollapsiblePanel>
           )}
