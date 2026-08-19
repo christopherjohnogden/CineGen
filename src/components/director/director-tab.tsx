@@ -19,7 +19,7 @@ import {
   parseBreakdownPayload,
 } from '@/lib/director/breakdown';
 import { mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
-import { BREAKDOWN_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
+import { BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
 import {
   breakdownJobInput,
   lookBibleJobInput,
