@@ -66,4 +66,30 @@ describe('useDirectorCascade', () => {
     expect(runShotlist).toHaveBeenCalledTimes(1);
     expect(commit).toHaveBeenCalledTimes(1);
   });
+
+  it('unmounting mid-run aborts the in-flight controller', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const runBreakdown = vi.fn((_scope: unknown, signal: AbortSignal) => {
+      capturedSignal = signal;
+      return new Promise<void>(() => {}); // never resolves — simulates an in-flight job
+    });
+    const runShotlist = vi.fn().mockResolvedValue(undefined);
+    const commit = vi.fn();
+    const { rerender, unmount } = renderHook((p) => useDirectorCascade(p), {
+      initialProps: { show: base({ sourceText: '' }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs: 2500 },
+    });
+
+    rerender({ show: base({ sourceText: SCRIPT }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs: 2500 });
+    // Let the debounce elapse so fire() starts and runBreakdown is invoked (in-flight).
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(runBreakdown).toHaveBeenCalledTimes(1);
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(runShotlist).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+  });
 });

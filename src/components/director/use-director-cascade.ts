@@ -47,6 +47,8 @@ export function useDirectorCascade({
       if (controller.signal.aborted) return;
       await runShotlist(scope, controller.signal);
       if (controller.signal.aborted) return;
+      // Reached only when this controller was never aborted, so a superseded
+      // (cancel-and-restart) run bails out above and never commits stale state.
       commitSyncState({ hashes: Object.fromEntries(next), dirty: [], lastRunAt: Date.now() });
       setDirty([]);
     } finally {
@@ -65,8 +67,11 @@ export function useDirectorCascade({
     if (timer.current) clearTimeout(timer.current);
     abort.current?.abort();
 
-    timer.current = setTimeout(() => { void fire(); }, debounceMs);
-    return () => { if (timer.current) clearTimeout(timer.current); };
+    timer.current = setTimeout(() => { void fire().catch(() => {}); }, debounceMs);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      abort.current?.abort();
+    };
     // Re-run when the source signature changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show.sourceText, autoSync, debounceMs]);
