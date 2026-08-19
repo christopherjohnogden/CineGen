@@ -350,7 +350,7 @@
 .dse-el--sel { background:rgba(79,123,255,.14); border-radius:2px; }
 .dse-el--diffdel { background:rgba(160,58,58,.18); border-left:3px solid #a03a3a; text-decoration:line-through; opacity:.8; padding-left:6px; }
 .dse-el--diffadd { background:rgba(47,125,79,.2); border-left:3px solid #2f7d4f; padding-left:6px; }
-.dse-diffbar { display:flex; gap:6px; align-items:center; margin:6px 0 14px; padding-left:6px; }
+.dse-diffbar { display:flex; gap:8px; align-items:center; margin:10px 0 20px; padding-left:6px; }
 
 /* ── Bottom type legend ─────────────────────────────────────────── */
 .dse-legend { display:flex; justify-content:center; align-items:stretch; gap:0; background:var(--bg-raised); border-top:1px solid var(--border-subtle); flex-shrink:0; overflow-x:auto; }
@@ -464,7 +464,7 @@
 .dbs-fields .full { grid-column:1 / -1; }
 .dbs-flabel { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-tertiary); font-weight:600; margin-bottom:3px; display:block; }
 .dbs-actions { display:flex; gap:6px; margin-top:10px; }
-.dbs-diffbar { display:flex; gap:6px; align-items:center; }
+.dbs-diffbar { display:flex; gap:8px; align-items:center; margin:10px 0 20px; }
 /* Sticky Accept/Decline bar pinned at the top of the editor while a change is pending. */
 .dxf-stickybar { position:sticky; top:0; z-index:20; display:flex; gap:8px; align-items:center; padding:8px 12px; margin-bottom:4px; background:var(--bg-elevated); border:1px solid var(--accent); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.4); width:100%; max-width:640px; }
 .dxf-stickybar .lbl { margin-left:auto; font-size:11px; color:var(--text-secondary); }
