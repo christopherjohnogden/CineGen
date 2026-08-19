@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { parseAssistantResponse, applyBeatEdits, buildBeatsheetMessage, type BeatEdit } from '@/lib/director/script-assistant';
+import { parseAssistantResponse, applyBeatEdits, buildBeatsheetMessage, needsJsonRetry, JSON_REPAIR_INSTRUCTION, type BeatEdit } from '@/lib/director/script-assistant';
 import type { BeatSheet } from '@/lib/director/beatsheet';
+
+describe('needsJsonRetry', () => {
+  it('true when a write/create request comes back as prose with no edits (not brainstorm)', () => {
+    expect(needsJsonRetry('help make a beat sheet where a rider charges into battle', false, false)).toBe(true);
+  });
+  it('false in brainstorm mode (never retries)', () => {
+    expect(needsJsonRetry('write a beat sheet', false, true)).toBe(false);
+  });
+  it('false when edits already landed', () => {
+    expect(needsJsonRetry('write beats', true, false)).toBe(false);
+  });
+  it('false for a plain question (no write/create/add/change verb)', () => {
+    expect(needsJsonRetry('is this beat too long?', false, false)).toBe(false);
+    expect(needsJsonRetry('what happens in beat 2?', false, false)).toBe(false);
+  });
+  it('JSON_REPAIR_INSTRUCTION demands JSON-only', () => {
+    expect(JSON_REPAIR_INSTRUCTION).toMatch(/JSON/);
+  });
+});
 
 const bs: BeatSheet = { beats: [
   { id: 'b1', n: 1, action: 'Old action.', location: 'INT. A', shot: '' },

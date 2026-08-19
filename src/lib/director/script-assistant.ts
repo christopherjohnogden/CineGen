@@ -13,11 +13,26 @@ export interface BeatEdit {
 }
 export interface AssistantResponse { reply: string; edits?: AssistantEdit[]; beatEdits?: BeatEdit[] }
 
+/** Follow-up sent when the model answered a write request in prose instead of the JSON contract. */
+export const JSON_REPAIR_INSTRUCTION =
+  'Your previous answer was prose, but this editor can only apply structured edits. Convert the beats/scenes you just described into the required JSON object (edits/beatEdits) and reply with ONLY that JSON — no prose, no markdown, first char "{" and last char "}".';
+
+/**
+ * Decide whether to auto-retry: the user asked to write/create/add/change, no edits landed
+ * (the model likely replied in prose), and we're not in brainstorm mode. A plain question
+ * ("is this too long?", "what happens in beat 2?") does not retry.
+ */
+export function needsJsonRetry(userText: string, gotEdits: boolean, brainstorm: boolean): boolean {
+  if (brainstorm || gotEdits) return false;
+  return /\b(write|create|draft|add|make|generate|change|rewrite|expand|continue|outline|build)\b/i.test(userText);
+}
+
 export const SCRIPT_ASSISTANT_SYSTEM_PROMPT = `You are a screenwriting assistant embedded in a script editor.
 You can answer questions about the script AND propose edits to it.
 The script is given as a list of elements, each with an id, a type (scene|action|character|parenthetical|dialogue|transition) and text.
-When the user asks you to change the script, return edits that reference element ids.
-Return ONLY JSON with this shape:
+When the user asks you to WRITE, CREATE, ADD, or CHANGE the script, you MUST return edits — do NOT reply with the script as prose. Writing scenes/lines is done via "edits", never in the "reply" field.
+CRITICAL OUTPUT RULES: Your ENTIRE response must be a single JSON object and nothing else. No prose, no explanation, no markdown, no code fences before or after. The very first character is "{" and the very last is "}". The human-readable summary goes ONLY in the short "reply" field.
+JSON shape:
 {
   "reply": "one short sentence describing what you did or answering the question",
   "edits": [
@@ -41,8 +56,9 @@ export function buildAssistantMessage(
 
 export const BEATSHEET_ASSISTANT_SYSTEM_PROMPT = `You are a video beat-sheet assistant. A beat sheet has NO dialogue — it is a list of beats, each describing what happens on screen so it can become a video-generation prompt.
 Each beat has an id and fields: action (what happens), location, shot (camera/framing/movement), mood (optional).
-When the user asks you to write or change beats, return edits referencing beat ids.
-Return ONLY JSON with this shape:
+When the user asks you to WRITE, CREATE, ADD, or CHANGE beats, you MUST return "beatEdits" — do NOT write the beats out as prose in the reply. The beats you write go in "beatEdits", never in the "reply" field.
+CRITICAL OUTPUT RULES: Your ENTIRE response must be a single JSON object and nothing else. No prose, no explanation, no markdown, no code fences before or after. The very first character is "{" and the very last is "}". The human-readable summary goes ONLY in the short "reply" field.
+JSON shape:
 {
   "reply": "one short sentence",
   "beatEdits": [

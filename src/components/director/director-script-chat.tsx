@@ -4,7 +4,8 @@ import { invokeCliCopilotChat } from '@/lib/llm/cli-copilot-client';
 import type { Screenplay } from '@/lib/director/screenplay';
 import {
   SCRIPT_ASSISTANT_SYSTEM_PROMPT, BEATSHEET_ASSISTANT_SYSTEM_PROMPT,
-  buildAssistantMessage, buildBeatsheetMessage, parseAssistantResponse, type AssistantResponse,
+  buildAssistantMessage, buildBeatsheetMessage, parseAssistantResponse,
+  needsJsonRetry, JSON_REPAIR_INSTRUCTION, type AssistantResponse,
 } from '@/lib/director/script-assistant';
 
 interface DirectorScriptChatProps {
@@ -43,7 +44,22 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
         : buildAssistantMessage(doc, text, selectedId ? { elementId: selectedId } : undefined))
         + (brainstorm ? '\n\n(Brainstorm mode: discuss and outline only — do NOT return edits/beatEdits this turn.)' : '');
       const result = await invokeCliCopilotChat(provider, { systemPrompt, userMessage, purpose: 'copilot' });
-      const res = parseAssistantResponse(result.message);
+      let res = parseAssistantResponse(result.message);
+      let gotEdits = isBeat ? !!res.beatEdits?.length : !!res.edits?.length;
+      // If the model answered a write request in prose (no edits), send one follow-up asking
+      // it to convert its own answer into the required JSON, then use that.
+      if (needsJsonRetry(text, gotEdits, brainstorm)) {
+        const repair = await invokeCliCopilotChat(provider, {
+          systemPrompt,
+          userMessage: `${JSON_REPAIR_INSTRUCTION}\n\nYour previous answer:\n${res.reply}`,
+          purpose: 'copilot',
+        });
+        const repaired = parseAssistantResponse(repair.message);
+        if (isBeat ? repaired.beatEdits?.length : repaired.edits?.length) {
+          res = repaired;
+          gotEdits = true;
+        }
+      }
       const count = isBeat ? res.beatEdits?.length : res.edits?.length;
       setMessages((m) => [...m, { role: 'ai', text: res.reply + (count ? `\n(proposed ${count} change${count === 1 ? '' : 's'})` : '') }]);
       if (!brainstorm) { if (isBeat) { if (res.beatEdits?.length) onProposeBeatEdits(res); } else { if (res.edits?.length) onProposeEdits(res); } }
