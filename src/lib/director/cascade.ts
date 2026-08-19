@@ -1,6 +1,7 @@
 import type { DirectorScene, DirectorShow } from '@/types/director';
 import { parseToScreenplay } from '@/lib/director/screenplay';
 import { splitScenes } from '@/lib/director/scene-split';
+import { detectSceneAssets } from '@/lib/director/scene-assets';
 
 export interface SceneDiff { changed: string[]; removed: string[]; }
 
@@ -104,4 +105,28 @@ export function diffScenes(prev: Map<string, string>, next: Map<string, string>)
   const removed: string[] = [];
   for (const key of prev.keys()) if (!next.has(key)) removed.push(key);
   return { changed, removed };
+}
+
+/** Drop clips whose scene is gone and breakdown items no surviving scene
+ *  references. `next` supplies the surviving scenes/text. An item is kept when
+ *  any surviving scene's text mentions it OR any surviving scene override still
+ *  lists its tag under `added`. Pure. */
+export function pruneRemovedScenes(show: DirectorShow, next: DirectorShow): DirectorShow {
+  const surviving = new Set(next.scenes.map((s) => s.id));
+  const clips = show.clips.filter((c) => surviving.has(c.sceneId));
+
+  const referenced = new Set<string>();
+  const scenes = splitScenes(parseToScreenplay(next.sourceText));
+  for (const sc of scenes) {
+    for (const hit of detectSceneAssets(sc, show.breakdown)) {
+      const m = show.breakdown.find((b) => b.name === hit.name && b.kind === hit.kind);
+      if (m) referenced.add(m.tag);
+    }
+  }
+  for (const ov of Object.values(next.sceneAssetOverrides ?? {})) {
+    for (const tag of ov.added) referenced.add(tag);
+  }
+  const breakdown = show.breakdown.filter((b) => referenced.has(b.tag));
+
+  return { ...show, clips, breakdown };
 }

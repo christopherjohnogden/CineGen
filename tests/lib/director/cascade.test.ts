@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { sceneHashes, diffScenes, scenesForKeys } from '@/lib/director/cascade';
-import type { DirectorShow, DirectorScene } from '@/types/director';
+import { sceneHashes, diffScenes, scenesForKeys, pruneRemovedScenes } from '@/lib/director/cascade';
+import type { DirectorShow, DirectorScene, DirectorBreakdownItem, DirectorClip } from '@/types/director';
 
 const show = (over: Partial<DirectorShow>): DirectorShow => ({
   sourceText: '', clipLengthSec: 10, stylePrefix: '', lookBible: {} as never,
@@ -150,5 +150,42 @@ describe('scenesForKeys', () => {
     // Order of the returned scenes still follows show.scenes order, not derived/parse order.
     const both = scenesForKeys(s, ['INT. OFFICE - DAY', 'EXT. STREET - NIGHT']);
     expect(both.map((x) => x.id)).toEqual(['street-scene', 'office-scene']);
+  });
+});
+
+const item = (o: Partial<DirectorBreakdownItem>): DirectorBreakdownItem =>
+  ({ id: o.name!, kind: 'character', name: 'x', tag: '@x', description: '', ...o });
+
+describe('pruneRemovedScenes', () => {
+  it('drops clips whose scene is gone and items no surviving scene references', () => {
+    const prevShow = show({
+      sourceText: 'INT. OFFICE - DAY\nDr. Jordan enters.\n\nEXT. STREET - NIGHT\nThe Taxi waits.',
+      breakdown: [item({ name: 'Dr. Jordan', tag: '@Dr-Jordan' }), item({ name: 'Taxi', tag: '@Taxi', kind: 'vehicle' })],
+      scenes: [
+        { id: 's1', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+        { id: 's2', number: 2, label: 'EXT. STREET - NIGHT', summary: '', elementIds: [], clipIds: [] },
+      ] as never,
+      clips: [{ id: 'c1', sceneId: 's1', beats: [] }, { id: 'c2', sceneId: 's2', beats: [] }] as DirectorClip[],
+    });
+    // next: scene 2 removed
+    const nextShow = { ...prevShow,
+      sourceText: 'INT. OFFICE - DAY\nDr. Jordan enters.',
+      scenes: [prevShow.scenes[0]],
+    };
+    const pruned = pruneRemovedScenes(prevShow, nextShow);
+    expect(pruned.clips.map((c) => c.id)).toEqual(['c1']);       // c2 dropped (scene gone)
+    expect(pruned.breakdown.map((b) => b.tag)).toEqual(['@Dr-Jordan']); // Taxi unreferenced now
+  });
+
+  it('keeps an item a surviving scene override still lists even if not in text', () => {
+    const prevShow = show({
+      sourceText: 'INT. OFFICE - DAY\nDr. Jordan enters.',
+      breakdown: [item({ name: 'Hidden Prop', tag: '@Hidden-Prop', kind: 'prop' })],
+      scenes: [{ id: 's1', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] }] as never,
+      clips: [],
+      sceneAssetOverrides: { 0: { added: ['@Hidden-Prop'], removed: [] } },
+    });
+    const pruned = pruneRemovedScenes(prevShow, prevShow);
+    expect(pruned.breakdown.map((b) => b.tag)).toEqual(['@Hidden-Prop']);
   });
 });
