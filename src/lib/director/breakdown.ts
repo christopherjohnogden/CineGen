@@ -52,7 +52,18 @@ export function mergeBreakdownItems(
     const element = findMatchingElement(elements, item);
     const linked = { ...item, elementId: item.elementId ?? element?.id };
     if (matchIndex >= 0) {
-      next[matchIndex] = { ...next[matchIndex], ...linked, id: next[matchIndex].id };
+      const prev = next[matchIndex];
+      // Preserve lazily-enriched fields the identify pass does not carry: an
+      // undefined/empty incoming actingProfile/voice/enrichedAt must NOT clobber
+      // an existing non-empty value (otherwise every re-breakdown wipes enrichment).
+      next[matchIndex] = {
+        ...prev,
+        ...linked,
+        id: prev.id,
+        actingProfile: linked.actingProfile?.trim() ? linked.actingProfile : prev.actingProfile,
+        voice: linked.voice?.trim() ? linked.voice : prev.voice,
+        enrichedAt: linked.enrichedAt ?? prev.enrichedAt,
+      };
     } else {
       next.push(linked);
     }

@@ -4,7 +4,7 @@ import { findMatchingElement, itemsMissingElements, mergeBreakdownItems, parseBr
 import { mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
 import { planDirectorFolders } from '@/lib/director/folders';
 import { createPendingTake } from '@/lib/director/generate';
-import type { DirectorClip, DirectorScene } from '@/types/director';
+import type { DirectorBreakdownItem, DirectorClip, DirectorScene } from '@/types/director';
 
 const elements: Element[] = [{
   id: 'el-1',
@@ -36,6 +36,36 @@ describe('director breakdown', () => {
     }).items, []);
     const second = mergeBreakdownItems(first, first, []);
     expect(second).toHaveLength(1);
+  });
+
+  it('preserves enriched actingProfile/voice/enrichedAt when re-merged from identify pass', () => {
+    // An enriched character already in the show breakdown.
+    const enrichedAt = 1_700_000_000_000;
+    const existing: DirectorBreakdownItem[] = [{
+      id: 'char-1',
+      kind: 'character',
+      name: 'Dr Jordan',
+      tag: '@Dr-Jordan',
+      description: 'therapist',
+      actingProfile: 'measured, clinical, warm undertone',
+      voice: 'low, even, unhurried',
+      enrichedAt,
+    }];
+    // The identify prompt re-runs breakdown and emits the same tag WITHOUT
+    // actingProfile/voice/enrichedAt (parseBreakdownPayload gives undefined own-keys).
+    const incoming = parseBreakdownPayload({
+      items: [{ kind: 'character', name: 'Dr Jordan', tag: '@Dr-Jordan', description: 'therapist, updated' }],
+      scenes: [],
+    }).items;
+    const merged = mergeBreakdownItems(existing, incoming, elements);
+    expect(merged).toHaveLength(1);
+    // Enriched fields survive the identify re-merge.
+    expect(merged[0].actingProfile).toBe('measured, clinical, warm undertone');
+    expect(merged[0].voice).toBe('low, even, unhurried');
+    expect(merged[0].enrichedAt).toBe(enrichedAt);
+    // Incoming still updates the non-enriched descriptive fields.
+    expect(merged[0].description).toBe('therapist, updated');
+    expect(merged[0].id).toBe('char-1');
   });
 });
 

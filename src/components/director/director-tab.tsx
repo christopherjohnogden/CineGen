@@ -306,6 +306,10 @@ export function DirectorTab() {
         parseDirectorLlmProvider(cur.llmProvider),
       );
       const { actingProfile, voice } = parseEnrichResult(payload);
+      // Only mark the character enriched if the LLM actually returned something.
+      // An empty parse (junk / wrong keys) must leave enrichedAt unset so a later
+      // generation retries instead of permanently locking the item as "enriched but empty".
+      if (!actingProfile && !voice) return;
       const now = Date.now();
       setShow({
         ...showRef.current,
