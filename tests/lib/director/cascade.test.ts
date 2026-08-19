@@ -122,4 +122,33 @@ describe('scenesForKeys', () => {
     // Passing both keys returns both scenes, in show.scenes order.
     expect(scenesForKeys(s, keys).map((x) => x.id)).toEqual(['first', 'second']);
   });
+
+  it('resolves by label, not by index, when show.scenes order/length diverges from a fresh parse of sourceText (post-breakdown edit)', () => {
+    // Simulates the real-world case scenesForKeys exists for: the user edits
+    // the script (sourceText changes) but show.scenes is LLM-authored and not
+    // re-derived from sourceText, so it can be in a different order (or have
+    // a different length) than a fresh parse would produce.
+    const s = show({
+      sourceText: SCRIPT_A, // parses to [OFFICE, STREET] in that document order
+      scenes: [
+        // show.scenes is in the OPPOSITE order from a fresh parse of sourceText,
+        // and also carries an extra stale scene a fresh parse would not produce.
+        { id: 'street-scene', number: 1, label: 'EXT. STREET - NIGHT', summary: '', elementIds: [], clipIds: [] },
+        { id: 'office-scene', number: 2, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+        { id: 'stale-scene', number: 3, label: 'INT. GARAGE - DAY', summary: '', elementIds: [], clipIds: [] },
+      ] as DirectorScene[],
+    });
+
+    // A naive index-zip would pair derived[0] ('INT. OFFICE - DAY', from the
+    // fresh parse) with show.scenes[0] (id 'street-scene'), which is wrong.
+    const result = scenesForKeys(s, ['INT. OFFICE - DAY']);
+    expect(result.map((x) => x.id)).toEqual(['office-scene']);
+
+    const result2 = scenesForKeys(s, ['EXT. STREET - NIGHT']);
+    expect(result2.map((x) => x.id)).toEqual(['street-scene']);
+
+    // Order of the returned scenes still follows show.scenes order, not derived/parse order.
+    const both = scenesForKeys(s, ['INT. OFFICE - DAY', 'EXT. STREET - NIGHT']);
+    expect(both.map((x) => x.id)).toEqual(['street-scene', 'office-scene']);
+  });
 });

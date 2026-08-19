@@ -65,21 +65,36 @@ export function sceneHashes(show: DirectorShow): Map<string, string> {
 }
 
 /** The DirectorScene entries whose derived key is in `keys`, in show.scenes
- *  order. Keys are derived from show.sourceText the same content-stable way
- *  sceneHashes does (grouped by base heading, ordered by body-content hash,
- *  then `#n` occurrence-suffixed) and matched positionally against
- *  show.scenes, which is expected to be parsed in the same scene order.
- *  Beats have no DirectorScene yet, so beatsheet docKind returns []. */
+ *  order.
+ *
+ *  show.scenes is LLM-authored (parseBreakdownPayload + mergeShotlist) and is
+ *  NOT re-derived from sourceText when the script is edited — the exact
+ *  moment dirty-key resolution runs. So show.scenes can differ in order
+ *  and/or length from a fresh parse of sourceText. Keys are therefore
+ *  derived directly from each DirectorScene's OWN `label`, never by zipping
+ *  show.scenes against a fresh sourceText parse by array index.
+ *
+ *  Duplicate-heading disambiguation is best-effort: sceneHashes assigns the
+ *  `#n` suffix by sorting same-heading scenes by BODY content-hash, but a
+ *  DirectorScene only has `summary`/`event`, not the raw body elements used
+ *  in that hash, so it cannot be recomputed identically here. For scenes
+ *  sharing a base heading, we fall back to occurrence order within
+ *  show.scenes (first same-heading scene -> base key, second -> `#1`, ...).
+ *  This matches sceneHashes exactly whenever a heading is unique (the common
+ *  case) and is a reasonable approximation otherwise. Beats have no
+ *  DirectorScene yet, so beatsheet docKind returns []. */
 export function scenesForKeys(show: DirectorShow, keys: string[]): DirectorScene[] {
   if (show.docKind === 'beatsheet') return [];
   const want = new Set(keys);
-  const scenes = splitScenes(parseToScreenplay(show.sourceText));
-  const derived = sceneKeysFromParsedScenes(scenes);
+  const seen = new Map<string, number>();
   const out: DirectorScene[] = [];
-  show.scenes.forEach((sc, i) => {
-    const key = derived[i]?.key;
-    if (key !== undefined && want.has(key)) out.push(sc);
-  });
+  for (const sc of show.scenes) {
+    const base = sc.label.trim().toUpperCase() || '(untitled)';
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    const key = n === 0 ? base : `${base}#${n}`;
+    if (want.has(key)) out.push(sc);
+  }
   return out;
 }
 
