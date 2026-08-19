@@ -284,7 +284,7 @@ export function DirectorTab() {
     setShow({ ...nextShow, syncState });
   }, [setShow]);
 
-  useDirectorCascade({
+  const cascade = useDirectorCascade({
     show,
     autoSync: show.autoSync ?? true,
     runBreakdown,
@@ -436,6 +436,11 @@ export function DirectorTab() {
         <div className="director-tab__row" style={{ marginLeft: 'auto', alignItems: 'center' }}>
           <button type="button" className="director-tab__btn" onClick={() => setOpenDrawer((d) => d === 'setup' ? null : 'setup')}>⚙ Setup</button>
           <button type="button" className="director-tab__btn" onClick={() => setOpenDrawer((d) => d === 'look' ? null : 'look')}>🎨 Look bible</button>
+          <label className="director-tab__autosync" title="Auto-run breakdown + shotlist after edits">
+            <input type="checkbox" checked={show.autoSync ?? true}
+              onChange={(e) => setShow({ ...show, autoSync: e.target.checked })} />
+            <span>Auto-sync{cascade.running ? ' ·…' : cascade.dirty.length ? ` · ${cascade.dirty.length} stale` : ''}</span>
+          </label>
           <DirectorLlmPicker
             provider={parseDirectorLlmProvider(show.llmProvider)}
             providers={cliProviders}
@@ -466,7 +471,7 @@ export function DirectorTab() {
           <DirectorScriptTab show={show} onChange={setShow} onBreakdown={() => void runBreakdown()} />
         )}
         {show.mode === 'breakdown' && (
-          <DirectorBreakdownTab show={show} elements={state.elements} onChange={setShow} onApprove={approveBreakdown} onCreateMissing={createMissing} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
+          <DirectorBreakdownTab show={show} elements={state.elements} dirtyKeys={cascade.dirty} syncing={cascade.running} onChange={setShow} onApprove={approveBreakdown} onCreateMissing={createMissing} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
         )}
         {show.mode === 'shotlist' && (
           <DirectorShotlistTab show={show} onChange={setShow} onShotlist={(sceneOnly) => void runShotlist(sceneOnly ? { sceneIds: selectedScene(show) ? [selectedScene(show)!.id] : [] } : 'all')} onSelectClip={selectClip} />
