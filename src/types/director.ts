@@ -165,6 +165,14 @@ export interface DirectorShow {
   beatSheet?: BeatSheet;
   /** Persisted Script Assistant chat thread — survives panel close/reopen and refresh. */
   chatMessages?: DirectorChatMessage[];
+  /** Auto-run breakdown+shotlist after edits. Absent = true (on by default). */
+  autoSync?: boolean;
+  /** What the cascade has already synced, so it survives reload. */
+  syncState?: {
+    hashes: Record<string, string>;
+    dirty: string[];
+    lastRunAt?: number;
+  };
   clipLengthSec: ClipLengthSec;
   stylePrefix: string;
   lookBible: DirectorLookBible;
