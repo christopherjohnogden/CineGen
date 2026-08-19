@@ -1,4 +1,5 @@
 import type { ScreenplayElement } from '@/lib/director/screenplay';
+import type { BeatSheet } from '@/lib/director/beatsheet';
 
 export type ClipLengthSec = 10 | 15 | 20 | 30;
 export type DirectorMode = 'source' | 'breakdown' | 'shotlist' | 'generate';
@@ -151,6 +152,10 @@ export interface DirectorShow {
   /** Typed screenplay elements from a structured import (e.g. .fdx). When present, the editor
    *  uses these directly instead of re-parsing sourceText; kept in sync with sourceText. */
   sourceElements?: ScreenplayElement[];
+  /** Which document the Script tab is editing. Absent = screenplay. */
+  docKind?: 'screenplay' | 'beatsheet';
+  /** Beat-sheet store (present when docKind === 'beatsheet'); kept in sync with sourceText. */
+  beatSheet?: BeatSheet;
   clipLengthSec: ClipLengthSec;
   stylePrefix: string;
   lookBible: DirectorLookBible;
