@@ -21,6 +21,11 @@ interface SceneAssetsPanelProps {
 
 const KIND_LABEL: Record<BreakdownKind, string> = { character: 'Characters', location: 'Locations', prop: 'Props', vehicle: 'Vehicles' };
 
+// The highlighted <mark> carries the literal script text (e.g. "DUSTY BATTLEFIELD PLAIN"),
+// whose casing/whitespace can differ from the item's name ("Dusty Battlefield Plain"). Compare
+// loosely so clicking a highlight still finds its card.
+const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
 export function SceneAssetsPanel({ show, scene, sceneIndex, elements, activeKind, focusName, onSetKind, onRemove, onGenerateRef, onEditDescription, onRelink }: SceneAssetsPanelProps) {
   const resolved = resolveSceneAssets(show, sceneIndex, show.breakdown, scene);
   const counts = { character: 0, location: 0, prop: 0, vehicle: 0 } as Record<BreakdownKind, number>;
@@ -68,7 +73,7 @@ export function SceneAssetsPanel({ show, scene, sceneIndex, elements, activeKind
                   <div
                     key={item.tag}
                     className="dbk-card"
-                    ref={focusName && item.name === focusName ? flashRef : undefined}
+                    ref={focusName && normName(item.name) === normName(focusName) ? flashRef : undefined}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                       <div className={`dbk-icn dbk-icn--${kind}`}>
