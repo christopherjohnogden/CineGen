@@ -34,13 +34,27 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
   };
 
   const hasPending = !!pendingBeatEdits && pendingBeatEdits.length > 0;
+  const beatIds = new Set(beats.map((b) => b.id));
   const delTargets = new Set((pendingBeatEdits ?? []).filter((e) => e.op === 'replace' || e.op === 'delete').map((e) => e.targetBeatId).filter(Boolean) as string[]);
   const addsFor = (id: string) => (pendingBeatEdits ?? []).find((e) => e.targetBeatId === id && (e.op === 'replace' || e.op === 'insert-after'))?.beats ?? [];
+  // Added beats with no existing anchor (no target, or a target that isn't a current beat —
+  // e.g. drafting into an empty sheet) render at the top; otherwise they'd be invisible.
+  const unanchoredAdds = (pendingBeatEdits ?? [])
+    .filter((e) => e.op === 'insert-after' && (!e.targetBeatId || !beatIds.has(e.targetBeatId)))
+    .flatMap((e) => e.beats ?? []);
+
+  const renderAddCard = (n: { id: string; location: string; action: string; shot: string }) => (
+    <div key={n.id} className="dbs-card dbs-card--diffadd">
+      <div className="dbs-head"><span className="dbs-num">+ {n.location || 'New beat'}</span></div>
+      <p className="director-tab__meta">{n.action}{n.shot ? ` · ${n.shot}` : ''}</p>
+    </div>
+  );
 
   return (
     <div className="dbs-wrap">
       <div className="dbs-list">
         {beats.length === 0 && !hasPending && <p className="director-tab__empty">No beats yet — add one, or ask the assistant to draft the beat sheet.</p>}
+        {unanchoredAdds.map(renderAddCard)}
         {beats.map((b) => (
           <div key={b.id}>
             <div className={`dbs-card${delTargets.has(b.id) ? ' dbs-card--diffdel' : ''}${b.id === selectedBeatId ? ' director-tab__item--active' : ''}`} onFocusCapture={() => onSelect(b.id)}>
@@ -66,12 +80,7 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
                 </div>
               </div>
             </div>
-            {addsFor(b.id).map((n) => (
-              <div key={n.id} className="dbs-card dbs-card--diffadd">
-                <div className="dbs-head"><span className="dbs-num">+ {n.location}</span></div>
-                <p className="director-tab__meta">{n.action}{n.shot ? ` · ${n.shot}` : ''}</p>
-              </div>
-            ))}
+            {addsFor(b.id).map(renderAddCard)}
           </div>
         ))}
         {hasPending && (

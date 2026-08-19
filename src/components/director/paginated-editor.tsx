@@ -45,11 +45,22 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
     (pendingEdits ?? []).filter((ed) => ed.op === 'replace' || ed.op === 'delete').map((ed) => ed.targetElementId).filter(Boolean) as string[],
   );
   const hasPendingEdits = !!pendingEdits && pendingEdits.length > 0;
+  // Added elements with no existing anchor (no target, or a target not in the doc — e.g.
+  // drafting into an empty script) render at the top; otherwise they'd be invisible.
+  const elementIds = new Set(doc.elements.map((e) => e.id));
+  const unanchoredAdds = (pendingEdits ?? [])
+    .filter((ed) => ed.op === 'insert-after' && (!ed.targetElementId || !elementIds.has(ed.targetElementId)))
+    .flatMap((ed) => ed.elements ?? []);
+  // Prepend unanchored adds as synthetic diff-add items so they render even with an empty doc.
+  const items = [...unanchoredAdds.map((n) => ({ ...n, __add: true as const })), ...doc.elements.map((e) => ({ ...e, __add: false as const }))];
 
   return (
     <PaginatedPages
-      items={doc.elements}
+      items={items}
       renderItem={(el) => {
+        if (el.__add) {
+          return <div className={`dse-el dse-el--${el.type} dse-el--diffadd`}>{el.text}</div>;
+        }
         const isDiff = diffTargets.has(el.id);
         return (
           <>
