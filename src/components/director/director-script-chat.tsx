@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { invokeCliCopilotChat } from '@/lib/llm/cli-copilot-client';
 import type { Screenplay } from '@/lib/director/screenplay';
 import {
-  SCRIPT_ASSISTANT_SYSTEM_PROMPT, buildAssistantMessage, parseAssistantResponse, type AssistantResponse,
+  SCRIPT_ASSISTANT_SYSTEM_PROMPT, BEATSHEET_ASSISTANT_SYSTEM_PROMPT,
+  buildAssistantMessage, buildBeatsheetMessage, parseAssistantResponse, type AssistantResponse,
 } from '@/lib/director/script-assistant';
 
 interface DirectorScriptChatProps {
@@ -12,37 +13,54 @@ interface DirectorScriptChatProps {
   selectedId?: string;
   selectedText?: string;
   onProposeEdits: (res: AssistantResponse) => void;
+  docKind: 'screenplay' | 'beatsheet';
+  beatSheet?: import('@/lib/director/beatsheet').BeatSheet;
+  onProposeBeatEdits: (res: import('@/lib/director/script-assistant').AssistantResponse) => void;
+  initialMessage?: { idea: string; mode: 'draft' | 'brainstorm' };
 }
 
 interface ChatMsg { role: 'user' | 'ai'; text: string }
 
-export function DirectorScriptChat({ doc, provider, selectedId, selectedText, onProposeEdits }: DirectorScriptChatProps) {
+export function DirectorScriptChat({ doc, provider, selectedId, selectedText, onProposeEdits, docKind, beatSheet, onProposeBeatEdits, initialMessage }: DirectorScriptChatProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const send = async () => {
-    const text = draft.trim();
+  const send = async (override?: { text: string; mode?: 'draft' | 'brainstorm' }) => {
+    const text = (override?.text ?? draft).trim();
     if (!text || busy) return;
     setDraft('');
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      const message = buildAssistantMessage(doc, text, selectedId ? { elementId: selectedId } : undefined);
-      const result = await invokeCliCopilotChat(provider, {
-        systemPrompt: SCRIPT_ASSISTANT_SYSTEM_PROMPT,
-        userMessage: message,
-        purpose: 'copilot',
-      });
+      const isBeat = docKind === 'beatsheet';
+      const brainstorm = override?.mode === 'brainstorm';
+      const systemPrompt = isBeat ? BEATSHEET_ASSISTANT_SYSTEM_PROMPT : SCRIPT_ASSISTANT_SYSTEM_PROMPT;
+      // In brainstorm mode, nudge the model to converse only (no edits/beatEdits this turn).
+      const userMessage = (isBeat
+        ? buildBeatsheetMessage(beatSheet ?? { beats: [] }, text, selectedId ? { beatId: selectedId } : undefined)
+        : buildAssistantMessage(doc, text, selectedId ? { elementId: selectedId } : undefined))
+        + (brainstorm ? '\n\n(Brainstorm mode: discuss and outline only — do NOT return edits/beatEdits this turn.)' : '');
+      const result = await invokeCliCopilotChat(provider, { systemPrompt, userMessage, purpose: 'copilot' });
       const res = parseAssistantResponse(result.message);
-      setMessages((m) => [...m, { role: 'ai', text: res.reply + (res.edits ? `\n(proposed ${res.edits.length} edit${res.edits.length === 1 ? '' : 's'})` : '') }]);
-      if (res.edits?.length) onProposeEdits(res);
+      const count = isBeat ? res.beatEdits?.length : res.edits?.length;
+      setMessages((m) => [...m, { role: 'ai', text: res.reply + (count ? `\n(proposed ${count} change${count === 1 ? '' : 's'})` : '') }]);
+      if (!brainstorm) { if (isBeat) { if (res.beatEdits?.length) onProposeBeatEdits(res); } else { if (res.edits?.length) onProposeEdits(res); } }
     } catch (err) {
       setMessages((m) => [...m, { role: 'ai', text: err instanceof Error ? err.message : 'Assistant failed.' }]);
     } finally {
       setBusy(false);
     }
   };
+
+  const seededRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (initialMessage && seededRef.current !== initialMessage.idea) {
+      seededRef.current = initialMessage.idea;
+      void send({ text: initialMessage.idea, mode: initialMessage.mode });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage]);
 
   return (
     <>

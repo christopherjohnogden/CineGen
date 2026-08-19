@@ -3,12 +3,15 @@ import type { DirectorShow } from '@/types/director';
 import { extractScriptText, SCRIPT_ACCEPT } from '@/lib/director/look-bible';
 import { parseToScreenplay, serializeScreenplay, type Screenplay } from '@/lib/director/screenplay';
 import { parseFdx } from '@/lib/director/fdx-parser';
-import { applyAssistantEdits, type AssistantEdit, type AssistantResponse } from '@/lib/director/script-assistant';
+import { applyAssistantEdits, applyBeatEdits, type AssistantEdit, type AssistantResponse, type BeatEdit } from '@/lib/director/script-assistant';
 import { parseDirectorLlmProvider } from '@/lib/director/cli-provider';
 import { CollapsiblePanel } from './collapsible-panel';
 import { PaginatedEditor, ELEMENT_TYPES } from './paginated-editor';
 import { DirectorScriptAssets } from './director-script-assets';
 import { DirectorScriptChat } from './director-script-chat';
+import { ScriptEmptyState } from './script-empty-state';
+import { BeatsheetEditor } from './beatsheet-editor';
+import { emptyBeatSheet, serializeBeatSheet, type BeatSheet } from '@/lib/director/beatsheet';
 
 interface DirectorScriptTabProps {
   show: DirectorShow;
@@ -26,8 +29,13 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
   const [rightOpen, setRightOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [pending, setPending] = useState<AssistantEdit[] | undefined>();
+  const [pendingBeats, setPendingBeats] = useState<BeatEdit[] | undefined>();
+  const [createSeed, setCreateSeed] = useState<{ idea: string; mode: 'draft' | 'brainstorm' } | undefined>();
   const [scriptError, setScriptError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const docKind = show.docKind ?? 'screenplay';
+  const beatSheet = show.beatSheet ?? emptyBeatSheet();
+  const setBeatSheet = (bs: BeatSheet) => onChange({ ...show, beatSheet: bs, sourceText: serializeBeatSheet(bs) });
 
   const [doc, setDocState] = useState<Screenplay>(() => docFromShow(show));
 
@@ -103,6 +111,16 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
     setSelectedId(target.id);
   };
 
+  const isEmpty = docKind === 'beatsheet' ? beatSheet.beats.length === 0 : (!show.sourceText.trim() && !show.sourceElements);
+  const newScreenplay = () => onChange({ ...show, docKind: 'screenplay', sourceText: '', sourceElements: undefined });
+  const newBeatSheet = () => onChange({ ...show, docKind: 'beatsheet', beatSheet: emptyBeatSheet(), sourceText: '' });
+  const createFromPrompt = (idea: string, kind: 'screenplay' | 'beatsheet', mode: 'draft' | 'brainstorm') => {
+    if (kind === 'beatsheet') onChange({ ...show, docKind: 'beatsheet', beatSheet: emptyBeatSheet(), sourceText: '' });
+    else onChange({ ...show, docKind: 'screenplay', sourceText: '', sourceElements: undefined });
+    setRightOpen(true);
+    setCreateSeed({ idea, mode });
+  };
+
   return (
     <div className="director-tab" style={{ height: '100%' }}>
       <div className="director-tab__toolbar">
@@ -116,51 +134,73 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
       </div>
       {scriptError && <p className="director-tab__warn" style={{ padding: '0 16px' }}>{scriptError}</p>}
 
-      <div className="dse-shell" data-left={leftOpen ? 'open' : 'closed'} data-right={rightOpen ? 'open' : 'closed'}>
-        {!leftOpen && <button type="button" className="dse-reopen dse-reopen--left" onClick={() => setLeftOpen(true)} title="Show panel">›</button>}
-        {!rightOpen && <button type="button" className="dse-reopen dse-reopen--right" onClick={() => setRightOpen(true)} title="Show assistant">‹</button>}
+      {isEmpty ? (
+        <ScriptEmptyState onNewScreenplay={newScreenplay} onNewBeatSheet={newBeatSheet} onUpload={() => fileRef.current?.click()} onCreateFromPrompt={createFromPrompt} />
+      ) : (
+        <div className="dse-shell" data-left={leftOpen ? 'open' : 'closed'} data-right={rightOpen ? 'open' : 'closed'}>
+          {!leftOpen && <button type="button" className="dse-reopen dse-reopen--left" onClick={() => setLeftOpen(true)} title="Show panel">›</button>}
+          {!rightOpen && <button type="button" className="dse-reopen dse-reopen--right" onClick={() => setRightOpen(true)} title="Show assistant">‹</button>}
 
-        {leftOpen && (
-          <CollapsiblePanel side="left" open={leftOpen} onToggle={setLeftOpen}>
-            <DirectorScriptAssets doc={doc} breakdown={show.breakdown} onJumpToScene={jumpToScene} />
-          </CollapsiblePanel>
-        )}
+          {leftOpen && (
+            <CollapsiblePanel side="left" open={leftOpen} onToggle={setLeftOpen}>
+              <DirectorScriptAssets doc={doc} breakdown={show.breakdown} onJumpToScene={jumpToScene} />
+            </CollapsiblePanel>
+          )}
 
-        <PaginatedEditor
-          doc={doc}
-          selectedId={selectedId}
-          pendingEdits={pending}
-          onChange={setDoc}
-          onSelect={setSelectedId}
-          onAcceptEdits={acceptEdits}
-          onDeclineEdits={declineEdits}
-        />
-
-        {rightOpen && (
-          <CollapsiblePanel side="right" open={rightOpen} onToggle={setRightOpen}>
-            <DirectorScriptChat
-              doc={doc}
-              provider={parseDirectorLlmProvider(show.llmProvider)}
-              selectedId={selectedId}
-              selectedText={selectedText}
-              onProposeEdits={(res: AssistantResponse) => setPending(res.edits)}
+          {docKind === 'beatsheet' ? (
+            <BeatsheetEditor
+              beatSheet={beatSheet}
+              selectedBeatId={selectedId}
+              pendingBeatEdits={pendingBeats}
+              onChange={setBeatSheet}
+              onSelect={setSelectedId}
+              onAcceptEdits={() => { setBeatSheet(applyBeatEdits(beatSheet, pendingBeats ?? [])); setPendingBeats(undefined); }}
+              onDeclineEdits={() => setPendingBeats(undefined)}
             />
-          </CollapsiblePanel>
-        )}
-      </div>
+          ) : (
+            <PaginatedEditor
+              doc={doc}
+              selectedId={selectedId}
+              pendingEdits={pending}
+              onChange={setDoc}
+              onSelect={setSelectedId}
+              onAcceptEdits={acceptEdits}
+              onDeclineEdits={declineEdits}
+            />
+          )}
 
-      <div className="dse-legend">
-        {ELEMENT_TYPES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`dse-leg${currentType === t.id ? ' dse-leg--on' : ''}`}
-            onClick={() => { if (selectedId) setDoc({ elements: doc.elements.map((e) => (e.id === selectedId ? { ...e, type: t.id } : e)) }); }}
-          >
-            <span className="sw" style={{ background: t.color }} /><span className="nm">{t.name}</span>
-          </button>
-        ))}
-      </div>
+          {rightOpen && (
+            <CollapsiblePanel side="right" open={rightOpen} onToggle={setRightOpen}>
+              <DirectorScriptChat
+                doc={doc}
+                provider={parseDirectorLlmProvider(show.llmProvider)}
+                selectedId={selectedId}
+                selectedText={selectedText}
+                onProposeEdits={(res: AssistantResponse) => setPending(res.edits)}
+                docKind={docKind}
+                beatSheet={beatSheet}
+                onProposeBeatEdits={(res: AssistantResponse) => setPendingBeats(res.beatEdits)}
+                initialMessage={createSeed}
+              />
+            </CollapsiblePanel>
+          )}
+        </div>
+      )}
+
+      {docKind === 'screenplay' && (
+        <div className="dse-legend">
+          {ELEMENT_TYPES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`dse-leg${currentType === t.id ? ' dse-leg--on' : ''}`}
+              onClick={() => { if (selectedId) setDoc({ elements: doc.elements.map((e) => (e.id === selectedId ? { ...e, type: t.id } : e)) }); }}
+            >
+              <span className="sw" style={{ background: t.color }} /><span className="nm">{t.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
