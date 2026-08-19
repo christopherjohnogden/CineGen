@@ -188,4 +188,44 @@ describe('pruneRemovedScenes', () => {
     const pruned = pruneRemovedScenes(prevShow, prevShow);
     expect(pruned.breakdown.map((b) => b.tag)).toEqual(['@Hidden-Prop']);
   });
+
+  it('drops a zombie item referenced only by a removed scene\'s (now stale-index) override', () => {
+    const prevShow = show({
+      sourceText: 'INT. OFFICE - DAY\nDr. Jordan enters.\n\nEXT. STREET - NIGHT\nHe walks.',
+      breakdown: [item({ name: 'Zombie', tag: '@Zombie', kind: 'prop' })],
+      scenes: [
+        { id: 's1', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+        { id: 's2', number: 2, label: 'EXT. STREET - NIGHT', summary: '', elementIds: [], clipIds: [] },
+      ] as never,
+      clips: [],
+      sceneAssetOverrides: { 1: { added: ['@Zombie'], removed: [] } },
+    });
+    // next: scene index 1 (the one the override referenced) removed.
+    const nextShow = { ...prevShow,
+      sourceText: 'INT. OFFICE - DAY\nDr. Jordan enters.',
+      scenes: [prevShow.scenes[0]],
+    };
+    const pruned = pruneRemovedScenes(prevShow, nextShow);
+    expect(pruned.breakdown.map((b) => b.tag)).toEqual([]);
+  });
+
+  it('keeps an item via a surviving-scene override (index still valid after prune)', () => {
+    const prevShow = show({
+      sourceText: 'INT. OFFICE - DAY\nDr. Jordan enters.\n\nEXT. STREET - NIGHT\nHe walks.',
+      breakdown: [item({ name: 'Hidden Prop', tag: '@Hidden-Prop', kind: 'prop' })],
+      scenes: [
+        { id: 's1', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+        { id: 's2', number: 2, label: 'EXT. STREET - NIGHT', summary: '', elementIds: [], clipIds: [] },
+      ] as never,
+      clips: [],
+      sceneAssetOverrides: { 0: { added: ['@Hidden-Prop'], removed: [] } },
+    });
+    // next: scene index 1 removed; override at index 0 still maps to a surviving scene.
+    const nextShow = { ...prevShow,
+      sourceText: 'INT. OFFICE - DAY\nDr. Jordan enters.',
+      scenes: [prevShow.scenes[0]],
+    };
+    const pruned = pruneRemovedScenes(prevShow, nextShow);
+    expect(pruned.breakdown.map((b) => b.tag)).toEqual(['@Hidden-Prop']);
+  });
 });

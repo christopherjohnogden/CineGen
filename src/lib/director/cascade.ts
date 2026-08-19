@@ -119,11 +119,11 @@ export function pruneRemovedScenes(show: DirectorShow, next: DirectorShow): Dire
   const scenes = splitScenes(parseToScreenplay(next.sourceText));
   for (const sc of scenes) {
     for (const hit of detectSceneAssets(sc, show.breakdown)) {
-      const m = show.breakdown.find((b) => b.name === hit.name && b.kind === hit.kind);
-      if (m) referenced.add(m.tag);
+      if (hit.item) referenced.add(hit.item.tag);
     }
   }
-  for (const ov of Object.values(next.sceneAssetOverrides ?? {})) {
+  for (const [idx, ov] of Object.entries(next.sceneAssetOverrides ?? {})) {
+    if (Number(idx) >= next.scenes.length) continue; // stale index — scene it referenced is gone
     for (const tag of ov.added) referenced.add(tag);
   }
   const breakdown = show.breakdown.filter((b) => referenced.has(b.tag));
