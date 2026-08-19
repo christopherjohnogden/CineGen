@@ -9,6 +9,8 @@ import { DirectorShotlistTab } from './director-shotlist-tab';
 import { DirectorGenerateTab } from './director-generate-tab';
 import { DirectorSetupDrawer } from './director-setup-drawer';
 import { DirectorLookBiblePanel } from './director-look-bible';
+import { useDirectorCascade } from './use-director-cascade';
+import { pruneRemovedScenes, remapSceneIndexMaps } from '@/lib/director/cascade';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import {
   findMatchingElement,
@@ -269,6 +271,26 @@ export function DirectorTab() {
       throw error; // let the cascade know not to chain
     }
   }, [failJob, setJob, setShow]);
+
+  const commitSyncState = useCallback((syncState: NonNullable<DirectorShow['syncState']>) => {
+    const cur = showRef.current;
+    const prevKeys = Object.keys(cur.syncState?.hashes ?? {});
+    const nextKeys = Object.keys(syncState.hashes);
+    let nextShow = cur;
+    if (prevKeys.join('|') !== nextKeys.join('|')) {
+      nextShow = remapSceneIndexMaps(nextShow, prevKeys, nextKeys);
+      nextShow = pruneRemovedScenes(nextShow, nextShow);
+    }
+    setShow({ ...nextShow, syncState });
+  }, [setShow]);
+
+  useDirectorCascade({
+    show,
+    autoSync: show.autoSync ?? true,
+    runBreakdown,
+    runShotlist,
+    commitSyncState,
+  });
 
   const generateOne = useCallback(async (clipId: string) => {
     const current = showRef.current;
