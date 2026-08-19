@@ -59,8 +59,13 @@ Return ONLY JSON with this shape:
     }
   ]
 }
-For every location, record the time of day and INT/EXT from its scene heading in the description (e.g. "INT, DAY").
-Extract set dressing and furniture as props — sofas, armchairs, tables, shelves, lamps, curtains, rugs — not only objects a character handles. A furnished room implies its furniture as props.
+EXTRACTION COMPLETENESS — this is the most important rule. Read the ENTIRE script start to finish and extract EVERY nameable entity. A breakdown that misses items is a failed breakdown. Do a second pass before answering and add anything you skipped. Err on the side of over-including: a borderline item belongs in the list.
+Cover, exhaustively, in every scene:
+- CHARACTERS: every person or creature, named OR unnamed — leads, minor speakers, and background/collective groups ("dozens of soldiers", "a lone armored warrior", "the crowd"). Give un-named groups a descriptive name (e.g. "Clashing Soldiers", "Human Warrior"). Do not list only the leads.
+- LOCATIONS: every distinct place or setting, including sub-areas ("the clearing within the battlefield" is its own location). Record time of day and INT/EXT from the scene heading in the description (e.g. "EXT, DAY").
+- PROPS: every physical object, INCLUDING (a) objects characters handle or wield — weapons, tools, banners; (b) worn items — armor, costume, helmets, cloaks, jewelry; (c) set dressing and furniture — sofas, tables, shelves, lamps, rugs (a furnished room implies its furniture); (d) notable atmospheric or FX elements when they are concrete story objects — an energy-spear's blade, a signal flare. Weapons, armor, and clothing are frequently missed — always scan for them.
+- VEHICLES: every mount or conveyance — cars, ships, aircraft, and RIDDEN ANIMALS (a horse a character rides is a vehicle, the animal itself may also warrant a character entry if it acts).
+No duplicates: if the same entity appears in several scenes, emit ONE item. Merge trivial variants ("the sofa" / "leather sofa" → one prop).
 Write actingProfile and voice for characters only; omit both on locations, props and vehicles.
 Match existing element names when they are provided. Use @Tags in Pascal-case-with-hyphens.
 Do not write shotlists or prompts.`;
