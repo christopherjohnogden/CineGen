@@ -1,0 +1,96 @@
+import type { Beat, BeatSheet } from '@/lib/director/beatsheet';
+import { renumberBeats } from '@/lib/director/beatsheet';
+import type { BeatEdit } from '@/lib/director/script-assistant';
+import { generateId } from '@/lib/utils/ids';
+
+interface BeatsheetEditorProps {
+  beatSheet: BeatSheet;
+  selectedBeatId?: string;
+  pendingBeatEdits?: BeatEdit[];
+  onChange: (bs: BeatSheet) => void;
+  onSelect: (beatId: string) => void;
+  onAcceptEdits: () => void;
+  onDeclineEdits: () => void;
+}
+
+export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, onChange, onSelect, onAcceptEdits, onDeclineEdits }: BeatsheetEditorProps) {
+  const beats = beatSheet.beats;
+  const patch = (next: Beat[]) => onChange({ beats: renumberBeats(next) });
+  const setField = (id: string, field: keyof Beat, value: string | number | undefined) =>
+    patch(beats.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
+  const addBeat = () => {
+    const b: Beat = { id: generateId(), n: beats.length + 1, action: '', location: '', shot: '' };
+    patch([...beats, b]);
+    onSelect(b.id);
+  };
+  const removeBeat = (id: string) => patch(beats.filter((b) => b.id !== id));
+  const move = (id: string, dir: -1 | 1) => {
+    const i = beats.findIndex((b) => b.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= beats.length) return;
+    const next = [...beats];
+    [next[i], next[j]] = [next[j], next[i]];
+    patch(next);
+  };
+
+  const hasPending = !!pendingBeatEdits && pendingBeatEdits.length > 0;
+  const delTargets = new Set((pendingBeatEdits ?? []).filter((e) => e.op === 'replace' || e.op === 'delete').map((e) => e.targetBeatId).filter(Boolean) as string[]);
+  const addsFor = (id: string) => (pendingBeatEdits ?? []).find((e) => e.targetBeatId === id && (e.op === 'replace' || e.op === 'insert-after'))?.beats ?? [];
+
+  return (
+    <div className="dbs-wrap">
+      <div className="dbs-list">
+        {beats.length === 0 && !hasPending && <p className="director-tab__empty">No beats yet — add one, or ask the assistant to draft the beat sheet.</p>}
+        {beats.map((b) => (
+          <div key={b.id}>
+            <div className={`dbs-card${delTargets.has(b.id) ? ' dbs-card--diffdel' : ''}${b.id === selectedBeatId ? ' director-tab__item--active' : ''}`} onFocusCapture={() => onSelect(b.id)}>
+              <div className="dbs-head">
+                <span className="dbs-num">BEAT {b.n}</span>
+                <input value={b.location} placeholder="INT./EXT. Location" onChange={(e) => setField(b.id, 'location', e.target.value)} disabled={hasPending} />
+                <button type="button" className="director-tab__btn" onClick={() => move(b.id, -1)} disabled={hasPending} title="Move up">↑</button>
+                <button type="button" className="director-tab__btn" onClick={() => move(b.id, 1)} disabled={hasPending} title="Move down">↓</button>
+                <button type="button" className="director-tab__btn" onClick={() => removeBeat(b.id)} disabled={hasPending} title="Remove">✕</button>
+              </div>
+              <div className="dbs-fields">
+                <div className="full">
+                  <label className="dbs-flabel">Action — what happens</label>
+                  <textarea value={b.action} onChange={(e) => setField(b.id, 'action', e.target.value)} disabled={hasPending} />
+                </div>
+                <div>
+                  <label className="dbs-flabel">Shot / camera</label>
+                  <input value={b.shot} onChange={(e) => setField(b.id, 'shot', e.target.value)} disabled={hasPending} />
+                </div>
+                <div>
+                  <label className="dbs-flabel">Mood</label>
+                  <input value={b.mood ?? ''} onChange={(e) => setField(b.id, 'mood', e.target.value)} disabled={hasPending} />
+                </div>
+                <div>
+                  <label className="dbs-flabel">Duration (s)</label>
+                  <input type="number" min={1} value={b.duration ?? ''} onChange={(e) => setField(b.id, 'duration', e.target.value === '' ? undefined : Number(e.target.value))} disabled={hasPending} />
+                </div>
+              </div>
+            </div>
+            {addsFor(b.id).map((n) => (
+              <div key={n.id} className="dbs-card dbs-card--diffadd">
+                <div className="dbs-head"><span className="dbs-num">+ {n.location}</span></div>
+                <p className="director-tab__meta">{n.action}{n.shot ? ` · ${n.shot}` : ''}</p>
+              </div>
+            ))}
+          </div>
+        ))}
+        {hasPending && (
+          <div className="dbs-diffbar">
+            <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
+            <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
+            <span className="director-tab__meta">assistant edit · {pendingBeatEdits!.length} change{pendingBeatEdits!.length === 1 ? '' : 's'}</span>
+          </div>
+        )}
+      </div>
+      {!hasPending && (
+        <div className="dbs-add">
+          <button type="button" className="director-tab__btn" onClick={addBeat}>+ Add beat</button>
+        </div>
+      )}
+    </div>
+  );
+}
