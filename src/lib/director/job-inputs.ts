@@ -1,5 +1,7 @@
 import type { DirectorBreakdownItem, DirectorScene, DirectorShow } from '@/types/director';
 import { compiledLookFromRefs, compileLookBible } from './look-bible';
+import { parseToScreenplay } from './screenplay';
+import { splitScenes } from './scene-split';
 import { shotDensityHint } from './shotlist';
 
 /** Script slice sent with the look-bible job. The whole script would drown the look. */
@@ -19,12 +21,29 @@ function sceneLine(scene: DirectorScene): string {
   return lines.join('\n');
 }
 
-export function breakdownJobInput(show: DirectorShow, existingElements: string): string {
+export function breakdownJobInput(
+  show: DirectorShow,
+  existingElements: string,
+  scope?: { sceneIds: string[] },
+): string {
+  let scriptSection = `SCRIPT:\n${show.sourceText}`;
+  if (scope) {
+    // Map changed DirectorScene ids → their labels → the parsed scenes with that heading.
+    const labels = new Set(
+      show.scenes.filter((s) => scope.sceneIds.includes(s.id)).map((s) => s.label.trim().toUpperCase()),
+    );
+    const parsed = splitScenes(parseToScreenplay(show.sourceText));
+    const changed = parsed.filter((sc) => labels.has(sc.heading.trim().toUpperCase()));
+    const text = changed
+      .map((sc) => sc.elements.map((e) => e.text).join('\n'))
+      .join('\n\n');
+    scriptSection = `SCRIPT (changed scenes only):\n${text}`;
+  }
   return [
     `Clip length setting: ${show.clipLengthSec}s.`,
     `Existing elements: ${existingElements || 'none'}`,
     '',
-    `SCRIPT:\n${show.sourceText}`,
+    scriptSection,
   ].join('\n');
 }
 
