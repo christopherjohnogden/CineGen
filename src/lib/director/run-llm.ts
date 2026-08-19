@@ -23,15 +23,18 @@ export async function runDirectorJsonJob(
 ): Promise<unknown> {
   const prompt = directorCliJobPrompt(systemPrompt, userPrompt);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   const aborted = new Promise<never>((_, reject) => {
     if (signal?.aborted) {
+      void cancelCliCopilotChat(provider, requestId);
       reject(new DOMException('Aborted', 'AbortError'));
       return;
     }
-    signal?.addEventListener('abort', () => {
+    onAbort = () => {
       void cancelCliCopilotChat(provider, requestId);
       reject(new DOMException('Aborted', 'AbortError'));
-    }, { once: true });
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
   const timedOut = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -59,5 +62,6 @@ export async function runDirectorJsonJob(
     throw new Error(`${getCliProviderLabel(provider)}: ${detail}`);
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
+    if (onAbort) signal?.removeEventListener('abort', onAbort);
   }
 }
