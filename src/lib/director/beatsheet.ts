@@ -4,7 +4,6 @@ export interface Beat {
   action: string;
   location: string;
   shot: string;
-  duration?: number;
   mood?: string;
 }
 export interface BeatSheet { beats: Beat[] }
@@ -18,14 +17,14 @@ export function renumberBeats(beats: Beat[]): Beat[] {
 }
 
 function beatIsEmpty(b: Beat): boolean {
-  return !b.action.trim() && !b.location.trim() && !b.shot.trim() && !(b.mood ?? '').trim() && b.duration == null;
+  return !b.action.trim() && !b.location.trim() && !b.shot.trim() && !(b.mood ?? '').trim();
 }
 
 export function serializeBeatSheet(bs: BeatSheet): string {
   const blocks: string[] = [];
   for (const b of bs.beats) {
     if (beatIsEmpty(b)) continue;
-    const meta = [b.duration != null ? `${b.duration}s` : '', (b.mood ?? '').trim()].filter(Boolean).join(', ');
+    const meta = (b.mood ?? '').trim();
     const head = `BEAT ${b.n} — ${b.location.trim()}${meta ? ` (${meta})` : ''}`;
     const lines = [head];
     if (b.action.trim()) lines.push(`Action: ${b.action.trim()}`);

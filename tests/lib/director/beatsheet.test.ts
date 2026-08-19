@@ -18,12 +18,12 @@ describe('renumberBeats', () => {
 });
 
 describe('serializeBeatSheet', () => {
-  it('emits a labeled block per beat with location, duration, mood, action, shot', () => {
+  it('emits a labeled block per beat with location, mood, action, shot', () => {
     const bs = { beats: [beat({
-      id: 'a', n: 1, action: 'She returns the wallet.', location: 'INT. ALLEY', shot: 'Handheld medium.', duration: 12, mood: 'tense',
+      id: 'a', n: 1, action: 'She returns the wallet.', location: 'INT. ALLEY', shot: 'Handheld medium.', mood: 'tense',
     })] };
     const text = serializeBeatSheet(bs);
-    expect(text).toMatch(/BEAT 1 — INT\. ALLEY \(12s, tense\)/);
+    expect(text).toMatch(/BEAT 1 — INT\. ALLEY \(tense\)/);
     expect(text).toMatch(/Action: She returns the wallet\./);
     expect(text).toMatch(/Shot: Handheld medium\./);
   });
@@ -31,7 +31,7 @@ describe('serializeBeatSheet', () => {
   it('omits empty optional fields and empty lines', () => {
     const bs = { beats: [beat({ id: 'a', n: 1, action: 'A city wakes.', location: 'EXT. CITY' })] };
     const text = serializeBeatSheet(bs);
-    expect(text).toMatch(/BEAT 1 — EXT\. CITY$/m);   // no "(…)" when no duration/mood
+    expect(text).toMatch(/BEAT 1 — EXT\. CITY$/m);   // no "(…)" when no mood
     expect(text).not.toMatch(/Shot:/);               // no empty Shot line
   });
 

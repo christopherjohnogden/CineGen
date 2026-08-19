@@ -16,7 +16,7 @@ interface BeatsheetEditorProps {
 export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, onChange, onSelect, onAcceptEdits, onDeclineEdits }: BeatsheetEditorProps) {
   const beats = beatSheet.beats;
   const patch = (next: Beat[]) => onChange({ beats: renumberBeats(next) });
-  const setField = (id: string, field: keyof Beat, value: string | number | undefined) =>
+  const setField = (id: string, field: 'action' | 'location' | 'shot' | 'mood', value: string) =>
     patch(beats.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
   const addBeat = () => {
     const b: Beat = { id: generateId(), n: beats.length + 1, action: '', location: '', shot: '' };
@@ -63,10 +63,6 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
                 <div>
                   <label className="dbs-flabel">Mood</label>
                   <input value={b.mood ?? ''} onChange={(e) => setField(b.id, 'mood', e.target.value)} disabled={hasPending} />
-                </div>
-                <div>
-                  <label className="dbs-flabel">Duration (s)</label>
-                  <input type="number" min={1} value={b.duration ?? ''} onChange={(e) => setField(b.id, 'duration', e.target.value === '' ? undefined : Number(e.target.value))} disabled={hasPending} />
                 </div>
               </div>
             </div>

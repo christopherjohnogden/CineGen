@@ -40,13 +40,13 @@ export function buildAssistantMessage(
 }
 
 export const BEATSHEET_ASSISTANT_SYSTEM_PROMPT = `You are a video beat-sheet assistant. A beat sheet has NO dialogue — it is a list of beats, each describing what happens on screen so it can become a video-generation prompt.
-Each beat has an id and fields: action (what happens), location, shot (camera/framing/movement), duration (seconds, optional), mood (optional).
+Each beat has an id and fields: action (what happens), location, shot (camera/framing/movement), mood (optional).
 When the user asks you to write or change beats, return edits referencing beat ids.
 Return ONLY JSON with this shape:
 {
   "reply": "one short sentence",
   "beatEdits": [
-    { "op": "insert-after", "targetBeatId": "<id or omit to append at start>", "beats": [ { "id": "new1", "n": 0, "action": "...", "location": "INT. ...", "shot": "...", "duration": 8, "mood": "..." } ] },
+    { "op": "insert-after", "targetBeatId": "<id or omit to append at start>", "beats": [ { "id": "new1", "n": 0, "action": "...", "location": "INT. ...", "shot": "...", "mood": "..." } ] },
     { "op": "replace", "targetBeatId": "<id>", "beats": [ { "id": "<id>", "n": 0, "action": "...", "location": "...", "shot": "..." } ] },
     { "op": "delete", "targetBeatId": "<id>" }
   ]
@@ -59,7 +59,7 @@ export function buildBeatsheetMessage(
   selection?: { beatId?: string },
 ): string {
   const sheet = bs.beats.map((b) =>
-    `[${b.id}] BEAT ${b.n} @ ${b.location} | action: ${b.action} | shot: ${b.shot}${b.duration != null ? ` | ${b.duration}s` : ''}${b.mood ? ` | ${b.mood}` : ''}`,
+    `[${b.id}] BEAT ${b.n} @ ${b.location} | action: ${b.action} | shot: ${b.shot}${b.mood ? ` | ${b.mood}` : ''}`,
   ).join('\n');
   const sel = selection?.beatId ? `\nSELECTED BEAT: ${selection.beatId}` : '';
   return `BEAT SHEET:\n${sheet || '(empty)'}${sel}\n\nUSER:\n${userText}`;
