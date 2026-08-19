@@ -82,7 +82,6 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
         {hasPending && diffBar(true)}
         {beats.length === 0 && !hasPending && <p className="director-tab__empty">No beats yet — add one, or ask the assistant to draft the beat sheet.</p>}
         {unanchoredAdds.map(renderAddCard)}
-        {hasPending && unanchoredAdds.length > 0 && diffBar(false)}
         {beats.map((b) => (
           <div key={b.id}>
             <div className={`dbs-card${delTargets.has(b.id) ? ' dbs-card--diffdel' : ''}${b.id === selectedBeatId ? ' director-tab__item--active' : ''}`} onFocusCapture={() => onSelect(b.id)}>
@@ -109,15 +108,12 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
               </div>
             </div>
             {addsFor(b.id).map(renderAddCard)}
+            {/* inline Accept/Decline right at the bottom of THIS beat's change */}
+            {hasPending && (delTargets.has(b.id) || addsFor(b.id).length > 0) && diffBar(false)}
           </div>
         ))}
-        {hasPending && (
-          <div className="dbs-diffbar">
-            <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
-            <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
-            <span className="director-tab__meta">assistant edit · {pendingBeatEdits!.length} change{pendingBeatEdits!.length === 1 ? '' : 's'}</span>
-          </div>
-        )}
+        {/* fallback inline bar at the very bottom of the diff (e.g. only unanchored adds) */}
+        {hasPending && unanchoredAdds.length > 0 && !beats.some((b) => delTargets.has(b.id) || addsFor(b.id).length > 0) && diffBar(false)}
       </div>
       {!hasPending && (
         <div className="dbs-add">

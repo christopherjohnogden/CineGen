@@ -54,12 +54,34 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
   // Prepend unanchored adds as synthetic diff-add items so they render even with an empty doc.
   const items = [...unanchoredAdds.map((n) => ({ ...n, __add: true as const })), ...doc.elements.map((e) => ({ ...e, __add: false as const }))];
 
+  // A compact inline Accept/Decline bar rendered right at the bottom of a diff region.
+  const inlineBar = (
+    <div className="dse-diffbar">
+      <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
+      <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
+      <span className="director-tab__meta">assistant edit · {pendingEdits!.length} change{pendingEdits!.length === 1 ? '' : 's'}</span>
+    </div>
+  );
+  // Which existing element is the LAST one carrying a diff (so the bottom-of-diff bar lands there).
+  const lastDiffTargetId = [...doc.elements].reverse().find((e) => diffTargets.has(e.id))?.id;
+  // If the only changes are unanchored adds (drafting into an empty/anchorless doc), the bar
+  // goes after the last synthetic add instead.
+  const lastUnanchoredId = unanchoredAdds.length ? unanchoredAdds[unanchoredAdds.length - 1].id : undefined;
+  // trailing falls back to a bottom bar only when a diff has no anchor at all — so
+  // Accept/Decline is never unreachable.
+  const bottomBarAfterId = lastDiffTargetId ?? lastUnanchoredId;
+
   return (
     <PaginatedPages
       items={items}
       renderItem={(el) => {
         if (el.__add) {
-          return <div className={`dse-el dse-el--${el.type} dse-el--diffadd`}>{el.text}</div>;
+          return (
+            <>
+              <div className={`dse-el dse-el--${el.type} dse-el--diffadd`}>{el.text}</div>
+              {el.id === bottomBarAfterId && inlineBar}
+            </>
+          );
         }
         const isDiff = diffTargets.has(el.id);
         return (
@@ -81,6 +103,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
               {el.text}
             </div>
             {isDiff && pendingEdits && renderDiffAdds(pendingEdits, el.id)}
+            {el.id === bottomBarAfterId && inlineBar}
           </>
         );
       }}
@@ -91,13 +114,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
           <span className="lbl">assistant edit · {pendingEdits!.length} change{pendingEdits!.length === 1 ? '' : 's'}</span>
         </div>
       ) : null}
-      trailing={hasPendingEdits ? (
-        <div className="dse-diffbar">
-          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
-          <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
-          <span className="director-tab__meta">assistant edit · {pendingEdits!.length} change{pendingEdits!.length === 1 ? '' : 's'}</span>
-        </div>
-      ) : null}
+      trailing={hasPendingEdits && !bottomBarAfterId ? inlineBar : null}
     />
   );
 }
