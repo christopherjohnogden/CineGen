@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { sceneHashes, diffScenes } from '@/lib/director/cascade';
-import type { DirectorShow } from '@/types/director';
+import { sceneHashes, diffScenes, scenesForKeys } from '@/lib/director/cascade';
+import type { DirectorShow, DirectorScene } from '@/types/director';
 
 const show = (over: Partial<DirectorShow>): DirectorShow => ({
   sourceText: '', clipLengthSec: 10, stylePrefix: '', lookBible: {} as never,
@@ -74,5 +74,52 @@ describe('diffScenes', () => {
     const after = 'INT. OFFICE - DAY\nB.\n\nINT. OFFICE - DAY\nA.';
     const d = diffScenes(sceneHashes(show({ sourceText: before })), sceneHashes(show({ sourceText: after })));
     expect(d.changed).toEqual([]);
+  });
+});
+
+describe('scenesForKeys', () => {
+  it('returns the DirectorScene entries for the given keys, in scene order', () => {
+    const s = show({
+      sourceText: SCRIPT_A,
+      scenes: [
+        { id: 's1', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+        { id: 's2', number: 2, label: 'EXT. STREET - NIGHT', summary: '', elementIds: [], clipIds: [] },
+      ] as DirectorScene[],
+    });
+    const keys = [...sceneHashes(s).keys()]; // ['INT. OFFICE - DAY', 'EXT. STREET - NIGHT']
+    expect(scenesForKeys(s, [keys[1]]).map((x) => x.id)).toEqual(['s2']);
+  });
+
+  it('returns [] for beatsheet docKind', () => {
+    const s = show({ docKind: 'beatsheet', sourceText: SCRIPT_A });
+    expect(scenesForKeys(s, ['beat:1'])).toEqual([]);
+  });
+
+  it('round-trips duplicate-heading keys taken from sceneHashes to the correct scene ids, even though the content-stable #n suffix does not match document order', () => {
+    // Two scenes share a base heading. sceneHashes assigns the #n suffix by
+    // sorting the group's bodies by hash — NOT by document position — so the
+    // scene appearing first in the document is not necessarily key "BASE"
+    // (n===0). scenesForKeys must derive keys the same content-stable way,
+    // or this round-trip breaks.
+    const dup = 'INT. OFFICE - DAY\nA.\n\nINT. OFFICE - DAY\nB.';
+    const s = show({
+      sourceText: dup,
+      scenes: [
+        { id: 'first', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+        { id: 'second', number: 2, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+      ] as DirectorScene[],
+    });
+    const keys = [...sceneHashes(s).keys()];
+    expect(keys).toHaveLength(2);
+
+    // Every key from sceneHashes must resolve to exactly one scene, and the
+    // two keys together must resolve to both scenes (order-independent check
+    // guards against a hard-coded positional mapping).
+    const resolvedIds = keys.map((k) => scenesForKeys(s, [k]).map((x) => x.id));
+    expect(resolvedIds.every((ids) => ids.length === 1)).toBe(true);
+    expect(new Set(resolvedIds.flat())).toEqual(new Set(['first', 'second']));
+
+    // Passing both keys returns both scenes, in show.scenes order.
+    expect(scenesForKeys(s, keys).map((x) => x.id)).toEqual(['first', 'second']);
   });
 });
