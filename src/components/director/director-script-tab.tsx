@@ -132,6 +132,17 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
     setCreating(true);
     setCreateSeed({ idea, mode });
   };
+  // Discard the current script/beat sheet and return to the empty state so the user can
+  // start over (e.g. switch to a beat sheet). Leaves breakdown/shotlist/clips/elements intact.
+  const startOver = () => {
+    if (!window.confirm('Discard the current script and start over? This clears the script only — your breakdown, shots, and generated clips are kept.')) return;
+    setCreating(false);
+    setCreateSeed(undefined);
+    setSelectedId(undefined);
+    setPending(undefined);
+    setPendingBeats(undefined);
+    onChange({ ...show, docKind: undefined, sourceText: '', sourceElements: undefined, beatSheet: undefined, sourceFileName: undefined });
+  };
 
   return (
     <div className="director-tab" style={{ height: '100%' }}>
@@ -140,6 +151,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
         {show.sourceFileName && <span className="director-tab__meta">{show.sourceFileName}</span>}
         <input ref={fileRef} type="file" accept={SCRIPT_ACCEPT} className="director-tab__file-input" onChange={(e) => void loadScript(e.target.files?.[0])} />
         <div className="director-tab__row" style={{ marginLeft: 'auto' }}>
+          {!isEmpty && <button type="button" className="director-tab__btn" onClick={startOver} title="Discard the current script and start over">↺ Start over</button>}
           <button type="button" className="director-tab__btn" onClick={() => fileRef.current?.click()}>⬆ Upload</button>
           <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onBreakdown} disabled={!show.sourceText.trim()}>Run breakdown →</button>
         </div>
