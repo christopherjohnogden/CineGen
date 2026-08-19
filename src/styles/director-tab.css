@@ -337,7 +337,7 @@
 .dse-reopen--right { right:0; border-radius:6px 0 0 6px; border-right:none; }
 
 /* ── Screenplay paper + elements ────────────────────────────────── */
-.dse-paperwrap { overflow:auto; padding:24px 0; display:flex; justify-content:center; align-items:flex-start; position:relative; }
+.dse-paperwrap { overflow:auto; padding:24px 0; display:flex; flex-direction:column; align-items:stretch; position:relative; }
 .dse-paper { width:620px; max-width:100%; background:#f4f1ea; color:#16130d; border-radius:4px; box-shadow:0 8px 40px rgba(0,0,0,.5); padding:48px 60px 56px 82px; font-family:'Courier New',Courier,monospace; font-size:14.5px; line-height:1.5; min-height:820px; }
 .dse-el { white-space:pre-wrap; outline:none; }
 .dse-el--scene { font-weight:700; text-transform:uppercase; margin:22px 0 10px; color:#3a2f10; }
@@ -465,7 +465,15 @@
 .dbs-flabel { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-tertiary); font-weight:600; margin-bottom:3px; display:block; }
 .dbs-actions { display:flex; gap:6px; margin-top:10px; }
 .dbs-diffbar { display:flex; gap:8px; align-items:center; margin:10px 0 20px; }
-/* Sticky Accept/Decline bar pinned at the top of the editor while a change is pending. */
-.dxf-stickybar { position:sticky; top:0; z-index:20; display:flex; gap:8px; align-items:center; padding:8px 12px; margin-bottom:4px; background:var(--bg-elevated); border:1px solid var(--accent); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.4); width:100%; max-width:640px; }
-.dxf-stickybar .lbl { margin-left:auto; font-size:11px; color:var(--text-secondary); }
+/* Sticky "Accept all / Decline all" bar pinned to the top-right of the editor while a
+   change is pending. In the beat editor it is a direct child of the scroll column
+   (.dbs-wrap) and align-self:flex-end floats it to the right edge; position:sticky keeps
+   it pinned to the top as content scrolls underneath. In the screenplay editor it is
+   wrapped in .dxf-stickywrap (which owns the sticky + right-alignment). */
+.dxf-stickybar { position:sticky; top:0; z-index:20; align-self:flex-end; display:inline-flex; flex-direction:column; align-items:center; gap:8px; padding:10px 14px; margin-bottom:4px; background:var(--bg-elevated); border:1px solid var(--accent); border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.45); }
+.dxf-stickybar .lbl { font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:var(--text-tertiary); text-align:center; }
+.dxf-stickybar__btns { display:flex; gap:8px; align-items:center; justify-content:center; }
+/* Full-width sticky wrapper so the bar can pin top-right even inside a centered paper flow. */
+.dxf-stickywrap { position:sticky; top:0; z-index:20; width:100%; display:flex; justify-content:flex-end; padding-right:16px; pointer-events:none; }
+.dxf-stickywrap .dxf-stickybar { position:static; align-self:auto; pointer-events:auto; }
 .dbs-add { width:640px; max-width:100%; }

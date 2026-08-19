@@ -66,7 +66,7 @@ export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, tra
 
   return (
     <div className="dse-paperwrap">
-      {leading}
+      {leading && <div className="dxf-stickywrap">{leading}</div>}
       <div className="dse-pageflow">
         <div className="dse-pages" ref={pagesRef} aria-hidden="true" />
         <div className="dse-flowcontent" ref={flowRef}>

@@ -68,18 +68,29 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
   );
 
   const changeCount = pendingBeatEdits?.length ?? 0;
-  const diffBar = (sticky: boolean) => (
-    <div className={sticky ? 'dxf-stickybar' : 'dbs-diffbar'}>
-      <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
-      <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
-      <span className={sticky ? 'lbl' : 'director-tab__meta'}>assistant edit · {changeCount} change{changeCount === 1 ? '' : 's'}</span>
-    </div>
-  );
+  // sticky=true → the corner "Accept all / Decline all" bar (applies every pending change);
+  // sticky=false → the inline bar at the bottom of a single change.
+  const diffBar = (sticky: boolean) =>
+    sticky ? (
+      <div className="dxf-stickybar">
+        <span className="lbl">assistant edit · {changeCount} change{changeCount === 1 ? '' : 's'}</span>
+        <div className="dxf-stickybar__btns">
+          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept all</button>
+          <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline all</button>
+        </div>
+      </div>
+    ) : (
+      <div className="dbs-diffbar">
+        <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
+        <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
+        <span className="director-tab__meta">assistant edit · {changeCount} change{changeCount === 1 ? '' : 's'}</span>
+      </div>
+    );
 
   return (
     <div className="dbs-wrap">
+      {hasPending && diffBar(true)}
       <div className="dbs-list">
-        {hasPending && diffBar(true)}
         {beats.length === 0 && !hasPending && <p className="director-tab__empty">No beats yet — add one, or ask the assistant to draft the beat sheet.</p>}
         {unanchoredAdds.map(renderAddCard)}
         {beats.map((b) => (
