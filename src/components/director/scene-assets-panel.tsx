@@ -46,7 +46,7 @@ export function SceneAssetsPanel({ show, scene, sceneIndex, elements, activeKind
     <>
       <div className="dast-tabs">
         <button type="button" className={`dast-tab${activeKind === 'all' ? ' dast-tab--on' : ''}`} onClick={() => onSetKind('all')}>All<span className="cnt">{resolved.length}</span></button>
-        {(['character', 'location', 'prop'] as BreakdownKind[]).map((k) => (
+        {(['character', 'location', 'prop', 'vehicle'] as BreakdownKind[]).map((k) => (
           <button key={k} type="button" className={`dast-tab${activeKind === k ? ' dast-tab--on' : ''}`} onClick={() => onSetKind(k)}>
             <span className={`dast-pip dast-pip--${k}`} />{KIND_LABEL[k]}<span className="cnt">{counts[k]}</span>
           </button>

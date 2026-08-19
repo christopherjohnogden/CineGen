@@ -416,13 +416,13 @@
 .dch-hint { font-size:10px; color:var(--text-tertiary); padding-left:2px; }
 
 /* ── Assets panels (script left + breakdown right share these) ──── */
-.dast-tabs { display:flex; gap:2px; padding:8px 8px 0; position:sticky; top:0; background:var(--bg-raised); border-bottom:1px solid var(--border-subtle); overflow-x:auto; }
+.dast-tabs { display:flex; gap:2px; padding:8px 8px 0; position:sticky; top:0; background:var(--bg-raised); border-bottom:1px solid var(--border-subtle); overflow-x:auto; flex-shrink:0; }
 .dast-tab { flex-shrink:0; padding:7px 11px; border:none; background:transparent; color:var(--text-secondary); font-size:12px; font-weight:600; border-bottom:2px solid transparent; cursor:pointer; white-space:nowrap; min-height:34px; display:flex; align-items:center; gap:6px; }
 .dast-tab--on { color:var(--accent); border-bottom-color:var(--accent); }
 .dast-tab .cnt { font-size:10px; background:var(--bg-elevated); border:1px solid var(--border-medium); border-radius:8px; padding:0 6px; font-weight:700; }
 .dast-tab--on .cnt { background:var(--accent); color:var(--bg-base); border-color:var(--accent); }
 .dast-pip { width:7px; height:7px; border-radius:50%; }
-.dast-pip--character { background:#9db4ff; } .dast-pip--location { background:#8fe0a8; } .dast-pip--prop { background:#e0a88f; }
+.dast-pip--character { background:#9db4ff; } .dast-pip--location { background:#8fe0a8; } .dast-pip--prop { background:#e0a88f; } .dast-pip--vehicle { background:#c8a0e0; }
 
 /* ── Breakdown 3-zone + scene nav + asset cards ─────────────────── */
 .dbk-shell { flex:1; display:grid; grid-template-columns:230px 1fr 380px; min-height:0; }
