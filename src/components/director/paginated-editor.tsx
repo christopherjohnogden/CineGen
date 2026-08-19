@@ -84,6 +84,13 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
           </>
         );
       }}
+      leading={hasPendingEdits ? (
+        <div className="dxf-stickybar">
+          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
+          <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
+          <span className="lbl">assistant edit · {pendingEdits!.length} change{pendingEdits!.length === 1 ? '' : 's'}</span>
+        </div>
+      ) : null}
       trailing={hasPendingEdits ? (
         <div className="dse-diffbar">
           <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>

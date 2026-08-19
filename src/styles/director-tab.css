@@ -465,4 +465,7 @@
 .dbs-flabel { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-tertiary); font-weight:600; margin-bottom:3px; display:block; }
 .dbs-actions { display:flex; gap:6px; margin-top:10px; }
 .dbs-diffbar { display:flex; gap:6px; align-items:center; }
+/* Sticky Accept/Decline bar pinned at the top of the editor while a change is pending. */
+.dxf-stickybar { position:sticky; top:0; z-index:20; display:flex; gap:8px; align-items:center; padding:8px 12px; margin-bottom:4px; background:var(--bg-elevated); border:1px solid var(--accent); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.4); width:100%; max-width:640px; }
+.dxf-stickybar .lbl { margin-left:auto; font-size:11px; color:var(--text-secondary); }
 .dbs-add { width:640px; max-width:100%; }

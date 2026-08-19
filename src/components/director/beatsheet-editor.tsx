@@ -43,18 +43,46 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
     .filter((e) => e.op === 'insert-after' && (!e.targetBeatId || !beatIds.has(e.targetBeatId)))
     .flatMap((e) => e.beats ?? []);
 
-  const renderAddCard = (n: { id: string; location: string; action: string; shot: string }) => (
+  // A proposed added beat, rendered as a full (read-only) beat card so it matches the real ones.
+  const renderAddCard = (n: Beat) => (
     <div key={n.id} className="dbs-card dbs-card--diffadd">
-      <div className="dbs-head"><span className="dbs-num">+ {n.location || 'New beat'}</span></div>
-      <p className="director-tab__meta">{n.action}{n.shot ? ` · ${n.shot}` : ''}</p>
+      <div className="dbs-head">
+        <span className="dbs-num">+ NEW BEAT</span>
+        <input value={n.location} placeholder="INT./EXT. Location" readOnly tabIndex={-1} />
+      </div>
+      <div className="dbs-fields">
+        <div className="full">
+          <label className="dbs-flabel">Action — what happens</label>
+          <textarea value={n.action} readOnly tabIndex={-1} />
+        </div>
+        <div>
+          <label className="dbs-flabel">Shot / camera</label>
+          <input value={n.shot} readOnly tabIndex={-1} />
+        </div>
+        <div>
+          <label className="dbs-flabel">Mood</label>
+          <input value={n.mood ?? ''} readOnly tabIndex={-1} />
+        </div>
+      </div>
+    </div>
+  );
+
+  const changeCount = pendingBeatEdits?.length ?? 0;
+  const diffBar = (sticky: boolean) => (
+    <div className={sticky ? 'dxf-stickybar' : 'dbs-diffbar'}>
+      <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
+      <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
+      <span className={sticky ? 'lbl' : 'director-tab__meta'}>assistant edit · {changeCount} change{changeCount === 1 ? '' : 's'}</span>
     </div>
   );
 
   return (
     <div className="dbs-wrap">
       <div className="dbs-list">
+        {hasPending && diffBar(true)}
         {beats.length === 0 && !hasPending && <p className="director-tab__empty">No beats yet — add one, or ask the assistant to draft the beat sheet.</p>}
         {unanchoredAdds.map(renderAddCard)}
+        {hasPending && unanchoredAdds.length > 0 && diffBar(false)}
         {beats.map((b) => (
           <div key={b.id}>
             <div className={`dbs-card${delTargets.has(b.id) ? ' dbs-card--diffdel' : ''}${b.id === selectedBeatId ? ' director-tab__item--active' : ''}`} onFocusCapture={() => onSelect(b.id)}>

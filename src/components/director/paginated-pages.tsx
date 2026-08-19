@@ -21,9 +21,11 @@ interface PaginatedPagesProps<T extends PaginatedItem> {
   renderItem: (item: T) => ReactNode;
   /** Optional content appended after the flow (e.g. the assistant diff bar). */
   trailing?: ReactNode;
+  /** Optional content pinned at the top of the flow (e.g. a sticky accept/decline bar). */
+  leading?: ReactNode;
 }
 
-export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, trailing }: PaginatedPagesProps<T>) {
+export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, trailing, leading }: PaginatedPagesProps<T>) {
   const flowRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef<HTMLDivElement>(null);
 
@@ -64,6 +66,7 @@ export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, tra
 
   return (
     <div className="dse-paperwrap">
+      {leading}
       <div className="dse-pageflow">
         <div className="dse-pages" ref={pagesRef} aria-hidden="true" />
         <div className="dse-flowcontent" ref={flowRef}>
