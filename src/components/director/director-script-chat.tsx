@@ -43,7 +43,10 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
         ? buildBeatsheetMessage(beatSheet ?? { beats: [] }, text, selectedId ? { beatId: selectedId } : undefined)
         : buildAssistantMessage(doc, text, selectedId ? { elementId: selectedId } : undefined))
         + (brainstorm ? '\n\n(Brainstorm mode: discuss and outline only — do NOT return edits/beatEdits this turn.)' : '');
-      const result = await invokeCliCopilotChat(provider, { systemPrompt, userMessage, purpose: 'copilot' });
+      // injectProjectContext:true is REQUIRED — without it the electron handler drops the
+      // systemPrompt entirely (it only appends it on resume or when this flag is set), so the
+      // model never sees the JSON contract and always replies in prose.
+      const result = await invokeCliCopilotChat(provider, { systemPrompt, userMessage, purpose: 'copilot', injectProjectContext: true });
       let res = parseAssistantResponse(result.message);
       let gotEdits = isBeat ? !!res.beatEdits?.length : !!res.edits?.length;
       // If the model answered a write request in prose (no edits), send one follow-up asking
@@ -53,6 +56,7 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
           systemPrompt,
           userMessage: `${JSON_REPAIR_INSTRUCTION}\n\nYour previous answer:\n${res.reply}`,
           purpose: 'copilot',
+          injectProjectContext: true,
         });
         const repaired = parseAssistantResponse(repair.message);
         if (isBeat ? repaired.beatEdits?.length : repaired.edits?.length) {
@@ -69,6 +73,12 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
       setBusy(false);
     }
   };
+
+  // Keep the newest message / thinking indicator in view.
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, busy]);
 
   const seededRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -88,6 +98,12 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
         {messages.map((m, i) => (
           <div key={i} className={`dch-m dch-m--${m.role === 'user' ? 'user' : 'ai'}`}>{m.text}</div>
         ))}
+        {busy && (
+          <div className="dch-m dch-m--ai dch-thinking" aria-label="Assistant is thinking">
+            <span className="dch-dot" /><span className="dch-dot" /><span className="dch-dot" />
+          </div>
+        )}
+        <div ref={bottomRef} />
       </div>
       <div className="dch-composer">
         {selectedId && <span className="dch-sel">◉ Selected: {(selectedText ?? '').slice(0, 42) || 'element'}</span>}

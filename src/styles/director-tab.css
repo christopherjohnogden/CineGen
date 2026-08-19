@@ -367,6 +367,11 @@
 .dch-m { max-width:92%; font-size:12.5px; line-height:1.5; border-radius:10px; padding:9px 11px; }
 .dch-m--user { align-self:flex-end; background:var(--accent); color:var(--bg-base); }
 .dch-m--ai { align-self:flex-start; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border-subtle); }
+.dch-thinking { display:flex; align-items:center; gap:5px; padding:12px 13px; }
+.dch-dot { width:7px; height:7px; border-radius:50%; background:var(--text-secondary); opacity:.35; animation:dch-bounce 1.2s infinite ease-in-out; }
+.dch-dot:nth-child(2) { animation-delay:.18s; }
+.dch-dot:nth-child(3) { animation-delay:.36s; }
+@keyframes dch-bounce { 0%,80%,100% { transform:translateY(0); opacity:.35; } 40% { transform:translateY(-4px); opacity:1; } }
 .dch-composer { border-top:1px solid var(--border-subtle); padding:10px; display:flex; flex-direction:column; gap:8px; }
 .dch-sel { font-size:10px; color:#9db4ff; background:var(--accent-dim); border:1px solid var(--border-medium); border-radius:6px; padding:3px 8px; align-self:flex-start; }
 
