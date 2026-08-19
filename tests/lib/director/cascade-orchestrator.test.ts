@@ -67,6 +67,36 @@ describe('useDirectorCascade', () => {
     expect(commit).toHaveBeenCalledTimes(1);
   });
 
+  it('a failed run is not auto-retried for the same source; a new edit retries', async () => {
+    // A failed run never advances syncState.hashes, so the scene stays dirty. The attempt
+    // guard ensures the still-dirty source is not auto-fired again on subsequent effect
+    // runs (which would re-surface the error) until the source actually changes.
+    const runBreakdown = vi.fn().mockRejectedValue(new Error('breakdown failed'));
+    const runShotlist = vi.fn().mockResolvedValue(undefined);
+    const commit = vi.fn();
+    // syncState carries stale hashes for a DIFFERENT prior source, so SCRIPT reads dirty and
+    // an unrelated prop change (autoSync toggled true→true is a no-op; use debounceMs bump)
+    // re-runs the effect against the same source.
+    const stale = { hashes: { 'INT. OLD - DAY': 'deadbeef' }, dirty: [] as string[] };
+    const props = (sourceText: string, debounceMs: number) => ({ show: base({ sourceText, syncState: stale }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs });
+    const { rerender } = renderHook((p) => useDirectorCascade(p), { initialProps: props(SCRIPT, 2500) });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(runBreakdown).toHaveBeenCalledTimes(1);
+    expect(commit).not.toHaveBeenCalled(); // failed → syncState not advanced → still dirty
+
+    // Re-run the effect against the SAME source (a debounceMs change re-fires the effect).
+    // The attempt guard must suppress a second fire for the unchanged source.
+    rerender(props(SCRIPT, 2600));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(runBreakdown).toHaveBeenCalledTimes(1); // guard held — no error-loop
+
+    // A genuine new edit → new signature → retry.
+    rerender(props(SCRIPT2, 2600));
+    await act(async () => { await vi.advanceTimersByTimeAsync(2600); });
+    expect(runBreakdown).toHaveBeenCalledTimes(2);
+  });
+
   it('unmounting mid-run aborts the in-flight controller', async () => {
     let capturedSignal: AbortSignal | undefined;
     const runBreakdown = vi.fn((_scope: unknown, signal: AbortSignal) => {

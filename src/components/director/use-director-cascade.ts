@@ -23,6 +23,11 @@ export function useDirectorCascade({
   const [dirty, setDirty] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abort = useRef<AbortController | null>(null);
+  // Signature of the source we last auto-fired for. A failed run does NOT advance
+  // syncState.hashes, so the scenes stay dirty — without this guard the effect would
+  // re-fire the same failing job on every re-render, spamming the error. We only
+  // auto-fire again once the source actually changes (a new signature).
+  const attemptedSig = useRef<string | null>(null);
 
   // Keep the latest props available to the debounced timer closure so that a
   // fire that lands after several edits reads the most recent show/callbacks.
@@ -61,7 +66,16 @@ export function useDirectorCascade({
     const prev = new Map(Object.entries(show.syncState?.hashes ?? {}));
     const d = diffScenes(prev, next);
     setDirty(d.changed);
-    if (!autoSync || (d.changed.length === 0 && d.removed.length === 0)) return;
+    // Turning auto-sync off clears the attempt guard, so flipping it back on retries.
+    if (!autoSync) { attemptedSig.current = null; return; }
+    if (d.changed.length === 0 && d.removed.length === 0) return;
+
+    // Don't auto-fire again for a source we already attempted (and which is still
+    // dirty because that attempt failed). Only fire once per distinct source
+    // signature; editing the script produces a new signature and re-enables it.
+    const sig = `${show.docKind ?? 'screenplay'}:${show.sourceText}`;
+    if (attemptedSig.current === sig) return;
+    attemptedSig.current = sig;
 
     // Cancel any in-flight run and any pending timer, then re-arm from now.
     if (timer.current) clearTimeout(timer.current);
