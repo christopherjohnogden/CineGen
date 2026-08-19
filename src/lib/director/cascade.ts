@@ -1,6 +1,6 @@
 import type { DirectorScene, DirectorShow } from '@/types/director';
 import { parseToScreenplay } from '@/lib/director/screenplay';
-import { splitScenes } from '@/lib/director/scene-split';
+import { splitScenes, type ScriptScene } from '@/lib/director/scene-split';
 import { detectSceneAssets } from '@/lib/director/scene-assets';
 
 export interface SceneDiff { changed: string[]; removed: string[]; }
@@ -17,35 +17,36 @@ function hash(s: string): string {
 
 /** Screenplay scene keys, content-stable: grouped by base heading, then each
  *  group's members are ordered by body-content hash (not document position)
- *  before the `#n` occurrence suffix is assigned. This is the single source
- *  of truth for scene-key derivation — sceneHashes and scenesForKeys both
+ *  before the `#n` occurrence suffix is assigned. This is THE single source of
+ *  truth for scene-key derivation — sceneHashes and any UI that needs to key
+ *  ScriptScenes the same way (e.g. the breakdown tab's per-scene sync dots)
  *  route through it so their keys can never diverge. */
-function sceneKeysFromParsedScenes(
-  scenes: { heading: string; elements: { text: string }[] }[],
-): { key: string; body: string }[] {
-  const groups = new Map<string, { body: string; h: string }[]>();
+export function sceneKeyMap(scenes: ScriptScene[]): Map<ScriptScene, string> {
+  const groups = new Map<string, { scene: ScriptScene; body: string; h: string }[]>();
   for (const sc of scenes) {
     const base = sc.heading.trim().toUpperCase() || '(untitled)';
     const body = sc.elements.map((e) => e.text).join('\n');
     const list = groups.get(base) ?? [];
-    list.push({ body, h: hash(body) });
+    list.push({ scene: sc, body, h: hash(body) });
     groups.set(base, list);
   }
-  const out: { key: string; body: string }[] = [];
+  const out = new Map<ScriptScene, string>();
   for (const [base, list] of groups) {
     const ordered = list.length > 1
       ? [...list].sort((a, b) => (a.h < b.h ? -1 : a.h > b.h ? 1 : 0))
       : list;
     ordered.forEach((entry, n) => {
-      const key = n === 0 ? base : `${base}#${n}`;
-      out.push({ key, body: entry.body });
+      out.set(entry.scene, n === 0 ? base : `${base}#${n}`);
     });
   }
   return out;
 }
 
 /** One stable hash per scene. Key is content-derived so a pure reorder does not
- *  read as an edit; duplicate headings are disambiguated by an occurrence index. */
+ *  read as an edit; duplicate headings are disambiguated by an occurrence index.
+ *  Keys are derived from the shared `sceneKeyMap` helper so they can never drift
+ *  from what any other consumer (e.g. the breakdown tab) computes for the same
+ *  parsed scenes. */
 export function sceneHashes(show: DirectorShow): Map<string, string> {
   const out = new Map<string, string>();
   if (show.docKind === 'beatsheet') {
@@ -59,7 +60,8 @@ export function sceneHashes(show: DirectorShow): Map<string, string> {
   // their #n suffix by content (body hash) rather than by document position.
   // This keeps (key -> hash) pairs stable when two same-heading scenes with
   // different bodies are merely reordered.
-  for (const { key, body } of sceneKeysFromParsedScenes(scenes)) {
+  for (const [sc, key] of sceneKeyMap(scenes)) {
+    const body = sc.elements.map((e) => e.text).join('\n');
     out.set(key, hash(body));
   }
   return out;
