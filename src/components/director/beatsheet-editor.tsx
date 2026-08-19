@@ -25,14 +25,6 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
     onSelect(b.id);
   };
   const removeBeat = (id: string) => patch(beats.filter((b) => b.id !== id));
-  const move = (id: string, dir: -1 | 1) => {
-    const i = beats.findIndex((b) => b.id === id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= beats.length) return;
-    const next = [...beats];
-    [next[i], next[j]] = [next[j], next[i]];
-    patch(next);
-  };
   // Move the beat with id `dragId` to sit immediately before `beforeId` (or to the end when
   // `beforeId` is null). Used by drag-to-reorder; renumber happens in patch().
   const reorder = (dragId: string, beforeId: string | null) => {
@@ -143,8 +135,6 @@ export function BeatsheetEditor({ beatSheet, selectedBeatId, pendingBeatEdits, o
                 >⠿</span>
                 <span className="dbs-num">BEAT {b.n}</span>
                 <input value={b.location} placeholder="INT./EXT. Location" onChange={(e) => setField(b.id, 'location', e.target.value)} disabled={hasPending} />
-                <button type="button" className="director-tab__btn" onClick={() => move(b.id, -1)} disabled={hasPending} title="Move up">↑</button>
-                <button type="button" className="director-tab__btn" onClick={() => move(b.id, 1)} disabled={hasPending} title="Move down">↓</button>
                 <button type="button" className="director-tab__btn" onClick={() => removeBeat(b.id)} disabled={hasPending} title="Remove">✕</button>
               </div>
               <div className="dbs-fields">
