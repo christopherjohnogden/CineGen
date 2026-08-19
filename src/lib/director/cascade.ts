@@ -25,13 +25,26 @@ export function sceneHashes(show: DirectorShow): Map<string, string> {
     return out;
   }
   const scenes = splitScenes(parseToScreenplay(show.sourceText));
-  const seen = new Map<string, number>();
+  // Group by base heading first so duplicate-heading scenes can be assigned
+  // their #n suffix by content (body hash) rather than by document position.
+  // This keeps (key -> hash) pairs stable when two same-heading scenes with
+  // different bodies are merely reordered.
+  const groups = new Map<string, { body: string; h: string }[]>();
   for (const sc of scenes) {
     const base = sc.heading.trim().toUpperCase() || '(untitled)';
-    const n = (seen.get(base) ?? 0);
-    seen.set(base, n + 1);
-    const key = n === 0 ? base : `${base}#${n}`;
-    out.set(key, hash(sc.elements.map((e) => e.text).join('\n')));
+    const body = sc.elements.map((e) => e.text).join('\n');
+    const list = groups.get(base) ?? [];
+    list.push({ body, h: hash(body) });
+    groups.set(base, list);
+  }
+  for (const [base, list] of groups) {
+    const ordered = list.length > 1
+      ? [...list].sort((a, b) => (a.h < b.h ? -1 : a.h > b.h ? 1 : 0))
+      : list;
+    ordered.forEach((entry, n) => {
+      const key = n === 0 ? base : `${base}#${n}`;
+      out.set(key, entry.h);
+    });
   }
   return out;
 }

@@ -50,4 +50,29 @@ describe('diffScenes', () => {
     expect(d.changed).toEqual([]);
     expect(d.removed).toEqual([]);
   });
+
+  it('detects a genuine removal when a scene is dropped', () => {
+    const prev = sceneHashes(show({ sourceText: SCRIPT_A }));
+    const oneSceneOnly = 'INT. OFFICE - DAY\nDr. Jordan enters.';
+    const next = sceneHashes(show({ sourceText: oneSceneOnly }));
+    const removedKey = [...prev.keys()].find((k) => !next.has(k))!;
+    const d = diffScenes(prev, next);
+    expect(d.removed).toContain(removedKey);
+  });
+
+  it('detects a genuine addition when a scene is introduced', () => {
+    const oneSceneOnly = 'INT. OFFICE - DAY\nDr. Jordan enters.';
+    const prev = sceneHashes(show({ sourceText: oneSceneOnly }));
+    const next = sceneHashes(show({ sourceText: SCRIPT_A }));
+    const addedKey = [...next.keys()].find((k) => !prev.has(k))!;
+    const d = diffScenes(prev, next);
+    expect(d.changed).toContain(addedKey);
+  });
+
+  it('a reorder of duplicate-heading scenes (same heading, different bodies) yields no changes', () => {
+    const before = 'INT. OFFICE - DAY\nA.\n\nINT. OFFICE - DAY\nB.';
+    const after = 'INT. OFFICE - DAY\nB.\n\nINT. OFFICE - DAY\nA.';
+    const d = diffScenes(sceneHashes(show({ sourceText: before })), sceneHashes(show({ sourceText: after })));
+    expect(d.changed).toEqual([]);
+  });
 });
