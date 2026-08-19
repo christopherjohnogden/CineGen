@@ -19,7 +19,7 @@ import {
   parseBreakdownPayload,
 } from '@/lib/director/breakdown';
 import { mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
-import { BREAKDOWN_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
+import { BREAKDOWN_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
 import {
   breakdownJobInput,
   lookBibleJobInput,
@@ -27,6 +27,7 @@ import {
   shotlistJobInput,
 } from '@/lib/director/job-inputs';
 import { applyWrittenLook } from '@/lib/director/look-bible';
+import { ENRICH_CHARACTER_SYSTEM_PROMPT, buildEnrichInput, parseEnrichResult } from '@/lib/director/enrich';
 import { parseDirectorLlmProvider, pickInstalledDirectorLlm } from '@/lib/director/cli-provider';
 import { runDirectorJsonJob } from '@/lib/director/run-llm';
 import { cancelCliCopilotChat } from '@/lib/llm/cli-copilot-client';
@@ -67,6 +68,7 @@ export function DirectorTab() {
   const show = state.director ?? createEmptyDirectorShow();
   const showRef = useRef(show);
   const foldersRef = useRef(state.mediaFolders);
+  const enrichingTags = useRef<Set<string>>(new Set());
   showRef.current = show;
   foldersRef.current = state.mediaFolders;
 
@@ -172,11 +174,10 @@ export function DirectorTab() {
     const requestId = setJob('breakdown', 'Breaking down script…');
     try {
       const existing = state.elements.map((element) => `${element.type} ${element.name}`).join(', ');
-      const scopeNote = scope === 'all' ? '' :
-        `\nOnly re-break-down these scenes (ids): ${scope.sceneIds.join(', ')}. Return items for these scenes; existing items for other scenes are kept.`;
+      const scopeArg = scope === 'all' ? undefined : { sceneIds: scope.sceneIds };
       const payload = await runDirectorJsonJob(
-        BREAKDOWN_SYSTEM_PROMPT,
-        breakdownJobInput(current, existing) + scopeNote,
+        BREAKDOWN_IDENTIFY_SYSTEM_PROMPT,
+        breakdownJobInput(current, existing, scopeArg),
         parseDirectorLlmProvider(current.llmProvider),
         requestId,
         signal,
@@ -292,14 +293,48 @@ export function DirectorTab() {
     commitSyncState,
   });
 
+  const enrichCharacter = useCallback(async (tag: string): Promise<void> => {
+    const cur = showRef.current;
+    const item = cur.breakdown.find((b) => b.tag === tag && b.kind === 'character');
+    if (!item || item.enrichedAt || item.actingProfile?.trim()) return;
+    if (enrichingTags.current.has(tag)) return;
+    enrichingTags.current.add(tag);
+    try {
+      const payload = await runDirectorJsonJob(
+        ENRICH_CHARACTER_SYSTEM_PROMPT,
+        buildEnrichInput(item, cur.sourceText),
+        parseDirectorLlmProvider(cur.llmProvider),
+      );
+      const { actingProfile, voice } = parseEnrichResult(payload);
+      const now = Date.now();
+      setShow({
+        ...showRef.current,
+        breakdown: showRef.current.breakdown.map((b) =>
+          b.tag === tag ? { ...b, actingProfile: actingProfile ?? b.actingProfile, voice: voice ?? b.voice, enrichedAt: now } : b,
+        ),
+      });
+    } catch {
+      // best-effort: leave the item un-enriched; generation falls back to description
+    } finally {
+      enrichingTags.current.delete(tag);
+    }
+  }, [setShow]);
+
   const generateOne = useCallback(async (clipId: string) => {
     const current = showRef.current;
     const clip = current.clips.find((entry) => entry.id === clipId);
     const scene = clip ? current.scenes.find((entry) => entry.id === clip.sceneId) : undefined;
     if (!clip || !scene) return;
+    // Lazily fill in acting profiles/voices for this clip's characters (best-effort).
+    const charTags = current.breakdown
+      .filter((b) => b.kind === 'character' && clip.elementTags.includes(b.tag) && !b.enrichedAt && !b.actingProfile?.trim())
+      .map((b) => b.tag);
+    for (const tag of charTags) await enrichCharacter(tag);
+    const fresh = showRef.current; // re-read after enrich commits
+    const freshScene = fresh.scenes.find((entry) => entry.id === clip.sceneId) ?? scene;
     const prepared = prepareDirectorGeneration({
-      show: current,
-      scene,
+      show: fresh,
+      scene: freshScene,
       clip,
       folders: foldersRef.current,
     });
@@ -348,7 +383,7 @@ export function DirectorTab() {
         error: error instanceof Error ? error.message : 'Generation failed',
       }));
     }
-  }, [dispatch, setShow]);
+  }, [dispatch, setShow, enrichCharacter]);
 
   const runGenerate = useCallback(async (scope: 'active' | 'queued' | 'scene') => {
     const current = showRef.current;
