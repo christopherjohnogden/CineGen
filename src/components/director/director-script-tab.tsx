@@ -31,6 +31,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
   const [pending, setPending] = useState<AssistantEdit[] | undefined>();
   const [pendingBeats, setPendingBeats] = useState<BeatEdit[] | undefined>();
   const [createSeed, setCreateSeed] = useState<{ idea: string; mode: 'draft' | 'brainstorm' } | undefined>();
+  const [creating, setCreating] = useState(false);
   const [scriptError, setScriptError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const docKind = show.docKind ?? 'screenplay';
@@ -111,13 +112,24 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
     setSelectedId(target.id);
   };
 
-  const isEmpty = docKind === 'beatsheet' ? beatSheet.beats.length === 0 : (!show.sourceText.trim() && !show.sourceElements);
-  const newScreenplay = () => onChange({ ...show, docKind: 'screenplay', sourceText: '', sourceElements: undefined });
-  const newBeatSheet = () => onChange({ ...show, docKind: 'beatsheet', beatSheet: emptyBeatSheet(), sourceText: '' });
+  // A pending create (Draft/Brainstorm) latches us into the editor+chat view — the chat
+  // delivers the seed — rather than staying on (or flipping back to) the empty state.
+  const isEmpty = !creating && (docKind === 'beatsheet' ? beatSheet.beats.length === 0 : (!show.sourceText.trim() && !show.sourceElements));
+  const newScreenplay = () => {
+    setCreating(false);
+    setCreateSeed(undefined);
+    onChange({ ...show, docKind: 'screenplay', sourceText: '', sourceElements: undefined });
+  };
+  const newBeatSheet = () => {
+    setCreating(false);
+    setCreateSeed(undefined);
+    onChange({ ...show, docKind: 'beatsheet', beatSheet: emptyBeatSheet(), sourceText: '' });
+  };
   const createFromPrompt = (idea: string, kind: 'screenplay' | 'beatsheet', mode: 'draft' | 'brainstorm') => {
     if (kind === 'beatsheet') onChange({ ...show, docKind: 'beatsheet', beatSheet: emptyBeatSheet(), sourceText: '' });
     else onChange({ ...show, docKind: 'screenplay', sourceText: '', sourceElements: undefined });
     setRightOpen(true);
+    setCreating(true);
     setCreateSeed({ idea, mode });
   };
 
@@ -181,6 +193,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
                 beatSheet={beatSheet}
                 onProposeBeatEdits={(res: AssistantResponse) => setPendingBeats(res.beatEdits)}
                 initialMessage={createSeed}
+                onInitialConsumed={() => setCreateSeed(undefined)}
               />
             </CollapsiblePanel>
           )}

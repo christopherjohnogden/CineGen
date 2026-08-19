@@ -17,11 +17,12 @@ interface DirectorScriptChatProps {
   beatSheet?: import('@/lib/director/beatsheet').BeatSheet;
   onProposeBeatEdits: (res: import('@/lib/director/script-assistant').AssistantResponse) => void;
   initialMessage?: { idea: string; mode: 'draft' | 'brainstorm' };
+  onInitialConsumed?: () => void;
 }
 
 interface ChatMsg { role: 'user' | 'ai'; text: string }
 
-export function DirectorScriptChat({ doc, provider, selectedId, selectedText, onProposeEdits, docKind, beatSheet, onProposeBeatEdits, initialMessage }: DirectorScriptChatProps) {
+export function DirectorScriptChat({ doc, provider, selectedId, selectedText, onProposeEdits, docKind, beatSheet, onProposeBeatEdits, initialMessage, onInitialConsumed }: DirectorScriptChatProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -58,6 +59,7 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
     if (initialMessage && seededRef.current !== initialMessage.idea) {
       seededRef.current = initialMessage.idea;
       void send({ text: initialMessage.idea, mode: initialMessage.mode });
+      onInitialConsumed?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
