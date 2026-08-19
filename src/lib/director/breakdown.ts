@@ -13,7 +13,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function normalizeTag(name: string, tag?: string): string {
+export function normalizeTag(name: string, tag?: string): string {
   const raw = (tag || name).trim();
   const cleaned = raw.replace(/^@/, '').replace(/\s+/g, '-');
   return `@${cleaned}`;

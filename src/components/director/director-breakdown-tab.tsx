@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { Element } from '@/types/elements';
-import type { BreakdownKind, DirectorBreakdownItem, DirectorShow } from '@/types/director';
+import type { BreakdownKind, DirectorShow } from '@/types/director';
 import { parseToScreenplay } from '@/lib/director/screenplay';
 import { splitScenes } from '@/lib/director/scene-split';
+import { applyManualTag } from '@/lib/director/scene-assets';
 import { SceneScriptView } from './scene-script-view';
 import { SceneAssetsPanel } from './scene-assets-panel';
 
@@ -39,6 +40,17 @@ export function DirectorBreakdownTab({ show, elements, onChange, onApprove, onCr
     requestAnimationFrame(() => setFocusName(name));
   };
 
+  // Manually tag a highlighted span as a breakdown element. Creates a real breakdown item
+  // (so it highlights everywhere and feeds the assets panel / refs / generation), or re-kinds
+  // an existing one with the same tag.
+  const tagSelection = (kind: BreakdownKind, rawName: string) => {
+    const res = applyManualTag(show.breakdown, kind, rawName);
+    if (!res) return;
+    if (res.breakdown !== show.breakdown) onChange({ ...show, breakdown: res.breakdown });
+    setActiveKind(kind);
+    onAssetClick(kind, res.name);
+  };
+
   return (
     <div className="dbk-shell">
       <aside className="dbk-nav">
@@ -58,7 +70,7 @@ export function DirectorBreakdownTab({ show, elements, onChange, onApprove, onCr
         </div>
       </aside>
 
-      <SceneScriptView scene={scene} breakdown={show.breakdown} onAssetClick={onAssetClick} />
+      <SceneScriptView scene={scene} breakdown={show.breakdown} onAssetClick={onAssetClick} onTagSelection={tagSelection} />
 
       <aside className="dbk-assets">
         <SceneAssetsPanel

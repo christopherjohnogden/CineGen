@@ -1,8 +1,32 @@
 import type { ScriptScene } from '@/lib/director/scene-split';
 import type { BreakdownKind, DirectorBreakdownItem, DirectorShow } from '@/types/director';
+import { normalizeTag } from '@/lib/director/breakdown';
+import { generateId } from '@/lib/utils/ids';
 
 export interface SceneAssetHit { kind: BreakdownKind; name: string; item?: DirectorBreakdownItem }
 export interface HighlightRun { text: string; kind?: BreakdownKind }
+
+/**
+ * Tag a span of text as a breakdown element of `kind`, returning the updated breakdown list
+ * and the resolved name/tag. If an item with the same tag exists, its kind is updated in
+ * place (re-tagging); otherwise a new item is appended. The name is whitespace-normalized.
+ */
+export function applyManualTag(
+  breakdown: DirectorBreakdownItem[],
+  kind: BreakdownKind,
+  rawName: string,
+): { breakdown: DirectorBreakdownItem[]; name: string; tag: string } | null {
+  const name = rawName.trim().replace(/\s+/g, ' ');
+  if (!name) return null;
+  const tag = normalizeTag(name);
+  const existing = breakdown.find((b) => b.tag === tag);
+  if (existing) {
+    const next = existing.kind === kind ? breakdown : breakdown.map((b) => (b.tag === tag ? { ...b, kind } : b));
+    return { breakdown: next, name, tag };
+  }
+  const item: DirectorBreakdownItem = { id: generateId(), kind, name, tag, description: '' };
+  return { breakdown: [...breakdown, item], name, tag };
+}
 
 function sceneText(scene: ScriptScene): string {
   return scene.elements.map((e) => e.text).join('\n');

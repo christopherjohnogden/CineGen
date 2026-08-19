@@ -435,13 +435,29 @@
 .dbk-mark--character { background:rgba(157,180,255,.3); box-shadow:inset 0 -2px 0 rgba(157,180,255,.7); }
 .dbk-mark--location { background:rgba(143,224,168,.28); box-shadow:inset 0 -2px 0 rgba(143,224,168,.7); }
 .dbk-mark--prop { background:rgba(224,168,143,.28); box-shadow:inset 0 -2px 0 rgba(224,168,143,.7); }
+.dbk-mark--vehicle { background:rgba(200,160,224,.28); box-shadow:inset 0 -2px 0 rgba(200,160,224,.7); }
 .dbk-mark:hover { filter:brightness(1.25); }
+
+/* Middle column wraps the paginated view so the tag popover can anchor to the selection. */
+.dbk-scriptwrap { position:relative; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.dbk-scriptwrap .dse-paperwrap { flex:1; }
+
+/* Floating "Tag as <type>" popover shown above a text selection in the breakdown. */
+.dbk-tagpop { position:absolute; z-index:40; transform:translate(-50%, calc(-100% - 8px)); display:flex; align-items:center; gap:4px; padding:5px 6px; background:var(--bg-overlay); border:1px solid var(--border-medium); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.5); white-space:nowrap; }
+.dbk-tagpop::after { content:''; position:absolute; left:50%; bottom:-5px; width:9px; height:9px; transform:translateX(-50%) rotate(45deg); background:var(--bg-overlay); border-right:1px solid var(--border-medium); border-bottom:1px solid var(--border-medium); }
+.dbk-tagpop__label { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-tertiary); padding:0 4px 0 2px; }
+.dbk-tagpop__btn { font-size:11px; font-weight:600; color:var(--text-primary); background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:7px; padding:4px 9px; cursor:pointer; transition:background .12s, border-color .12s; }
+.dbk-tagpop__btn:hover { background:var(--bg-raised); }
+.dbk-tagpop__btn--character:hover { border-color:rgba(157,180,255,.8); }
+.dbk-tagpop__btn--location:hover { border-color:rgba(143,224,168,.8); }
+.dbk-tagpop__btn--prop:hover { border-color:rgba(224,168,143,.8); }
+.dbk-tagpop__btn--vehicle:hover { border-color:rgba(200,160,224,.8); }
 .dbk-card { background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:8px; padding:9px 10px; margin-bottom:7px; }
 .dbk-card--flash { animation:dbkflash 1.1s ease; }
 @keyframes dbkflash { 0%,100% { box-shadow:0 0 0 0 rgba(79,123,255,0); } 20% { box-shadow:0 0 0 2px var(--accent); } }
 .dbk-icn { width:44px; height:44px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700; flex-shrink:0; overflow:hidden; position:relative; }
 .dbk-icn img { width:100%; height:100%; object-fit:cover; display:block; }
-.dbk-icn--character { background:#2a3550; color:#9db4ff; } .dbk-icn--location { background:#2a4030; color:#8fe0a8; } .dbk-icn--prop { background:#402a2a; color:#e0a88f; }
+.dbk-icn--character { background:#2a3550; color:#9db4ff; } .dbk-icn--location { background:#2a4030; color:#8fe0a8; } .dbk-icn--prop { background:#402a2a; color:#e0a88f; } .dbk-icn--vehicle { background:#3a2a40; color:#c8a0e0; }
 .dbk-tod { background:#3a3320; color:#e0c060; border-radius:4px; padding:0 5px; margin-left:4px; font-weight:700; font-size:10px; }
 .dbk-status { margin-left:auto; font-size:10px; font-weight:600; padding:2px 7px; border-radius:8px; }
 .dbk-status--linked { background:var(--accent-dim); color:var(--success); } .dbk-status--missing { background:var(--bg-raised); color:var(--error); } .dbk-status--ai { background:#2a2540; color:#c8a0e0; }

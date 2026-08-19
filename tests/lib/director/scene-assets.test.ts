@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectSceneAssets, highlightRuns, resolveSceneAssets } from '@/lib/director/scene-assets';
+import { applyManualTag, detectSceneAssets, highlightRuns, resolveSceneAssets } from '@/lib/director/scene-assets';
 import type { DirectorBreakdownItem, DirectorShow } from '@/types/director';
 import { parseToScreenplay } from '@/lib/director/screenplay';
 import { splitScenes } from '@/lib/director/scene-split';
@@ -32,6 +32,33 @@ describe('detectSceneAssets', () => {
     const names = detectSceneAssets(scene, BREAKDOWN).map((h) => h.name);
     expect(names).toContain('Dr. Jordan');
     expect(names).toContain('Chesterfield Sofa');
+  });
+});
+
+describe('applyManualTag', () => {
+  it('creates a new breakdown item from a selected span', () => {
+    const res = applyManualTag([], 'prop', '  curved  energy-spear ');
+    expect(res).not.toBeNull();
+    expect(res!.name).toBe('curved energy-spear'); // whitespace normalized
+    expect(res!.tag).toBe('@curved-energy-spear');
+    expect(res!.breakdown).toHaveLength(1);
+    expect(res!.breakdown[0]).toMatchObject({ kind: 'prop', name: 'curved energy-spear', tag: '@curved-energy-spear', description: '' });
+    expect(res!.breakdown[0].id).toBeTruthy();
+  });
+
+  it('re-kinds an existing item with the same tag instead of duplicating', () => {
+    const res = applyManualTag(BREAKDOWN, 'vehicle', 'Sofa');
+    expect(res!.breakdown).toHaveLength(BREAKDOWN.length); // no new item
+    expect(res!.breakdown.find((b) => b.tag === '@Sofa')!.kind).toBe('vehicle');
+  });
+
+  it('is a no-op (same array) when the tag and kind already match', () => {
+    const res = applyManualTag(BREAKDOWN, 'prop', 'Sofa');
+    expect(res!.breakdown).toBe(BREAKDOWN); // reference unchanged → caller skips onChange
+  });
+
+  it('returns null for an empty/whitespace selection', () => {
+    expect(applyManualTag(BREAKDOWN, 'prop', '   ')).toBeNull();
   });
 });
 
