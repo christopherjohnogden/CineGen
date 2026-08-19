@@ -101,11 +101,22 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
 
+  const isBeatKind = docKind === 'beatsheet';
   return (
-    <>
-      <div className="dch-head"><span>🤖</span><span style={{ fontSize: 12, fontWeight: 700 }}>Script Assistant</span></div>
+    <div className="dch">
+      <div className="dch-head">
+        <span className="dch-avatar" aria-hidden="true">🤖</span>
+        <span className="dch-title">Script Assistant</span>
+        <span className={`dch-status${busy ? ' dch-status--busy' : ''}`}>{busy ? 'Thinking…' : 'Ready'}</span>
+      </div>
       <div className="dch-msgs">
-        {messages.length === 0 && <p className="director-tab__empty">Ask about your script, or tell me what to change.</p>}
+        {messages.length === 0 && !busy && (
+          <div className="dch-empty">
+            <div className="dch-empty__icon" aria-hidden="true">✨</div>
+            <p className="dch-empty__title">Ask about your {isBeatKind ? 'beat sheet' : 'script'}</p>
+            <p className="dch-empty__sub">Ask a question, or tell me what to write or change — edits show up as an inline diff you can accept or decline.</p>
+          </div>
+        )}
         {messages.map((m, i) => (
           <div key={i} className={`dch-m dch-m--${m.role === 'user' ? 'user' : 'ai'}`}>{m.text}</div>
         ))}
@@ -118,17 +129,24 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
       </div>
       <div className="dch-composer">
         {selectedId && <span className="dch-sel">◉ Selected: {(selectedText ?? '').slice(0, 42) || 'element'}</span>}
-        <textarea
-          value={draft}
-          placeholder="Ask about your script, or tell me what to write / change…"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } }}
-        />
-        <div className="director-tab__row">
-          <span className="director-tab__meta" style={{ marginRight: 'auto' }}>Edits appear as an inline diff in the script.</span>
-          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={() => void send()} disabled={busy}>{busy ? '…' : 'Send'}</button>
+        <div className="dch-inputbox">
+          <textarea
+            value={draft}
+            placeholder={`Ask about your ${isBeatKind ? 'beat sheet' : 'script'}, or tell me what to write / change…`}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); } }}
+          />
+          <button
+            type="button"
+            className="dch-send"
+            onClick={() => void send()}
+            disabled={busy || !draft.trim()}
+            title="Send (⌘↵)"
+            aria-label="Send"
+          >{busy ? '…' : '↑'}</button>
         </div>
+        <span className="dch-hint">Edits appear as an inline diff · ⌘↵ to send</span>
       </div>
-    </>
+    </div>
   );
 }
