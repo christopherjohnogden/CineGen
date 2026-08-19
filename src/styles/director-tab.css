@@ -15,6 +15,9 @@
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   background: var(--bg-raised);
+  /* At narrow widths let the right-side controls drop to a second row rather than
+     crushing the stage tabs until they vanish. */
+  flex-wrap: wrap;
 }
 
 .director-tab__llm {
@@ -266,7 +269,7 @@
 }
 
 /* ── Redesign: stage tabs ───────────────────────────── */
-.director-tab__stagetabs { display:flex; gap:4px; background:var(--bg-input); padding:4px; border-radius:12px; }
+.director-tab__stagetabs { display:flex; gap:4px; background:var(--bg-input); padding:4px; border-radius:12px; flex-shrink:0; }
 .director-tab__stab { display:flex; align-items:center; gap:7px; padding:6px 15px; border:none; border-radius:9px; background:transparent; color:var(--text-secondary); font-size:12.5px; font-weight:600; cursor:pointer; }
 .director-tab__stab:hover { color:var(--text-primary); }
 .director-tab__stab--active { background:var(--accent); color:var(--bg-base); }
