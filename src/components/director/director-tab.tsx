@@ -162,29 +162,38 @@ export function DirectorTab() {
     return () => { cancelled = true; };
   }, [show.adapterId, show.clips, show.selectedClipId, show.selectedSceneId]);
 
-  const runBreakdown = useCallback(async () => {
+  const runBreakdown = useCallback(async (
+    scope: { sceneIds: string[] } | 'all' = 'all',
+    signal?: AbortSignal,
+  ) => {
     const current = showRef.current;
     const requestId = setJob('breakdown', 'Breaking down script…');
     try {
       const existing = state.elements.map((element) => `${element.type} ${element.name}`).join(', ');
+      const scopeNote = scope === 'all' ? '' :
+        `\nOnly re-break-down these scenes (ids): ${scope.sceneIds.join(', ')}. Return items for these scenes; existing items for other scenes are kept.`;
       const payload = await runDirectorJsonJob(
         BREAKDOWN_SYSTEM_PROMPT,
-        breakdownJobInput(current, existing),
+        breakdownJobInput(current, existing) + scopeNote,
         parseDirectorLlmProvider(current.llmProvider),
         requestId,
+        signal,
       );
+      if (signal?.aborted) return; // silent — a newer edit superseded this
       const parsed = parseBreakdownPayload(payload);
       setShow({
         ...current,
         breakdown: mergeBreakdownItems(current.breakdown, parsed.items, state.elements),
         scenes: parsed.scenes.length > 0 ? parsed.scenes : current.scenes,
         breakdownApproved: false,
-        mode: 'breakdown',
+        mode: current.mode, // do NOT force the tab to switch during an auto-run
         jobStatus: null,
         selectedSceneId: parsed.scenes[0]?.id ?? current.selectedSceneId,
       });
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       failJob('breakdown', error, 'Breakdown failed');
+      throw error; // let the cascade know not to chain shotlist
     }
   }, [failJob, setJob, setShow, state.elements]);
 
@@ -223,9 +232,13 @@ export function DirectorTab() {
     setShow(linkMissingElements(showRef.current, true));
   }, [linkMissingElements, setShow]);
 
-  const runShotlist = useCallback(async (sceneOnly: boolean) => {
+  const runShotlist = useCallback(async (
+    scope: { sceneIds: string[] } | 'all' = 'all',
+    signal?: AbortSignal,
+  ) => {
     const current = showRef.current;
-    const scene = selectedScene(current);
+    const sceneOnly = scope !== 'all';
+    const scene = sceneOnly ? current.scenes.find((s) => scope.sceneIds.includes(s.id)) : selectedScene(current);
     const requestId = setJob('shotlist', sceneOnly ? `Shotlisting ${scene?.label ?? 'scene'}…` : 'Shotlisting show…');
     try {
       const payload = await runDirectorJsonJob(
@@ -233,7 +246,9 @@ export function DirectorTab() {
         shotlistJobInput(current, scene, sceneOnly),
         parseDirectorLlmProvider(current.llmProvider),
         requestId,
+        signal,
       );
+      if (signal?.aborted) return; // silent — a newer edit superseded this
       const parsed = parseShotlistPayload(payload, sceneOnly ? scene?.id : undefined);
       const merged = mergeShotlist(current.scenes, current.clips, parsed);
       setShow({
@@ -243,13 +258,15 @@ export function DirectorTab() {
           : (parsed.stylePrefix?.trim() ? parsed.stylePrefix : current.stylePrefix),
         scenes: merged.scenes,
         clips: merged.clips,
-        mode: 'shotlist',
+        mode: current.mode, // do NOT force the tab to switch during an auto-run
         jobStatus: parsed.errors[0] ? { type: 'shotlist', message: parsed.errors[0], error: true } : null,
         selectedClipId: merged.clips[0]?.id ?? current.selectedClipId,
         selectedSceneId: merged.clips[0]?.sceneId ?? current.selectedSceneId,
       });
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       failJob('shotlist', error, 'Shotlist failed');
+      throw error; // let the cascade know not to chain
     }
   }, [failJob, setJob, setShow]);
 
@@ -430,7 +447,7 @@ export function DirectorTab() {
           <DirectorBreakdownTab show={show} elements={state.elements} onChange={setShow} onApprove={approveBreakdown} onCreateMissing={createMissing} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
         )}
         {show.mode === 'shotlist' && (
-          <DirectorShotlistTab show={show} onChange={setShow} onShotlist={(sceneOnly) => void runShotlist(sceneOnly)} onSelectClip={selectClip} />
+          <DirectorShotlistTab show={show} onChange={setShow} onShotlist={(sceneOnly) => void runShotlist(sceneOnly ? { sceneIds: selectedScene(show) ? [selectedScene(show)!.id] : [] } : 'all')} onSelectClip={selectClip} />
         )}
         {show.mode === 'generate' && (
           <DirectorGenerateTab

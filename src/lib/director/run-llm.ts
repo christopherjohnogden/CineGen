@@ -19,9 +19,20 @@ export async function runDirectorJsonJob(
   userPrompt: string,
   provider: CliLlmProviderId,
   requestId = crypto.randomUUID(),
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const prompt = directorCliJobPrompt(systemPrompt, userPrompt);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    signal?.addEventListener('abort', () => {
+      void cancelCliCopilotChat(provider, requestId);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  });
   const timedOut = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       void cancelCliCopilotChat(provider, requestId);
@@ -39,9 +50,11 @@ export async function runDirectorJsonJob(
         userMessage: `${prompt.systemPrompt}\n\n${prompt.userMessage}`,
       }),
       timedOut,
+      aborted,
     ]);
     return extractJsonValue(response.message ?? '');
   } catch (error) {
+    if (error instanceof DOMException) throw error;
     const detail = error instanceof Error ? error.message : 'Director LLM job failed.';
     throw new Error(`${getCliProviderLabel(provider)}: ${detail}`);
   } finally {
