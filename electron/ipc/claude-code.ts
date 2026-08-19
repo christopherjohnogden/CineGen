@@ -226,6 +226,9 @@ async function streamClaudeCodeChat(
     '--tools',
     COPILOT_CHAT_TOOLS,
     '--disable-slash-commands',
+    // No --mcp-config is passed, so this loads ZERO MCP servers. These jobs never use
+    // them, and booting/tearing down the user's fleet dominated the call's wall clock.
+    '--strict-mcp-config',
     '--permission-mode',
     'dontAsk',
   ];
@@ -260,6 +263,19 @@ async function streamClaudeCodeChat(
     activeRequest = { child, requestId };
 
     let lineBuffer = '';
+    // The CLI emits its final `result` line as soon as the answer is complete, but the
+    // process can then linger for many seconds tearing down MCP servers. Waiting for
+    // 'close' made every job pay that teardown (and hit the renderer's timeout), so we
+    // settle on the result and stop the child ourselves.
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      activeRequest = null;
+      win?.webContents.send('llm:claude-code-stream', { requestId, done: true });
+      fn();
+      if (!child.killed) child.kill();
+    };
 
     child.stdout?.on('data', (chunk: Buffer) => {
       lineBuffer += chunk.toString();
@@ -283,6 +299,17 @@ async function streamClaudeCodeChat(
 
           if (obj.type === 'result') {
             lastResultPayload = obj;
+            // Capture any text carried on the result line before settling below.
+            const resultToken = extractStreamToken(obj);
+            if (resultToken && !fullContent.trim()) {
+              fullContent = resultToken;
+              win?.webContents.send('llm:claude-code-stream', { requestId, token: resultToken });
+            }
+            const done = fullContent.trim();
+            if (done && !authFailed && !done.includes('Not logged in')) {
+              finish(() => resolve({ message: done, sessionId, usage, resumed: canResume }));
+              return;
+            }
           }
 
           const parsedUsage = parseClaudeCodeUsage(obj);
@@ -324,26 +351,23 @@ async function streamClaudeCodeChat(
     });
 
     child.on('error', (error) => {
-      activeRequest = null;
-      reject(error);
+      finish(() => reject(error));
     });
 
+    // Fallback: the process exited without a usable `result` line.
     child.on('close', (code) => {
-      activeRequest = null;
-      win?.webContents.send('llm:claude-code-stream', { requestId, done: true });
-
-      const trimmed = fullContent.trim();
-      if (authFailed || trimmed.includes('Not logged in')) {
-        reject(new Error('Claude Code is not logged in. Open Terminal, run `claude`, and sign in with your subscription.'));
-        return;
-      }
-
-      if (trimmed) {
-        resolve({ message: trimmed, sessionId, usage, resumed: canResume });
-        return;
-      }
-
-      reject(new Error(formatClaudeCodeFailure(code, stderrBuffer, lastResultPayload)));
+      finish(() => {
+        const trimmed = fullContent.trim();
+        if (authFailed || trimmed.includes('Not logged in')) {
+          reject(new Error('Claude Code is not logged in. Open Terminal, run `claude`, and sign in with your subscription.'));
+          return;
+        }
+        if (trimmed) {
+          resolve({ message: trimmed, sessionId, usage, resumed: canResume });
+          return;
+        }
+        reject(new Error(formatClaudeCodeFailure(code, stderrBuffer, lastResultPayload)));
+      });
     });
   });
 }
