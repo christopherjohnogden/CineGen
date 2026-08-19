@@ -4,6 +4,7 @@ import { isolatedPrompt, rewritePrefixForIsolate } from '@/lib/director/isolate-
 import { compileClipBody, retimeClipToSeconds, validateClipTimings } from '@/lib/director/prompt-compiler';
 import { seedance25Adapter } from '@/lib/director/video-adapter';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
+import { BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, BREAKDOWN_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
 
 const clip: DirectorClip = {
   id: '2-9b',
@@ -97,5 +98,19 @@ describe('seedance 2.5 adapter', () => {
     };
     const full = seedance25Adapter.buildRequest({ show, clip: edited, variant: { kind: 'full' } });
     expect(full.prompt).toContain('ELEMENTS — @Edited');
+  });
+});
+
+describe('BREAKDOWN_IDENTIFY_SYSTEM_PROMPT', () => {
+  it('drops the per-character profile prose (fast identify pass)', () => {
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).not.toMatch(/actingProfile/i);
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).not.toMatch(/\bvoice\b/i);
+  });
+  it('keeps the exhaustive extraction mandate', () => {
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/EXTRACTION COMPLETENESS/);
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/VEHICLES/);
+  });
+  it('the full BREAKDOWN_SYSTEM_PROMPT still asks for profiles', () => {
+    expect(BREAKDOWN_SYSTEM_PROMPT).toMatch(/actingProfile/);
   });
 });
