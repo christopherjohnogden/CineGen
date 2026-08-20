@@ -60,6 +60,9 @@ export default defineConfig({
             outDir: 'dist-electron',
             rollupOptions: {
               external: ['electron', 'better-sqlite3', 'ffmpeg-static', 'ffprobe-static'],
+              // Keep the main bundle a single file: code-split ESM chunks crash Node's
+              // CJS-interop loader at startup when they share external CJS deps
+              output: { inlineDynamicImports: true },
             },
           },
           resolve: {

@@ -232,7 +232,7 @@ function createElementNode(params: {
     data: {
       type: 'element',
       label: params.label,
-      config: { ...definition.defaultData, elementId: params.elementId },
+      config: { ...definition.defaultData, elementIds: [params.elementId] },
     },
   };
 }

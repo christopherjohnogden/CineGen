@@ -526,9 +526,105 @@ export async function runHiggsfieldCli(args: string[], timeoutMs = 60_000): Prom
   throw new Error(detail ? `${CLI_MISSING_MESSAGE} Tried: ${tried}. ${detail}` : `${CLI_MISSING_MESSAGE} Tried: ${tried}.`);
 }
 
+const REMOTE_MEDIA_TIMEOUT_MS = 60_000;
+
+const MEDIA_CONTENT_TYPE_EXT: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm',
+  'audio/mpeg': '.mp3',
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
+  'audio/mp4': '.m4a',
+  'audio/ogg': '.ogg',
+};
+
+function fallbackExtensionForRole(role: HiggsfieldMedia['role']): string {
+  if (role === 'video') return '.mp4';
+  if (role === 'audio') return '.mp3';
+  return '.png';
+}
+
+function mediaExtensionFor(
+  reference: string,
+  contentType: string | null,
+  role: HiggsfieldMedia['role'],
+): string {
+  const fromType = contentType
+    ? MEDIA_CONTENT_TYPE_EXT[contentType.split(';', 1)[0].trim().toLowerCase()]
+    : undefined;
+  if (fromType) return fromType;
+  const ext = path.extname(reference.split(/[?#]/, 1)[0]).toLowerCase();
+  if (ext && ext.length <= 5) return ext;
+  return fallbackExtensionForRole(role);
+}
+
+/**
+ * The CLI accepts local paths, upload UUIDs, and job ids as media values — not remote URLs.
+ * Download http(s)/data references (e.g. a chained node's CDN output) into temp files so the
+ * CLI can perform its own upload. Returns the temp paths so they can be removed after submit.
+ */
+async function resolveRemoteMedias(
+  medias: HiggsfieldMedia[] | undefined,
+): Promise<{ medias: HiggsfieldMedia[] | undefined; tempPaths: string[] }> {
+  if (!medias?.length) return { medias, tempPaths: [] };
+  const tempPaths: string[] = [];
+  const resolved: HiggsfieldMedia[] = [];
+  for (const [index, media] of medias.entries()) {
+    let value = media.value;
+    if (value.startsWith('local-media://file')) {
+      try {
+        value = decodeURIComponent(value.slice('local-media://file'.length));
+      } catch {
+        value = value.slice('local-media://file'.length);
+      }
+    }
+
+    if (/^https?:\/\//i.test(value)) {
+      const res = await fetch(value, { signal: AbortSignal.timeout(REMOTE_MEDIA_TIMEOUT_MS) });
+      if (!res.ok) throw new Error(`Failed to download media input (HTTP ${res.status}): ${value}`);
+      const ext = mediaExtensionFor(value, res.headers.get('content-type'), media.role);
+      const tmpPath = path.join(os.tmpdir(), `cinegen-hf-media-${Date.now()}-${index}${ext}`);
+      await fs.promises.writeFile(tmpPath, Buffer.from(await res.arrayBuffer()));
+      tempPaths.push(tmpPath);
+      resolved.push({ ...media, value: tmpPath });
+    } else if (value.startsWith('data:')) {
+      const comma = value.indexOf(',');
+      if (comma < 0) throw new Error('Malformed data: URI media input');
+      const meta = value.slice(5, comma);
+      const contentType = meta.replace(/;base64$/i, '');
+      const data = value.slice(comma + 1);
+      const buffer = /;base64$/i.test(meta)
+        ? Buffer.from(data, 'base64')
+        : Buffer.from(decodeURIComponent(data));
+      const ext = MEDIA_CONTENT_TYPE_EXT[contentType.toLowerCase()] ?? fallbackExtensionForRole(media.role);
+      const tmpPath = path.join(os.tmpdir(), `cinegen-hf-media-${Date.now()}-${index}${ext}`);
+      await fs.promises.writeFile(tmpPath, buffer);
+      tempPaths.push(tmpPath);
+      resolved.push({ ...media, value: tmpPath });
+    } else {
+      resolved.push(value === media.value ? media : { ...media, value });
+    }
+  }
+  return { medias: resolved, tempPaths };
+}
+
 /** Submit the job, then wait — a 503 during poll does not cancel a job already on Higgsfield. */
 export async function generateHiggsfield(params: HiggsfieldGenerateParams): Promise<HiggsfieldResult> {
-  const submitted = await submitHiggsfieldJob(params);
+  const { medias, tempPaths } = await resolveRemoteMedias(params.medias);
+  let submitted: HiggsfieldResult | { jobId: string };
+  try {
+    submitted = await submitHiggsfieldJob({ ...params, medias });
+  } finally {
+    // The CLI uploads during submit; the temp copies are no longer needed
+    for (const tmpPath of tempPaths) {
+      fs.promises.unlink(tmpPath).catch(() => {});
+    }
+  }
   if (isFinishedHiggsfieldResult(submitted, params.mediaType)) return submitted;
   const jobId = 'jobId' in submitted ? submitted.jobId : undefined;
   if (!jobId) throw new Error('Higgsfield accepted the request but did not return a job id.');

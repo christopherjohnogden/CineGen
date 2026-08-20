@@ -88,7 +88,7 @@ export function DirectorTab() {
   const recoverAttempted = useRef<Set<string>>(new Set());
   const recoverInFlight = useRef(false);
   const recoverTries = useRef(0);
-  const recoverTimer = useRef<number>();
+  const recoverTimer = useRef<number | undefined>(undefined);
   const stagingRecovered = useRef<Set<string>>(new Set());
   const [recoverNonce, setRecoverNonce] = useState(0);
   const [fetchingTake, setFetchingTake] = useState(false);

@@ -4,7 +4,7 @@ import type { Element } from '@/types/elements';
 import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
 import { generateId } from '@/lib/utils/ids';
-import { NODE_REGISTRY } from '@/lib/workflows/node-registry';
+import { NODE_REGISTRY, resolveElementNodeIds } from '@/lib/workflows/node-registry';
 
 const TAG_PATTERN = /@([A-Za-z0-9][\w-]*)/g;
 const ELEMENT_X_OFFSET = 240;
@@ -68,8 +68,9 @@ export function bindPromptMentionsToGraph(params: {
 
   for (const node of nodes) {
     if (node.type !== 'element') continue;
-    const elementId = String(node.data.config.elementId ?? '');
-    if (elementId) elementNodeIds.set(elementId, node.id);
+    for (const elementId of resolveElementNodeIds(node.data.config)) {
+      if (!elementNodeIds.has(elementId)) elementNodeIds.set(elementId, node.id);
+    }
   }
 
   const origin = promptNodes[0] ?? nodes[0];
@@ -87,7 +88,7 @@ export function bindPromptMentionsToGraph(params: {
       data: {
         type: 'element',
         label: element.name,
-        config: { ...NODE_REGISTRY.element.defaultData, elementId: element.id },
+        config: { ...NODE_REGISTRY.element.defaultData, elementIds: [element.id] },
       },
     };
     nodes.push(elementNode);

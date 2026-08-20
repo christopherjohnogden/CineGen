@@ -43,7 +43,7 @@ const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
     category: 'utility',
     inputs: [],
     outputs: [{ id: 'element', type: 'image', label: 'element' }],
-    defaultData: { elementId: '' },
+    defaultData: { elementIds: [] },
   },
   compositionPlan: {
     type: 'compositionPlan',
@@ -184,6 +184,17 @@ export const CATEGORY_COLORS: Record<string, string> = {
   audio: 'var(--port-audio)',
   model3d: 'var(--port-model)',
 };
+
+/** Element nodes stack multiple element ids; older saves stored a single `elementId`. */
+export function resolveElementNodeIds(config: Record<string, unknown> | undefined): string[] {
+  const raw = config?.elementIds;
+  if (Array.isArray(raw)) {
+    const ids = raw.filter((id): id is string => typeof id === 'string' && id !== '');
+    if (ids.length > 0) return ids;
+  }
+  const legacy = config?.elementId;
+  return typeof legacy === 'string' && legacy ? [legacy] : [];
+}
 
 export const PORT_COLORS: Record<string, string> = {
   text: 'var(--port-text)',

@@ -211,6 +211,18 @@ function compatibilityMediaFieldsFor(
   return [];
 }
 
+/** Catalog params are alphabetized; surface the main prompt as the first input/port. */
+const PROMPT_FIELD_PRIORITY = ['prompt', 'user_prompt', 'instruction'];
+
+function promotePromptFirst(inputs: ModelInputField[]): ModelInputField[] {
+  for (const id of PROMPT_FIELD_PRIORITY) {
+    const index = inputs.findIndex((field) => field.id === id);
+    if (index > 0) return [inputs[index], ...inputs.slice(0, index), ...inputs.slice(index + 1)];
+    if (index === 0) return inputs;
+  }
+  return inputs;
+}
+
 export function buildHiggsfieldModelRegistry(
   schemas: readonly HiggsfieldModelSchema[] = HIGGSFIELD_MODEL_SCHEMAS,
 ): Record<string, ModelDefinition> {
@@ -225,10 +237,10 @@ export function buildHiggsfieldModelRegistry(
       name: model.display_name,
       category: outputType,
       description: `Higgsfield ${model.type.toUpperCase()} model`,
-      inputs: model.params.flatMap((param) => [
+      inputs: promotePromptFirst(model.params.flatMap((param) => [
         inputFieldFor(model, param),
         ...compatibilityMediaFieldsFor(model, param),
-      ]),
+      ])),
       outputType,
       outputs: [{ id: outputType, portType: outputType, label: outputType === 'model3d' ? '3D Model' : humanize(outputType) }],
       provider: 'higgsfield',

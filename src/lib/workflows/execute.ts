@@ -1,6 +1,6 @@
 import type { Node, Edge } from '@xyflow/react';
 import { topologicalSort } from './topo-sort';
-import { NODE_REGISTRY } from './node-registry';
+import { NODE_REGISTRY, resolveElementNodeIds } from './node-registry';
 import {
   getLayerDecomposeAutoPrompts,
   getLayerDecomposeStageLabel,
@@ -701,23 +701,28 @@ function resolveUtilityOutputs(
         break;
       }
       case 'element': {
-        const elementId = data.config.elementId as string;
-        if (elementId) {
-          const elements = dispatch.getElements();
+        const elementIds = resolveElementNodeIds(data.config);
+        const elements = dispatch.getElements();
+        const stack: ElementData[] = [];
+        for (const elementId of elementIds) {
           const el = elements.find((e) => e.id === elementId);
-          if (el && el.images.length > 0) {
-            // Pick best references: 0=frontal, 1=full body front, 5=left portrait, 6=right portrait
-            const refIndices = [1, 5, 6];
-            const elementData: ElementData = {
-              frontalImageUrl: el.images[0].url,
-              referenceImageUrls: refIndices
-                .filter((idx) => idx < el.images.length)
-                .map((idx) => el.images[idx].url),
-              allUrls: el.images.map((img) => img.url),
-              name: el.name,
-            };
-            output[port.id] = elementData;
-          }
+          if (!el || el.images.length === 0) continue;
+          // Pick best references: 0=frontal, 1=full body front, 5=left portrait, 6=right portrait
+          const refIndices = [1, 5, 6];
+          stack.push({
+            frontalImageUrl: el.images[0].url,
+            referenceImageUrls: refIndices
+              .filter((idx) => idx < el.images.length)
+              .map((idx) => el.images[idx].url),
+            allUrls: el.images.map((img) => img.url),
+            name: el.name,
+          });
+        }
+        // Single element keeps the original scalar shape; a stack emits an array
+        if (stack.length === 1) {
+          output[port.id] = stack[0];
+        } else if (stack.length > 1) {
+          output[port.id] = stack;
         }
         break;
       }
@@ -774,7 +779,11 @@ async function executeModelNode(
       if (field.fieldType !== 'element-list') continue;
       const items: ElementData[] = [];
       for (const [key, value] of Object.entries(portInputs)) {
-        if (key.startsWith(field.id + '_') && value && typeof value === 'object') {
+        if (!key.startsWith(field.id + '_') || !value || typeof value !== 'object') continue;
+        // A stacked element node emits an array of ElementData on one edge
+        if (Array.isArray(value)) {
+          items.push(...(value as ElementData[]));
+        } else {
           items.push(value as ElementData);
         }
       }
@@ -844,7 +853,9 @@ async function executeModelNode(
         const mediaInputs = Array.isArray(falInputs.higgsfield_media_inputs)
           ? falInputs.higgsfield_media_inputs as Array<{ value: string; role: string }>
           : [];
-        const candidates = Array.isArray(value) ? value : [value];
+        // Flatten one level: multiple-ports wrap each edge value in an array, and a
+        // stacked element node emits an array of ElementData on a single edge
+        const candidates = (Array.isArray(value) ? value : [value]).flat(1);
         for (const candidate of candidates) {
           if (typeof candidate === 'string' && candidate.trim()) {
             mediaInputs.push({ value: candidate, role: field.mediaRole });
@@ -864,10 +875,19 @@ async function executeModelNode(
         continue;
       }
 
-      // If the value is an ElementData object (from element port connections),
+      // If the value is ElementData (or a stack of them, from element port connections),
       // extract the flat URL list for array-type params or the frontal URL for single params
-      const isElementData = typeof value === 'object' && value !== null && !Array.isArray(value)
-        && ('allUrls' in value || 'frontalImageUrl' in value);
+      const looksLikeElement = (entry: unknown): entry is ElementData =>
+        typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+        && ('allUrls' in entry || 'frontalImageUrl' in entry);
+      // Flatten one level: multiple-ports wrap each edge value in an array, and a
+      // stacked element node emits an array of ElementData on a single edge
+      const flatValue = Array.isArray(value) ? value.flat(1) : value;
+      const elementStack: ElementData[] | null = looksLikeElement(flatValue)
+        ? [flatValue]
+        : Array.isArray(flatValue) && flatValue.length > 0 && flatValue.every(looksLikeElement)
+          ? flatValue
+          : null;
 
       const needsArrayParam =
         (field.falParam.endsWith('s') && field.falParam.startsWith('image_url'))
@@ -878,13 +898,15 @@ async function executeModelNode(
         || field.falParam === 'video_urls'
         || field.falParam === 'audio_urls';
 
-      if (isElementData && needsArrayParam) {
-        const urls = (value as { allUrls?: string[] }).allUrls ?? [(value as { frontalImageUrl?: string }).frontalImageUrl].filter(Boolean);
+      if (elementStack && needsArrayParam) {
+        const urls = elementStack.flatMap((el) => (
+          el.allUrls ?? [el.frontalImageUrl].filter((url): url is string => Boolean(url))
+        ));
         const existing = Array.isArray(falInputs[field.falParam]) ? falInputs[field.falParam] as string[] : [];
         falInputs[field.falParam] = [...existing, ...urls];
-      } else if (isElementData) {
-        // Single-value param from an element — use the frontal image URL
-        falInputs[field.falParam] = (value as { frontalImageUrl?: string }).frontalImageUrl ?? (value as { allUrls?: string[] }).allUrls?.[0];
+      } else if (elementStack) {
+        // Single-value param from an element — use the first frontal image URL
+        falInputs[field.falParam] = elementStack[0].frontalImageUrl ?? elementStack[0].allUrls?.[0];
       } else if (typeof value === 'string' && needsArrayParam) {
         falInputs[field.falParam] = [value];
       } else if (field.portType === 'number' && field.fieldType === 'select' && typeof value === 'string') {

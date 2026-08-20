@@ -6,6 +6,7 @@ import { ALL_MODELS } from '@/lib/fal/models';
 import { CATEGORY_COLORS } from '@/lib/workflows/node-registry';
 import { getLayerDecomposeStageLabel } from '@/lib/workflows/layer-decompose';
 import { useRunNode } from './workflow-canvas';
+import { CustomSelect } from '@/components/ui/custom-select';
 import type { WorkflowNodeData, ModelInputField } from '@/types/workflow';
 
 interface NodeInspectorProps {
@@ -99,15 +100,11 @@ function InspectorField({ field, value, onChange }: {
     return (
       <div className="inspector__field">
         <InspectorFieldLabel field={field} />
-        <select
-          className="inspector__select"
+        <CustomSelect
           value={String(value ?? field.default ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {field.options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          options={field.options}
+          onChange={onChange}
+        />
       </div>
     );
   }
