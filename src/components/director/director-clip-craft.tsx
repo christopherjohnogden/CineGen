@@ -7,6 +7,7 @@ import {
   emptyStagingMap,
   stagingDiagramPrompt,
 } from '@/lib/director/staging-map';
+import { toFileUrl } from '@/lib/utils/file-url';
 
 const FOV_LABELS: Record<number, string> = {
   8: '8° super-telephoto — distant observation',
@@ -22,9 +23,11 @@ interface DirectorClipCraftProps {
   sceneLabel: string;
   aspectRatio: string;
   onPatch: (updater: (current: DirectorClip) => DirectorClip) => void;
+  onMakeDiagram?: () => void;
+  onFetchDiagram?: () => void;
 }
 
-export function DirectorClipCraft({ clip, sceneLabel, aspectRatio, onPatch }: DirectorClipCraftProps) {
+export function DirectorClipCraft({ clip, sceneLabel, aspectRatio, onPatch, onMakeDiagram, onFetchDiagram }: DirectorClipCraftProps) {
   const weakWords = clip.blocking ? weakSpatialWordsIn(clip.blocking) : [];
   const taggedWithoutTask = clip.elementTags.filter(
     (tag) => !(clip.acting ?? []).some((task) => task.tag === tag),
@@ -111,6 +114,31 @@ export function DirectorClipCraft({ clip, sceneLabel, aspectRatio, onPatch }: Di
               placeholder="Tactic — verbs at the partner, eye-work as action"
               onChange={(event) => patchTask(task.tag, { tactic: event.target.value })}
             />
+            <input
+              value={task.note ?? ''}
+              placeholder="Take note — again, but he doesn't look until the last word"
+              onChange={(event) => patchTask(task.tag, { note: event.target.value })}
+            />
+            <div className="dcov-acting">
+              {([
+                ['volume', [['whisper', 'Whisper'], ['under', 'Under'], ['full', 'Full']]],
+                ['pace', [['hold', 'Hold'], ['pick-up', 'Pick up'], ['overlap', 'Overlap']]],
+                ['eyeline', [['down', 'Down'], ['partner', 'Partner'], ['lens', 'Lens']]],
+              ] as const).map(([key, options]) => (
+                <div key={key} className="dgen-seg" role="group" aria-label={key}>
+                  {options.map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`dgen-seg-btn${task[key] === id ? ' dgen-seg-btn--on' : ''}`}
+                      onClick={() => patchTask(task.tag, { [key]: task[key] === id ? undefined : id })}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
         ))}
         {taggedWithoutTask.length > 0 && (
@@ -135,12 +163,12 @@ export function DirectorClipCraft({ clip, sceneLabel, aspectRatio, onPatch }: Di
         )}
       </div>
 
-      <StagingBlock clip={clip} sceneLabel={sceneLabel} aspectRatio={aspectRatio} onPatch={onPatch} />
+      <StagingBlock clip={clip} sceneLabel={sceneLabel} aspectRatio={aspectRatio} onPatch={onPatch} onMakeDiagram={onMakeDiagram} onFetchDiagram={onFetchDiagram} />
     </>
   );
 }
 
-function StagingBlock({ clip, sceneLabel, aspectRatio, onPatch }: DirectorClipCraftProps) {
+function StagingBlock({ clip, sceneLabel, aspectRatio, onPatch, onMakeDiagram, onFetchDiagram }: DirectorClipCraftProps) {
   const map = clip.staging;
 
   return (
@@ -198,7 +226,35 @@ function StagingBlock({ clip, sceneLabel, aspectRatio, onPatch }: DirectorClipCr
               />
             </div>
           ))}
+          {map.sourceFrameUrl && (
+            <div className="dstage-thumbs">
+              <img src={toFileUrl(map.sourceFrameUrl)} alt="Liked frame" />
+              {map.diagramUrl
+                ? <img src={toFileUrl(map.diagramUrl)} alt="Blocking map" />
+                : <span className="director-tab__meta">{map.status === 'generating' ? 'Drawing map…' : 'No map yet'}</span>}
+            </div>
+          )}
           <div className="director-tab__row">
+            {onMakeDiagram && (
+              <button
+                type="button"
+                className="director-tab__btn director-tab__btn--accent"
+                disabled={!map.sourceFrameUrl || map.status === 'generating'}
+                onClick={onMakeDiagram}
+              >
+                {map.status === 'generating' ? 'Drawing map…' : 'Make blocking map'}
+              </button>
+            )}
+            {onFetchDiagram && (
+              <button
+                type="button"
+                className="director-tab__btn"
+                disabled={map.status === 'generating'}
+                onClick={onFetchDiagram}
+              >
+                {map.status === 'generating' ? 'Loading from Higgsfield…' : 'Load from Higgsfield'}
+              </button>
+            )}
             <button
               type="button"
               className="director-tab__btn"
@@ -219,6 +275,9 @@ function StagingBlock({ clip, sceneLabel, aspectRatio, onPatch }: DirectorClipCr
                     ...current.staging,
                     stagingTag: bumpStagingVersion(current.staging.stagingTag),
                     assetId: undefined,
+                    diagramUrl: undefined,
+                    elementId: undefined,
+                    status: 'idle',
                   },
                 }
                 : current)}
@@ -227,8 +286,7 @@ function StagingBlock({ clip, sceneLabel, aspectRatio, onPatch }: DirectorClipCr
             </button>
           </div>
           <p className="director-tab__meta">
-            Generate the schematic from the copied prompt with your source frame attached, then attach it after the
-            location and character references so those carry the style.
+            Pause a take, Set as frame under the viewer, then Make blocking map — Higgsfield draws the schematic and this clip (or the whole scene) uses it last on Generate.
           </p>
         </div>
       )}

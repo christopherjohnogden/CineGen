@@ -157,6 +157,9 @@ export function collectClipElementRefs(
 
   const urls: string[] = [];
   const stagingUrls = staging.map(stillFor).filter((url): url is string => Boolean(url));
+  if (clip.staging?.enabled && clip.staging.diagramUrl?.trim() && !stagingUrls.includes(clip.staging.diagramUrl.trim())) {
+    stagingUrls.push(clip.staging.diagramUrl.trim());
+  }
   const maxPrimary = Math.max(0, MAX_ELEMENT_REFS - (stagingUrls.length > 0 ? 1 : 0));
   for (const tag of primary) {
     if (urls.length >= maxPrimary) break;

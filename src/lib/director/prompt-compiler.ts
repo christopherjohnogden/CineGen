@@ -2,19 +2,25 @@ import type {
   DirectorActingTask,
   DirectorBeat,
   DirectorBreakdownItem,
+  DirectorCameraMove,
   DirectorClip,
   DirectorShow,
   IsolateVariant,
 } from '@/types/director';
 import { EYE_LIFE_SAFETY } from './craft/acting';
 import { DIALOGUE_DISCIPLINE } from './craft/blocking';
+import {
+  axisLockLine, compileBeatLens, coverageLockLine, grammarHeading, resolveCameraMove,
+} from './craft/coverage';
 import { isFovAnchor, nearestFovAnchor, opticsBlock } from './craft/optics';
 import { stagingConnectorBlock } from './staging-map';
 import { variantKey } from './slate';
 
 /** Oneiric segment heading — `SEGMENT n — label (~from–to)`, not `SHOT n`. */
 export function formatShotHeading(beat: DirectorBeat, _isLast = false): string {
-  const label = beat.cam?.trim().replace(/[.]$/, '') || `BEAT ${beat.n}`;
+  const label = beat.cam?.trim().replace(/[.]$/, '')
+    || grammarHeading(beat.grammar)
+    || `BEAT ${beat.n}`;
   return `SEGMENT ${beat.n} — ${label} (~${beat.from}–${beat.to})`;
 }
 
@@ -27,6 +33,12 @@ export interface CompileClipOptions {
   event?: string;
   /** Scene terrain — one line under SCENE CONTEXT (tig-acting-task §1c). */
   physicalAction?: string;
+  /** Scene line-of-action lock. */
+  axis?: string;
+  /** Scene coverage checklist, compiled as a lock. */
+  coverage?: DirectorShow['scenes'][number]['coverage'];
+  /** Resolved camera-move plan for this clip (clip overrides scene). */
+  cameraMove?: DirectorCameraMove;
 }
 
 export function compileVoiceBlock(
@@ -109,13 +121,15 @@ export function compileClipBody(clip: DirectorClip, options: CompileClipOptions 
   const blocks = [
     compileSceneContext(clip, options),
     compileReferenceBlock(clip, breakdown),
-    compileLocationMap(clip),
-    compileFormatMode(clip),
+    compileLocationMap(clip, options),
+    compileFormatMode(clip, { coverage: options.coverage }),
     compileSegments(clip, options),
     compileDialogueBlock(clip, breakdown),
     compileVoiceBlock(clip, options.voices, breakdown),
     compileStyleBlock(clip),
-    compilePositiveLocksBlock(clip),
+    compilePositiveLocksBlock(clip, {
+      lead: [coverageLockLine(options.coverage), axisLockLine(options.axis)].filter(Boolean).join('\n'),
+    }),
   ];
   return blocks.filter(Boolean).join('\n\n');
 }
@@ -127,6 +141,9 @@ export function compileOptionsForShow(show: DirectorShow, clip: DirectorClip): C
     breakdown: show.breakdown,
     event: scene?.event,
     physicalAction: scene?.physicalAction,
+    axis: scene?.axis,
+    coverage: scene?.coverage,
+    cameraMove: clip.cameraMove ?? scene?.cameraMove,
   };
 }
 
@@ -143,10 +160,14 @@ export function compileSceneContext(
   return `SCENE CONTEXT\n${lines.join('\n')}`;
 }
 
-export function compileLocationMap(clip: Pick<DirectorClip, 'location' | 'blocking' | 'staging'>): string {
+export function compileLocationMap(
+  clip: Pick<DirectorClip, 'location' | 'blocking' | 'staging'>,
+  extras: Pick<CompileClipOptions, 'axis'> = {},
+): string {
   const parts: string[] = [];
   if (clip.location.trim()) parts.push(clip.location.trim());
   if (clip.blocking?.trim()) parts.push(clip.blocking.trim());
+  if (extras.axis?.trim()) parts.push(axisLockLine(extras.axis));
   const staging = compileStagingBlock(clip);
   if (staging) parts.push(staging);
   if (parts.length === 0) return '';
@@ -155,7 +176,7 @@ export function compileLocationMap(clip: Pick<DirectorClip, 'location' | 'blocki
 
 export function compileFormatMode(
   clip: Pick<DirectorClip, 'seconds' | 'beats' | 'camera'>,
-  extras: { text?: string } = {},
+  extras: { text?: string; coverage?: CompileClipOptions['coverage'] } = {},
 ): string {
   if (extras.text?.trim()) return `FORMAT MODE\n${extras.text.trim()}`;
   const shotCount = clip.beats.length;
@@ -163,10 +184,12 @@ export function compileFormatMode(
     ? ' Dialogue delivered as spoken audio.'
     : '';
   const camera = clip.camera?.trim();
+  const coverage = coverageLockLine(extras.coverage);
   const lead = shotCount === 1
     ? `Single continuous take, ${clip.seconds} seconds. Real-time motion. No internal cuts — a cut is a failed take.${dialogue}`
     : `Controlled ${numberWord(shotCount).toLowerCase()}-segment sequence with HARD CUTS. Real-time motion.${dialogue}`;
-  return camera ? `FORMAT MODE\n${lead}\n${camera}` : `FORMAT MODE\n${lead}`;
+  const lines = [lead, camera, coverage].filter(Boolean);
+  return `FORMAT MODE\n${lines.join('\n')}`;
 }
 
 export function compileStyleBlock(clip: Pick<DirectorClip, 'style'>): string {
@@ -308,17 +331,25 @@ export function sceneIntent(clip: Pick<DirectorClip, 'intent'>): string {
 function compileSegments(clip: DirectorClip, options: CompileClipOptions = {}): string {
   const tasks = clip.acting ?? [];
   const used = new Set<string>();
-  const optics = compileOpticsBlock(clip).replace(/^OPTICS — /, '');
+  const clipOptics = compileOpticsBlock(clip).replace(/^OPTICS — /, '');
   const blocks = clip.beats.map((beat, index) => {
     const matched = tasks.filter((task) => actingMatchesBeat(task, beat));
     matched.forEach((task) => used.add(normalizeElementTag(task.tag)));
     const leftover = index === clip.beats.length - 1
       ? tasks.filter((task) => !used.has(normalizeElementTag(task.tag)))
       : [];
+    const optics = beat.fov != null
+      ? compileOpticsBlock({ fov: beat.fov }).replace(/^OPTICS — /, '')
+      : clipOptics;
+    const move = resolveCameraMove({
+      beat: beat.grammar,
+      clip: options.cameraMove ?? clip.cameraMove,
+    });
     return formatSegmentBlock(
       beat,
       [...matched, ...leftover],
       optics,
+      move,
       index === clip.beats.length - 1,
       options.event,
     );
@@ -330,6 +361,7 @@ function formatSegmentBlock(
   beat: DirectorBeat,
   tasks: DirectorActingTask[],
   optics: string,
+  move: ReturnType<typeof resolveCameraMove>,
   last: boolean,
   event?: string,
 ): string {
@@ -338,7 +370,7 @@ function formatSegmentBlock(
     lines.push(tasks.map((task) => formatActionTask(task, event)).join('\n'));
     if (last) lines.push(EYE_LIFE_SAFETY);
   }
-  const lens = [beat.cam?.trim(), optics].filter(Boolean).join('. ');
+  const lens = compileBeatLens({ beat, optics, move });
   if (lens) lines.push(`LENS: ${lens}`);
   return lines.join('\n');
 }
@@ -357,6 +389,13 @@ function formatActionTask(task: DirectorActingTask, event?: string): string {
     `OBSTACLE: ${task.obstacle.trim()}`,
     `TACTIC: ${task.tactic.trim()}`,
   );
+  if (task.note?.trim()) lines.push(`TAKE NOTE: ${task.note.trim()}`);
+  const direction = [
+    task.volume === 'whisper' ? 'spoken as a whisper' : task.volume === 'under' ? 'under, not projected' : task.volume === 'full' ? 'full voice' : '',
+    task.pace === 'hold' ? 'hold the pace' : task.pace === 'pick-up' ? 'pick up the pace' : task.pace === 'overlap' ? 'overlap the partner' : '',
+    task.eyeline === 'down' ? 'eyeline down' : task.eyeline === 'partner' ? 'eyeline on the partner' : task.eyeline === 'lens' ? 'eyeline toward lens as a last resort of the tactic' : '',
+  ].filter(Boolean);
+  if (direction.length > 0) lines.push(`DIRECTION: ${direction.join('; ')}.`);
   const moments = (task.moments ?? []).map((moment) => moment.trim()).filter(Boolean);
   if (moments.length > 0) {
     lines.push('Moment to moment:');

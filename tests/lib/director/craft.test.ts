@@ -229,6 +229,13 @@ describe('staging map', () => {
     expect(prompt).toContain('--ar 16:9');
   });
 
+  it('drops Midjourney flags when the diagram is generated on Higgsfield', () => {
+    const prompt = stagingDiagramPrompt({ figures: map.figures, aspectRatio: '16:9', engine: 'higgsfield' });
+    expect(prompt).toContain('COMPOSITION-ONLY');
+    expect(prompt).not.toContain('--ar');
+    expect(prompt).not.toContain('@[Image 1]');
+  });
+
   it('assigns one distinct muted colour and letter per figure', () => {
     const figures = assignStagingFigures(['@A-Tag', '@B-Tag', '@C-Tag']);
     expect(figures.map((figure) => figure.letter)).toEqual(['A', 'B', 'C']);

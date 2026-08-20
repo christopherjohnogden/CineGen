@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { Asset } from '@/types/project';
 import type { DirectorClip, DirectorShow, DirectorTake, IsolateVariant } from '@/types/director';
 import {
@@ -18,6 +19,11 @@ import { isolatedPrompt } from '@/lib/director/isolate-prompt';
 import { clipDisplayLabels } from '@/lib/director/shotlist';
 import { getDirectorAdapter } from '@/lib/director/video-adapter';
 import { DirectorClipCraft } from './director-clip-craft';
+import { DirectorCameraMovePanel } from './director-camera-move';
+import { DirectorShotGrammarRow } from './director-shot-grammar';
+import { applyMatchSizeToScene, SHOT_SIZES } from '@/lib/director/craft/coverage';
+import { DirectorStagingFrame, captureVideoFrame } from './director-staging-frame';
+import { ensureClipStaging } from '@/lib/director/staging-diagram';
 
 interface DirectorGenerateTabProps {
   show: DirectorShow;
@@ -34,6 +40,9 @@ interface DirectorGenerateTabProps {
   onKeepRewrite: () => void;
   onDiscardRewrite: () => void;
   onRemoveAsset?: (assetId: string) => void;
+  onSetStagingFrame?: (source: { dataUrl?: string; fileRef?: string; timeSec?: number }) => void;
+  onMakeStagingDiagram?: () => void;
+  onFetchStagingDiagram?: () => void;
 }
 
 function activeBody(show: DirectorShow, clip: DirectorClip): string {
@@ -54,6 +63,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const { show, assets, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onRewrite, onKeepRewrite, onDiscardRewrite, onRemoveAsset } = props;
   const clip = selectedClip(show);
   const adapter = getDirectorAdapter(show.adapterId);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const patchClip = (updater: (current: DirectorClip) => DirectorClip) => {
     if (!clip) return;
@@ -241,8 +251,24 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             variantLabel={variantLabel}
             adapterLabel={adapter.label}
             clipLabel={`${thisLabel} · ${clip.title}`}
+            videoRef={videoRef}
             onFetchTake={props.onFetchTake}
             fetchingTake={props.fetchingTake}
+          />
+          <DirectorStagingFrame
+            staging={clip.staging}
+            canCapture={Boolean(asset?.url)}
+            onSetFrame={() => props.onSetStagingFrame?.({
+              dataUrl: captureVideoFrame(videoRef.current) ?? undefined,
+              fileRef: asset?.fileRef || asset?.url,
+              timeSec: videoRef.current?.currentTime,
+            })}
+            onMakeDiagram={() => props.onMakeStagingDiagram?.()}
+            onFetchDiagram={props.onFetchStagingDiagram}
+            onScope={(scope) => patchClip((current) => ({
+              ...current,
+              staging: { ...ensureClipStaging(current, scene?.label ?? 'scene', show.breakdown), scope },
+            }))}
           />
 
           <DirectorTakesBoard
@@ -305,6 +331,46 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             </div>
           </details>
 
+          <details className="dsl-section" open>
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Camera</span>
+              <span className="director-tab__meta">movement · match this size across the scene</span>
+            </summary>
+            <div className="dgen-section-body">
+              <DirectorCameraMovePanel
+                value={clip.cameraMove}
+                inherited={scene?.cameraMove}
+                sizeHint={clip.beats.find((entry) => entry.n === beatN)?.grammar?.size}
+                onChange={(cameraMove) => patchClip((current) => ({ ...current, cameraMove }))}
+              />
+              {clip.cameraMove && scene?.cameraMove && (
+                <button
+                  type="button"
+                  className="director-tab__btn"
+                  onClick={() => patchClip((current) => ({ ...current, cameraMove: undefined }))}
+                >
+                  Use scene movement
+                </button>
+              )}
+              {(() => {
+                const active = clip.beats.find((entry) => entry.n === beatN);
+                const size = active?.grammar?.size;
+                const sizeLabel = SHOT_SIZES.find((entry) => entry.id === size)?.label;
+                if (!size || !scene) return null;
+                return (
+                  <button
+                    type="button"
+                    className="director-tab__btn director-tab__btn--accent"
+                    onClick={() => onChange(applyMatchSizeToScene(show, scene.id, { clipId: clip.id, beatN }))}
+                  >
+                    Use this {sizeLabel} for every {sizeLabel} in the scene
+                  </button>
+                );
+              })()}
+            </div>
+          </details>
+
           <details className="dsl-section">
             <summary className="dsl-section-head">
               <span className="dsl-tw" aria-hidden />
@@ -313,22 +379,31 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             </summary>
             <div className="dgen-section-body">
               {clip.beats.map((entry) => (
-                <div key={entry.n} className="dgen-shotedit">
-                  <button
-                    type="button"
-                    className={`director-tab__iso${entry.n === beatN ? ' director-tab__iso--active' : ''}`}
-                    title="Select this shot for isolation"
-                    onClick={() => pickShot(entry.n)}
-                  >
-                    S{entry.n}
-                  </button>
-                  <input
-                    type="number" min={1} value={entry.dur} className="dgen-shotedit-dur"
-                    onChange={(event) => patchClip((current) => applyBeatDurations({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, dur: Math.max(1, Number(event.target.value) || row.dur) } : row) }))}
-                  />
-                  <input
-                    value={entry.text}
-                    onChange={(event) => patchClip((current) => ({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, text: event.target.value } : row) }))}
+                <div key={entry.n} className="dcov-shot">
+                  <div className="dgen-shotedit">
+                    <button
+                      type="button"
+                      className={`director-tab__iso${entry.n === beatN ? ' director-tab__iso--active' : ''}`}
+                      title="Select this shot for isolation"
+                      onClick={() => pickShot(entry.n)}
+                    >
+                      S{entry.n}
+                    </button>
+                    <input
+                      type="number" min={1} value={entry.dur} className="dgen-shotedit-dur"
+                      onChange={(event) => patchClip((current) => applyBeatDurations({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, dur: Math.max(1, Number(event.target.value) || row.dur) } : row) }))}
+                    />
+                    <input
+                      value={entry.text}
+                      onChange={(event) => patchClip((current) => ({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, text: event.target.value } : row) }))}
+                    />
+                  </div>
+                  <DirectorShotGrammarRow
+                    beat={entry}
+                    onPatch={(grammar) => patchClip((current) => ({
+                      ...current,
+                      beats: current.beats.map((row) => row.n === entry.n ? { ...row, grammar } : row),
+                    }))}
                   />
                 </div>
               ))}
@@ -370,7 +445,14 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
               <span className="director-tab__meta">blocking · lens · acting · staging</span>
             </summary>
             <div className="dgen-section-body director-tab__fields">
-              <DirectorClipCraft clip={clip} sceneLabel={scene?.label ?? 'scene'} aspectRatio={show.aspectRatio} onPatch={patchClip} />
+              <DirectorClipCraft
+                clip={clip}
+                sceneLabel={scene?.label ?? 'scene'}
+                aspectRatio={show.aspectRatio}
+                onPatch={patchClip}
+                onMakeDiagram={props.onMakeStagingDiagram}
+                onFetchDiagram={props.onFetchStagingDiagram}
+              />
             </div>
           </details>
 

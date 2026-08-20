@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import type { DirectorTake } from '@/types/director';
 import { generateViewerMessage, isDirectorTakeLive } from '@/lib/director/generate';
 
@@ -7,6 +8,7 @@ interface DirectorGenerateViewerProps {
   variantLabel: string;
   adapterLabel: string;
   clipLabel: string;
+  videoRef?: Ref<HTMLVideoElement>;
   onFetchTake?: () => void;
   fetchingTake?: boolean;
 }
@@ -17,13 +19,14 @@ export function DirectorGenerateViewer({
   variantLabel,
   adapterLabel,
   clipLabel,
+  videoRef,
   onFetchTake,
   fetchingTake,
 }: DirectorGenerateViewerProps) {
   if (assetUrl) {
     return (
       <div className="director-tab__viewer dgen-viewer">
-        <video src={assetUrl} controls />
+        <video ref={videoRef} src={assetUrl} controls crossOrigin="anonymous" />
       </div>
     );
   }

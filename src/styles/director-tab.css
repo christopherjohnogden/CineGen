@@ -736,6 +736,7 @@
 .dgen-seg-btn:last-child { border-right:none; }
 .dgen-seg-btn:hover { color:var(--text-primary); background:var(--bg-elevated); }
 .dgen-seg-btn--on { background:var(--accent-dim); color:var(--accent); }
+.dgen-seg-btn--hint { color:var(--accent); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .dgen-seg-count { font-size:10px; font-weight:700; letter-spacing:.04em; color:var(--text-tertiary); }
 .dgen-seg-btn--on .dgen-seg-count { color:inherit; opacity:.8; }
 .dgen-viewer { position:relative; aspect-ratio:16/9; min-height:0; display:flex; align-items:stretch; justify-content:stretch; overflow:hidden; }
@@ -836,6 +837,20 @@
 .dgen-two .dsl-scenefield { flex:1; }
 .dgen-shotedit { display:flex; gap:8px; align-items:center; }
 .dgen-shotedit-dur { width:64px; flex-shrink:0; }
+.dcov-shot { display:flex; flex-direction:column; gap:8px; padding-bottom:10px; border-bottom:1px solid var(--border-subtle); }
+.dcov-shot:last-child { border-bottom:none; padding-bottom:0; }
+.dcov-grammar, .dcov-scene, .dcov-move, .dcov-acting { display:flex; flex-direction:column; gap:8px; }
+.dcov-chips { display:flex; flex-direction:column; gap:4px; }
+.dcov-moves { flex-wrap:wrap; }
+.dcov-life { display:flex; align-items:center; gap:10px; }
+.dcov-life input[type='range'] { flex:1; min-width:0; accent-color:var(--accent); }
+.dcov-acting { flex-direction:row; flex-wrap:wrap; gap:8px; }
+.dstage { display:flex; flex-direction:column; gap:8px; }
+.dstage-section .dstage { gap:10px; }
+.dstage-thumbs { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.dstage-thumbs img, .dstage-still img { width:100%; aspect-ratio:16/9; object-fit:contain; border-radius:8px; background:#050505; border:1px solid var(--border-subtle); }
+.dstage-still .director-tab__meta { min-height:48px; display:flex; align-items:center; }
+.dstage-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 
 /* ── Redesign: script editor + formatted view ───────── */
 .director-tab__editor { width:100%; flex:1; min-height:320px; background:var(--bg-input); border:1px solid var(--border-medium); border-radius:var(--radius-sm); padding:16px 18px; color:var(--text-primary); font-family:'Space Mono',monospace; font-size:12.5px; line-height:1.7; resize:none; white-space:pre-wrap; }

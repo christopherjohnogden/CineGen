@@ -7,6 +7,41 @@ export type BreakdownKind = 'character' | 'location' | 'prop' | 'vehicle';
 export type TakeStatus = 'queued' | 'running' | 'done' | 'failed';
 export type IsolateMode = 'held' | 'native';
 
+export type ShotSize = 'ews' | 'ws' | 'ms' | 'mcu' | 'cu' | 'ecu';
+export type ShotAngle = 'eye' | 'high' | 'low' | 'dutch';
+export type ShotBodies = 'one' | 'two' | 'group' | 'ots' | 'insert';
+export type ShotClean = 'clean' | 'dirty';
+export type CameraMoveId =
+  | 'locked'
+  | 'push-in'
+  | 'pull-out'
+  | 'track-left'
+  | 'track-right'
+  | 'crane-up'
+  | 'crane-down'
+  | 'pan-left'
+  | 'pan-right'
+  | 'tilt-up'
+  | 'tilt-down';
+export type CoverageKind = 'master' | 'singles' | 'ots' | 'two-shot' | 'insert';
+export type ActingVolume = 'whisper' | 'under' | 'full';
+export type ActingPace = 'hold' | 'pick-up' | 'overlap';
+export type ActingEyeline = 'down' | 'partner' | 'lens';
+
+export interface DirectorShotGrammar {
+  size?: ShotSize;
+  angle?: ShotAngle;
+  bodies?: ShotBodies;
+  clean?: ShotClean;
+  move?: CameraMoveId;
+}
+
+/** Locked by default. Intensity 0–100 picks a filmic move when move is still locked. */
+export interface DirectorCameraMove {
+  move: CameraMoveId;
+  intensity: number;
+}
+
 export type IsolateVariant =
   | { kind: 'full' }
   | { kind: 'isolated'; beatN: number; mode: IsolateMode };
@@ -57,6 +92,10 @@ export interface DirectorBeat {
   quote?: string;
   /** Tag of whoever speaks the quote, so the locked voice reaches the right character. */
   speaker?: string;
+  /** Structured coverage — compiles into LENS: with beat.cam. */
+  grammar?: DirectorShotGrammar;
+  /** Per-shot FOV override; falls back to clip.fov. */
+  fov?: number;
 }
 
 export interface DirectorTake {
@@ -93,6 +132,8 @@ export interface DirectorClip {
   blocking?: string;
   /** Diagonal field of view for the clip, snapped to a CINEDANCE anchor. */
   fov?: number;
+  /** Camera move for this clip; inherits the scene plan when omitted. */
+  cameraMove?: DirectorCameraMove;
   /** Per-character acting tasks for whoever is actually in this clip. */
   acting?: DirectorActingTask[];
   /** Staging reference binding letters to character tags. */
@@ -119,6 +160,12 @@ export interface DirectorScene {
   event?: string;
   /** The surface activity the event is played through — the terrain, not the event. */
   physicalAction?: string;
+  /** Screen-direction lock, e.g. "@Peter camera-left of @Jordan". */
+  axis?: string;
+  /** Coverage the scene should contain; stamps empty beats when applied. */
+  coverage?: CoverageKind[];
+  /** Default camera move for every clip in the scene unless a clip overrides it. */
+  cameraMove?: DirectorCameraMove;
 }
 
 /** One character's acting task for one clip, derived from the scene event. */
@@ -129,6 +176,11 @@ export interface DirectorActingTask {
   obstacle: string;
   tactic: string;
   moments?: string[];
+  /** Director's adjustment for this take — behaviour, never an emotion adjective. */
+  note?: string;
+  volume?: ActingVolume;
+  pace?: ActingPace;
+  eyeline?: ActingEyeline;
 }
 
 /** A figure on a staging reference. Letters live in prompt text, colours in the image. */
@@ -140,14 +192,30 @@ export interface DirectorStagingFigure {
   visible?: string;
 }
 
+export type StagingDiagramStatus = 'idle' | 'generating' | 'ready' | 'failed';
+
 /** tig-diagram staging reference: geometry only, attached after the photo references. */
 export interface DirectorStagingMap {
   enabled: boolean;
   stagingTag: string;
   locationTag: string;
   figures: DirectorStagingFigure[];
+  /** Media-pool still of the liked frame that seeded the diagram. */
+  sourceAssetId?: string;
+  /** Local path, hosted URL, or data URL of the liked frame. */
+  sourceFrameUrl?: string;
+  /** Generated schematic URL. Attached last on Generate. */
+  diagramUrl?: string;
+  /** Higgsfield job id so we can rejoin after wait misses the image URL. */
+  jobId?: string;
+  /** Prop element that holds the schematic still. */
+  elementId?: string;
   /** Set once the schematic has been generated and stored as an asset. */
   assetId?: string;
+  status?: StagingDiagramStatus;
+  error?: string;
+  /** Where the last diagram apply landed. */
+  scope?: 'clip' | 'scene';
 }
 
 export interface DirectorLookBible {

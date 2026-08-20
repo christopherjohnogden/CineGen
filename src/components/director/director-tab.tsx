@@ -58,6 +58,14 @@ import { getDirectorAdapter } from '@/lib/director/video-adapter';
 import { variantKey } from '@/lib/director/slate';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { defaultFolderForNewElement, projectFolderId } from '@/lib/elements/library';
+import { HIGGSFIELD_MODELS } from '@/lib/higgsfield/higgsfield-models';
+import { planDirectorFolders } from '@/lib/director/folders';
+import { stagingDiagramPrompt } from '@/lib/director/staging-map';
+import {
+  bindStagingDiagram, ensureClipStaging, listedStagingJobId, listedStagingMediaUrl,
+  matchListedStagingJob, patchClipStaging,
+} from '@/lib/director/staging-diagram';
+import type { Asset } from '@/types/project';
 import '@/styles/director-tab.css';
 
 const EMPTY_CLI_PROVIDERS: Record<CliLlmProviderId, DirectorCliInfo> = {
@@ -77,6 +85,7 @@ export function DirectorTab() {
   const recoverInFlight = useRef(false);
   const recoverTries = useRef(0);
   const recoverTimer = useRef<number>();
+  const stagingRecovered = useRef<Set<string>>(new Set());
   const [recoverNonce, setRecoverNonce] = useState(0);
   const [fetchingTake, setFetchingTake] = useState(false);
   showRef.current = show;
@@ -306,6 +315,267 @@ export function DirectorTab() {
       )),
     });
   }, [dispatch, projectId, setShow, state.elementFolders, state.elements]);
+
+  const setStagingFrame = useCallback(async (source: {
+    dataUrl?: string;
+    fileRef?: string;
+    timeSec?: number;
+  }) => {
+    const current = showRef.current;
+    const clip = selectedClip(current);
+    const scene = selectedScene(current);
+    if (!clip || !scene) return;
+    let framePath: string | undefined;
+    try {
+      if (source.dataUrl?.startsWith('data:') && window.electronAPI?.media?.writeTempImage) {
+        framePath = (await window.electronAPI.media.writeTempImage({ dataUrl: source.dataUrl })).outputPath;
+      } else if (source.fileRef && window.electronAPI?.media?.extractFrame) {
+        const extracted = await window.electronAPI.media.extractFrame({
+          inputPath: source.fileRef,
+          timeSec: source.timeSec ?? 0,
+        });
+        framePath = extracted?.outputPath;
+      }
+    } catch (error) {
+      setShow(patchClipStaging(showRef.current, clip.id, {
+        error: error instanceof Error ? error.message : 'Could not save that frame.',
+      }, scene.label));
+      return;
+    }
+    const url = framePath || source.dataUrl;
+    if (!url) {
+      setShow(patchClipStaging(showRef.current, clip.id, {
+        error: 'Pause the take on the frame you like, then Set as frame.',
+      }, scene.label));
+      return;
+    }
+    const clipLabel = clipDisplayLabels(current.scenes, current.clips).get(clip.id);
+    const planned = planDirectorFolders({
+      folders: foldersRef.current,
+      scene,
+      clip,
+      variantKey: variantKey(clip.activeVariant),
+      clipLabel,
+    });
+    foldersRef.current = [...foldersRef.current, ...planned.foldersToAdd];
+    for (const folder of planned.foldersToAdd) dispatch({ type: 'ADD_FOLDER', folder });
+    for (const folder of planned.foldersToRename) {
+      foldersRef.current = foldersRef.current.map((entry) => (
+        entry.id === folder.id ? { ...entry, ...folder } : entry
+      ));
+      dispatch({ type: 'UPDATE_FOLDER', folder });
+    }
+    const asset: Asset = {
+      id: generateId(),
+      name: `${clipLabel ?? clip.title} frame`,
+      type: 'image',
+      url,
+      fileRef: framePath,
+      thumbnailUrl: url,
+      createdAt: timestamp(),
+      folderId: planned.clipId,
+      metadata: { generatedVia: 'director-staging-frame', directorClipId: clip.id },
+    };
+    dispatch({ type: 'ADD_ASSET', asset });
+    setShow(patchClipStaging(showRef.current, clip.id, {
+      sourceFrameUrl: url,
+      sourceAssetId: asset.id,
+      error: undefined,
+      status: clip.staging?.diagramUrl ? 'ready' : 'idle',
+    }, scene.label));
+  }, [dispatch, setShow]);
+
+  const commitStagingDiagram = useCallback((args: {
+    clipId: string;
+    url: string;
+    jobId?: string;
+    scope: 'clip' | 'scene';
+  }) => {
+    const current = showRef.current;
+    const clip = current.clips.find((entry) => entry.id === args.clipId);
+    const scene = current.scenes.find((entry) => entry.id === clip?.sceneId);
+    if (!clip || !scene) return;
+    const staging = ensureClipStaging(clip, scene.label, current.breakdown);
+    const tagName = staging.stagingTag.replace(/^@/, '');
+    const existing = elementsRef.current.find((element) => element.id === staging.elementId)
+      ?? elementsRef.current.find((element) => element.name === tagName);
+    const image = { id: generateId(), url: args.url, createdAt: timestamp(), source: 'generated' as const };
+    let elementId = existing?.id ?? generateId();
+    if (existing) {
+      dispatch({
+        type: 'UPDATE_ELEMENT',
+        elementId: existing.id,
+        updates: { images: [image, ...existing.images] },
+      });
+      elementId = existing.id;
+    } else {
+      dispatch({
+        type: 'ADD_ELEMENT',
+        element: {
+          id: elementId,
+          name: tagName,
+          type: 'prop',
+          description: 'Staging reference — positions only.',
+          images: [image],
+          folderId: defaultFolderForNewElement('all', projectFolderId(
+            { version: 1, folders: state.elementFolders, elements: elementsRef.current },
+            projectId,
+          )),
+          createdAt: timestamp(),
+          updatedAt: timestamp(),
+        },
+      });
+    }
+    const clipLabel = clipDisplayLabels(current.scenes, current.clips).get(clip.id);
+    const planned = planDirectorFolders({
+      folders: foldersRef.current,
+      scene,
+      clip,
+      variantKey: variantKey(clip.activeVariant),
+      clipLabel,
+    });
+    foldersRef.current = [...foldersRef.current, ...planned.foldersToAdd];
+    for (const folder of planned.foldersToAdd) dispatch({ type: 'ADD_FOLDER', folder });
+    const diagramAsset: Asset = {
+      id: generateId(),
+      name: `${clipLabel ?? clip.title} map`,
+      type: 'image',
+      url: args.url,
+      sourceUrl: args.url,
+      thumbnailUrl: args.url,
+      createdAt: timestamp(),
+      folderId: planned.clipId,
+      metadata: {
+        generatedVia: 'director-staging-map',
+        directorClipId: clip.id,
+        higgsfieldModel: HIGGSFIELD_MODELS.nanoBanana,
+        higgsfieldJobId: args.jobId,
+      },
+    };
+    dispatch({ type: 'ADD_ASSET', asset: diagramAsset });
+    setShow(bindStagingDiagram({
+      show: showRef.current,
+      clipId: clip.id,
+      diagramUrl: args.url,
+      elementId,
+      assetId: diagramAsset.id,
+      jobId: args.jobId,
+      scope: args.scope,
+    }));
+  }, [dispatch, projectId, setShow, state.elementFolders]);
+
+  const pullStagingDiagram = useCallback(async (jobId?: string) => {
+    const hf = window.electronAPI?.higgsfield;
+    if (jobId && hf?.generate) {
+      try {
+        const waited = await hf.generate({
+          jobId,
+          model: HIGGSFIELD_MODELS.nanoBanana,
+          outputType: 'image',
+        });
+        if (waited.url) return { url: waited.url, jobId: waited.jobId ?? jobId };
+      } catch {
+        // List image jobs next — wait/get often miss Nano Banana Pro's result_url.
+      }
+    }
+    if (!hf?.generateList) return undefined;
+    const listed = await hf.generateList({ size: 50 });
+    const match = matchListedStagingJob(listed, { jobId });
+    const url = match ? listedStagingMediaUrl(match) : undefined;
+    if (!match || !url) return undefined;
+    return { url, jobId: listedStagingJobId(match) ?? jobId };
+  }, []);
+
+  const fetchStagingDiagram = useCallback(async () => {
+    const current = showRef.current;
+    const clip = selectedClip(current);
+    const scene = selectedScene(current);
+    if (!clip || !scene) return;
+    const staging = ensureClipStaging(clip, scene.label, current.breakdown);
+    if (!window.electronAPI?.higgsfield?.generateList) {
+      setShow(patchClipStaging(current, clip.id, {
+        status: 'failed',
+        error: 'Higgsfield generate is only available in the CineGen desktop app.',
+      }, scene.label));
+      return;
+    }
+    const scope = staging.scope ?? 'clip';
+    setShow(patchClipStaging(showRef.current, clip.id, { status: 'generating', error: undefined }, scene.label));
+    try {
+      const pulled = await pullStagingDiagram(staging.jobId);
+      if (!pulled?.url) {
+        throw new Error('No blocking map on Higgsfield yet. If the job is still running, wait, then Load from Higgsfield.');
+      }
+      commitStagingDiagram({ clipId: clip.id, url: pulled.url, jobId: pulled.jobId, scope });
+    } catch (error) {
+      setShow(patchClipStaging(showRef.current, clip.id, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Could not load the blocking map.',
+      }, scene.label));
+    }
+  }, [commitStagingDiagram, pullStagingDiagram, setShow]);
+
+  const makeStagingDiagram = useCallback(async () => {
+    const current = showRef.current;
+    const clip = selectedClip(current);
+    const scene = selectedScene(current);
+    if (!clip || !scene) return;
+    const staging = ensureClipStaging(clip, scene.label, current.breakdown);
+    if (!staging.sourceFrameUrl) {
+      setShow(patchClipStaging(current, clip.id, { error: 'Set a frame first.' }, scene.label));
+      return;
+    }
+    if (!window.electronAPI?.higgsfield?.generate) {
+      setShow(patchClipStaging(current, clip.id, {
+        error: 'Higgsfield generate is only available in the CineGen desktop app.',
+      }, scene.label));
+      return;
+    }
+    const scope = staging.scope ?? 'clip';
+    setShow(patchClipStaging(showRef.current, clip.id, { status: 'generating', error: undefined }, scene.label));
+    try {
+      let mediaValue = staging.sourceFrameUrl;
+      if (mediaValue.startsWith('data:') && window.electronAPI.media?.writeTempImage) {
+        mediaValue = (await window.electronAPI.media.writeTempImage({ dataUrl: mediaValue })).outputPath;
+      }
+      const submitted = await window.electronAPI.higgsfield.generate({
+        prompt: stagingDiagramPrompt({
+          figures: staging.figures,
+          aspectRatio: current.aspectRatio,
+          engine: 'higgsfield',
+        }),
+        model: HIGGSFIELD_MODELS.nanoBanana,
+        outputType: 'image',
+        medias: [{ value: mediaValue, role: 'image' }],
+        params: { aspect_ratio: current.aspectRatio, resolution: '2k' },
+        wait: false,
+      });
+      if (submitted.jobId) {
+        setShow(patchClipStaging(showRef.current, clip.id, {
+          status: 'generating',
+          jobId: submitted.jobId,
+          error: undefined,
+        }, scene.label));
+      }
+      const pulled = submitted.url
+        ? { url: submitted.url, jobId: submitted.jobId }
+        : await pullStagingDiagram(submitted.jobId);
+      if (!pulled?.url) {
+        throw new Error('Higgsfield finished the map, but CineGen missed the image URL. Use Load from Higgsfield.');
+      }
+      commitStagingDiagram({
+        clipId: clip.id,
+        url: pulled.url,
+        jobId: pulled.jobId ?? submitted.jobId,
+        scope,
+      });
+    } catch (error) {
+      setShow(patchClipStaging(showRef.current, clip.id, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Blocking map failed.',
+      }, scene.label));
+    }
+  }, [commitStagingDiagram, pullStagingDiagram, setShow]);
 
   // One LLM call PER SCENE (each response gets the full output budget, clips
   // land progressively), plus an automatic continuation pass when a scene's
@@ -689,6 +959,17 @@ export function DirectorTab() {
     }
   }, [recoverLiveTakes]);
 
+  useEffect(() => {
+    if (show.mode !== 'generate') return;
+    const clip = selectedClip(show);
+    const staging = clip?.staging;
+    if (!clip || !staging || staging.diagramUrl) return;
+    if (staging.status !== 'failed') return;
+    if (stagingRecovered.current.has(clip.id)) return;
+    stagingRecovered.current.add(clip.id);
+    void fetchStagingDiagram();
+  }, [fetchStagingDiagram, show.mode, show.selectedClipId, show]);
+
   const runRewrite = useCallback(async (notes: string) => {
     const current = showRef.current;
     const clip = selectedClip(current);
@@ -921,6 +1202,9 @@ export function DirectorTab() {
             onKeepRewrite={() => { const current = selectedClip(show); if (current) setShow(keepPendingRewrite(show, current.id)); }}
             onDiscardRewrite={() => { const current = selectedClip(show); if (current) setShow(discardPendingRewrite(show, current.id)); }}
             onRemoveAsset={(assetId) => dispatch({ type: 'REMOVE_ASSET', assetId })}
+            onSetStagingFrame={(source) => void setStagingFrame(source)}
+            onMakeStagingDiagram={() => void makeStagingDiagram()}
+            onFetchStagingDiagram={() => void fetchStagingDiagram()}
           />
         )}
       </div>

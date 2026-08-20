@@ -5,7 +5,7 @@ import { clipDisplayLabels } from '@/lib/director/shotlist';
 import { padTimecode, validateClipTimings } from '@/lib/director/prompt-compiler';
 import { directorRunningLabel, setClipVariant, updateDirectorClip } from '@/lib/director/director-state';
 import { compileLookBible } from '@/lib/director/look-bible';
-import { getDirectorAdapter } from '@/lib/director/video-adapter';
+import { DirectorSceneCoverage } from './director-scene-coverage';
 
 interface DirectorShotlistTabProps {
   show: DirectorShow;
@@ -221,6 +221,7 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
                     />
                   </label>
                 </div>
+                <DirectorSceneCoverage show={show} scene={scene} onChange={onChange} />
                 {clips.length === 0 ? (
                   <p className="director-tab__meta">
                     {working

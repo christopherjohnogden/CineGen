@@ -9,7 +9,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## Highlights
 
-- **Director tab:** script-to-Seedance 2.5 shotlist with takes and nested Edit media-pool folders
+- **Director tab:** script-to-Seedance 2.5 shotlist with takes, nested Edit folders, shot-size coverage, and a camera Life slider for filmic moves
 - **CINEDANCE / Oneiric clip prompts:** compiled bodies use the Higgsfield Oneiric block order (ACTIVE REFERENCES, FORMAT MODE, SEGMENT n, DIALOGUE, AUDIO, STYLE, POSITIVE LOCKS) instead of ELEMENTS / SHOT n
 - **Oneiric Tig skills in-repo:** `skills/tig-acting-task` and `skills/tig-diagram` (blocking map) — scene direction compiles into `ACTING TASK`, staging stills attach last on Generate
 - **Global Elements library:** characters, locations, props, and vehicles are shared across projects and organized in folders
@@ -61,6 +61,8 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - Collapses to one column on narrow windows
 - **Delete any take** from the takes board: in-chip delete control (always visible on failed/red takes), right-click, or Delete/Backspace. A dark in-app confirm (Cancel / Delete) replaces the browser dialog; live takes warn that they are still generating. Linked media-pool assets are removed with the take **(in progress)**
 - Media-pool take names use the paper slate (`1A · T01`, `1A · S1 · T01`) instead of leaking the stored clip id (`S01_1-p0a_S1_T01`). Opening Edit rewrites leftover names and clip folders **(in progress)**
+- **Shot grammar + camera movement** on Generate and Shotlist: size / bodies / dirty-clean / angle chips per beat; scene coverage (master, singles, OTS, two-shot, insert) stamps empty beats; **Use this CU for every CU in the scene** copies a liked size. Camera stays locked off unless you pick a move (dolly, track, crane, pan, tilt) or push the **Life** slider, which injects a filmic move when the frame feels static. Isolation allows that one move and still bans everything else. Acting take notes plus Whisper/Under/Full, Hold/Pick up/Overlap, and eyeline chips compile into `TAKE NOTE` / `DIRECTION`. Scene line of action locks screen direction **(in progress)**
+- **Blocking map from a liked take:** pause the viewer, **Set as frame**, then **Make blocking map**. Higgsfield Nano Banana draws the tig-diagram schematic from that still and stores it as the clip's staging reference (or copies it to the whole scene). If CineGen misses the finished URL, **Load from Higgsfield** pulls the completed outline. The Frame · map strip is a collapsed section like Prompt / Craft (header shows frame set / map ready / drawing). Generate still attaches the map last so photo refs keep the look **(in progress)**
 
 ### Director tab: Setup + Look bible chrome **(in progress)**
 
@@ -320,6 +322,7 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Seedance 2.5 unknown params:** Generate no longer sends `genre` or `multi_shots` — the live Higgsfield CLI dropped those flags. Genre and shot list stay in the prompt; CLI args are filtered to the current `seedance_2_5` schema **(in progress)**
 - **Higgsfield 503 during Generate:** a 503 while polling no longer kills a job that already landed. CineGen submits, then `generate wait` / `get` the job id and retries transient errors; the Generating spinner clears if the job really failed **(in progress)**
 - **Generate stuck on Rendering:** a take no longer stays “rendering” after Higgsfield has the mp4. CineGen stores the job id, fetches completed jobs (web `higgsfield.generateList` + `generate get`), and attaches the video; recovery retries instead of giving up after the first miss, and the overlay can **Load from Higgsfield** **(in progress)**
+- **Higgsfield finished without a media URL:** blocking maps submit Nano Banana as `nano_banana_2` but Higgsfield lists them as `nano_banana_pro` with `result_url`. CineGen now stores the job id, waits with `generate wait --timeout`, falls back to `generate list` (image jobs, not `--video`), and **Load from Higgsfield** pulls the completed outline. Parser prefers `result_url` over the `_min.webp` thumbnail and skips `params.input_images` **(in progress)**
 - **Director element stills on Generate:** isolated prompts include `ACTIVE REFERENCES`, and tagged library stills are sent to Seedance 2.5 as `omni_reference` `--image` refs so identity is locked to Peter / Jordan / locations, not invented from text **(in progress)**
 - **Generate take player:** the video fills the 16:9 viewer instead of sitting in a 240px-tall postage stamp with black padding **(in progress)**
 

@@ -244,27 +244,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+const INPUT_KEYS = new Set(['params', 'prompt', 'input_images', 'inputs', 'extra', 'request']);
+const URL_KEYS = [
+  'url', 'urls', 'video_url', 'image_url', 'audio_url', 'model_url', 'glb_url',
+  'file_url', 'asset_url', 'output_url', 'result_url', 'download_url', 'signed_url',
+  'cdn_url', 'media_url', 'public_url', 'uri', 'src', 'min_result_url',
+];
+const NEST_KEYS = [
+  'output', 'result', 'data', 'job', 'results', 'outputs', 'medias', 'jobs', 'items',
+  'raw', 'video', 'files', 'assets', 'images', 'image', 'media', 'artifact', 'artifacts',
+];
+
 /** Pull every media URL out of the CLI's JSON result, tolerant of envelope shape. Pure. */
 export function extractMediaUrls(value: unknown, depth = 0): string[] {
   if (depth > 12) return [];
-  if (typeof value === 'string') return /^https?:\/\//i.test(value) ? [value] : [];
+  if (typeof value === 'string') {
+    const trimmed = value.trim().replace(/[),.;]+$/, '');
+    return /^https?:\/\//i.test(trimmed) ? [trimmed] : [];
+  }
   if (Array.isArray(value)) {
     return [...new Set(value.flatMap((entry) => extractMediaUrls(entry, depth + 1)))];
   }
   if (!isRecord(value)) return [];
 
   const urls: string[] = [];
-  for (const key of ['url', 'video_url', 'image_url', 'audio_url', 'model_url', 'output_url', 'result_url']) {
-    const candidate = value[key];
-    if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate)) urls.push(candidate);
+  for (const key of URL_KEYS) {
+    if (value[key] === undefined) continue;
+    urls.push(...extractMediaUrls(value[key], depth + 1));
   }
   if (typeof value.result_json === 'string' && value.result_json.trim()) {
     try { urls.push(...extractMediaUrls(JSON.parse(value.result_json) as unknown, depth + 1)); } catch { /* not JSON */ }
   }
-  for (const key of ['output', 'result', 'data', 'job', 'results', 'outputs', 'medias', 'jobs', 'items', 'raw', 'video', 'files', 'assets']) {
+  for (const key of NEST_KEYS) {
+    if (value[key] === undefined) continue;
     urls.push(...extractMediaUrls(value[key], depth + 1));
   }
+  for (const [key, entry] of Object.entries(value)) {
+    if (INPUT_KEYS.has(key)) continue;
+    if (URL_KEYS.includes(key) || NEST_KEYS.includes(key) || key === 'result_json') continue;
+    if (isRecord(entry) || Array.isArray(entry)) urls.push(...extractMediaUrls(entry, depth + 1));
+  }
   return [...new Set(urls)];
+}
+
+const HTTP_URL_RE = /https?:\/\/[^\s"'<>\\]+/gi;
+
+export function extractHttpUrlsFromText(text: string): string[] {
+  const matches = text.match(HTTP_URL_RE) ?? [];
+  return [...new Set(matches.map((url) => url.replace(/[),.;]+$/, '')))].filter((url) => (
+    /^https?:\/\//i.test(url) && !/higgsfield\.ai\/(docs|cli|skills)/i.test(url)
+  ));
 }
 
 /** Pull the first media URL out of the CLI's JSON result. Retained for compatibility. */
@@ -329,8 +358,12 @@ export function parseGenerateJson(
     if (!result.url && !result.text) throw new Error('Higgsfield generation finished without a media URL or text output');
     return result;
   }
-  if (!result.url) throw new Error('Higgsfield generation finished without a media URL');
-  return result;
+  if (result.url) return result;
+  const scraped = extractHttpUrlsFromText(stdout);
+  if (scraped[0]) {
+    return { ...result, url: scraped[0], urls: scraped, outputs: scraped.map((url) => ({ kind: params.mediaType, url })) };
+  }
+  throw new Error('Higgsfield generation finished without a media URL');
 }
 
 function snapshotToResult(
@@ -542,6 +575,39 @@ async function submitHiggsfieldJob(
   throw lastError instanceof Error ? lastError : new Error('Higgsfield submit failed');
 }
 
+export function matchListedJobRecord(
+  rows: Array<Record<string, unknown>>,
+  jobId: string,
+): Record<string, unknown> | undefined {
+  return rows.find((row) => (
+    row.id === jobId
+    || row.job_id === jobId
+    || row.jobId === jobId
+    || row.job_set_id === jobId
+    || row.parent_id === jobId
+  ));
+}
+
+async function resultFromListedJob(
+  jobId: string,
+  params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
+): Promise<HiggsfieldResult | undefined> {
+  try {
+    const rows = await listHiggsfieldJobs({ size: 50 });
+    const match = matchListedJobRecord(rows, jobId);
+    if (!match) return undefined;
+    const result = snapshotToResult({
+      status: String(match.status ?? match.state ?? 'completed').toLowerCase(),
+      jobId,
+      record: match,
+      parsed: match,
+    }, params);
+    return result.url || result.text ? result : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function readHiggsfieldJob(
   jobId: string,
   params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
@@ -552,7 +618,27 @@ async function readHiggsfieldJob(
     throw new Error(typeof snap.record.error === 'string' ? snap.record.error : 'Higgsfield generation failed');
   }
   const result = snapshotToResult(snap, params);
-  return result.url || result.text ? result : undefined;
+  if (result.url || result.text) return result;
+  const scraped = extractHttpUrlsFromText(stdout);
+  if (scraped[0]) {
+    return { ...result, url: scraped[0], urls: scraped, outputs: scraped.map((url) => ({ kind: params.mediaType, url })) };
+  }
+  return resultFromListedJob(jobId, params);
+}
+
+async function waitHiggsfieldJobStdout(jobId: string): Promise<string> {
+  try {
+    return await runHiggsfieldCli(
+      ['generate', 'wait', jobId, '--timeout', '20m', '--interval', '5s'],
+      GENERATE_TIMEOUT_MS,
+    );
+  } catch (error) {
+    if (!/unknown|unexpected|unrecognized/i.test(cliErrorMessage(error))) throw error;
+    return runHiggsfieldCli(
+      ['generate', 'wait', jobId, '--wait-timeout', '20m', '--wait-interval', '5s'],
+      GENERATE_TIMEOUT_MS,
+    );
+  }
 }
 
 async function waitForHiggsfieldJob(
@@ -562,10 +648,7 @@ async function waitForHiggsfieldJob(
   let lastError: unknown;
   for (let attempt = 1; attempt <= WAIT_ATTEMPTS; attempt++) {
     try {
-      const stdout = await runHiggsfieldCli(
-        ['generate', 'wait', jobId, '--timeout', '20m', '--interval', '5s'],
-        GENERATE_TIMEOUT_MS,
-      );
+      const stdout = await waitHiggsfieldJobStdout(jobId);
       return parseGenerateJson(stdout, params);
     } catch (error) {
       lastError = error;
@@ -588,6 +671,8 @@ async function waitForHiggsfieldJob(
       await sleep(2000 * attempt);
     }
   }
+  const listed = await resultFromListedJob(jobId, params);
+  if (listed) return listed;
   throw new Error(
     `${cliErrorMessage(lastError)} The job was submitted (${jobId}) and may still finish on Higgsfield.`,
   );

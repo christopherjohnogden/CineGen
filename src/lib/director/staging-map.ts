@@ -68,22 +68,33 @@ export function stagingDiagramPrompt(options: {
   aspectRatio: string;
   anchors?: string;
   extras?: string;
+  /** Higgsfield drops Midjourney flags; the still is attached as --image. */
+  engine?: 'midjourney' | 'higgsfield';
 }): string {
-  const { figures, aspectRatio, anchors, extras } = options;
+  const { figures, aspectRatio, anchors, extras, engine = 'midjourney' } = options;
   const figureLines = figures.map((figure) => {
     const visible = figure.visible?.trim() || 'full body';
     const position = figure.position.trim() || 'position as in the attached image';
     return `- A ${figure.color} outline figure: ${position}, ${visible}, pose exactly as in the image, facing direction exactly as in the image.`;
   });
+  const count = figures.length > 0
+    ? `${figures.length} outline figure${figures.length === 1 ? '' : 's'}`
+    : 'every person visible in the attached image as a muted-color outline figure, one distinct hue each';
+  const guide = engine === 'higgsfield'
+    ? 'The attached image is a COMPOSITION-ONLY guide: copy its exact framing, camera angle, crop, and the positions, poses and scale of every person — but do NOT copy its photographic look: no photo textures, no realistic lighting, no realistic faces, no colors from the image. Do NOT add anything that is not in the attached image. Do NOT complete cropped bodies — if a body part is cut off by the frame edge in the image, cut it off in the drawing. The OUTPUT is a flat schematic:'
+    : '@[Image 1](image_1) — use the attached image ONLY as the compositional guide: copy its exact framing, camera angle, crop, and the positions, poses and scale of every person — but do NOT copy its photographic look: no photo textures, no realistic lighting, no realistic faces, no colors from the image. Do NOT add anything that is not in the attached image. Do NOT complete cropped bodies — if a body part is cut off by the frame edge in the image, cut it off in the drawing. The OUTPUT is a flat schematic:';
+  const close = engine === 'higgsfield'
+    ? 'Nothing else — no ground line, no extra props, no extra figures. Simple, readable, diagrammatic — flat 2D line drawing, minimal detail, only who is where. Do not include photorealism, photo texture, realistic lighting, realistic faces, shading, solid color fills, color blocks, text, letters, labels, or typography.'
+    : `Nothing else — no ground line, no extra props, no extra figures. Simple, readable, diagrammatic — flat 2D line drawing, minimal detail, only who is where. --ar ${aspectRatio} --style raw --stylize 30 --no photorealism, photo texture, realistic lighting, realistic faces, shading, solid color fills, color blocks, text, letters, labels, typography`;
 
   return [
-    '@[Image 1](image_1) — use the attached image ONLY as the compositional guide: copy its exact framing, camera angle, crop, and the positions, poses and scale of every person — but do NOT copy its photographic look: no photo textures, no realistic lighting, no realistic faces, no colors from the image. Do NOT add anything that is not in the attached image. Do NOT complete cropped bodies — if a body part is cut off by the frame edge in the image, cut it off in the drawing. The OUTPUT is a flat schematic:',
+    guide,
     'Flat minimalist technical LINE DRAWING, a staging plan for a film scene — an obviously schematic, non-photographic drawing on a white background with a very faint, thin, light-grey graph-paper grid. Figures are drawn as clean THIN OUTLINES in muted colors — NO fills, NO solid color blocks, NO shading, NO texture, NO realism, NO text, NO letters, NO labels anywhere.',
-    `Front view matching the attached image's framing exactly: ${figures.length} outline figure${figures.length === 1 ? '' : 's'}.`,
+    `Front view matching the attached image's framing exactly: ${count}.`,
     ...figureLines,
     anchors?.trim() ? anchors.trim() : 'No furniture, open background.',
     extras?.trim() ?? '',
-    `Nothing else — no ground line, no extra props, no extra figures. Simple, readable, diagrammatic — flat 2D line drawing, minimal detail, only who is where. --ar ${aspectRatio} --style raw --stylize 30 --no photorealism, photo texture, realistic lighting, realistic faces, shading, solid color fills, color blocks, text, letters, labels, typography`,
+    close,
   ].filter((line) => line.trim().length > 0).join('\n');
 }
 

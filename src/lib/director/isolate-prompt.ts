@@ -1,4 +1,5 @@
 import type { DirectorBeat, DirectorClip, IsolateMode } from '@/types/director';
+import { axisLockLine, grammarLensLine, isolateMoveLock, resolveCameraMove } from './craft/coverage';
 import {
   compileActingBlock,
   compileDialogueBlock,
@@ -156,16 +157,29 @@ export function isolatedPrompt(
     }).join('\n');
   }
 
-  let camText = (shot.cam || shot.framing || 'locked camera').replace(/\s{2,}/g, ' ').trim();
+  let camText = [
+    grammarLensLine(shot.grammar),
+    (shot.cam || shot.framing || '').replace(/\s{2,}/g, ' ').trim() || (shot.grammar ? '' : 'locked camera'),
+  ].filter(Boolean).join('. ');
+  if (!camText) camText = 'locked camera';
   if (!/[.!]$/.test(camText)) camText += '.';
 
-  const lens = `LENS: ONE fixed setup for the entire ${secs} seconds, held identically from the first frame to the last: ${camText} This is the ONLY camera position in the prompt. It never changes — no cut, no second angle, no pan, no tilt, no push, no punch-in, no zoom, no dolly, no crane, no drift, no rack focus, no reframe and no crop at any point. If the frame changes at any moment, the take has failed.`;
+  const move = resolveCameraMove({
+    beat: shot.grammar,
+    clip: options?.cameraMove ?? clip.cameraMove,
+  });
+  const lens = isolateMoveLock(secs, camText, move);
 
+  const cameraPhrase = move.locked
+    ? 'a single locked camera'
+    : `a single camera whose only move is: ${move.line}`;
   const intro = native
-    ? `${intent ? `${intent}\n` : ''}This is ONE continuous unbroken ${secs}-second take from a single fixed camera. It is a SINGLE MOMENT only — no shots, no cuts — and it does not continue into whatever follows it in the scene.\n${beats}\nThe action above is the ENTIRE content of this clip. Do not add beats, do not carry the scene past it, and do not compress a longer sequence into ${secs} seconds — play this one moment at natural speed and end there. Any framing or lens word inside it is void and is overridden by the LENS line below. Hold one frame to ${last}.`
-    : `${intent ? `${intent}\n` : ''}This is ONE continuous unbroken take from a single fixed camera, running the full ${secs} seconds. It contains NO shots and NO cuts. The beats below are moments that happen in front of one unmoving camera, in order, without interruption.\n${beats}\nHOW TO READ THE BEATS: they describe WHAT HAPPENS, never how it is framed. Any framing or lens word surviving inside them is void and is overridden by the LENS line below. Several beats were originally written for tighter or wider framings than this one; this take is ${scaleOf(shot.cam)}, so some described detail will be small, soft, partly obscured or entirely outside the frame. THAT IS CORRECT AND INTENDED. Do not punch in, push in, cut, crop, reframe, zoom or change lens to make any detail readable — an unresolvable detail simply plays unresolved, or happens off-frame and is carried by sound and by the performance inside the frame. Hold one frame to ${last}.`;
+    ? `${intent ? `${intent}\n` : ''}This is ONE continuous unbroken ${secs}-second take from ${cameraPhrase}. It is a SINGLE MOMENT only — no shots, no cuts — and it does not continue into whatever follows it in the scene.\n${beats}\nThe action above is the ENTIRE content of this clip. Do not add beats, do not carry the scene past it, and do not compress a longer sequence into ${secs} seconds — play this one moment at natural speed and end there. Any framing or lens word inside it is void and is overridden by the LENS line below. Hold one frame to ${last}.`
+    : `${intent ? `${intent}\n` : ''}This is ONE continuous unbroken take from ${cameraPhrase}, running the full ${secs} seconds. It contains NO shots and NO cuts. The beats below are moments that happen in front of that camera, in order, without interruption.\n${beats}\nHOW TO READ THE BEATS: they describe WHAT HAPPENS, never how it is framed. Any framing or lens word surviving inside them is void and is overridden by the LENS line below. Several beats were originally written for tighter or wider framings than this one; this take is ${scaleOf(shot.cam)}, so some described detail will be small, soft, partly obscured or entirely outside the frame. THAT IS CORRECT AND INTENDED. Do not punch in, cut, crop, reframe, zoom or change lens to make any detail readable — an unresolvable detail simply plays unresolved, or happens off-frame and is carried by sound and by the performance inside the frame. Hold one frame to ${last}.`;
 
-  const label = native ? (shot.cam?.trim().replace(/[.]$/, '') || 'NATIVE BEAT') : 'LOCKED CONTINUOUS TAKE';
+  const label = native
+    ? (shot.cam?.trim().replace(/[.]$/, '') || grammarLensLine(shot.grammar) || 'NATIVE BEAT')
+    : (move.locked ? 'LOCKED CONTINUOUS TAKE' : 'CONTINUOUS TAKE');
   const acting = compileActingBlock(
     native
       ? clip.acting?.filter((task) => {
@@ -178,14 +192,16 @@ export function isolatedPrompt(
   );
   const segment = `SEGMENT 1 — ${label} (~0:00–${last})\n${intro}${acting ? `\n${acting}` : ''}\n${lens}`;
 
-  const formatText = `SINGLE UNBROKEN TAKE, ${secs} SECONDS${native ? ' (one beat lifted out of a longer sequence and generated on its own).' : '.'} Single continuous take. Real-time motion. This prompt is ONE shot: one camera, one framing, one continuous ${secs}-second run with no cuts and no angle changes. Any instruction anywhere below that implies more than one shot is void. Generate a single continuous take.`;
+  const formatText = `SINGLE UNBROKEN TAKE, ${secs} SECONDS${native ? ' (one beat lifted out of a longer sequence and generated on its own).' : '.'} Single continuous take. Real-time motion. This prompt is ONE shot: one camera, ${move.locked ? 'one framing' : `one move (${move.line})`}, one continuous ${secs}-second run with no cuts${move.locked ? ' and no angle changes' : ' and no other camera move'}. Any instruction anywhere below that implies more than one shot is void. Generate a single continuous take.`;
 
-  const lockLead = `${aspect}. SINGLE UNBROKEN TAKE — one locked framing for the full ${secs} seconds. Any cut, angle change or reframe is a FAILED TAKE.${native ? ` TOTAL RUNTIME IS ${secs} SECONDS — this clip covers ONE moment only and ends there; do not extend it, do not continue the scene, and do not speed anything up to fit more in.` : ''}`;
+  const lockLead = move.locked
+    ? `${aspect}. SINGLE UNBROKEN TAKE — one locked framing for the full ${secs} seconds. Any cut, angle change or reframe is a FAILED TAKE.${native ? ` TOTAL RUNTIME IS ${secs} SECONDS — this clip covers ONE moment only and ends there; do not extend it, do not continue the scene, and do not speed anything up to fit more in.` : ''}`
+    : `${aspect}. SINGLE UNBROKEN TAKE — one setup, one move (${move.line}) for the full ${secs} seconds. Any cut, second angle or other camera move is a FAILED TAKE.${native ? ` TOTAL RUNTIME IS ${secs} SECONDS — this clip covers ONE moment only and ends there.` : ''}`;
   const constraints = clip.constraints.trim().replace(/^CONSTRAINTS\s*—\s*/i, '')
     .replace(new RegExp(`^${aspect.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.\\s*`), '');
   const locks = compilePositiveLocksBlock(
     { constraints, lock: clip.lock },
-    { lead: lockLead, rewriteLock: isoLock },
+    { lead: [lockLead, axisLockLine(options?.axis)].filter(Boolean).join(' '), rewriteLock: isoLock },
   );
 
   const voiceScope = native ? { beats: [shot] } : clip;
@@ -193,7 +209,7 @@ export function isolatedPrompt(
   const body = [
     compileSceneContext(isolatedClip, options),
     compileReferenceBlock(clip, breakdown),
-    compileLocationMap(clip),
+    compileLocationMap(clip, options),
     compileFormatMode(clip, { text: formatText }),
     segment,
     compileDialogueBlock(voiceScope, breakdown),

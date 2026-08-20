@@ -8,6 +8,7 @@ import {
   extractMediaUrl,
   extractMediaUrls,
   extractTextOutput,
+  matchListedJobRecord,
   parseConnectionState,
   pickHiggsfieldBinaries,
   higgsfieldBinaryCandidates,
@@ -149,6 +150,12 @@ describe('extractMediaUrl', () => {
     expect(extractMediaUrl({ job: { outputs: [{ video_url: 'https://a/3.mp4' }] } })).toBe('https://a/3.mp4');
   });
 
+  it('reads image envelopes that put the file on urls / images / uri', () => {
+    expect(extractMediaUrl({ status: 'completed', result: { urls: ['https://a/out.png'] } })).toBe('https://a/out.png');
+    expect(extractMediaUrl({ status: 'completed', images: [{ url: 'https://a/shot.png' }] })).toBe('https://a/shot.png');
+    expect(extractMediaUrl({ jobs: [{ uri: 'https://a/uri.png' }] })).toBe('https://a/uri.png');
+  });
+
   it('returns undefined when no url present', () => {
     expect(extractMediaUrl({ state: 'running' })).toBeUndefined();
   });
@@ -161,6 +168,19 @@ describe('extractMediaUrl', () => {
         { result_url: 'https://a/one.png' },
       ],
     })).toEqual(['https://a/one.png', 'https://a/two.png']);
+  });
+
+  it('reads a Nano Banana Pro list row without picking the input still', () => {
+    const urls = extractMediaUrls({
+      id: '213375f2-df1d-45f5-8acb-a0c4fad312b7',
+      job_type: 'nano_banana_pro',
+      status: 'completed',
+      result_url: 'https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_map.png',
+      min_result_url: 'https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_map_min.webp',
+      params: { input_images: [{ url: 'https://cdn/liked-frame.jpg' }] },
+    });
+    expect(urls[0]).toBe('https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_map.png');
+    expect(urls).not.toContain('https://cdn/liked-frame.jpg');
   });
 
   it('reads seedance result_url and result_json video payloads', () => {
@@ -228,6 +248,14 @@ describe('parseGenerateJson', () => {
     expect(() => parseGenerateJson('not json', p)).toThrow(/not valid JSON/);
   });
 
+  it('scrapes a result URL when the wait payload is completed but the field is not result_url', () => {
+    const r = parseGenerateJson(
+      '{"status":"completed","id":"j1"}\nhttps://d8j0ntlcm91z4.cloudfront.net/user_x/map.png',
+      { model: 'nano_banana_2', mediaType: 'image' },
+    );
+    expect(r.url).toBe('https://d8j0ntlcm91z4.cloudfront.net/user_x/map.png');
+  });
+
   it('parses a pretty-printed multi-line array (the --wait output shape)', () => {
     // This is what `generate create --wait --json` actually emits — indented, multi-line.
     const real = `[
@@ -257,6 +285,19 @@ describe('parseGenerateJson', () => {
     const r = parseGenerateJson(real, { model: 'nano_banana_2', mediaType: 'image' });
     expect(r.url).toBe('https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_apple.png');
     expect(r.jobId).toBe('0316caff-f73c-43d3-be1e-fa113bcb95d3');
+  });
+
+  it('parses a listed nano_banana_pro job with result_url', () => {
+    const r = parseGenerateJson(JSON.stringify({
+      id: '213375f2-df1d-45f5-8acb-a0c4fad312b7',
+      job_type: 'nano_banana_pro',
+      status: 'completed',
+      result_url: 'https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_map.png',
+      min_result_url: 'https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_map_min.webp',
+      params: { prompt: 'COMPOSITION-ONLY', input_images: [{ url: 'https://cdn/frame.jpg' }] },
+    }), { model: 'nano_banana_2', mediaType: 'image' });
+    expect(r.url).toBe('https://d8j0ntlcm91z4.cloudfront.net/user_x/hf_map.png');
+    expect(r.jobId).toBe('213375f2-df1d-45f5-8acb-a0c4fad312b7');
   });
 
   it.each(['image', 'video', 'audio', '3d'] as const)('preserves the %s output kind for URL results', (mediaType) => {
@@ -314,6 +355,12 @@ describe('Higgsfield 503 / job rejoin', () => {
       'Error: Higgsfield API error (HTTP 503). request failed with status 503 Service Unavailable',
       queued,
     )).toBe('572aea65-7865-48f9-b550-cdc9e494d065');
+  });
+
+  it('rejoins a listed child when the waited id is the job set', () => {
+    expect(matchListedJobRecord([
+      { id: 'child-id', job_set_id: 'set-id', result_url: 'https://cdn/map.png' },
+    ], 'set-id')).toMatchObject({ id: 'child-id' });
   });
 });
 
