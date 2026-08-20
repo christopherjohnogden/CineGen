@@ -26,7 +26,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    return window.electronAPI.app.onPowerEvent(({ type }) => {
+    // Optional-chained: absent when the renderer runs in a plain browser
+    return window.electronAPI?.app?.onPowerEvent(({ type }) => {
       if (type === 'resume' || type === 'unlock-screen') {
         setWakeCounter((c) => c + 1);
       }
@@ -41,18 +42,18 @@ export function App() {
 
   const handleBackToHome = useCallback(async () => {
     try {
-      await window.electronAPI.nativeVideo.resetSurfaces([...EDIT_NATIVE_SURFACES]);
+      await window.electronAPI?.nativeVideo?.resetSurfaces([...EDIT_NATIVE_SURFACES]);
     } catch {}
     setProjectId(null);
     setUseSqlite(false);
     // Re-open PM window, then switch to blank state
-    try { await window.electronAPI.pm.open(); } catch {}
+    try { await window.electronAPI?.pm?.open(); } catch {}
     setView('home');
   }, []);
 
   useEffect(() => {
     if (view !== 'home') return;
-    void window.electronAPI.nativeVideo.resetSurfaces([...EDIT_NATIVE_SURFACES]).catch(() => {});
+    void window.electronAPI?.nativeVideo?.resetSurfaces([...EDIT_NATIVE_SURFACES]).catch(() => {});
   }, [view]);
 
   // Listen for project open events from the PM window (main process relay)

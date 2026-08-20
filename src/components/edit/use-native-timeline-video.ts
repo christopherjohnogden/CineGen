@@ -28,7 +28,8 @@ export function useNativeTimelineVideo({
   surfaceVersion = 0,
 }: UseNativeTimelineVideoOptions) {
   useEffect(() => {
-    if (!enabled) return undefined;
+    const nativeVideo = window.electronAPI?.nativeVideo;
+    if (!enabled || !nativeVideo) return undefined;
     const descriptors = buildNativeVisualPlaybackDescriptors(
       timeline,
       assets,

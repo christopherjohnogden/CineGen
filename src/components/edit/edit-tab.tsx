@@ -208,7 +208,12 @@ export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpReq
 
   useEffect(() => {
     let cancelled = false;
-    window.electronAPI.nativeVideo.isAvailable()
+    const nativeVideo = window.electronAPI?.nativeVideo;
+    if (!nativeVideo) {
+      setNativeVideoAvailable(false);
+      return () => { cancelled = true; };
+    }
+    nativeVideo.isAvailable()
       .then(({ available, error }) => {
         if (cancelled) return;
         setNativeVideoAvailable(available);
@@ -235,8 +240,8 @@ export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpReq
 
   useEffect(() => {
     return () => {
-      window.electronAPI.nativeVideo.destroySurface('timeline-viewer');
-      window.electronAPI.nativeVideo.destroySurface('source-viewer');
+      window.electronAPI?.nativeVideo?.destroySurface('timeline-viewer');
+      window.electronAPI?.nativeVideo?.destroySurface('source-viewer');
     };
   }, []);
 
@@ -269,7 +274,7 @@ export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpReq
   });
 
   useEffect(() => {
-    return window.electronAPI.app.onPowerEvent(({ type }) => {
+    return window.electronAPI?.app?.onPowerEvent(({ type }) => {
       if (type !== 'resume' && type !== 'unlock-screen') return;
       handleSystemWake();
       syncTimelineNativeSurfaceRect();

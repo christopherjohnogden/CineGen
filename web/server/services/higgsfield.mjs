@@ -29,6 +29,8 @@ const CLI_PARAM_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 const MAX_GENERIC_PARAM_ENTRIES = 2_000;
 const MAX_GENERIC_PARAM_DEPTH = 24;
 const MAX_GENERIC_STRING_LENGTH = 2 * 1024 * 1024;
+const DEFAULT_REMOTE_MEDIA_TIMEOUT_MS = 60_000;
+const DEFAULT_REMOTE_MEDIA_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const RESERVED_CLI_PARAMS = new Set([
   'help', 'h', 'json', 'no-color', 'no_color', 'wait', 'wait-timeout', 'wait_timeout',
   'wait-interval', 'wait_interval', 'output-dir', 'output_dir',
@@ -66,6 +68,23 @@ const ROLE_FLAGS = Object.freeze({
   end_image: '--end-image',
   video: '--video',
   audio: '--audio',
+});
+const MEDIA_CONTENT_TYPE_EXTENSIONS = Object.freeze({
+  'image/avif': '.avif',
+  'image/gif': '.gif',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm',
+  'audio/aac': '.aac',
+  'audio/flac': '.flac',
+  'audio/mp4': '.m4a',
+  'audio/mpeg': '.mp3',
+  'audio/ogg': '.ogg',
+  'audio/wav': '.wav',
+  'audio/x-wav': '.wav',
 });
 
 export const higgsfieldCapabilities = Object.freeze({
@@ -192,6 +211,145 @@ function inferRawMediaRole(value, outputType) {
   if (outputType === 'text') return 'video';
   if (outputType === 'audio') return 'audio';
   return 'image';
+}
+
+function fallbackExtensionForRole(role) {
+  if (role === 'video') return '.mp4';
+  if (role === 'audio') return '.mp3';
+  return '.png';
+}
+
+function remoteMediaExtension(reference, contentType, role) {
+  const normalizedType = String(contentType ?? '').split(';', 1)[0].trim().toLowerCase();
+  if (MEDIA_CONTENT_TYPE_EXTENSIONS[normalizedType]) {
+    return MEDIA_CONTENT_TYPE_EXTENSIONS[normalizedType];
+  }
+  let pathname = reference;
+  try {
+    pathname = new URL(reference).pathname;
+  } catch {
+    // The URL has already been validated; fall back to the media role below.
+  }
+  const extension = path.extname(pathname).toLowerCase();
+  if (extension && extension.length <= 6) return extension;
+  return fallbackExtensionForRole(role);
+}
+
+async function runCleanups(cleanups) {
+  for (const cleanup of [...cleanups].reverse()) {
+    await cleanup().catch(() => {});
+  }
+}
+
+function createDefaultRemoteMediaStager(options = {}) {
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_REMOTE_MEDIA_TIMEOUT_MS;
+  const maxBytes = options.maxBytes ?? DEFAULT_REMOTE_MEDIA_MAX_BYTES;
+  if (typeof fetchImpl !== 'function') {
+    throw new ServiceError('Remote Higgsfield media downloads are unavailable.', {
+      code: 'SERVER_MISCONFIGURED',
+      statusCode: 500,
+    });
+  }
+
+  return async (referenceValue, { label, role }) => {
+    let current = validatePublicUrl(referenceValue, label);
+    let response;
+    for (let redirects = 0; redirects <= 5; redirects += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      timer.unref?.();
+      try {
+        response = await fetchImpl(current.href, {
+          method: 'GET',
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: { Accept: 'image/*,video/*,audio/*,application/octet-stream;q=0.5' },
+        });
+      } catch (cause) {
+        throw new ServiceError(
+          controller.signal.aborted
+            ? `${label} download timed out.`
+            : `Could not download ${label.toLowerCase()}.`,
+          {
+            code: controller.signal.aborted ? 'PROVIDER_TIMEOUT' : 'PROVIDER_UNAVAILABLE',
+            statusCode: 502,
+            cause,
+          },
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers?.get?.('location');
+      if (!location || redirects === 5) {
+        throw new ServiceError(`${label} redirected too many times.`, {
+          code: 'DOWNLOAD_REDIRECT',
+          statusCode: 502,
+        });
+      }
+      await response.body?.cancel?.().catch(() => {});
+      current = validatePublicUrl(new URL(location, current).href, `${label} redirect`);
+    }
+
+    if (!response?.ok) {
+      throw new ServiceError(`${label} download failed (HTTP ${response?.status || 502}).`, {
+        code: 'DOWNLOAD_FAILED',
+        statusCode: 502,
+      });
+    }
+    const declaredSize = Number(response.headers?.get?.('content-length') || 0);
+    if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
+      throw new ServiceError(`${label} exceeds the configured download limit.`, {
+        code: 'DOWNLOAD_TOO_LARGE',
+        statusCode: 413,
+      });
+    }
+
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'cinegen-higgsfield-web-'));
+    const cleanup = async () => fs.rm(tempDirectory, { recursive: true, force: true });
+    const extension = remoteMediaExtension(current.href, response.headers?.get?.('content-type'), role);
+    const filePath = path.join(tempDirectory, `input${extension}`);
+    let handle;
+    try {
+      handle = await fs.open(filePath, 'wx');
+    } catch (error) {
+      await cleanup().catch(() => {});
+      throw error;
+    }
+    let written = 0;
+    try {
+      if (!response.body) {
+        throw new ServiceError(`${label} returned an empty response.`, {
+          code: 'DOWNLOAD_FAILED',
+          statusCode: 502,
+        });
+      }
+      for await (const value of response.body) {
+        const chunk = Buffer.from(value);
+        written += chunk.length;
+        if (written > maxBytes) {
+          throw new ServiceError(`${label} exceeds the configured download limit.`, {
+            code: 'DOWNLOAD_TOO_LARGE',
+            statusCode: 413,
+          });
+        }
+        await handle.write(chunk);
+      }
+      if (written === 0) {
+        throw new ServiceError(`${label} returned an empty response.`, {
+          code: 'DOWNLOAD_FAILED',
+          statusCode: 502,
+        });
+      }
+      await handle.close();
+      return { value: filePath, localPath: filePath, cleanup };
+    } catch (error) {
+      await handle.close().catch(() => {});
+      await cleanup().catch(() => {});
+      throw error;
+    }
+  };
 }
 
 function optionalAspectRatio(value) {
@@ -818,6 +976,19 @@ export function createHiggsfieldService(options = {}) {
   const processRunner = options.processRunner ?? createDefaultProcessRunner();
   const detector = options.detector;
   const mediaPreparer = options.mediaPreparer ?? createDefaultMediaPreparer(options, settingsEnv);
+  const remoteMediaStager = options.remoteMediaStager ?? createDefaultRemoteMediaStager({
+    fetchImpl: options.fetchImpl,
+    timeoutMs: parsePositiveSetting(
+      options.remoteMediaTimeoutMs ?? settingsEnv.CINEGEN_HIGGSFIELD_MEDIA_TIMEOUT_MS,
+      DEFAULT_REMOTE_MEDIA_TIMEOUT_MS,
+      'Higgsfield remote media timeout',
+    ),
+    maxBytes: parsePositiveSetting(
+      options.remoteMediaMaxBytes ?? settingsEnv.CINEGEN_HIGGSFIELD_MAX_MEDIA_BYTES,
+      DEFAULT_REMOTE_MEDIA_MAX_BYTES,
+      'Higgsfield remote media limit',
+    ),
+  });
   const activeOperations = new Map();
 
   const detectExecutable = async () => {
@@ -946,14 +1117,28 @@ export function createHiggsfieldService(options = {}) {
     }
   };
 
-  const resolveMediaReference = async (value, label, { allowOpaque = false } = {}) => {
+  const resolveMediaReference = async (
+    value,
+    label,
+    { allowOpaque = false, stageRemote = false, role = 'image', cleanups = [] } = {},
+  ) => {
     const reference = requireString(value, label, { maxLength: 4_096 });
     if (isWebMediaReference(reference)) {
       const resolved = await resolveWebMediaPath(reference, { dataRoot: options.dataRoot, label });
       return { value: resolved.diskPath, localPath: resolved.diskPath };
     }
     if (/^https?:\/\//i.test(reference)) {
-      return { value: validatePublicUrl(reference, label).href, localPath: null };
+      const publicUrl = validatePublicUrl(reference, label).href;
+      if (!stageRemote) return { value: publicUrl, localPath: null };
+      const staged = await remoteMediaStager(publicUrl, { label, role });
+      if (!staged || typeof staged.value !== 'string' || typeof staged.cleanup !== 'function') {
+        throw new ServiceError('The Higgsfield remote media stager returned an invalid result.', {
+          code: 'SERVER_MISCONFIGURED',
+          statusCode: 500,
+        });
+      }
+      cleanups.push(staged.cleanup);
+      return { value: staged.value, localPath: staged.localPath ?? staged.value };
     }
     if (allowOpaque && OPAQUE_REFERENCE_PATTERN.test(reference)) {
       return { value: reference, localPath: null };
@@ -1050,7 +1235,7 @@ export function createHiggsfieldService(options = {}) {
     throw new ServiceError(`${label} must contain only JSON values.`, { code: 'INVALID_INPUT' });
   };
 
-  const normalizeGenerationRequest = async (params) => {
+  const normalizeGenerationRequest = async (params, cleanups) => {
     const rawInputs = Object.create(null);
     for (const source of [params.inputs, params.params, params.extra]) {
       if (!source) continue;
@@ -1082,7 +1267,12 @@ export function createHiggsfieldService(options = {}) {
             code: 'INVALID_INPUT',
           });
         }
-        const resolved = await resolveMediaReference(entry, `${label}[${index}]`, { allowOpaque: true });
+        const resolved = await resolveMediaReference(entry, `${label}[${index}]`, {
+          allowOpaque: true,
+          stageRemote: true,
+          role,
+          cleanups,
+        });
         medias.push({ value: resolved.value, role });
         if (medias.length > 64) {
           throw new ServiceError('Higgsfield media references must contain at most 64 entries.', {
@@ -1180,18 +1370,23 @@ export function createHiggsfieldService(options = {}) {
         wait: params.wait !== false,
       });
     }
-    const generateParams = await normalizeGenerationRequest(params);
-    const stdout = await runCli(buildHiggsfieldCreateArgs({ ...generateParams, wait: params.wait }), {
-      label: 'Higgsfield generation',
-      timeoutMs: params.wait === false ? Math.min(generateTimeoutMs, 90_000) : generateTimeoutMs,
-    });
+    const cleanups = [];
     try {
-      return parseHiggsfieldGenerateJson(stdout, generateParams);
-    } catch (error) {
-      if (params.wait !== false) throw error;
-      const jobId = parseHiggsfieldJobId(stdout);
-      if (!jobId) throw error;
-      return { jobId, mediaType: generateParams.mediaType, model: generateParams.model };
+      const generateParams = await normalizeGenerationRequest(params, cleanups);
+      const stdout = await runCli(buildHiggsfieldCreateArgs({ ...generateParams, wait: params.wait }), {
+        label: 'Higgsfield generation',
+        timeoutMs: params.wait === false ? Math.min(generateTimeoutMs, 90_000) : generateTimeoutMs,
+      });
+      try {
+        return parseHiggsfieldGenerateJson(stdout, generateParams);
+      } catch (error) {
+        if (params.wait !== false) throw error;
+        const jobId = parseHiggsfieldJobId(stdout);
+        if (!jobId) throw error;
+        return { jobId, mediaType: generateParams.mediaType, model: generateParams.model };
+      }
+    } finally {
+      await runCleanups(cleanups);
     }
   };
 
@@ -1231,19 +1426,32 @@ export function createHiggsfieldService(options = {}) {
     const params = validateQuickEditParams(paramsValue);
     let medias = [];
     let cleanup = async () => {};
+    const remoteCleanups = [];
     try {
       if (params.drawnFramePath) {
-        const drawn = await resolveMediaReference(params.drawnFramePath, 'Clean drawn frame');
+        const drawn = await resolveMediaReference(params.drawnFramePath, 'Clean drawn frame', {
+          stageRemote: true,
+          role: params.outputType === 'video' ? 'start_image' : 'image',
+          cleanups: remoteCleanups,
+        });
         medias.push({
           value: drawn.value,
           role: params.outputType === 'video' ? 'start_image' : 'image',
         });
         if (params.guideFramePath) {
-          const guide = await resolveMediaReference(params.guideFramePath, 'Annotated guide frame');
+          const guide = await resolveMediaReference(params.guideFramePath, 'Annotated guide frame', {
+            stageRemote: true,
+            role: 'image',
+            cleanups: remoteCleanups,
+          });
           medias.push({ value: guide.value, role: 'image' });
         }
       } else {
-        const source = await resolveMediaReference(params.fileRef, 'Quick Edit source media');
+        const source = await resolveMediaReference(params.fileRef, 'Quick Edit source media', {
+          stageRemote: true,
+          role: params.outputType === 'video' ? 'start_image' : 'image',
+          cleanups: remoteCleanups,
+        });
         if (source.localPath) {
           try {
             const prepared = normalizePreparedMedia(await mediaPreparer(source.localPath, {
@@ -1281,6 +1489,7 @@ export function createHiggsfieldService(options = {}) {
       return parseHiggsfieldGenerateJson(stdout, generateParams);
     } finally {
       await cleanup();
+      await runCleanups(remoteCleanups);
     }
   };
 

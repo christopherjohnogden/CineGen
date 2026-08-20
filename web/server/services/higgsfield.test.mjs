@@ -248,12 +248,24 @@ test('device auth remains disabled by default and never starts a login process',
   assert.equal(processCalls, 0);
 });
 
-test('hosted generation validates references and passes no renderer command or secret fields', async () => {
+test('hosted generation stages remote references and passes no renderer command or secret fields', async () => {
   const specs = [];
+  const stagedPaths = [];
   const handlers = createHiggsfieldHandlers({
     detector: async () => INSTALLED,
+    async fetchImpl(url) {
+      assert.equal(url, 'https://d8j0ntlcm91z4.cloudfront.net/user/example/reference.png');
+      return new Response(Buffer.from('remote-image'), {
+        status: 200,
+        headers: { 'content-type': 'image/png', 'content-length': '12' },
+      });
+    },
     async processRunner(spec, io) {
       specs.push(spec);
+      const mediaPath = spec.args[spec.args.indexOf('--start-image') + 1];
+      stagedPaths.push(mediaPath);
+      assert.match(mediaPath, /cinegen-higgsfield-web-.*\/input\.png$/);
+      assert.equal(await fs.readFile(mediaPath, 'utf8'), 'remote-image');
       io.onStdout('{"status":"queued"}\n');
       io.onStdout(`${resultJson()}\n`);
       return { code: 0, signal: null };
@@ -261,7 +273,7 @@ test('hosted generation validates references and passes no renderer command or s
   });
 
   assert.deepEqual(await handlers.generate(generationParams({
-    referenceValue: 'https://media.example.com/reference.jpg',
+    referenceValue: 'https://d8j0ntlcm91z4.cloudfront.net/user/example/reference.png',
     executable: '/tmp/attacker-controlled',
     apiKey: 'renderer-secret-must-not-propagate',
   })), {
@@ -272,10 +284,13 @@ test('hosted generation validates references and passes no renderer command or s
     model: 'seedance_2_0',
   });
 
-  assert.deepEqual(specs[0].args, [
+  assert.deepEqual(specs[0].args.slice(0, 5), [
     'generate', 'create', 'seedance_2_0', '--prompt', 'Make the scene feel cinematic',
-    '--start-image', 'https://media.example.com/reference.jpg', '--wait', '--json',
   ]);
+  assert.equal(specs[0].args[5], '--start-image');
+  assert.equal(specs[0].args[6], stagedPaths[0]);
+  assert.deepEqual(specs[0].args.slice(7), ['--wait', '--json']);
+  await assert.rejects(fs.stat(stagedPaths[0]), (error) => error.code === 'ENOENT');
   assert.equal(JSON.stringify(specs[0]).includes('renderer-secret-must-not-propagate'), false);
   assert.equal(JSON.stringify(specs[0]).includes('attacker-controlled'), false);
 
@@ -365,8 +380,16 @@ test('generic generation resolves web media and forwards scalar, object, and arr
 
 test('raw medias infer roles from extensions and fall back by output kind', async () => {
   const specs = [];
+  let stagedCount = 0;
   const handlers = createHiggsfieldHandlers({
     detector: async () => INSTALLED,
+    async remoteMediaStager(_reference, { role }) {
+      stagedCount += 1;
+      return {
+        value: `/tmp/staged-${stagedCount}-${role}`,
+        cleanup: async () => {},
+      };
+    },
     async processRunner(spec, io) {
       specs.push(spec);
       io.onStdout(resultJson());
@@ -401,14 +424,14 @@ test('raw medias infer roles from extensions and fall back by output kind', asyn
 
   assert.deepEqual(specs[0].args, [
     'generate', 'create', 'brain_activity',
-    '--video', 'https://cdn.example.com/ad.mp4',
+    '--video', '/tmp/staged-1-video',
     '--video', 'opaque-text-reference',
     '--wait', '--json',
   ]);
   assert.deepEqual(specs[1].args, [
     'generate', 'create', 'seedance_2_0',
-    '--start-image', 'https://cdn.example.com/unknown-reference',
-    '--audio', 'https://cdn.example.com/track.wav',
+    '--start-image', '/tmp/staged-2-start_image',
+    '--audio', '/tmp/staged-3-audio',
     '--wait', '--json',
   ]);
   assert.deepEqual(specs[2].args, [

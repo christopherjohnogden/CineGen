@@ -129,12 +129,12 @@ export function useNativeVideoSurface({
       if (document.hidden) return;
       syncRect();
     };
-    const unsubscribe = window.electronAPI.app.onPowerEvent(handlePowerEvent);
+    const unsubscribe = window.electronAPI?.app?.onPowerEvent(handlePowerEvent);
     document.addEventListener('visibilitychange', handleVisible);
     window.addEventListener('pageshow', handleVisible);
     window.addEventListener('focus', handleVisible);
     return () => {
-      unsubscribe();
+      unsubscribe?.();
       document.removeEventListener('visibilitychange', handleVisible);
       window.removeEventListener('pageshow', handleVisible);
       window.removeEventListener('focus', handleVisible);
