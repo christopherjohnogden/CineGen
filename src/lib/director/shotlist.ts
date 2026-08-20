@@ -9,6 +9,7 @@ import type {
 import { generateId } from '@/lib/utils/ids';
 import { nearestFovAnchor } from './craft/optics';
 import { ensureBeatOrigin } from './craft/coverage';
+import { captureClipLlmOrigin, preserveClipLlmOrigin } from './llm-origin';
 import { padTimecode, retimeClipToSeconds, validateClipTimings } from './prompt-compiler';
 import { STAGING_COLORS, STAGING_LETTERS } from './staging-map';
 
@@ -92,7 +93,7 @@ export function applyReshotBeat(clip: DirectorClip, beatN: number, incoming: Dir
       origin: undefined,
     });
   });
-  return { ...clip, beats, bodyEdits: {} };
+  return preserveClipLlmOrigin(clip, { ...clip, beats, bodyEdits: {} });
 }
 
 export function parseReshotBeatPayload(raw: unknown, beatN: number): DirectorBeat | null {
@@ -250,10 +251,12 @@ export function parseShotlistPayload(raw: unknown, fallbackSceneId?: string): Pa
     // usable shots at all is worth an error.
     if (clip.beats.length > 0) {
       const timingError = validateClipTimings(clip);
-      if (timingError) return [retimeClipToSeconds(clip, clip.seconds > 0 ? clip.seconds : clip.beats.reduce((sum, beat) => sum + beat.dur, 0))];
-    } else {
-      errors.push(`${clip.id}: ${validateClipTimings(clip) ?? 'Clip has no shots.'}`);
+      const next = timingError
+        ? retimeClipToSeconds(clip, clip.seconds > 0 ? clip.seconds : clip.beats.reduce((sum, beat) => sum + beat.dur, 0))
+        : clip;
+      return [{ ...next, llmOrigin: captureClipLlmOrigin(next) }];
     }
+    errors.push(`${clip.id}: ${validateClipTimings(clip) ?? 'Clip has no shots.'}`);
     return [clip];
   });
 
@@ -272,6 +275,43 @@ export function parseShotlistPayload(raw: unknown, fallbackSceneId?: string): Pa
       ? true
       : coveredRaw === false || coveredRaw === 'false' ? false : undefined,
   };
+}
+
+export function parseReshotClipPayload(raw: unknown, fallbackSceneId: string): DirectorClip | null {
+  const record = asRecord(raw);
+  const wrapped = record?.clip && !Array.isArray(record.clips)
+    ? { clips: [record.clip] }
+    : raw;
+  return parseShotlistPayload(wrapped, fallbackSceneId).clips[0] ?? null;
+}
+
+/** New coverage for one clip. Identity, duration, takes, staging, and first-shotlist origin stay. */
+export function applyReshotClip(existing: DirectorClip, incoming: DirectorClip): DirectorClip {
+  if (incoming.beats.length === 0) return existing;
+  return preserveClipLlmOrigin(existing, retimeClipToSeconds({
+    ...existing,
+    title: incoming.title.trim() || existing.title,
+    subject: incoming.subject || existing.subject,
+    location: incoming.location || existing.location,
+    blocking: incoming.blocking ?? existing.blocking,
+    fov: incoming.fov ?? existing.fov,
+    camera: incoming.camera ?? existing.camera,
+    intent: incoming.intent ?? existing.intent,
+    acting: incoming.acting ?? existing.acting,
+    constraints: incoming.constraints || existing.constraints,
+    style: incoming.style || existing.style,
+    beats: incoming.beats,
+    bodyEdits: {},
+    pendingRewrite: undefined,
+    activeVariant: (() => {
+      const current = existing.activeVariant;
+      return current.kind === 'isolated' && incoming.beats.some((beat) => beat.n === current.beatN)
+        ? current
+        : { kind: 'full' as const };
+    })(),
+    seconds: existing.seconds,
+    llmOrigin: undefined,
+  }, existing.seconds));
 }
 
 export function mergeShotlist(
@@ -330,7 +370,7 @@ export function mergeShotlist(
     const clip: DirectorClip = { ...raw, id, sceneId };
     const index = clips.findIndex((entry) => entry.id === clip.id);
     if (index >= 0) {
-      clips[index] = {
+      clips[index] = preserveClipLlmOrigin(clips[index], {
         ...clip,
         sceneId: clips[index].sceneId,
         // (existing clips keep their scene; only their content is refreshed)
@@ -343,9 +383,10 @@ export function mergeShotlist(
         // A staging map is hand-tuned and points at a generated asset, so a
         // re-shotlist must never replace one that already exists.
         staging: clips[index].staging ?? clip.staging,
-      };
+        llmOrigin: undefined,
+      });
     } else {
-      clips.push(clip);
+      clips.push(clip.llmOrigin ? clip : { ...clip, llmOrigin: captureClipLlmOrigin(clip) });
     }
   }
 

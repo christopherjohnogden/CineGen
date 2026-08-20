@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectorClip } from '@/types/director';
-import { applyReshotBeat, parseReshotBeatPayload } from '@/lib/director/shotlist';
+import { applyReshotBeat, applyReshotClip, parseReshotBeatPayload, parseReshotClipPayload } from '@/lib/director/shotlist';
 
 const clip = (): DirectorClip => ({
   id: 'a', title: 'Peter waits', seconds: 14, sceneId: 's1',
@@ -38,5 +38,35 @@ describe('redo one shot', () => {
   it('leaves the clip alone when the beat is missing', () => {
     const source = clip();
     expect(applyReshotBeat(source, 9, source.beats[0])).toBe(source);
+  });
+});
+
+describe('redo one clip', () => {
+  it('replaces coverage and keeps id, duration, and takes', () => {
+    const source: DirectorClip = {
+      ...clip(),
+      takes: [{ id: 't1', number: 1, variantKey: 'full', status: 'done', adapterId: 'seedance-2.5' }],
+      fov: 47,
+    };
+    const incoming = parseReshotClipPayload({
+      clip: {
+        id: 'other', sceneId: 'wrong', title: 'Peter waits', seconds: 99,
+        subject: 'a talk', location: 'the office',
+        beats: [
+          { n: 1, from: '0:00', to: '0:10', dur: 10, text: 'Wide of the office.', cam: 'extreme wide of the room' },
+          { n: 2, from: '0:10', to: '0:14', dur: 4, text: 'Peter on the sofa.', cam: 'close-up on Peter', quote: 'Yeah.', speaker: '@Peter' },
+        ],
+      },
+    }, 's1');
+    expect(incoming?.beats).toHaveLength(2);
+    const next = applyReshotClip(source, incoming!);
+    expect(next.id).toBe('a');
+    expect(next.sceneId).toBe('s1');
+    expect(next.seconds).toBe(14);
+    expect(next.beats).toHaveLength(2);
+    expect(next.beats[0].cam).toMatch(/extreme wide/);
+    expect(next.takes).toHaveLength(1);
+    expect(next.bodyEdits).toEqual({});
+    expect(next.activeVariant).toEqual({ kind: 'full' });
   });
 });

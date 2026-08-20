@@ -679,7 +679,8 @@
 .director-tab__shotrow-text em { color:var(--text-primary); font-style:italic; }
 .director-tab__shotrow-btns { display:inline-flex; gap:4px; flex-shrink:0; align-self:center; }
 .director-tab__iso { font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; background:transparent; color:var(--text-secondary); border:1px solid var(--border-medium); border-radius:6px; padding:3px 8px; cursor:pointer; transition:color .15s,border-color .15s,background .15s,box-shadow .15s; white-space:nowrap; }
-.director-tab__iso:hover { color:var(--accent); border-color:var(--accent); }
+.director-tab__iso:hover:not(:disabled) { color:var(--accent); border-color:var(--accent); }
+.director-tab__iso:disabled { opacity:.4; cursor:default; }
 .director-tab__iso--active { background:var(--accent); border-color:var(--accent); color:var(--bg-base); }
 .director-tab__iso--active:hover { color:var(--bg-base); }
 .director-tab__iso--setup[data-setup="0"] { --setup:var(--setup-0); }
@@ -723,8 +724,9 @@
 @media (max-width: 900px) { .dsl-scenefields { grid-template-columns:1fr; } }
 .dsl-scenefield { display:flex; flex-direction:column; gap:4px; }
 .dsl-scenefield-label { font-size:10px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--text-tertiary); }
-.dsl-notes { display:flex; flex-direction:column; gap:6px; border-top:1px dashed var(--border-subtle); padding-top:10px; }
+.dsl-notes { display:flex; flex-direction:column; gap:6px; border-top:1px dashed var(--border-subtle); padding-top:10px; padding-bottom:10px; }
 .dsl-notes textarea { min-height:54px; }
+.dgen-section-body > .dsl-notes { border-top:none; padding:0; }
 .dsl-shotspill { font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); border:1px solid var(--border-medium); border-radius:999px; padding:3px 9px; white-space:nowrap; flex-shrink:0; }
 .dsl-queue { display:flex; align-items:center; cursor:pointer; position:relative; flex-shrink:0; }
 .dsl-queue input { position:absolute; opacity:0; width:1px; height:1px; margin:0; pointer-events:none; }

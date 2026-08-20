@@ -235,6 +235,31 @@ ${CONSTRAINT_DOCTRINE}
 
 Return ONLY JSON: { "clips": [ ...changed clips only... ] }`;
 
+export const CLIP_NOTES_SYSTEM_PROMPT = `You revise ONE Seedance clip for CineGen Director from the director's notes on that clip.
+The input carries the scene, this clip as JSON, and the notes. Notes apply to THIS clip — they may name shots as S1, S2, or speak about the whole clip (framing, tone, coverage). Do not wait for a scene label like 1A.
+
+RULES
+- Return this clip as a COMPLETE object. Do not return other clips or scenes.
+- Keep "id", "sceneId", and "seconds" VERBATIM.
+- Change ONLY what the notes ask. Unmentioned beats stay identical (same n, from, to, dur, text, cam, quote, speaker).
+- If notes name a shot (S2), change that beat; leave unnamed beats identical.
+- If ACTIVE VIEW is an isolated shot, unnamed notes apply to that shot. Named shots (S1, S2) still win.
+- A framing note ("make it a medium close-up") changes "fov" (one of 8, 18, 29, 47, 84, 107) and the affected beats' "cam"/"text"; never write millimetres or f-stops.
+- A performance or tone note changes that character's acting entry and the beat text — as behaviour and tactic, never emotion adjectives.
+- Shot "dur" values must still sum to "seconds", and "from"/"to" must stay consistent.
+
+${OPTICS_DOCTRINE}
+
+${ACTING_TASK_DOCTRINE}
+
+${BLOCKING_DOCTRINE}
+
+${STATES_NOT_TRANSITIONS}
+
+${CONSTRAINT_DOCTRINE}
+
+Return ONLY JSON: { "clip": { ...complete clip... } }`;
+
 export const RESHOT_BEAT_SYSTEM_PROMPT = `You rewrite ONE shot's camera for CineGen Director. The director did not like this setup and wants a different one.
 
 RULES
@@ -250,6 +275,31 @@ ${OPTICS_DOCTRINE}
 ${BLOCKING_DOCTRINE}
 
 Return ONLY JSON: { "beat": { "n": 1, "from": "0:00", "to": "0:07", "dur": 7, "text": "...", "cam": "...", "quote": "...", "speaker": "@Peter", "fov": 29 } }`;
+
+export function reshotClipSystemPrompt(clipLengthSec: number, density: string): string {
+  return `You rewrite ONE clip's coverage for CineGen Director. The director did not like this multi-shot and wants it done again.
+
+RULES
+- Return ONLY this clip as a COMPLETE object. Do not return other clips or scenes.
+- Keep "id", "sceneId", and "seconds" (${clipLengthSec}) EXACTLY as given.
+- Keep the same dramatic beat, location, characters, and spoken lines. Every quoted line still lands inside some shot's time window.
+- Write a NEW shot list — different cameras than the current beats. Do not copy the old cam lines. Shot density: ${density}. No shot under 4 seconds.
+- "dur" values must sum to "seconds". "from"/"to" must stay consistent.
+- "fov" is one of 8, 18, 29, 47, 84, 107 and must match the new coverage.
+- Neighbour clips cover other parts of the scene — do not steal their action.
+
+${OPTICS_DOCTRINE}
+
+${BLOCKING_DOCTRINE}
+
+${ACTING_TASK_DOCTRINE}
+
+${STATES_NOT_TRANSITIONS}
+
+${CONSTRAINT_DOCTRINE}
+
+Return ONLY JSON: { "clip": { "id": "", "sceneId": "", "title": "", "seconds": ${clipLengthSec}, "elementTags": [], "subject": "", "location": "", "blocking": "", "fov": 47, "beats": [{ "n": 1, "from": "0:00", "to": "0:07", "dur": 7, "text": "", "cam": "", "quote": "", "speaker": "" }] } }`;
+}
 
 export const NOTES_REWRITE_SYSTEM_PROMPT = `You rewrite a Seedance clip prompt using the director's notes about the last take.
 Keep the same heading structure (SCENE CONTEXT, ACTIVE REFERENCES, LOCATION MAP, FORMAT MODE, SEGMENT, DIALOGUE, PHYSICS, LIGHTING, AUDIO, STYLE, POSITIVE LOCKS) and keep every heading the prompt already has.

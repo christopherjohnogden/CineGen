@@ -158,6 +158,24 @@ export interface DirectorClip {
   bodyEdits: Record<string, string>;
   pendingRewrite?: { variantKey: string; body: string };
   takes: DirectorTake[];
+  /** First shotlist write. Notes / redo restore from this; later LLM passes must not overwrite it. */
+  llmOrigin?: DirectorClipLlmOrigin;
+}
+
+export interface DirectorClipLlmOrigin {
+  title: string;
+  subject: string;
+  location: string;
+  intent?: string;
+  camera?: string;
+  style: string;
+  constraints: string;
+  lock?: string;
+  blocking?: string;
+  fov?: number;
+  cameraMove?: DirectorCameraMove;
+  acting?: DirectorActingTask[];
+  beats: DirectorBeat[];
 }
 
 export interface DirectorScene {

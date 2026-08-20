@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Asset } from '@/types/project';
 import type { DirectorClip, DirectorShow, DirectorTake, IsolateVariant } from '@/types/director';
 import {
@@ -23,7 +23,9 @@ import { DirectorCameraMovePanel } from './director-camera-move';
 import { DirectorShotGrammarRow } from './director-shot-grammar';
 import { applyMatchSizeToScene, beatGrammarsForClip, beatHoldsPreviousSetup, beatIsDirtyFromOrigin, beatScriptContext, beatSetupColors, grammarSizeLabel, resetBeatToOrigin, SETUP_SWATCH_COUNT, SHOT_SIZES } from '@/lib/director/craft/coverage';
 import { DirectorStagingFrame, captureVideoFrame } from './director-staging-frame';
+import { DirectorsNotesField } from './director-notes-field';
 import { ensureClipStaging } from '@/lib/director/staging-diagram';
+import { clipIsDirtyFromLlmOrigin, resetClipToLlmOrigin } from '@/lib/director/llm-origin';
 
 interface DirectorGenerateTabProps {
   show: DirectorShow;
@@ -36,9 +38,7 @@ interface DirectorGenerateTabProps {
   onGenerate: (scope: 'active' | 'queued' | 'scene') => void;
   onFetchTake?: () => void;
   fetchingTake?: boolean;
-  onRewrite: (notes: string) => void;
-  onKeepRewrite: () => void;
-  onDiscardRewrite: () => void;
+  onClipNotes: (notes: string) => Promise<boolean>;
   onRemoveAsset?: (assetId: string) => void;
   onSetStagingFrame?: (source: { dataUrl?: string; fileRef?: string; timeSec?: number }) => void;
   onMakeStagingDiagram?: () => void;
@@ -60,12 +60,14 @@ function activeBody(show: DirectorShow, clip: DirectorClip): string {
 }
 
 export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
-  const { show, assets, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onRewrite, onKeepRewrite, onDiscardRewrite, onRemoveAsset } = props;
+  const { show, assets, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onClipNotes, onRemoveAsset } = props;
   const clip = selectedClip(show);
   const adapter = getDirectorAdapter(show.adapterId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const shotsSectionRef = useRef<HTMLDetailsElement>(null);
   const shotsBodyRef = useRef<HTMLDivElement>(null);
+  const [notesDraft, setNotesDraft] = useState('');
+  useEffect(() => { setNotesDraft(''); }, [clip?.id]);
 
   const patchClip = (updater: (current: DirectorClip) => DirectorClip) => {
     if (!clip) return;
@@ -96,6 +98,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const sceneClipCount = show.clips.filter((entry) => entry.sceneId === scene?.id && !entry.altOf).length;
   const thisLabel = clipLabel ?? 'clip';
   const generating = directorJobIsRunning(show, 'generate');
+  const rewriting = directorJobIsRunning(show, 'rewrite');
   const liveTake = clip.takes.find((entry) => isDirectorTakeLive(entry));
   const variantLabel = variantTakeLabel(clip, key);
   const beatGrammars = beatGrammarsForClip(clip.beats);
@@ -308,23 +311,42 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             onHeroTake={(takeId) => onChange(setHeroTake(show, clip.id, takeId))}
             onDeleteTake={deleteTake}
           />
-
-          <div className="dgen-notes">
-            <span className="dsl-scenefield-label">Director&rsquo;s notes — rewrite this variant</span>
-            <textarea id="director-notes" placeholder="What to keep or change on the next rewrite of this take."
-              onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); onRewrite((event.currentTarget as HTMLTextAreaElement).value); } }} />
-            <div className="director-tab__row">
-              <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={() => { const field = document.getElementById('director-notes') as HTMLTextAreaElement | null; onRewrite(field?.value ?? ''); }}>Rewrite</button>
-              <button type="button" className="director-tab__btn" onClick={onKeepRewrite} disabled={!clip.pendingRewrite}>Keep</button>
-              <button type="button" className="director-tab__btn" onClick={onDiscardRewrite} disabled={!clip.pendingRewrite}>Discard</button>
-            </div>
-            {clip.pendingRewrite && <p className="director-tab__ok">Rewrite ready — Keep to store, Discard to revert.</p>}
-          </div>
         </div>
 
         {/* ── RIGHT: the prompt stack ── */}
         <div className="dgen-right">
           <details className="dsl-section" open>
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Director&rsquo;s notes</span>
+              <span className="director-tab__meta">
+                {isolated ? `${thisLabel} · S${variant.beatN}` : thisLabel}
+              </span>
+            </summary>
+            <div className="dgen-section-body">
+              <DirectorsNotesField
+                hideLabel
+                value={notesDraft}
+                placeholder={isolated
+                  ? `e.g. "Peter shouldn't be motionless" · "make this an over-the-shoulder"`
+                  : `e.g. "S2 should be over Jordan's shoulder" · "Peter's look stays dead until the file lands"`}
+                hint={isolated
+                  ? `Rewrites S${variant.beatN} in the structured clip — the isolated prompt updates. Mention S1, S2 for other shots.`
+                  : 'Rewrites this clip — the compiled prompt and shots both update. Mention S1, S2 if you mean one shot.'}
+                disabled={rewriting || generating}
+                onChange={setNotesDraft}
+                onApply={async () => {
+                  const ok = await onClipNotes(notesDraft);
+                  if (ok) setNotesDraft('');
+                }}
+                resetLabel="Reset to original"
+                resetTitle="Restore this clip to the first shotlist"
+                resetDisabled={rewriting || generating || !clipIsDirtyFromLlmOrigin(clip)}
+                onReset={() => onChange(updateDirectorClip(show, clip.id, resetClipToLlmOrigin))}
+              />
+            </div>
+          </details>
+          <details className="dsl-section">
             <summary className="dsl-section-head">
               <span className="dsl-tw" aria-hidden />
               <span className="dsl-section-title">Prompt</span>
@@ -356,7 +378,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             </div>
           </details>
 
-          <details className="dsl-section" open>
+          <details className="dsl-section">
             <summary className="dsl-section-head">
               <span className="dsl-tw" aria-hidden />
               <span className="dsl-section-title">Camera</span>

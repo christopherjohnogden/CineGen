@@ -266,6 +266,24 @@ export function sceneNotesJobInput(
   ].join('\n\n');
 }
 
+export function clipNotesJobInput(
+  scene: DirectorScene,
+  clip: DirectorClip,
+  clipLabel: string,
+  notes: string,
+): string {
+  const variant = clip.activeVariant;
+  const isolated = variant.kind === 'isolated';
+  const view = isolated
+    ? `ACTIVE VIEW: isolated S${variant.beatN} (${variant.mode === 'held' ? `held ${clip.seconds}s` : `native ${clip.beats.find((beat) => beat.n === variant.beatN)?.dur ?? clip.seconds}s`}). Unnamed notes apply to S${variant.beatN}.`
+    : `ACTIVE VIEW: full ${clip.seconds}s multishot prompt. Unnamed notes apply to the whole clip.`;
+  return [
+    `Scene:\n${sceneLine(scene)}`,
+    `THIS CLIP is ${clipLabel}. Notes apply to it — you do not need to name the clip. Mention shots as S1, S2 if you mean one beat.\n${view}\n${JSON.stringify(sceneNotesClip(clip, clipLabel), null, 1)}`,
+    `DIRECTOR'S NOTES:\n${notes.trim()}`,
+  ].join('\n\n');
+}
+
 export function reshotBeatJobInput(
   scene: DirectorScene,
   clip: DirectorClip,
@@ -294,6 +312,21 @@ export function reshotBeatJobInput(
       ? `NEIGHBOUR SHOTS (do not copy these setups):\n${neighbours.join('\n')}`
       : 'This is the only shot in the clip.',
     `LOCATION:\n${clip.location || clip.blocking || '(none)'}`,
+  ].join('\n\n');
+}
+
+export function reshotClipJobInput(
+  scene: DirectorScene,
+  clip: DirectorClip,
+  clipLabel: string,
+  neighbours: Array<{ label: string; title: string }>,
+): string {
+  return [
+    `Scene:\n${sceneLine(scene)}`,
+    `THIS CLIP (replace the coverage, keep the id):\n${JSON.stringify(sceneNotesClip(clip, clipLabel), null, 1)}`,
+    neighbours.length > 0
+      ? `NEIGHBOUR CLIPS (do not cover their action):\n${neighbours.map((entry) => `${entry.label} — ${entry.title}`).join('\n')}`
+      : 'This is the only clip in the scene.',
   ].join('\n\n');
 }
 

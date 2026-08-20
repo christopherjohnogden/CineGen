@@ -3,6 +3,7 @@ import { createEmptyDirectorShow, isDirectorShow } from './create-show';
 import { lookBibleFrom } from './look-bible';
 import { parseDirectorLlmProvider } from './cli-provider';
 import { ensureBeatOrigin } from './craft/coverage';
+import { ensureClipLlmOrigin } from './llm-origin';
 import { directorLlmSpendFrom } from '@/lib/llm/openai-usage';
 import { looksLikeFdx, parseFdx } from './fdx-parser';
 import { scrubFdxChrome, serializeScreenplay, trimFdxTrailer } from './screenplay';
@@ -40,7 +41,7 @@ export function normalizeDirectorShow(value: DirectorShow): DirectorShow {
     llmSpend: directorLlmSpendFrom(value.llmSpend),
     sourceFileName: typeof value.sourceFileName === 'string' ? value.sourceFileName : undefined,
     jobStatus: null,
-    clips: value.clips.map((clip) => ({
+    clips: value.clips.map((clip) => ensureClipLlmOrigin({
       ...clip,
       beats: clip.beats.map(ensureBeatOrigin),
     })),

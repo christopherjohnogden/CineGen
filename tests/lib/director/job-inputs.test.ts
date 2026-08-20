@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { breakdownAuditInput, breakdownJobInput, estimateSceneSeconds, lookBibleJobInput, shotlistContinuationInput, shotlistJobInput } from '@/lib/director/job-inputs';
-import type { DirectorShow, DirectorScene } from '@/types/director';
+import { breakdownAuditInput, breakdownJobInput, clipNotesJobInput, estimateSceneSeconds, lookBibleJobInput, shotlistContinuationInput, shotlistJobInput } from '@/lib/director/job-inputs';
+import type { DirectorClip, DirectorShow, DirectorScene } from '@/types/director';
 
 const show = (over: Partial<DirectorShow>): DirectorShow => ({
   sourceText: '', clipLengthSec: 10, stylePrefix: '', lookBible: {} as never,
@@ -114,5 +114,41 @@ describe('coverage estimate + continuation input', () => {
     expect(body).toMatch(/EXISTING clips below cover only ~20s/);
     expect(body).toMatch(/\[1A\].*ends on: He crosses to the desk\./);
     expect(body).toMatch(/continue from there to the END/);
+  });
+});
+
+describe('clipNotesJobInput', () => {
+  it('scopes notes to one clip and lets shots be named as S1/S2', () => {
+    const clip: DirectorClip = {
+      id: 'c1', sceneId: 's1', title: 'Peter waits', seconds: 20,
+      subject: '', location: '', style: '', constraints: '', elementTags: [],
+      activeVariant: { kind: 'full' }, bodyEdits: {}, takes: [],
+      beats: [
+        { n: 1, from: '0:00', to: '0:08', dur: 8, text: 'Peter waits on the sofa.' },
+        { n: 2, from: '0:08', to: '0:20', dur: 12, text: 'Jordan enters.' },
+      ],
+    };
+    const body = clipNotesJobInput(SCENES[0], clip, '1A', 'S2 should be over Jordan\'s shoulder');
+    expect(body).toMatch(/THIS CLIP is 1A/);
+    expect(body).toMatch(/ACTIVE VIEW: full 20s multishot/);
+    expect(body).toMatch(/S1, S2/);
+    expect(body).toMatch(/Peter waits on the sofa/);
+    expect(body).toMatch(/S2 should be over Jordan's shoulder/);
+    expect(body).not.toMatch(/Clips:/);
+  });
+
+  it('scopes unnamed generate notes to the isolated shot in view', () => {
+    const clip: DirectorClip = {
+      id: 'c1', sceneId: 's1', title: 'Peter waits', seconds: 20,
+      subject: '', location: '', style: '', constraints: '', elementTags: [],
+      activeVariant: { kind: 'isolated', beatN: 2, mode: 'held' }, bodyEdits: {}, takes: [],
+      beats: [
+        { n: 1, from: '0:00', to: '0:08', dur: 8, text: 'Peter waits on the sofa.' },
+        { n: 2, from: '0:08', to: '0:20', dur: 12, text: 'Jordan enters.' },
+      ],
+    };
+    const body = clipNotesJobInput(SCENES[0], clip, '1A', 'Peter should fidget');
+    expect(body).toMatch(/ACTIVE VIEW: isolated S2 \(held 20s\)/);
+    expect(body).toMatch(/Unnamed notes apply to S2/);
   });
 });

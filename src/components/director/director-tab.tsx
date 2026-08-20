@@ -14,13 +14,15 @@ import { pruneRemovedScenes, remapSceneIndexMaps } from '@/lib/director/cascade'
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import { applyLlmBreakdownItems, mergeScenes, parseBreakdownPayload } from '@/lib/director/breakdown';
 import { localBreakdownForShow } from '@/lib/director/local-breakdown';
-import { applyReshotBeat, clipDisplayLabels, mergeShotlist, parseReshotBeatPayload, parseShotlistPayload } from '@/lib/director/shotlist';
-import { BREAKDOWN_AUDIT_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, RESHOT_BEAT_SYSTEM_PROMPT, SCENE_NOTES_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
+import { applyReshotBeat, applyReshotClip, clipDisplayLabels, mergeShotlist, parseReshotBeatPayload, parseReshotClipPayload, parseShotlistPayload, shotDensityHint } from '@/lib/director/shotlist';
+import { BREAKDOWN_AUDIT_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, CLIP_NOTES_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, RESHOT_BEAT_SYSTEM_PROMPT, reshotClipSystemPrompt, SCENE_NOTES_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
 import {
   breakdownAuditInput,
   breakdownJobInput,
+  clipNotesJobInput,
   lookBibleJobInput,
   reshotBeatJobInput,
+  reshotClipJobInput,
   sceneNotesJobInput,
 } from '@/lib/director/job-inputs';
 import { applyWrittenLook, lookBibleImageUrls } from '@/lib/director/look-bible';
@@ -40,8 +42,6 @@ import {
   appendDirectorTake,
   directorJobIsRunning,
   directorRunningLabel,
-  discardPendingRewrite,
-  keepPendingRewrite,
   selectedClip,
   selectedScene,
   updateDirectorClip,
@@ -613,7 +613,7 @@ export function DirectorTab() {
     const current = showRef.current;
     const scene = current.scenes.find((entry) => entry.id === sceneId);
     const clips = current.clips.filter((entry) => entry.sceneId === sceneId);
-    if (!scene || clips.length === 0 || !notes.trim()) return;
+    if (!scene || clips.length === 0 || !notes.trim()) return false;
     const requestId = setJob('rewrite', `Applying notes to ${scene.label}…`);
     try {
       const labels = clipDisplayLabels(current.scenes, current.clips);
@@ -625,8 +625,7 @@ export function DirectorTab() {
         undefined,
         { onUsage: recordSpend },
       );
-      // The script was replaced or reset while the job ran.
-      if (showRef.current.sourceText !== current.sourceText) return;
+      if (showRef.current.sourceText !== current.sourceText) return false;
       const parsed = parseShotlistPayload(payload, sceneId);
       if (parsed.clips.length === 0) throw new Error('The rewrite returned no clips — name them by label (1A, 1B) in the notes.');
       // A model that answers with the display label as the id would otherwise
@@ -653,9 +652,44 @@ export function DirectorTab() {
         clips: merged.clips.map((clip) => touched.has(clip.id) ? { ...clip, bodyEdits: {} } : clip),
         jobStatus: parsed.errors[0] ? { type: 'rewrite', message: parsed.errors[0], error: true } : null,
       });
+      return true;
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (error instanceof DOMException && error.name === 'AbortError') return false;
       failJob('rewrite', error, 'Notes rewrite failed');
+      return false;
+    }
+  }, [failJob, setJob, setShow]);
+
+  const runClipNotes = useCallback(async (clipId: string, notes: string) => {
+    const current = showRef.current;
+    const clip = current.clips.find((entry) => entry.id === clipId);
+    const scene = clip ? current.scenes.find((entry) => entry.id === clip.sceneId) : undefined;
+    if (!clip || !scene || !notes.trim()) return false;
+    const labels = clipDisplayLabels(current.scenes, current.clips);
+    const clipLabel = labels.get(clip.id) ?? clip.id;
+    const requestId = setJob('rewrite', `Applying notes to ${clipLabel}…`);
+    try {
+      const payload = await runDirectorJsonJob(
+        CLIP_NOTES_SYSTEM_PROMPT,
+        clipNotesJobInput(scene, clip, clipLabel, notes),
+        parseDirectorLlmProvider(current.llmProvider),
+        requestId,
+        undefined,
+        { onUsage: recordSpend },
+      );
+      if (showRef.current.sourceText !== current.sourceText) return false;
+      const incoming = parseReshotClipPayload(payload, clip.sceneId);
+      if (!incoming || incoming.beats.length === 0) throw new Error('The rewrite returned no shots.');
+      setShow(updateDirectorClip(
+        { ...showRef.current, jobStatus: null },
+        clipId,
+        (entry) => applyReshotClip(entry, incoming),
+      ));
+      return true;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return false;
+      failJob('rewrite', error, 'Notes rewrite failed');
+      return false;
     }
   }, [failJob, setJob, setShow]);
 
@@ -688,6 +722,40 @@ export function DirectorTab() {
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       failJob('rewrite', error, 'Redo shot failed');
+    }
+  }, [failJob, setJob, setShow]);
+
+  const runReshotClip = useCallback(async (clipId: string) => {
+    const current = showRef.current;
+    const clip = current.clips.find((entry) => entry.id === clipId);
+    const scene = clip ? current.scenes.find((entry) => entry.id === clip.sceneId) : undefined;
+    if (!clip || !scene) return;
+    const labels = clipDisplayLabels(current.scenes, current.clips);
+    const clipLabel = labels.get(clip.id) ?? clip.id;
+    const neighbours = current.clips
+      .filter((entry) => entry.sceneId === clip.sceneId && entry.id !== clip.id && !entry.altOf)
+      .map((entry) => ({ label: labels.get(entry.id) ?? entry.id, title: entry.title }));
+    const requestId = setJob('rewrite', `Redoing ${clipLabel}…`);
+    try {
+      const payload = await runDirectorJsonJob(
+        reshotClipSystemPrompt(clip.seconds, shotDensityHint(clip.seconds)),
+        reshotClipJobInput(scene, clip, clipLabel, neighbours),
+        parseDirectorLlmProvider(current.llmProvider),
+        requestId,
+        undefined,
+        { onUsage: recordSpend },
+      );
+      if (showRef.current.sourceText !== current.sourceText) return;
+      const incoming = parseReshotClipPayload(payload, clip.sceneId);
+      if (!incoming || incoming.beats.length === 0) throw new Error('The rewrite returned no shots.');
+      setShow(updateDirectorClip(
+        { ...showRef.current, jobStatus: null },
+        clipId,
+        (entry) => applyReshotClip(entry, incoming),
+      ));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      failJob('rewrite', error, 'Redo clip failed');
     }
   }, [failJob, setJob, setShow]);
 
@@ -1003,35 +1071,6 @@ export function DirectorTab() {
     void fetchStagingDiagram();
   }, [fetchStagingDiagram, show.mode, show.selectedClipId, show]);
 
-  const runRewrite = useCallback(async (notes: string) => {
-    const current = showRef.current;
-    const clip = selectedClip(current);
-    if (!clip || !notes.trim()) return;
-    const requestId = setJob('rewrite', 'Rewriting active variant…');
-    try {
-      const adapter = getDirectorAdapter(current.adapterId);
-      const compiled = adapter.buildRequest({ show: current, clip, variant: clip.activeVariant });
-      const payload = await runDirectorJsonJob(
-        NOTES_REWRITE_SYSTEM_PROMPT,
-        `NOTES:\n${notes.trim()}\n\nCURRENT BODY:\n${compiled.prompt}`,
-        parseDirectorLlmProvider(current.llmProvider),
-        requestId,
-        undefined,
-        { onUsage: recordSpend },
-      );
-      const body = payload && typeof payload === 'object' && typeof (payload as { body?: unknown }).body === 'string'
-        ? (payload as { body: string }).body
-        : '';
-      if (!body) throw new Error('Rewrite did not return a body.');
-      setShow(updateDirectorClip({ ...showRef.current, jobStatus: null }, clip.id, (entry) => ({
-        ...entry,
-        pendingRewrite: { variantKey: variantKey(entry.activeVariant), body },
-      })));
-    } catch (error) {
-      failJob('rewrite', error, 'Rewrite failed');
-    }
-  }, [failJob, setJob, setShow]);
-
   const runLookBible = useCallback(async () => {
     const current = showRef.current;
     const requestId = setJob('look-bible', 'Writing look bible…');
@@ -1221,7 +1260,7 @@ export function DirectorTab() {
           <DirectorBreakdownTab show={show} elements={state.elements} dirtyKeys={cascade.dirty} syncing={cascade.running} onChange={setShow} onCreateElement={createElementFromBreakdown} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
         )}
         {show.mode === 'shotlist' && (
-          <DirectorShotlistTab show={show} elements={state.elements} sceneFilter={sceneFilter} expandRequest={expandRequest} syncing={cascade.running} onChange={setShow} onShotlist={startManualShotlist} onStopShotlist={stopShotlist} onSceneNotes={(sceneId, notes) => void runSceneNotes(sceneId, notes)} onReshotBeat={(clipId, beatN) => void runReshotBeat(clipId, beatN)} onSelectClip={selectClip} />
+          <DirectorShotlistTab show={show} elements={state.elements} sceneFilter={sceneFilter} expandRequest={expandRequest} syncing={cascade.running} onChange={setShow} onShotlist={startManualShotlist} onStopShotlist={stopShotlist} onSceneNotes={(sceneId, notes) => runSceneNotes(sceneId, notes)} onClipNotes={(clipId, notes) => runClipNotes(clipId, notes)} onReshotBeat={(clipId, beatN) => void runReshotBeat(clipId, beatN)} onReshotClip={(clipId) => void runReshotClip(clipId)} onSelectClip={selectClip} />
         )}
         {show.mode === 'generate' && (
           <DirectorGenerateTab
@@ -1231,9 +1270,10 @@ export function DirectorTab() {
             onGenerate={(scope) => void runGenerate(scope)}
             onFetchTake={() => void fetchLiveTake()}
             fetchingTake={fetchingTake}
-            onRewrite={(notes) => void runRewrite(notes)}
-            onKeepRewrite={() => { const current = selectedClip(show); if (current) setShow(keepPendingRewrite(show, current.id)); }}
-            onDiscardRewrite={() => { const current = selectedClip(show); if (current) setShow(discardPendingRewrite(show, current.id)); }}
+            onClipNotes={(notes) => {
+              const current = selectedClip(showRef.current);
+              return current ? runClipNotes(current.id, notes) : Promise.resolve(false);
+            }}
             onRemoveAsset={(assetId) => dispatch({ type: 'REMOVE_ASSET', assetId })}
             onSetStagingFrame={(source) => void setStagingFrame(source)}
             onMakeStagingDiagram={() => void makeStagingDiagram()}

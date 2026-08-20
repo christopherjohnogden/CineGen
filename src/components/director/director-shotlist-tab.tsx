@@ -4,9 +4,18 @@ import type { Element } from '@/types/elements';
 import { clipDisplayLabels } from '@/lib/director/shotlist';
 import { padTimecode, validateClipTimings } from '@/lib/director/prompt-compiler';
 import { directorRunningLabel, setClipVariant, updateDirectorClip } from '@/lib/director/director-state';
+import {
+  beatIsDirtyFromLlmOrigin,
+  clipIsDirtyFromLlmOrigin,
+  resetClipBeatToLlmOrigin,
+  resetClipToLlmOrigin,
+  resetSceneClipsToLlmOrigin,
+  sceneIsDirtyFromLlmOrigin,
+} from '@/lib/director/llm-origin';
 import { compileLookBible } from '@/lib/director/look-bible';
 import { getDirectorAdapter } from '@/lib/director/video-adapter';
 import { DirectorSceneCoverage } from './director-scene-coverage';
+import { DirectorsNotesField } from './director-notes-field';
 import { beatScriptContext } from '@/lib/director/craft/coverage';
 
 interface DirectorShotlistTabProps {
@@ -24,21 +33,27 @@ interface DirectorShotlistTabProps {
   /** Stop the running shotlist job (manual or auto-sync). */
   onStopShotlist: () => void;
   /** Send director's notes for one scene to the LLM; it patches the clips the notes mention. */
-  onSceneNotes: (sceneId: string, notes: string) => void;
+  onSceneNotes: (sceneId: string, notes: string) => Promise<boolean>;
+  /** Send director's notes for one clip; it patches that clip only. */
+  onClipNotes: (clipId: string, notes: string) => Promise<boolean>;
   /** Redo one beat's camera; duration and dialogue stay. */
   onReshotBeat: (clipId: string, beatN: number) => void;
+  /** Redo the whole clip's coverage; other clips in the scene stay. */
+  onReshotClip: (clipId: string) => void;
   onSelectClip: (sceneId: string, clipId: string) => void;
 }
 
 type PendingShotlist =
   | { kind: 'show' }
   | { kind: 'scene'; sceneId: string; label: string; clipCount: number }
+  | { kind: 'clip'; clipId: string; clipLabel: string }
   | { kind: 'beat'; clipId: string; beatN: number; clipLabel: string };
 
-export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest, syncing, onChange, onShotlist, onStopShotlist, onSceneNotes, onReshotBeat, onSelectClip }: DirectorShotlistTabProps) {
+export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest, syncing, onChange, onShotlist, onStopShotlist, onSceneNotes, onClipNotes, onReshotBeat, onReshotClip, onSelectClip }: DirectorShotlistTabProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+  const [clipNotesDraft, setClipNotesDraft] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<PendingShotlist | null>(null);
 
   // A rail clip click expands that clip's row EXCLUSIVELY — whatever was open
@@ -273,34 +288,38 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
                       beatN,
                       clipLabel: clipLabels.get(clip.id) ?? clip.id,
                     })}
+                    onReshotClip={working ? undefined : () => setPending({
+                      kind: 'clip',
+                      clipId: clip.id,
+                      clipLabel: clipLabels.get(clip.id) ?? clip.id,
+                    })}
+                    notesValue={clipNotesDraft[clip.id] ?? ''}
+                    notesBusy={working}
+                    onNotesChange={(value) => setClipNotesDraft((draft) => ({ ...draft, [clip.id]: value }))}
+                    onApplyNotes={async () => {
+                      const ok = await onClipNotes(clip.id, clipNotesDraft[clip.id] ?? '');
+                      if (ok) setClipNotesDraft((draft) => ({ ...draft, [clip.id]: '' }));
+                    }}
+                    onResetClip={() => onChange(updateDirectorClip(show, clip.id, resetClipToLlmOrigin))}
+                    onResetBeat={(beatN) => onChange(updateDirectorClip(show, clip.id, (entry) => resetClipBeatToLlmOrigin(entry, beatN)))}
                   />
                 ))}
                 {clips.length > 0 && (
-                  <div className="dsl-notes">
-                    <span className="dsl-scenefield-label">Director&rsquo;s notes</span>
-                    <textarea
-                      value={notesDraft[scene.id] ?? ''}
-                      placeholder={'e.g. "1A should be a medium close-up" · "1B — Peter\'s tone more angry"'}
-                      onChange={(event) => setNotesDraft((draft) => ({ ...draft, [scene.id]: event.target.value }))}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                          event.preventDefault();
-                          onSceneNotes(scene.id, notesDraft[scene.id] ?? '');
-                        }
-                      }}
-                    />
-                    <div className="director-tab__row" style={{ alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        className="director-tab__btn director-tab__btn--accent"
-                        disabled={working || !(notesDraft[scene.id] ?? '').trim()}
-                        onClick={() => onSceneNotes(scene.id, notesDraft[scene.id] ?? '')}
-                      >
-                        Apply notes with LLM
-                      </button>
-                      <span className="director-tab__meta">Rewrites only the clips your notes mention — reference them by label (1A, 1B).</span>
-                    </div>
-                  </div>
+                  <DirectorsNotesField
+                    value={notesDraft[scene.id] ?? ''}
+                    placeholder={'e.g. "1A should be a medium close-up" · "1B — Peter\'s tone more angry"'}
+                    hint="Rewrites only the clips your notes mention — reference them by label (1A, 1B)."
+                    disabled={working}
+                    onChange={(value) => setNotesDraft((draft) => ({ ...draft, [scene.id]: value }))}
+                    onApply={async () => {
+                      const ok = await onSceneNotes(scene.id, notesDraft[scene.id] ?? '');
+                      if (ok) setNotesDraft((draft) => ({ ...draft, [scene.id]: '' }));
+                    }}
+                    resetLabel="Reset scene to original"
+                    resetTitle="Restore every clip in this scene to the first shotlist"
+                    resetDisabled={working || !sceneIsDirtyFromLlmOrigin(clips, scene.id)}
+                    onReset={() => onChange({ ...show, clips: resetSceneClipsToLlmOrigin(show.clips, scene.id) })}
+                  />
                 )}
               </div>
             </section>
@@ -325,11 +344,12 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
               </button>
               <button
                 type="button"
-                className={`mp-confirm__btn ${pending.kind === 'beat' ? 'mp-confirm__btn--go' : 'mp-confirm__btn--delete'}`}
+                className={`mp-confirm__btn ${pending.kind === 'show' || pending.kind === 'scene' ? 'mp-confirm__btn--delete' : 'mp-confirm__btn--go'}`}
                 autoFocus
                 onClick={() => {
                   if (pending.kind === 'show') onShotlist();
                   else if (pending.kind === 'scene') onShotlist(pending.sceneId);
+                  else if (pending.kind === 'clip') onReshotClip(pending.clipId);
                   else onReshotBeat(pending.clipId, pending.beatN);
                   setPending(null);
                 }}
@@ -357,6 +377,13 @@ function pendingCopy(pending: PendingShotlist): { title: string; description: st
       title: 'Re-shotlist this scene?',
       description: `${pending.label} has ${pending.clipCount} clip${pending.clipCount === 1 ? '' : 's'}. They will be replaced. Takes already generated on those clips are removed.`,
       confirm: 'Re-shotlist scene',
+    };
+  }
+  if (pending.kind === 'clip') {
+    return {
+      title: `Redo ${pending.clipLabel}?`,
+      description: `New coverage for this clip. Duration and the scene's other clips stay. Takes already on ${pending.clipLabel} are kept but may not match the new shots.`,
+      confirm: 'Redo clip',
     };
   }
   return {
@@ -414,9 +441,16 @@ interface ClipRowProps {
   onCopy: () => void;
   onOpenGenerate: () => void;
   onReshotBeat?: (beatN: number) => void;
+  onReshotClip?: () => void;
+  notesValue: string;
+  notesBusy: boolean;
+  onNotesChange: (value: string) => void;
+  onApplyNotes: () => void | Promise<void>;
+  onResetClip: () => void;
+  onResetBeat: (beatN: number) => void;
 }
 
-function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue, onVariant, onCopy, onOpenGenerate, onReshotBeat }: ClipRowProps) {
+function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue, onVariant, onCopy, onOpenGenerate, onReshotBeat, onReshotClip, notesValue, notesBusy, onNotesChange, onApplyNotes, onResetClip, onResetBeat }: ClipRowProps) {
   const timingError = validateClipTimings(clip);
   const adapter = getDirectorAdapter(show.adapterId);
   const variant = clip.activeVariant;
@@ -455,6 +489,16 @@ function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue,
         <button type="button" className="director-tab__btn" onClick={(event) => { event.stopPropagation(); onCopy(); }}>
           {copied ? 'Copied ✓' : 'Copy prompt'}
         </button>
+        {onReshotClip && (
+          <button
+            type="button"
+            className="director-tab__btn"
+            title={`Redo ${label ?? 'this clip'} — new coverage, same duration`}
+            onClick={(event) => { event.stopPropagation(); onReshotClip(); }}
+          >
+            Redo
+          </button>
+        )}
         <span className="director-tab__meta" aria-hidden>{open ? '▾' : '▸'}</span>
       </div>
       {open && (
@@ -468,13 +512,25 @@ function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue,
           <div className="director-tab__shotmap">
             <div className="director-tab__shotmap-head">
               <span>Shots in this prompt — isolate one for the full {clip.seconds}s or just its own length</span>
-              <button
-                type="button"
-                className={`director-tab__iso${variant.kind === 'full' ? ' director-tab__iso--active' : ''}`}
-                onClick={() => onVariant({ kind: 'full' })}
-              >
-                Full multishot
-              </button>
+              <span className="director-tab__shotrow-btns">
+                <button
+                  type="button"
+                  className={`director-tab__iso${variant.kind === 'full' ? ' director-tab__iso--active' : ''}`}
+                  onClick={() => onVariant({ kind: 'full' })}
+                >
+                  Full multishot
+                </button>
+                {onReshotClip && (
+                  <button
+                    type="button"
+                    className="director-tab__iso"
+                    title={`Redo ${label ?? 'this clip'} — new coverage for every shot`}
+                    onClick={onReshotClip}
+                  >
+                    Redo
+                  </button>
+                )}
+              </span>
             </div>
             {clip.beats.map((beat) => {
               const heldActive = isolated && variant.beatN === beat.n && variant.mode === 'held';
@@ -514,6 +570,15 @@ function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue,
                         Redo
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="director-tab__iso"
+                      disabled={!beatIsDirtyFromLlmOrigin(clip, beat.n)}
+                      title={`Restore S${beat.n} as first shotlisted`}
+                      onClick={() => onResetBeat(beat.n)}
+                    >
+                      Reset
+                    </button>
                   </span>
                 </div>
               );
@@ -521,6 +586,18 @@ function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue,
           </div>
 
           {timingError && <p className="director-tab__warn">{timingError}</p>}
+          <DirectorsNotesField
+            value={notesValue}
+            placeholder={'e.g. "S2 should be over Jordan\'s shoulder" · "Peter\'s look stays dead until the file lands"'}
+            hint="Rewrites this clip — mention S1, S2 if you mean one shot. This clip is implied."
+            disabled={notesBusy}
+            onChange={onNotesChange}
+            onApply={onApplyNotes}
+            resetLabel="Reset to original"
+            resetTitle="Restore this clip to the first shotlist"
+            resetDisabled={notesBusy || !clipIsDirtyFromLlmOrigin(clip)}
+            onReset={onResetClip}
+          />
           {request && (
             <>
               <span className="director-tab__meta">
