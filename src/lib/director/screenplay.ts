@@ -11,6 +11,39 @@ export const ELEMENT_CYCLE: ScreenplayElementType[] =
 
 const SCENE_HEADING = /^\s*(INT|EXT|EST|INT\.?\/EXT|I\.?\/E)[\s.]/i;
 const TRANSITION = /(TO:|^FADE (IN|OUT)|^DISSOLVE|^SMASH CUT|^MATCH CUT)/;
+/** File-format chrome after </Content> — not the <FinalDraft> root (that would wipe a raw .fdx). */
+const FDX_CHROME = /<(ElementSettings|FontSpec|ParagraphSpec|Behavior|Outline|WindowState|SmartType|HeaderAndFooter|MoresAndContinueds)\b/i;
+
+/** True when a line is Final Draft file chrome, not script. */
+export function isFdxChromeLine(text: string): boolean {
+  return FDX_CHROME.test(text)
+    || /\bAdornmentStyle\s*=/.test(text)
+    || /\bPaginateAs\s*=/.test(text)
+    || /\bFont\s*=\s*"Courier Final Draft"/i.test(text);
+}
+
+/** Drop the ElementSettings / FontSpec trailer Final Draft appends after the script. */
+export function trimFdxTrailer(text: string): string {
+  const tagIdx = text.search(FDX_CHROME);
+  const lines = text.split('\n');
+  const lineIdx = lines.findIndex((line) => isFdxChromeLine(line));
+  const lineCut = lineIdx === -1 ? -1 : lines.slice(0, lineIdx).join('\n').length;
+  const cuts = [tagIdx, lineCut].filter((n) => n >= 0);
+  if (cuts.length === 0) return text;
+  return text.slice(0, Math.min(...cuts)).replace(/\s+$/, '');
+}
+
+/** Drop trailing FDX-chrome elements (and trim chrome off the last real line). */
+export function scrubFdxChrome(elements: ScreenplayElement[]): ScreenplayElement[] {
+  const out: ScreenplayElement[] = [];
+  for (const el of elements) {
+    if (isFdxChromeLine(el.text)) break;
+    const text = trimFdxTrailer(el.text);
+    if (!text) break;
+    out.push(text === el.text ? el : { ...el, text });
+  }
+  return out;
+}
 
 function isAllCaps(line: string): boolean {
   const letters = line.replace(/[^A-Za-z]/g, '');
@@ -25,7 +58,7 @@ function isCharacterCue(t: string): boolean {
 export function parseToScreenplay(source: string): Screenplay {
   const elements: ScreenplayElement[] = [];
   let inDialogue = false;
-  for (const raw of source.replace(/^﻿/, '').split('\n')) {
+  for (const raw of trimFdxTrailer(source.replace(/^\uFEFF/, '')).split('\n')) {
     const t = raw.trim();
     if (t === '') { inDialogue = false; continue; }
     let type: ScreenplayElementType;

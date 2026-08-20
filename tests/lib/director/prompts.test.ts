@@ -4,7 +4,7 @@ import { isolatedPrompt, rewritePrefixForIsolate } from '@/lib/director/isolate-
 import { compileClipBody, retimeClipToSeconds, validateClipTimings } from '@/lib/director/prompt-compiler';
 import { seedance25Adapter } from '@/lib/director/video-adapter';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
-import { BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, BREAKDOWN_SYSTEM_PROMPT, shotlistContinueSystemPrompt, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
+import { BREAKDOWN_AUDIT_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, BREAKDOWN_SYSTEM_PROMPT, shotlistContinueSystemPrompt, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
 
 const clip: DirectorClip = {
   id: '2-9b',
@@ -151,7 +151,23 @@ describe('BREAKDOWN_IDENTIFY_SYSTEM_PROMPT', () => {
     expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/EXTRACTION COMPLETENESS/);
     expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/VEHICLES/);
   });
+  it('asks for a complete list from a specialist, not a delta against a prior parse', () => {
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/professional script supervisor/i);
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/COMPLETE "items" list/);
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).not.toMatch(/ALREADY IDENTIFIED/);
+  });
+  it('forces an action-line walk with quoted evidence instead of a noun lexicon', () => {
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/\[A#\] ACTION/);
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/"evidence"/);
+    expect(BREAKDOWN_IDENTIFY_SYSTEM_PROMPT).toMatch(/script's own noun phrase/);
+  });
   it('the full BREAKDOWN_SYSTEM_PROMPT still asks for profiles', () => {
     expect(BREAKDOWN_SYSTEM_PROMPT).toMatch(/actingProfile/);
+    expect(BREAKDOWN_SYSTEM_PROMPT).toMatch(/professional script supervisor/i);
+  });
+  it('audit pass hunts for misses, not a noun lexicon', () => {
+    expect(BREAKDOWN_AUDIT_SYSTEM_PROMPT).toMatch(/JUNIOR BREAKDOWN/);
+    expect(BREAKDOWN_AUDIT_SYSTEM_PROMPT).toMatch(/\[A#\] ACTION/);
+    expect(BREAKDOWN_AUDIT_SYSTEM_PROMPT).not.toMatch(/actingProfile/i);
   });
 });

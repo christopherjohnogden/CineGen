@@ -97,10 +97,7 @@ describe('useDirectorCascade', () => {
     expect(runBreakdown).toHaveBeenCalledTimes(2);
   });
 
-  it('a breakdown-refinement failure does not kill the shotlist, but leaves the run dirty', async () => {
-    // The deterministic breakdown phase already committed scenes before the LLM
-    // refinement failed, so the shotlist must still run — and sync state must
-    // NOT be committed, so the next edit retries the whole chain.
+  it('a failed LLM breakdown does not start the shotlist, and leaves the run dirty', async () => {
     const runBreakdown = vi.fn().mockRejectedValue(new Error('CLI hiccup'));
     const runShotlist = vi.fn().mockResolvedValue(undefined);
     const commit = vi.fn();
@@ -110,8 +107,39 @@ describe('useDirectorCascade', () => {
     rerender({ show: base({ sourceText: SCRIPT }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs: 2500 });
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
     expect(runBreakdown).toHaveBeenCalledTimes(1);
-    expect(runShotlist).toHaveBeenCalledTimes(1);
+    expect(runShotlist).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('acknowledge suppresses the pending auto-run for this source', async () => {
+    const runBreakdown = vi.fn().mockResolvedValue(undefined);
+    const runShotlist = vi.fn().mockResolvedValue(undefined);
+    const commit = vi.fn();
+    const { rerender, result } = renderHook((p) => useDirectorCascade(p), {
+      initialProps: { show: base({ sourceText: '' }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs: 2500 },
+    });
+
+    // Same order as an upload: commit the new script, then mark it handled
+    // before the debounce window elapses.
+    rerender({ show: base({ sourceText: SCRIPT }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs: 2500 });
+    act(() => { result.current.acknowledge(SCRIPT, 'screenplay'); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(runBreakdown).not.toHaveBeenCalled();
+    expect(runShotlist).not.toHaveBeenCalled();
+  });
+
+  it('acknowledge before the effect runs still suppresses auto-sync', async () => {
+    const runBreakdown = vi.fn().mockResolvedValue(undefined);
+    const runShotlist = vi.fn().mockResolvedValue(undefined);
+    const commit = vi.fn();
+    const { rerender, result } = renderHook((p) => useDirectorCascade(p), {
+      initialProps: { show: base({ sourceText: '' }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs: 2500 },
+    });
+
+    act(() => { result.current.acknowledge(SCRIPT, 'screenplay'); });
+    rerender({ show: base({ sourceText: SCRIPT }), autoSync: true, runBreakdown, runShotlist, commitSyncState: commit, debounceMs: 2500 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(runBreakdown).not.toHaveBeenCalled();
   });
 
   it('unmounting mid-run aborts the in-flight controller', async () => {

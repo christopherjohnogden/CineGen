@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { breakdownJobInput, estimateSceneSeconds, lookBibleJobInput, shotlistContinuationInput, shotlistJobInput } from '@/lib/director/job-inputs';
+import { breakdownAuditInput, breakdownJobInput, estimateSceneSeconds, lookBibleJobInput, shotlistContinuationInput, shotlistJobInput } from '@/lib/director/job-inputs';
 import type { DirectorShow, DirectorScene } from '@/types/director';
 
 const show = (over: Partial<DirectorShow>): DirectorShow => ({
@@ -24,8 +24,23 @@ describe('breakdownJobInput', () => {
   it('sends only the changed scene text when scoped', () => {
     const body = breakdownJobInput(show({ sourceText: SRC, scenes: SCENES }), 'none', { sceneIds: ['s1'] });
     expect(body).toMatch(/changed scenes only/i);
+    expect(body).toMatch(/complete element list/i);
     expect(body).toMatch(/Dr Jordan enters/);   // scene s1 kept
     expect(body).not.toMatch(/He walks fast/);  // scene s2 omitted
+    expect(body).not.toMatch(/ALREADY IDENTIFIED/);
+  });
+  it('numbers action lines so the model must walk every slug', () => {
+    const body = breakdownJobInput(show({ sourceText: SRC }), 'none');
+    expect(body).toMatch(/\[A1\] ACTION {2}Dr Jordan enters\./);
+    expect(body).toMatch(/=== SCENE 1\/2 {2}INT\. OFFICE - DAY ===/);
+  });
+  it('audit input lists the junior pass and the numbered script', () => {
+    const body = breakdownAuditInput(show({ sourceText: SRC }), [
+      { id: '1', kind: 'character', name: 'Dr Jordan', tag: '@Dr-Jordan', description: '' },
+    ]);
+    expect(body).toMatch(/JUNIOR BREAKDOWN/);
+    expect(body).toMatch(/@Dr-Jordan/);
+    expect(body).toMatch(/\[A1\] ACTION/);
   });
 });
 

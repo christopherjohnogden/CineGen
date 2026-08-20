@@ -12,17 +12,12 @@ import { DirectorLookBiblePanel } from './director-look-bible';
 import { useDirectorCascade } from './use-director-cascade';
 import { pruneRemovedScenes, remapSceneIndexMaps } from '@/lib/director/cascade';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
-import {
-  addMissingItems,
-  mergeBreakdownItems,
-  mergeScenes,
-  parseBreakdownPayload,
-  reconcileAutoItems,
-} from '@/lib/director/breakdown';
+import { applyLlmBreakdownItems, mergeScenes, parseBreakdownPayload } from '@/lib/director/breakdown';
 import { localBreakdownForShow } from '@/lib/director/local-breakdown';
 import { clipDisplayLabels, mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
-import { BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, SCENE_NOTES_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
+import { BREAKDOWN_AUDIT_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, SCENE_NOTES_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
 import {
+  breakdownAuditInput,
   breakdownJobInput,
   lookBibleJobInput,
   sceneNotesJobInput,
@@ -208,32 +203,25 @@ export function DirectorTab() {
     signal?: AbortSignal,
   ) => {
     const current = showRef.current;
-    // Phase 1 — deterministic parse, committed IMMEDIATELY. Scenes, locations
-    // (heading = location) and speaking characters (dialogue cue = character)
-    // are structural facts; they land in the breakdown with zero latency.
+    // Scene headings stay structural (script parse). Elements come only from the LLM.
     const local = localBreakdownForShow(current);
-    const localItems = addMissingItems(
-      reconcileAutoItems(current.breakdown, local.items), local.items, state.elements,
-    );
     const localScenes = mergeScenes(current.scenes, local.scenes, { authoritative: true });
     const requestId = crypto.randomUUID();
     setShow({
       ...current,
-      breakdown: localItems,
       scenes: localScenes,
       breakdownApproved: false,
-      jobStatus: { type: 'breakdown', message: 'Refining breakdown…', requestId },
+      jobStatus: { type: 'breakdown', message: 'Breaking down script…', requestId },
       selectedSceneId: current.selectedSceneId ?? localScenes[0]?.id,
     });
     try {
-      // Phase 2 — the LLM only ADDS what the deterministic pass missed (unnamed
-      // groups, descriptions, summaries). Telling it what is already identified
-      // keeps its output — and therefore its latency — small.
       const existing = state.elements.map((element) => `${element.type} ${element.name}`).join(', ');
-      const scopeArg = scope === 'all' ? undefined : { sceneIds: scope.sceneIds };
+      const scopedIds = scope === 'all' ? [] : scope.sceneIds;
+      const scopeArg = scopedIds.length > 0 ? { sceneIds: scopedIds } : undefined;
+      const showForJob = { ...current, scenes: localScenes };
       const payload = await runDirectorJsonJob(
         BREAKDOWN_IDENTIFY_SYSTEM_PROMPT,
-        breakdownJobInput(current, existing, scopeArg, localItems),
+        breakdownJobInput(showForJob, existing, scopeArg),
         parseDirectorLlmProvider(current.llmProvider),
         requestId,
         signal,
@@ -244,10 +232,32 @@ export function DirectorTab() {
       // result would repopulate a board the user just cleared.
       if (showRef.current.sourceText !== current.sourceText) return;
       const parsed = parseBreakdownPayload(payload);
+      let found = parsed.items;
+      try {
+        setShow({
+          ...showRef.current,
+          jobStatus: { type: 'breakdown', message: 'Checking for missed elements…', requestId },
+        });
+        const audit = parseBreakdownPayload(await runDirectorJsonJob(
+          BREAKDOWN_AUDIT_SYSTEM_PROMPT,
+          breakdownAuditInput(showForJob, found, scopeArg),
+          parseDirectorLlmProvider(current.llmProvider),
+          crypto.randomUUID(),
+          signal,
+          { onUsage: recordSpend },
+        ));
+        if (showRef.current.sourceText !== current.sourceText) return;
+        found = [...found, ...audit.items];
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        // Keep the first pass — a failed audit must not wipe a usable breakdown.
+      }
       const latest = showRef.current; // re-read: the user may have edited during the job
       setShow({
         ...latest,
-        breakdown: mergeBreakdownItems(latest.breakdown, parsed.items, state.elements),
+        breakdown: applyLlmBreakdownItems(
+          latest.breakdown, found, state.elements, { pruneMissing: !scopeArg },
+        ),
         scenes: mergeScenes(latest.scenes, parsed.scenes),
         breakdownApproved: false,
         mode: latest.mode, // do NOT force the tab to switch during an auto-run
@@ -260,11 +270,6 @@ export function DirectorTab() {
       throw error; // let the cascade know not to chain shotlist
     }
   }, [failJob, setShow, state.elements]);
-
-  const approveBreakdown = useCallback(() => {
-    const current = showRef.current;
-    setShow({ ...current, breakdownApproved: true, mode: 'shotlist' });
-  }, [setShow]);
 
   const createElementFromBreakdown = useCallback((item: DirectorBreakdownItem, data: {
     name: string;
@@ -385,22 +390,16 @@ export function DirectorTab() {
     setShow({ ...nextShow, syncState });
   }, [setShow]);
 
-  // Live deterministic breakdown: re-extract on every script edit (the editor
-  // already debounces sourceText writes) so the Breakdown tab shows current
-  // scenes/characters/locations/props the moment the user switches to it —
-  // before any LLM job has even started. Both merges return the SAME reference
-  // when nothing changed, so this effect settles instead of looping.
+  // Scene list stays in sync with the script (headings are structural). Elements
+  // wait for the LLM breakdown — the live extractor no longer mints suggestions.
   useEffect(() => {
     const cur = showRef.current;
     if (!cur.sourceText.trim() && cur.docKind !== 'beatsheet') return;
     const local = localBreakdownForShow(cur);
-    const breakdown = addMissingItems(
-      reconcileAutoItems(cur.breakdown, local.items), local.items, state.elements,
-    );
     const scenes = mergeScenes(cur.scenes, local.scenes, { authoritative: true });
-    if (breakdown === cur.breakdown && scenes === cur.scenes) return;
-    setShow({ ...cur, breakdown, scenes });
-  }, [show.sourceText, show.docKind, state.elements, setShow]);
+    if (scenes === cur.scenes) return;
+    setShow({ ...cur, scenes });
+  }, [show.sourceText, show.docKind, setShow]);
 
   const cascade = useDirectorCascade({
     show,
@@ -656,6 +655,15 @@ export function DirectorTab() {
           </span>
         )}
         <div className="director-tab__toolcluster">
+          <label className="dtog" title="Auto-run breakdown + shotlist after edits">
+            <input type="checkbox" checked={show.autoSync ?? true}
+              onChange={(e) => setShow({ ...show, autoSync: e.target.checked })} />
+            <span className="dtog-track" aria-hidden><span className="dtog-thumb" /></span>
+            <span className="dtog-label">Auto-sync</span>
+            {cascade.running && <span className="dtog-badge dtog-badge--run">running</span>}
+            {!cascade.running && cascade.dirty.length > 0 && <span className="dtog-badge">{cascade.dirty.length} stale</span>}
+          </label>
+          <span className="director-tab__vr" aria-hidden />
           <div className="dtool">
             <button
               type="button"
@@ -679,15 +687,6 @@ export function DirectorTab() {
               Look bible
             </button>
           </div>
-          <span className="director-tab__vr" aria-hidden />
-          <label className="dtog" title="Auto-run breakdown + shotlist after edits">
-            <input type="checkbox" checked={show.autoSync ?? true}
-              onChange={(e) => setShow({ ...show, autoSync: e.target.checked })} />
-            <span className="dtog-track" aria-hidden><span className="dtog-thumb" /></span>
-            <span className="dtog-label">Auto-sync</span>
-            {cascade.running && <span className="dtog-badge dtog-badge--run">running</span>}
-            {!cascade.running && cascade.dirty.length > 0 && <span className="dtog-badge">{cascade.dirty.length} stale</span>}
-          </label>
           <span className="director-tab__vr" aria-hidden />
           <DirectorLlmPicker
             provider={parseDirectorLlmProvider(show.llmProvider)}
@@ -739,10 +738,19 @@ export function DirectorTab() {
           />
         )}
         {show.mode === 'source' && (
-          <DirectorScriptTab show={show} onChange={setShow} onBreakdown={() => void runBreakdown()} onStartOver={startOver} />
+          <DirectorScriptTab
+            show={show}
+            onChange={setShow}
+            onBreakdown={() => {
+              const cur = showRef.current;
+              cascade.acknowledge(cur.sourceText, cur.docKind);
+              void runBreakdown();
+            }}
+            onStartOver={startOver}
+          />
         )}
         {show.mode === 'breakdown' && (
-          <DirectorBreakdownTab show={show} elements={state.elements} dirtyKeys={cascade.dirty} syncing={cascade.running} onChange={setShow} onApprove={approveBreakdown} onCreateElement={createElementFromBreakdown} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
+          <DirectorBreakdownTab show={show} elements={state.elements} dirtyKeys={cascade.dirty} syncing={cascade.running} onChange={setShow} onCreateElement={createElementFromBreakdown} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
         )}
         {show.mode === 'shotlist' && (
           <DirectorShotlistTab show={show} elements={state.elements} sceneFilter={sceneFilter} expandRequest={expandRequest} syncing={cascade.running} onChange={setShow} onShotlist={startManualShotlist} onStopShotlist={stopShotlist} onSceneNotes={(sceneId, notes) => void runSceneNotes(sceneId, notes)} onSelectClip={selectClip} />

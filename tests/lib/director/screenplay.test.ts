@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseToScreenplay, serializeScreenplay, nextElementType, typeAfterEnter, ELEMENT_CYCLE,
+  scrubFdxChrome, trimFdxTrailer,
 } from '@/lib/director/screenplay';
 
 describe('parseToScreenplay', () => {
@@ -15,6 +16,35 @@ describe('parseToScreenplay', () => {
     const types = doc.elements.map((e) => e.type);
     expect(types).toContain('parenthetical');
     expect(types.at(-1)).toBe('transition');
+  });
+});
+
+describe('Final Draft chrome trailer', () => {
+  const script = 'EXT. FOREST - DAY\nJordan listens.\n\nCUT TO:';
+  const trailer = `<ElementSettings Type="General">
+<FontSpec AdornmentStyle="0" Font="Courier Final Draft" Size="12" Style=""/>
+<ParagraphSpec Alignment="Left" Type="General"/>
+<Behavior PaginateAs="General" ReturnKey="General"/>`;
+
+  it('trimFdxTrailer drops settings after the script', () => {
+    expect(trimFdxTrailer(`${script}\n${trailer}`)).toBe(script);
+    expect(trimFdxTrailer(script)).toBe(script);
+  });
+
+  it('parseToScreenplay does not treat FontSpec as action', () => {
+    const doc = parseToScreenplay(`${script}\n${trailer}`);
+    const blob = serializeScreenplay(doc);
+    expect(blob).toContain('CUT TO:');
+    expect(blob).not.toMatch(/FontSpec|ElementSettings|Courier Final Draft/);
+  });
+
+  it('scrubFdxChrome drops trailing chrome elements', () => {
+    const doc = parseToScreenplay(script);
+    const dirty = [
+      ...doc.elements,
+      { id: 'x', type: 'action' as const, text: '<FontSpec AdornmentStyle="0" Font="Courier Final Draft" Size="12"/>' },
+    ];
+    expect(serializeScreenplay({ elements: scrubFdxChrome(dirty) })).toBe(serializeScreenplay(doc));
   });
 });
 

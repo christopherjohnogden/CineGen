@@ -18,7 +18,13 @@ export function useDirectorCascade({
   runShotlist,
   commitSyncState,
   debounceMs = 2500,
-}: Args): { dirty: string[]; running: boolean; cancel: () => void } {
+}: Args): {
+  dirty: string[];
+  running: boolean;
+  cancel: () => void;
+  /** Mark this source as already handled so auto-sync will not re-fire it. */
+  acknowledge: (sourceText: string, docKind?: DirectorShow['docKind']) => void;
+} {
   const [running, setRunning] = useState(false);
   const [dirty, setDirty] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,27 +50,23 @@ export function useDirectorCascade({
     abort.current = controller;
     setRunning(true);
     try {
+      const scopedIds = scenesForKeys(cur, d.changed).map((s) => s.id);
       const scope: { sceneIds: string[] } | 'all' =
-        d.changed.length && cur.docKind !== 'beatsheet'
-          ? { sceneIds: scenesForKeys(cur, d.changed).map((s) => s.id) }
+        d.changed.length && cur.docKind !== 'beatsheet' && scopedIds.length > 0
+          ? { sceneIds: scopedIds }
           : 'all';
-      // The deterministic breakdown phase commits scenes/items before the LLM
-      // refinement can fail, so a refinement failure must not cost the user
-      // their clips — the shotlist still runs on what the parse produced.
-      let breakdownFailed = false;
+      // Elements come from the LLM breakdown. A failed job must not shotlist
+      // against an empty (or stale) bible — stay dirty so the next edit retries.
       try {
         await runBreakdown(scope, controller.signal);
       } catch {
-        breakdownFailed = true;
+        return;
       }
       if (controller.signal.aborted) return;
       await runShotlist(scope, controller.signal);
       if (controller.signal.aborted) return;
       // Reached only when this controller was never aborted, so a superseded
       // (cancel-and-restart) run bails out above and never commits stale state.
-      // A half-failed run (breakdown refinement down) stays dirty so the next
-      // edit retries the whole chain.
-      if (breakdownFailed) return;
       commitSyncState({ hashes: Object.fromEntries(next), dirty: [], lastRunAt: Date.now() });
       setDirty([]);
     } finally {
@@ -107,5 +109,16 @@ export function useDirectorCascade({
     setRunning(false);
   };
 
-  return { dirty, running, cancel };
+  // Upload / the Run-breakdown button already kicked a job for this source.
+  // Drop the pending auto-sync timer so we don't pay for a second LLM pass
+  // 2.5s later (and so we don't abort-restart the one that just started).
+  const acknowledge = (sourceText: string, docKind?: DirectorShow['docKind']) => {
+    attemptedSig.current = `${docKind ?? 'screenplay'}:${sourceText}`;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    abort.current?.abort();
+    setRunning(false);
+  };
+
+  return { dirty, running, cancel, acknowledge };
 }

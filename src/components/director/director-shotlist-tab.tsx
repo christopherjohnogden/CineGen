@@ -182,7 +182,7 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
       )}
 
       {show.scenes.length === 0 ? (
-        <p className="director-tab__empty">Approve a breakdown, then run a shotlist to fill this board.</p>
+        <p className="director-tab__empty">Run a breakdown, then shotlist to fill this board.</p>
       ) : (
         visibleScenes.map((scene) => {
           const clips = show.clips.filter((clip) => clip.sceneId === scene.id);

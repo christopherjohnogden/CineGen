@@ -28,6 +28,24 @@ describe('director script extract', () => {
       .toContain('INT. KITCHEN - NIGHT');
   });
 
+  it('parses a .txt that is actually Final Draft XML and drops ElementSettings', () => {
+    const raw = `<?xml version="1.0"?>
+<FinalDraft DocumentType="Script">
+  <Content>
+    <Paragraph Type="Scene Heading"><Text>EXT. FOREST - DAY</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Jordan listens.</Text></Paragraph>
+    <Paragraph Type="Transition"><Text>CUT TO:</Text></Paragraph>
+  </Content>
+  <ElementSettings Type="General">
+    <FontSpec AdornmentStyle="0" Font="Courier Final Draft" Size="12"/>
+  </ElementSettings>
+</FinalDraft>`;
+    const text = extractScriptText('script.txt', raw);
+    expect(text).toContain('EXT. FOREST - DAY');
+    expect(text).toContain('CUT TO:');
+    expect(text).not.toMatch(/ElementSettings|FontSpec|Courier Final Draft/);
+  });
+
   it('rejects PDF until a text export is provided', () => {
     expect(() => extractScriptText('script.pdf', '%PDF-1.4')).toThrow(/PDF is not supported/);
   });

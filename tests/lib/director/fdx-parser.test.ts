@@ -59,6 +59,25 @@ describe('parseFdx', () => {
     expect(text.split('\n').length).toBeGreaterThan(3);
   });
 
+  it('ignores ElementSettings / FontSpec chrome after </Content>', () => {
+    const withChrome = `${FDX.slice(0, FDX.lastIndexOf('</FinalDraft>'))}
+  <ElementSettings Type="General">
+    <FontSpec AdornmentStyle="0" Font="Courier Final Draft" RevisionID="0" Size="12" Style=""/>
+    <ParagraphSpec Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="1.50" RightIndent="7.50" SpaceBefore="0" Spacing="1" StartsNewPage="No" Type="General"/>
+    <Behavior PaginateAs="General" ReturnKey="General" Shortcut="0" TabKey="" WinShortcut="0"/>
+    <Paragraph Type="General"><Text>&lt;ElementSettings Type="General"&gt;</Text></Paragraph>
+  </ElementSettings>
+</FinalDraft>`;
+    const doc = parseFdx(withChrome)!;
+    const blob = serializeScreenplay(doc);
+    expect(blob).toContain('CUT TO:');
+    expect(blob).not.toMatch(/ElementSettings/);
+    expect(blob).not.toMatch(/FontSpec/);
+    expect(blob).not.toMatch(/Courier Final Draft/);
+    expect(blob).not.toMatch(/ParagraphSpec/);
+    expect(blob).not.toMatch(/PaginateAs/);
+  });
+
   it('unwraps DualDialogue into sequential character/dialogue', () => {
     const dual = `<FinalDraft><Content>
       <Paragraph Type="Scene Heading"><Text>INT. ROOM - DAY</Text></Paragraph>

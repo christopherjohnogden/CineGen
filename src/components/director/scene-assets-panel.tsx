@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react';
 import type { ScriptScene } from '@/lib/director/scene-split';
-import { resolveSceneAssets } from '@/lib/director/scene-assets';
+import { resolveAllSceneAssets, resolveSceneAssets } from '@/lib/director/scene-assets';
 import type { BreakdownKind, DirectorBreakdownItem, DirectorShow } from '@/types/director';
 import type { Element } from '@/types/elements';
 import { BreakdownAssetCard } from './breakdown-asset-card';
 
 interface SceneAssetsPanelProps {
   show: DirectorShow;
-  scene: ScriptScene;
-  sceneIndex: number;
+  scenes: ScriptScene[];
+  filter: number | 'all';
   elements: Element[];
   activeKind: 'all' | BreakdownKind;
   focusName?: string;
@@ -18,6 +18,7 @@ interface SceneAssetsPanelProps {
   onEditDescription: (tag: string, description: string) => void;
   onAssign: (tag: string, elementId: string) => void;
   onCreate: (item: DirectorBreakdownItem) => void;
+  onJump: (item: DirectorBreakdownItem) => void;
 }
 
 const KIND_LABEL: Record<BreakdownKind, string> = { character: 'Characters', location: 'Locations', prop: 'Props', vehicle: 'Vehicles' };
@@ -25,10 +26,16 @@ const KIND_LABEL: Record<BreakdownKind, string> = { character: 'Characters', loc
 const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
 export function SceneAssetsPanel({
-  show, scene, sceneIndex, elements, activeKind, focusName,
-  onSetKind, onRemove, onGenerateRef, onEditDescription, onAssign, onCreate,
+  show, scenes, filter, elements, activeKind, focusName,
+  onSetKind, onRemove, onGenerateRef, onEditDescription, onAssign, onCreate, onJump,
 }: SceneAssetsPanelProps) {
-  const resolved = resolveSceneAssets(show, sceneIndex, show.breakdown, scene);
+  const resolved = filter === 'all'
+    ? resolveAllSceneAssets(show, scenes)
+    : scenes[filter]
+      ? resolveSceneAssets(show, filter, show.breakdown, scenes[filter]).map((row) => (
+        { ...row, sceneIndex: filter }
+      ))
+      : [];
   const counts = { character: 0, location: 0, prop: 0, vehicle: 0 } as Record<BreakdownKind, number>;
   resolved.forEach((row) => { counts[row.item.kind] += 1; });
   const flashRef = useRef<HTMLDivElement>(null);
@@ -43,6 +50,7 @@ export function SceneAssetsPanel({
   }, [focusName]);
 
   const kinds: BreakdownKind[] = activeKind === 'all' ? ['character', 'location', 'prop', 'vehicle'] : [activeKind];
+  const emptyLabel = filter === 'all' ? 'None in the show.' : 'None in this scene.';
 
   return (
     <>
@@ -55,19 +63,25 @@ export function SceneAssetsPanel({
         ))}
       </div>
       <div className="dbk-card-list">
+        {show.breakdown.length === 0 && show.jobStatus?.type === 'breakdown' && !show.jobStatus.error && (
+          <p className="director-tab__empty">The LLM is breaking down the script…</p>
+        )}
+        {show.breakdown.length === 0 && !(show.jobStatus?.type === 'breakdown' && !show.jobStatus.error) && (
+          <p className="director-tab__empty">Run a breakdown to list characters, locations, props and vehicles.</p>
+        )}
         {kinds.map((kind) => {
           const items = resolved.filter((row) => row.item.kind === kind);
           if (activeKind === 'all' && items.length === 0) return null;
           return (
             <div key={kind} className="dbk-card-group">
               <span className="director-tab__label">{KIND_LABEL[kind]} ({items.length})</span>
-              {items.length === 0 && <p className="director-tab__empty">None in this scene.</p>}
-              {items.map(({ item, source }) => (
+              {items.length === 0 && <p className="director-tab__empty">{emptyLabel}</p>}
+              {items.map(({ item, source, sceneIndex }) => (
                 <BreakdownAssetCard
                   key={item.tag}
                   item={item}
                   source={source}
-                  scene={scene}
+                  scene={scenes[sceneIndex] ?? scenes[0]}
                   elements={elements}
                   focused={Boolean(focusName && normName(item.name) === normName(focusName))}
                   flashRef={flashRef}
@@ -76,6 +90,7 @@ export function SceneAssetsPanel({
                   onCreate={onCreate}
                   onGenerateRef={onGenerateRef}
                   onEditDescription={onEditDescription}
+                  onJump={onJump}
                 />
               ))}
             </div>

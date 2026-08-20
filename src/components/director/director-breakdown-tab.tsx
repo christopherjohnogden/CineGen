@@ -4,10 +4,11 @@ import type { BreakdownKind, DirectorBreakdownItem, DirectorShow } from '@/types
 import { parseToScreenplay } from '@/lib/director/screenplay';
 import { splitScenes, type ScriptScene } from '@/lib/director/scene-split';
 import { sceneKeyMap } from '@/lib/director/cascade';
-import { applyManualTag } from '@/lib/director/scene-assets';
+import { applyManualTag, firstScriptHit, resolveSceneAssets } from '@/lib/director/scene-assets';
 import { assignBreakdownElement } from '@/lib/director/breakdown';
 import { SceneScriptView } from './scene-script-view';
 import { SceneAssetsPanel } from './scene-assets-panel';
+import { DirectorSpendCard } from './director-spend-card';
 import { ElementModal } from '@/components/elements/element-modal';
 
 interface DirectorBreakdownTabProps {
@@ -16,7 +17,6 @@ interface DirectorBreakdownTabProps {
   dirtyKeys: string[];
   syncing: boolean;
   onChange: (show: DirectorShow) => void;
-  onApprove: () => void;
   onCreateElement: (item: DirectorBreakdownItem, data: {
     name: string;
     type: Element['type'];
@@ -27,31 +27,59 @@ interface DirectorBreakdownTabProps {
 }
 
 export function DirectorBreakdownTab({
-  show, elements, dirtyKeys, syncing, onChange, onApprove, onCreateElement, onOpenElements,
+  show, elements, dirtyKeys, syncing, onChange, onCreateElement, onOpenElements,
 }: DirectorBreakdownTabProps) {
   const scenes = splitScenes(parseToScreenplay(show.sourceText));
   const sceneKeys = sceneKeyMap(scenes);
   const keyOf = (entry: ScriptScene) => sceneKeys.get(entry) ?? (entry.heading.trim().toUpperCase() || '(untitled)');
-  const [sceneIndex, setSceneIndex] = useState(0);
+  const [navKey, setNavKey] = useState<'all' | number>('all');
+  const [scriptSceneIndex, setScriptSceneIndex] = useState(0);
   const [activeKind, setActiveKind] = useState<'all' | BreakdownKind>('all');
   const [focusName, setFocusName] = useState<string | undefined>();
+  const [focusTag, setFocusTag] = useState<string | undefined>();
   const [createFor, setCreateFor] = useState<DirectorBreakdownItem | null>(null);
-  const scene = scenes[sceneIndex] ?? scenes[0];
+  const scriptScene = scenes[scriptSceneIndex] ?? scenes[0];
 
-  if (!scene) {
+  if (!scriptScene) {
     return <div className="director-tab__stage"><p className="director-tab__empty">Run a breakdown from the Script tab to populate scenes.</p></div>;
   }
 
+  const selectScene = (index: number) => {
+    setNavKey(index);
+    setScriptSceneIndex(index);
+    setActiveKind('all');
+  };
+
   const removeFromScene = (tag: string) => {
-    const ov = show.sceneAssetOverrides?.[sceneIndex] ?? { added: [], removed: [] };
-    const next = { added: ov.added.filter((t) => t !== tag), removed: [...new Set([...ov.removed, tag])] };
-    onChange({ ...show, sceneAssetOverrides: { ...show.sceneAssetOverrides, [sceneIndex]: next } });
+    const indices = navKey === 'all'
+      ? scenes.map((_, index) => index).filter((index) => (
+        resolveSceneAssets(show, index, show.breakdown, scenes[index]).some((row) => row.item.tag === tag)
+      ))
+      : [navKey];
+    let overrides = { ...show.sceneAssetOverrides };
+    for (const index of indices) {
+      const ov = overrides?.[index] ?? { added: [], removed: [] };
+      overrides = {
+        ...overrides,
+        [index]: { added: ov.added.filter((t) => t !== tag), removed: [...new Set([...ov.removed, tag])] },
+      };
+    }
+    onChange({ ...show, sceneAssetOverrides: overrides });
   };
 
   const onAssetClick = (kind: BreakdownKind, name: string) => {
     if (activeKind !== 'all' && activeKind !== kind) setActiveKind(kind);
     setFocusName(undefined);
     requestAnimationFrame(() => setFocusName(name));
+  };
+
+  const jumpToScript = (item: DirectorBreakdownItem) => {
+    const prefer = navKey === 'all' ? scriptSceneIndex : navKey;
+    const hit = firstScriptHit(scenes, show, item, prefer);
+    if (hit && hit.sceneIndex !== scriptSceneIndex) setScriptSceneIndex(hit.sceneIndex);
+    if (hit && navKey !== 'all') setNavKey(hit.sceneIndex);
+    setFocusTag(undefined);
+    requestAnimationFrame(() => setFocusTag(item.tag));
   };
 
   const tagSelection = (kind: BreakdownKind, rawName: string) => {
@@ -65,28 +93,48 @@ export function DirectorBreakdownTab({
   return (
     <div className="dbk-shell">
       <aside className="dbk-nav">
-        <div className="director-tab__row" style={{ marginBottom: 10 }}>
-          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onApprove} disabled={show.breakdown.length === 0 || show.breakdownApproved}>{show.breakdownApproved ? 'Approved' : 'Approve →'}</button>
-        </div>
-        <span className="director-tab__label">Scenes</span>
-        {scenes.map((entry) => (
-          <div key={entry.index} className={`dbk-navitem${entry.index === sceneIndex ? ' dbk-navitem--on' : ''}`} onClick={() => { setSceneIndex(entry.index); setActiveKind('all'); }}>
+        <div className="dbk-nav-scroll">
+          <span className="director-tab__label">Scenes</span>
+          <div
+            className={`dbk-navitem${navKey === 'all' ? ' dbk-navitem--on' : ''}`}
+            onClick={() => { setNavKey('all'); setActiveKind('all'); }}
+          >
             <div className="dbk-navtxt">
-              <div className="dbk-navnum">SC{entry.index + 1}</div>
-              <div className="dbk-navttl">{entry.heading || '(untitled scene)'}</div>
+              <div className="dbk-navnum">ALL</div>
+              <div className="dbk-navttl">All scenes</div>
             </div>
-            <span className={`dbk-syncdot dbk-syncdot--${syncing ? 'run' : dirtyKeys.includes(keyOf(entry)) ? 'stale' : 'ok'}`} />
           </div>
-        ))}
+          {scenes.map((entry) => (
+            <div
+              key={entry.index}
+              className={`dbk-navitem${navKey === entry.index ? ' dbk-navitem--on' : ''}`}
+              onClick={() => selectScene(entry.index)}
+            >
+              <div className="dbk-navtxt">
+                <div className="dbk-navnum">SC{entry.index + 1}</div>
+                <div className="dbk-navttl">{entry.heading || '(untitled scene)'}</div>
+              </div>
+              <span className={`dbk-syncdot dbk-syncdot--${syncing ? 'run' : dirtyKeys.includes(keyOf(entry)) ? 'stale' : 'ok'}`} />
+            </div>
+          ))}
+        </div>
+        <DirectorSpendCard spend={show.llmSpend} />
       </aside>
 
-      <SceneScriptView scene={scene} sceneIndex={sceneIndex} show={show} onAssetClick={onAssetClick} onTagSelection={tagSelection} />
+      <SceneScriptView
+        scene={scriptScene}
+        sceneIndex={scriptSceneIndex}
+        show={show}
+        onAssetClick={onAssetClick}
+        onTagSelection={tagSelection}
+        focusTag={focusTag}
+      />
 
       <aside className="dbk-assets">
         <SceneAssetsPanel
           show={show}
-          scene={scene}
-          sceneIndex={sceneIndex}
+          scenes={scenes}
+          filter={navKey}
           elements={elements}
           activeKind={activeKind}
           focusName={focusName}
@@ -96,6 +144,7 @@ export function DirectorBreakdownTab({
           onEditDescription={(tag, description) => onChange({ ...show, breakdown: show.breakdown.map((item) => (item.tag === tag ? { ...item, description } : item)) })}
           onAssign={(tag, elementId) => onChange({ ...show, breakdown: assignBreakdownElement(show.breakdown, tag, elementId) })}
           onCreate={setCreateFor}
+          onJump={jumpToScript}
         />
       </aside>
 

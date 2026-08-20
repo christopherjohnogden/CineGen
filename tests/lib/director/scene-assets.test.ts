@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyManualTag, detectSceneAssets, highlightRuns, highlightRunsForScene, resolveSceneAssets } from '@/lib/director/scene-assets';
+import { applyManualTag, breakdownMatchTerms, detectSceneAssets, firstScriptHit, highlightRuns, highlightRunsForScene, resolveAllSceneAssets, resolveSceneAssets } from '@/lib/director/scene-assets';
 import type { DirectorBreakdownItem, DirectorShow } from '@/types/director';
 import { parseToScreenplay } from '@/lib/director/screenplay';
 import { splitScenes } from '@/lib/director/scene-split';
@@ -19,9 +19,19 @@ describe('highlightRuns', () => {
     const marked = runs.filter((r) => r.kind);
     expect(marked.map((r) => r.text)).toEqual(['DR. JORDAN', 'Chesterfield Sofa']);
     expect(marked[0].kind).toBe('character');
+    expect(marked[0].tag).toBe('@Dr-Jordan');
     expect(marked[1].kind).toBe('prop');
     // reconstruct original text exactly
     expect(runs.map((r) => r.text).join('')).toBe('DR. JORDAN sits on the Chesterfield Sofa.');
+  });
+
+  it('highlights script-faithful aliases from the LLM name, not a furniture lexicon', () => {
+    expect(breakdownMatchTerms(BREAKDOWN[0])).toEqual(expect.arrayContaining(['Dr. Jordan', 'Jordan']));
+    const runs = highlightRuns('Jordan tucks the book beneath his arm.', [
+      bd({ name: 'Dr. Jordan', tag: '@Dr-Jordan', kind: 'character' }),
+      bd({ name: 'small black book', tag: '@small-black-book', kind: 'prop' }),
+    ]);
+    expect(runs.filter((run) => run.kind).map((run) => run.text)).toEqual(['Jordan', 'book']);
   });
 });
 
@@ -78,6 +88,18 @@ describe('resolveSceneAssets merges auto + ai + manual', () => {
   });
 });
 
+describe('resolveAllSceneAssets', () => {
+  it('unions scenes and keeps one card per tag, first mention first', () => {
+    const scenes = splitScenes(parseToScreenplay(
+      'INT. OFFICE - DAY\nDr. Jordan sits on the Sofa.\n\nINT. HALL - NIGHT\nDr. Jordan leaves the Sofa.',
+    ));
+    const show = { breakdown: [BREAKDOWN[0], BREAKDOWN[2]] } as unknown as DirectorShow;
+    const rows = resolveAllSceneAssets(show, scenes);
+    expect(rows.map((row) => row.item.tag)).toEqual(['@Dr-Jordan', '@Sofa']);
+    expect(rows.find((row) => row.item.tag === '@Dr-Jordan')?.sceneIndex).toBe(0);
+  });
+});
+
 describe('highlightRunsForScene', () => {
   it('does not highlight a tag removed from that scene', () => {
     const doc = parseToScreenplay('INT. OFFICE - DAY\nDr. Jordan sits on the Sofa.');
@@ -103,5 +125,27 @@ describe('highlightRunsForScene', () => {
     const scene1 = highlightRunsForScene('Dr. Jordan leaves.', show, 1, scenes[1]).filter((run) => run.kind);
     expect(scene0).toHaveLength(0);
     expect(scene1.map((run) => run.text)).toEqual(['Dr. Jordan']);
+  });
+});
+
+describe('firstScriptHit', () => {
+  it('returns the first element in the preferred scene that highlights the item', () => {
+    const scenes = splitScenes(parseToScreenplay(
+      'INT. OFFICE - DAY\nDr. Jordan sits.\nHe stands.\n\nINT. HALL - NIGHT\nDr. Jordan leaves.',
+    ));
+    const show = { breakdown: BREAKDOWN } as unknown as DirectorShow;
+    const hit = firstScriptHit(scenes, show, BREAKDOWN[0], 0);
+    expect(hit?.sceneIndex).toBe(0);
+    expect(hit?.elementId).toBe(scenes[0].elements[1]?.id);
+  });
+
+  it('walks other scenes when the preferred scene has no highlight', () => {
+    const scenes = splitScenes(parseToScreenplay(
+      'INT. OFFICE - DAY\nThe lamp glows.\n\nINT. HALL - NIGHT\nDr. Jordan leaves.',
+    ));
+    const show = { breakdown: BREAKDOWN } as unknown as DirectorShow;
+    const hit = firstScriptHit(scenes, show, BREAKDOWN[0], 0);
+    expect(hit?.sceneIndex).toBe(1);
+    expect(hit?.elementId).toBe(scenes[1].elements[1]?.id);
   });
 });

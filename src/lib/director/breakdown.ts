@@ -61,6 +61,9 @@ export function mergeBreakdownItems(
         ...prev,
         ...linked,
         id: prev.id,
+        elementId: linked.elementId ?? prev.elementId,
+        intExt: linked.intExt?.trim() ? linked.intExt : prev.intExt,
+        timeOfDay: linked.timeOfDay?.trim() ? linked.timeOfDay : prev.timeOfDay,
         // Same rule as the enrichment fields below: an empty/absent incoming
         // value must never wipe content we already have.
         description: linked.description?.trim() ? linked.description : prev.description,
@@ -236,6 +239,28 @@ export function assignBreakdownElement(
   return items.map((item) => item.tag === tag ? { ...item, elementId } : item);
 }
 
+/** Merge an LLM breakdown onto the current list. Full-script runs prune
+ *  uninvested suggestions the model no longer returned; scoped runs only add. */
+export function applyLlmBreakdownItems(
+  existing: DirectorBreakdownItem[],
+  incoming: DirectorBreakdownItem[],
+  elements: Element[],
+  opts: { pruneMissing?: boolean } = {},
+): DirectorBreakdownItem[] {
+  const merged = mergeBreakdownItems(existing, incoming, elements);
+  if (!opts.pruneMissing) return merged;
+  const keep = new Set(incoming.flatMap((item) => [
+    item.tag,
+    `${item.kind}:${normalizeElementName(item.name)}`,
+  ]));
+  const next = merged.filter((item) => (
+    invested(item)
+    || keep.has(item.tag)
+    || keep.has(`${item.kind}:${normalizeElementName(item.name)}`)
+  ));
+  return next.length === merged.length ? merged : next;
+}
+
 export function toElementType(kind: BreakdownKind): ElementType {
   return kind;
 }
@@ -256,7 +281,11 @@ export function parseBreakdownPayload(raw: unknown): ParsedBreakdown {
       name,
       tag: normalizeTag(name, typeof row.tag === 'string' ? row.tag : undefined),
       description: typeof row.description === 'string' ? row.description : '',
-      blurb: typeof row.blurb === 'string' ? row.blurb : undefined,
+      blurb: typeof row.blurb === 'string' && row.blurb.trim()
+        ? row.blurb
+        : typeof row.evidence === 'string' && row.evidence.trim() ? row.evidence.trim() : undefined,
+      intExt: typeof row.intExt === 'string' && row.intExt.trim() ? row.intExt.trim() : undefined,
+      timeOfDay: typeof row.timeOfDay === 'string' && row.timeOfDay.trim() ? row.timeOfDay.trim() : undefined,
       actingProfile: typeof row.actingProfile === 'string' && row.actingProfile.trim()
         ? row.actingProfile.trim()
         : undefined,

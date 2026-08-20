@@ -15,7 +15,7 @@ export function directorRunningLabel(
 ): string {
   switch (type) {
     case 'shotlist': return 'Shotlisting…';
-    case 'breakdown': return 'Refining…';
+    case 'breakdown': return 'Breaking down…';
     case 'rewrite': return 'Rewriting…';
     case 'look-bible': return 'Writing look…';
     case 'generate': return 'Generating…';

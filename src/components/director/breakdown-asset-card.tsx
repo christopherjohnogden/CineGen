@@ -15,6 +15,7 @@ interface BreakdownAssetCardProps {
   onAssign: (tag: string, elementId: string) => void;
   onCreate: (item: DirectorBreakdownItem) => void;
   onGenerateRef: (item: DirectorBreakdownItem) => void;
+  onJump: (item: DirectorBreakdownItem) => void;
   onEditDescription: (tag: string, description: string) => void;
 }
 
@@ -27,7 +28,8 @@ function locationPill(item: DirectorBreakdownItem, scene: ScriptScene): string |
 }
 
 export function BreakdownAssetCard({
-  item, source, scene, elements, focused, flashRef,   onRemove, onAssign, onCreate, onGenerateRef, onEditDescription,
+  item, source, scene, elements, focused, flashRef,
+  onRemove, onAssign, onCreate, onGenerateRef, onEditDescription, onJump,
 }: BreakdownAssetCardProps) {
   const [assignOpen, setAssignOpen] = useState(false);
   const linked = elements.find((entry) => entry.id === item.elementId)
@@ -40,12 +42,17 @@ export function BreakdownAssetCard({
 
   return (
     <div
-      className={`dbk-card${focused ? ' dbk-card--flash' : ''}${suggested ? ' dbk-card--suggest' : ''}`}
+      className={`dbk-card${suggested ? ' dbk-card--suggest' : ''}`}
       ref={focused ? flashRef : undefined}
+      title="Jump to in script"
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest('button, [contenteditable="true"], .dbk-assign')) return;
+        onJump(item);
+      }}
     >
       <div className={`dbk-card-ref dbk-icn--${item.kind}`}>
         {img ? <img src={img} alt="" /> : (
-          <span className="dbk-card-ref-ph">{item.kind === 'character' ? item.name[0] : ''}</span>
+          <span className="dbk-card-ref-ph">{item.name.trim().charAt(0).toUpperCase()}</span>
         )}
       </div>
       <div className="dbk-card-body">

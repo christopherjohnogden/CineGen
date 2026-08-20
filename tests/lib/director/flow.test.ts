@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Element } from '@/types/elements';
-import { assignBreakdownElement, findMatchingElement, itemsMissingElements, mergeBreakdownItems, parseBreakdownPayload } from '@/lib/director/breakdown';
+import { applyLlmBreakdownItems, assignBreakdownElement, findMatchingElement, itemsMissingElements, mergeBreakdownItems, parseBreakdownPayload } from '@/lib/director/breakdown';
 import { clipDisplayLabels, mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
 import { planDirectorFolders } from '@/lib/director/folders';
 import { createPendingTake } from '@/lib/director/generate';
@@ -36,6 +36,46 @@ describe('director breakdown', () => {
     const assigned = assignBreakdownElement(items, '@Sofa', 'el-sofa');
     expect(assigned[0].elementId).toBe('el-sofa');
     expect(items[0].elementId).toBeUndefined();
+  });
+
+  it('full LLM breakdown drops stale suggestions but keeps assigned elements', () => {
+    const existing: DirectorBreakdownItem[] = [
+      { id: 'keep', kind: 'prop', name: 'Sofa', tag: '@Sofa', description: '', elementId: 'el-sofa' },
+      { id: 'drop', kind: 'prop', name: 'Lamp', tag: '@Lamp', description: '' },
+    ];
+    const incoming: DirectorBreakdownItem[] = [
+      { id: 'new', kind: 'prop', name: 'Sofa', tag: '@Sofa', description: 'olive velvet' },
+      { id: 'chair', kind: 'prop', name: 'Chair', tag: '@Chair', description: 'armchair' },
+    ];
+    const next = applyLlmBreakdownItems(existing, incoming, [], { pruneMissing: true });
+    expect(next.map((item) => item.tag)).toEqual(['@Sofa', '@Chair']);
+    expect(next[0].elementId).toBe('el-sofa');
+    expect(next[0].description).toBe('olive velvet');
+  });
+
+  it('scoped LLM breakdown does not prune items outside the excerpt', () => {
+    const existing: DirectorBreakdownItem[] = [
+      { id: 'lamp', kind: 'prop', name: 'Lamp', tag: '@Lamp', description: '' },
+    ];
+    const incoming: DirectorBreakdownItem[] = [
+      { id: 'sofa', kind: 'prop', name: 'Sofa', tag: '@Sofa', description: '' },
+    ];
+    const next = applyLlmBreakdownItems(existing, incoming, []);
+    expect(next.map((item) => item.tag)).toEqual(['@Lamp', '@Sofa']);
+  });
+
+  it('parses location INT/EXT and time of day from the LLM payload', () => {
+    const parsed = parseBreakdownPayload({
+      items: [{ kind: 'location', name: "Dr Jordan's Office", intExt: 'INT', timeOfDay: 'DAY' }],
+    });
+    expect(parsed.items[0]).toMatchObject({ intExt: 'INT', timeOfDay: 'DAY' });
+  });
+
+  it('uses evidence as the blurb when the model omitted blurb', () => {
+    const parsed = parseBreakdownPayload({
+      items: [{ kind: 'prop', name: 'jacket', evidence: 'jacket over his arm' }],
+    });
+    expect(parsed.items[0].blurb).toBe('jacket over his arm');
   });
 
   it('does not duplicate on re-merge', () => {

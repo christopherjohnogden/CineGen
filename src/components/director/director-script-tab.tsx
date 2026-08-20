@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DirectorShow } from '@/types/director';
 import { extractScriptText, SCRIPT_ACCEPT } from '@/lib/director/look-bible';
-import { parseToScreenplay, serializeScreenplay, type Screenplay } from '@/lib/director/screenplay';
-import { parseFdx } from '@/lib/director/fdx-parser';
+import { parseToScreenplay, serializeScreenplay, scrubFdxChrome, trimFdxTrailer, type Screenplay } from '@/lib/director/screenplay';
+import { looksLikeFdx, parseFdx } from '@/lib/director/fdx-parser';
 import { applyAssistantEdits, applyBeatEdits, type AssistantEdit, type AssistantResponse, type BeatEdit } from '@/lib/director/script-assistant';
 import { cliProviderFor, parseDirectorLlmProvider } from '@/lib/director/cli-provider';
 import { CollapsiblePanel } from './collapsible-panel';
@@ -23,7 +23,8 @@ interface DirectorScriptTabProps {
 
 function docFromShow(show: DirectorShow): Screenplay {
   // Prefer structured elements (exact types, stable ids) when present; else parse the text.
-  return show.sourceElements ? { elements: show.sourceElements } : parseToScreenplay(show.sourceText);
+  if (show.sourceElements) return { elements: scrubFdxChrome(show.sourceElements) };
+  return parseToScreenplay(show.sourceText);
 }
 
 export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: DirectorScriptTabProps) {
@@ -46,11 +47,26 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
   // not from our own serialize round-trip. We compare against what we last serialized.
   const lastSerialized = useRef(serializeScreenplay(doc));
   useEffect(() => {
+    const next = docFromShow(show);
+    const text = serializeScreenplay(next);
+    const cleanedEls = show.sourceElements ? scrubFdxChrome(show.sourceElements) : undefined;
+    const hadChrome = trimFdxTrailer(show.sourceText) !== show.sourceText
+      || Boolean(
+        show.sourceElements && cleanedEls && (
+          cleanedEls.length !== show.sourceElements.length
+          || cleanedEls.some((el, i) => el.text !== show.sourceElements![i].text)
+        ),
+      );
+    if (hadChrome) {
+      lastSerialized.current = text;
+      setDocState(next);
+      onChange({ ...show, sourceElements: next.elements, sourceText: text });
+      return;
+    }
     // Re-sync when an external change (upload, another tab) makes sourceText differ from what
     // we last serialized. Adopt sourceElements directly when present (no reparse, stable ids).
     if (show.sourceText !== lastSerialized.current) {
-      const next = docFromShow(show);
-      lastSerialized.current = serializeScreenplay(next);
+      lastSerialized.current = text;
       setDocState(next);
     }
   }, [show.sourceText, show.sourceElements]);
@@ -69,17 +85,21 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
   };
   useEffect(() => () => { if (flushTimer.current) clearTimeout(flushTimer.current); }, []);
 
+  const commitUploadedScript = (patch: Partial<DirectorShow>) => {
+    onChange({ ...show, ...patch });
+    onBreakdown();
+  };
+
   const loadScript = async (file: File | undefined) => {
     if (!file) return;
     setScriptError('');
     try {
       const raw = await file.text();
       const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-      if (ext === 'fdx') {
+      if (ext === 'fdx' || looksLikeFdx(raw)) {
         const parsed = parseFdx(raw);
         if (parsed) {
-          onChange({
-            ...show,
+          commitUploadedScript({
             sourceElements: parsed.elements,
             sourceText: serializeScreenplay(parsed),
             sourceFileName: file.name,
@@ -91,7 +111,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
       }
       const text = extractScriptText(file.name, raw);
       if (!text.trim()) throw new Error('That file did not contain readable script text.');
-      onChange({ ...show, sourceText: text, sourceFileName: file.name, sourceElements: undefined });
+      commitUploadedScript({ sourceText: text, sourceFileName: file.name, sourceElements: undefined });
     } catch (error) {
       setScriptError(error instanceof Error ? error.message : 'Could not read that script.');
     }
@@ -172,7 +192,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
 
           {leftOpen && (
             <CollapsiblePanel side="left" open={leftOpen} onToggle={setLeftOpen}>
-              <DirectorScriptAssets doc={doc} breakdown={show.breakdown} onJumpToScene={jumpToScene} />
+              <DirectorScriptAssets doc={doc} breakdown={show.breakdown} spend={show.llmSpend} onJumpToScene={jumpToScene} />
             </CollapsiblePanel>
           )}
 

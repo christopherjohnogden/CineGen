@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ScriptScene } from '@/lib/director/scene-split';
 import { highlightRunsForScene } from '@/lib/director/scene-assets';
 import type { BreakdownKind, DirectorShow } from '@/types/director';
@@ -9,6 +9,8 @@ interface SceneScriptViewProps {
   sceneIndex: number;
   show: DirectorShow;
   onAssetClick: (kind: BreakdownKind, name: string) => void;
+  /** Tag of a rail card the user clicked — scroll that highlight into view. */
+  focusTag?: string;
   /** Tag the currently-highlighted text as a breakdown element of the given kind. */
   onTagSelection: (kind: BreakdownKind, name: string) => void;
 }
@@ -22,9 +24,15 @@ const KIND_OPTIONS: { kind: BreakdownKind; label: string }[] = [
 
 interface Popover { name: string; x: number; y: number }
 
-export function SceneScriptView({ scene, sceneIndex, show, onAssetClick, onTagSelection }: SceneScriptViewProps) {
+export function SceneScriptView({ scene, sceneIndex, show, onAssetClick, onTagSelection, focusTag }: SceneScriptViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [pop, setPop] = useState<Popover | null>(null);
+
+  useEffect(() => {
+    if (!focusTag) return;
+    const mark = wrapRef.current?.querySelector<HTMLElement>(`[data-tag="${CSS.escape(focusTag)}"]`);
+    mark?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focusTag, scene.index]);
 
   // On mouse-up, if the user has selected non-empty text inside this view, show the tag
   // popover anchored just above the selection. Coordinates are relative to wrapRef so the
@@ -62,7 +70,8 @@ export function SceneScriptView({ scene, sceneIndex, show, onAssetClick, onTagSe
               run.kind ? (
                 <mark
                   key={i}
-                  className={`dbk-mark dbk-mark--${run.kind}`}
+                  data-tag={run.tag}
+                  className={`dbk-mark dbk-mark--${run.kind}${focusTag && run.tag === focusTag ? ' dbk-mark--flash' : ''}`}
                   title={`Jump to ${run.text}`}
                   onClick={() => onAssetClick(run.kind as BreakdownKind, run.text)}
                 >{run.text}</mark>

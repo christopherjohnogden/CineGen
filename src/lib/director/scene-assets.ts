@@ -4,7 +4,7 @@ import { normalizeTag } from '@/lib/director/breakdown';
 import { generateId } from '@/lib/utils/ids';
 
 export interface SceneAssetHit { kind: BreakdownKind; name: string; item?: DirectorBreakdownItem }
-export interface HighlightRun { text: string; kind?: BreakdownKind }
+export interface HighlightRun { text: string; kind?: BreakdownKind; tag?: string }
 
 /**
  * Tag a span of text as a breakdown element of `kind`, returning the updated breakdown list
@@ -37,19 +37,39 @@ function sceneText(scene: ScriptScene): string {
 }
 function escapeRe(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-interface Span { start: number; end: number; kind: BreakdownKind }
+const HONORIFIC = /^(dr|mr|mrs|ms|miss|prof|sir)\.?$/i;
+const SKIP_ALIAS = /^(the|a|an|and|of|or|to|in|on)$/i;
 
-// non-overlapping matches across the text, longest breakdown name first
+/** Phrases that should highlight in the script: the item's name, plus a short
+ *  alias derived from it (last word; honorific-stripped character names). */
+export function breakdownMatchTerms(item: DirectorBreakdownItem): string[] {
+  const terms = [item.name];
+  const words = item.name.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return terms;
+  const last = words[words.length - 1];
+  if (last.length >= 4 && !SKIP_ALIAS.test(last)) terms.push(last);
+  if (item.kind === 'character' && HONORIFIC.test(words[0])) {
+    const rest = words.slice(1).join(' ');
+    if (rest) terms.push(rest);
+  }
+  return [...new Set(terms)];
+}
+
+interface Span { start: number; end: number; kind: BreakdownKind; tag: string }
+
+// non-overlapping matches across the text, longest phrase first
 function findSpans(text: string, breakdown: DirectorBreakdownItem[]): Span[] {
-  const terms = [...breakdown].sort((a, b) => b.name.length - a.name.length);
+  const terms = breakdown.flatMap((item) => (
+    breakdownMatchTerms(item).map((phrase) => ({ phrase, kind: item.kind, tag: item.tag }))
+  )).sort((a, b) => b.phrase.length - a.phrase.length);
   const spans: Span[] = [];
-  for (const item of terms) {
-    const re = new RegExp('\\b(' + escapeRe(item.name) + ')\\b', 'gi');
+  for (const term of terms) {
+    const re = new RegExp('\\b(' + escapeRe(term.phrase) + ')\\b', 'gi');
     let m: RegExpExecArray | null;
     while ((m = re.exec(text))) {
       const start = m.index, end = start + m[0].length;
       if (spans.some((sp) => start < sp.end && end > sp.start)) continue;
-      spans.push({ start, end, kind: item.kind });
+      spans.push({ start, end, kind: term.kind, tag: term.tag });
     }
   }
   return spans.sort((a, b) => a.start - b.start);
@@ -61,7 +81,7 @@ export function highlightRuns(text: string, breakdown: DirectorBreakdownItem[]):
   let pos = 0;
   for (const sp of spans) {
     if (sp.start > pos) runs.push({ text: text.slice(pos, sp.start) });
-    runs.push({ text: text.slice(sp.start, sp.end), kind: sp.kind });
+    runs.push({ text: text.slice(sp.start, sp.end), kind: sp.kind, tag: sp.tag });
     pos = sp.end;
   }
   if (pos < text.length) runs.push({ text: text.slice(pos) });
@@ -84,8 +104,10 @@ export function detectSceneAssets(scene: ScriptScene, breakdown: DirectorBreakdo
   const seen = new Set<string>();
   const hits: SceneAssetHit[] = [];
   for (const item of [...breakdown].sort((a, b) => b.name.length - a.name.length)) {
-    const re = new RegExp('\\b' + escapeRe(item.name) + '\\b', 'i');
-    if (re.test(text) && !seen.has(item.tag)) {
+    const hit = breakdownMatchTerms(item).some((phrase) => (
+      new RegExp('\\b' + escapeRe(phrase) + '\\b', 'i').test(text)
+    ));
+    if (hit && !seen.has(item.tag)) {
       seen.add(item.tag);
       hits.push({ kind: item.kind, name: item.name, item });
     }
@@ -111,4 +133,53 @@ export function resolveSceneAssets(
   const out: Array<{ item: DirectorBreakdownItem; source: 'auto' | 'ai' | 'manual' }> = [];
   for (const [tag, src] of source) { const item = byTag.get(tag); if (item) out.push({ item, source: src }); }
   return out;
+}
+
+export type ResolvedSceneAsset = {
+  item: DirectorBreakdownItem;
+  source: 'auto' | 'ai' | 'manual';
+  sceneIndex: number;
+};
+
+/** Union of every scene's assets, first mention wins (one card per @tag). */
+export function resolveAllSceneAssets(
+  show: DirectorShow,
+  scenes: ScriptScene[],
+): ResolvedSceneAsset[] {
+  const seen = new Set<string>();
+  const out: ResolvedSceneAsset[] = [];
+  scenes.forEach((scene, sceneIndex) => {
+    for (const row of resolveSceneAssets(show, sceneIndex, show.breakdown, scene)) {
+      if (seen.has(row.item.tag)) continue;
+      seen.add(row.item.tag);
+      out.push({ ...row, sceneIndex });
+    }
+  });
+  return out;
+}
+
+/** First script element that highlights this item. Prefers `preferSceneIndex`, then walks the rest. */
+export function firstScriptHit(
+  scenes: ScriptScene[],
+  show: DirectorShow,
+  item: DirectorBreakdownItem,
+  preferSceneIndex?: number,
+): { sceneIndex: number; elementId: string } | null {
+  const order = scenes.map((_, index) => index);
+  if (preferSceneIndex != null && preferSceneIndex >= 0) {
+    order.sort((a, b) => Number(b === preferSceneIndex) - Number(a === preferSceneIndex));
+  }
+  for (const sceneIndex of order) {
+    const scene = scenes[sceneIndex];
+    if (!scene) continue;
+    const present = resolveSceneAssets(show, sceneIndex, show.breakdown, scene)
+      .some((row) => row.item.tag === item.tag);
+    if (!present) continue;
+    for (const el of scene.elements) {
+      if (highlightRunsForScene(el.text, show, sceneIndex, scene).some((run) => run.tag === item.tag)) {
+        return { sceneIndex, elementId: el.id };
+      }
+    }
+  }
+  return null;
 }

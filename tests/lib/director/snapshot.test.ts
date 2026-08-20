@@ -41,12 +41,21 @@ describe('director snapshot', () => {
       jobStatus: { type: 'look-bible', message: 'Writing look bible…' },
     }).jobStatus).toBeNull();
   });
+
+  it('strips a Final Draft ElementSettings trailer from a saved script', () => {
+    const loaded = directorFromUnknown({
+      ...createEmptyDirectorShow(),
+      sourceText: 'EXT. FOREST - DAY\nJordan listens.\n\nCUT TO:\n<ElementSettings Type="General">\n<FontSpec Font="Courier Final Draft"/>',
+    });
+    expect(loaded.sourceText).toContain('CUT TO:');
+    expect(loaded.sourceText).not.toMatch(/ElementSettings|Courier Final Draft/);
+  });
 });
 
 describe('director job spinner', () => {
   it('names a running job in one word so the toolbar stays quiet', () => {
     expect(directorRunningLabel('shotlist')).toBe('Shotlisting…');
-    expect(directorRunningLabel('breakdown')).toBe('Refining…');
+    expect(directorRunningLabel('breakdown')).toBe('Breaking down…');
     expect(directorRunningLabel('rewrite')).toBe('Rewriting…');
     expect(directorRunningLabel('look-bible')).toBe('Writing look…');
     expect(directorRunningLabel('generate')).toBe('Generating…');

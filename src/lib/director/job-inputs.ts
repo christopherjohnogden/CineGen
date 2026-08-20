@@ -22,38 +22,70 @@ function sceneLine(scene: DirectorScene): string {
   return lines.join('\n');
 }
 
+/** Numbered action-line script so the model must walk every slug, not skim. */
+export function formatBreakdownScript(sourceText: string, headings?: Set<string>): string {
+  const scenes = splitScenes(parseToScreenplay(sourceText));
+  const picked = headings
+    ? scenes.filter((scene) => headings.has(scene.heading.trim().toUpperCase()))
+    : scenes;
+  if (picked.length === 0) return sourceText;
+  return picked.map((scene, index) => {
+    const lines = [`=== SCENE ${index + 1}/${picked.length}  ${scene.heading || '(untitled)'} ===`];
+    let action = 0;
+    for (const el of scene.elements) {
+      if (el.type === 'scene') continue;
+      if (el.type === 'action') {
+        action += 1;
+        lines.push(`[A${action}] ACTION  ${el.text}`);
+      } else if (el.type === 'character') {
+        lines.push(`[C] ${el.text}`);
+      } else if (el.type === 'dialogue') {
+        lines.push(`[D] ${el.text}`);
+      } else if (el.type === 'parenthetical') {
+        lines.push(`[P] ${el.text}`);
+      } else {
+        lines.push(el.text);
+      }
+    }
+    return lines.join('\n');
+  }).join('\n\n');
+}
+
+function breakdownScriptSection(show: DirectorShow, scope?: { sceneIds: string[] }): string {
+  if (!scope) return `SCRIPT:\n${formatBreakdownScript(show.sourceText)}`;
+  const labels = new Set(
+    show.scenes.filter((s) => scope.sceneIds.includes(s.id)).map((s) => s.label.trim().toUpperCase()),
+  );
+  return `SCRIPT (changed scenes only — return a complete element list for this excerpt):\n${formatBreakdownScript(show.sourceText, labels)}`;
+}
+
 export function breakdownJobInput(
   show: DirectorShow,
   existingElements: string,
   scope?: { sceneIds: string[] },
-  knownItems?: DirectorBreakdownItem[],
 ): string {
-  let scriptSection = `SCRIPT:\n${show.sourceText}`;
-  if (scope) {
-    // Map changed DirectorScene ids → their labels → the parsed scenes with that heading.
-    const labels = new Set(
-      show.scenes.filter((s) => scope.sceneIds.includes(s.id)).map((s) => s.label.trim().toUpperCase()),
-    );
-    const parsed = splitScenes(parseToScreenplay(show.sourceText));
-    const changed = parsed.filter((sc) => labels.has(sc.heading.trim().toUpperCase()));
-    const text = changed
-      .map((sc) => sc.elements.map((e) => e.text).join('\n'))
-      .join('\n\n');
-    scriptSection = `SCRIPT (changed scenes only):\n${text}`;
-  }
-  // The deterministic parse already found these — the LLM must only ADD what is
-  // missing, which keeps its output (and therefore its latency) small.
-  const known = (knownItems ?? []).length
-    ? `ALREADY IDENTIFIED (confirmed — do NOT repeat these in "items", except to fill a missing description):\n${(knownItems ?? [])
-      .map((item) => `- ${item.kind} ${item.tag} (${item.name})${item.description.trim() ? '' : ' — needs description'}`)
-      .join('\n')}`
-    : '';
   return [
     `Clip length setting: ${show.clipLengthSec}s.`,
-    `Existing elements: ${existingElements || 'none'}`,
-    ...(known ? [known] : []),
+    `Existing library elements (reuse these names when they match): ${existingElements || 'none'}`,
     '',
-    scriptSection,
+    breakdownScriptSection(show, scope),
+  ].join('\n');
+}
+
+/** Second pass: the same numbered script plus what the first pass already found. */
+export function breakdownAuditInput(
+  show: DirectorShow,
+  items: DirectorBreakdownItem[],
+  scope?: { sceneIds: string[] },
+): string {
+  const listed = items.length === 0
+    ? '(none)'
+    : items.map((item) => `- ${item.kind} ${item.tag} (${item.name})`).join('\n');
+  return [
+    'JUNIOR BREAKDOWN (already extracted — do NOT repeat these):',
+    listed,
+    '',
+    breakdownScriptSection(show, scope),
   ].join('\n');
 }
 

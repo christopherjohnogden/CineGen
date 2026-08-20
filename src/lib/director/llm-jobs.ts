@@ -26,7 +26,7 @@ export function extractJsonValue(text: string): unknown {
   return JSON.parse(raw.slice(start, end + 1)) as unknown;
 }
 
-export const BREAKDOWN_SYSTEM_PROMPT = `You break a script or idea into a production bible for CineGen Director.
+export const BREAKDOWN_SYSTEM_PROMPT = `You are a professional script supervisor and breakdown artist. You specialize in breaking screenplays into a complete production bible for CineGen Director.
 
 ${ACTING_AXIOM}
 
@@ -70,17 +70,30 @@ Write actingProfile and voice for characters only; omit both on locations, props
 Match existing element names when they are provided. Use @Tags in Pascal-case-with-hyphens.
 Do not write shotlists or prompts.`;
 
-export const BREAKDOWN_IDENTIFY_SYSTEM_PROMPT = `You break a script or idea into a production bible for CineGen Director. This is the FAST IDENTIFY pass: list every asset and scene. Do NOT write acting profiles, voices, or deep event prose — those are written later.
+export const BREAKDOWN_IDENTIFY_SYSTEM_PROMPT = `You are a professional script supervisor and breakdown artist. You specialize in breaking screenplays into a complete element list for production — the same work a breakdown department does before stripboarding. Ordinary objects count. A jacket over an arm, a sofa a character sits on, a file tucked under an elbow: those are props. Skimming for "important" items is a failed breakdown.
+
+This pass lists every asset and scene. Do NOT write acting profiles, voices, or deep event prose — those are written later.
+
+HOW YOU WORK — mechanical, not optional:
+1. Read the SCENE heading. Emit that location (intExt + timeOfDay from the heading).
+2. Walk every [A#] ACTION line in order. For THAT line only, extract every photographable noun: wardrobe worn or carried, objects in hand or set down, furniture and set pieces the line names or uses, architecture the line calls out (a door that opens, a bookshelf reached into). Do not wait for an object to become "plot-important".
+3. Characters: every [C] cue is a character. Named people in action are the same character when they are clearly that person — emit ONE item, named as the cue reads.
+4. After the last [A#] of a scene, re-read those action lines and add anything you skipped.
+5. "name" MUST be the script's own noun phrase as written ("jacket", "desk chair", "small black book") — never a category ("wardrobe", "furniture"). That exact phrase must appear in the script.
+6. "evidence" is a short quote copied from the [A#] line that contains the item. No evidence = you did not actually find it; do not emit the item.
 
 Return ONLY JSON with this shape:
 {
   "items": [
     {
       "kind": "character"|"location"|"prop"|"vehicle",
-      "name": "Dr Jordan",
-      "tag": "@Dr-Jordan",
+      "name": "jacket",
+      "tag": "@jacket",
       "description": "one or two concrete sentences: what it looks like / who they are",
-      "blurb": "where it is used"
+      "blurb": "where it is used",
+      "evidence": "jacket over his arm",
+      "intExt": "INT or EXT — locations only",
+      "timeOfDay": "DAY or NIGHT or DUSK etc — locations only"
     }
   ],
   "scenes": [
@@ -88,16 +101,28 @@ Return ONLY JSON with this shape:
   ]
 }
 "label" MUST be the scene heading EXACTLY as written in the script (e.g. "EXT. BATTLEFIELD - DAY"), and "number" its script order — scenes are matched back to the script by heading.
-ALREADY IDENTIFIED — when the input carries an ALREADY IDENTIFIED list, those entities are confirmed and stored. Do NOT repeat them in "items", with one exception: an entry marked "needs description" may be re-emitted with the SAME tag and a filled description. Otherwise return ONLY entities missing from that list (an empty "items" array is a valid answer), plus every scene with its summary.
-EXTRACTION COMPLETENESS — this is the most important rule. Read the ENTIRE script start to finish and extract EVERY nameable entity not already identified. A breakdown that misses items is a failed breakdown. Do a second pass before answering and add anything you skipped. Err on the side of over-including: a borderline item belongs in the list.
+Return a COMPLETE "items" list for the script you were given — every character, location, prop and vehicle you believe belongs in the bible. An empty "items" array is only valid when the script truly has no nameable entities. Do not treat this as a delta against a prior list.
+EXTRACTION COMPLETENESS — this is the most important rule. Read the ENTIRE script start to finish and extract EVERY nameable entity. A breakdown that misses items is a failed breakdown. Do a second pass before answering and add anything you skipped. Err on the side of over-including: a borderline item belongs in the list.
 Cover, exhaustively, in every scene:
-- CHARACTERS: every person or creature, named OR unnamed — leads, minor speakers, and background/collective groups ("dozens of soldiers", "a lone armored warrior", "the crowd"). Give un-named groups a descriptive name (e.g. "Clashing Soldiers", "Human Warrior"). Do not list only the leads.
-- LOCATIONS: every distinct place or setting, including sub-areas ("the clearing within the battlefield" is its own location). Record time of day and INT/EXT from the scene heading in the description (e.g. "EXT, DAY").
-- PROPS: every physical object, INCLUDING (a) objects characters handle or wield — weapons, tools, banners; (b) worn items — armor, costume, helmets, cloaks, jewelry; (c) set dressing and furniture — sofas, tables, shelves, lamps, rugs (a furnished room implies its furniture); (d) notable atmospheric or FX elements when they are concrete story objects — an energy-spear's blade, a signal flare. Weapons, armor, and clothing are frequently missed — always scan for them.
-- VEHICLES: every mount or conveyance — cars, ships, aircraft, and RIDDEN ANIMALS (a horse a character rides is a vehicle, the animal itself may also warrant a character entry if it acts).
-No duplicates: if the same entity appears in several scenes, emit ONE item. Merge trivial variants ("the sofa" / "leather sofa" → one prop).
+- CHARACTERS: every person or creature, named OR unnamed — leads, minor speakers, and background/collective groups. Give un-named groups a descriptive name. Do not list only the leads.
+- LOCATIONS: every distinct place or setting, including sub-areas. Set intExt and timeOfDay from the scene heading.
+- PROPS: every physical object the camera could see, INCLUDING wardrobe, handled objects, named furniture / set dressing, and concrete FX objects. The usual misses are clothes being worn and furniture the scene is sitting in — do not skip those.
+- VEHICLES: every mount or conveyance — cars, ships, aircraft, and ridden animals.
+No duplicates: if the same entity appears in several scenes, emit ONE item. Merge trivial variants ("the sofa" / "leather sofa" → one prop named as the script most often says it).
 Keep each description short and factual. Match existing element names when they are provided. Use @Tags in Pascal-case-with-hyphens.
 Do not write shotlists, prompts, acting profiles, or voices.`;
+
+export const BREAKDOWN_AUDIT_SYSTEM_PROMPT = `You are a professional script supervisor checking a junior breakdown for missed production elements.
+
+Re-walk every [A#] ACTION line in order. Return ONLY items that appear in the script and are NOT already in JUNIOR BREAKDOWN (same entity — ignore @tag punctuation and case). Empty "items" is correct when nothing was missed.
+
+The usual misses are ordinary wardrobe (jacket, coat, glasses), named furniture (sofa, chair, desk, bookshelf), handled objects (file, book, bottle, pill), and architecture the action uses (door, shelf). Do not skip an object because it seems mundane.
+
+"name" MUST be the script's own noun phrase. "evidence" MUST be a short quote from the [A#] line. No evidence = do not emit.
+
+Return ONLY JSON:
+{ "items": [{ "kind": "character"|"location"|"prop"|"vehicle", "name": "", "tag": "", "description": "", "blurb": "", "evidence": "", "intExt": "", "timeOfDay": "" }], "scenes": [] }
+Do not write acting profiles, voices, shotlists, or prompts.`;
 
 export function shotlistSystemPrompt(clipLengthSec: number, density: string, batchSize?: number): string {
   const batch = batchSize

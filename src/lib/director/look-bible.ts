@@ -1,4 +1,6 @@
 import type { DirectorLookBible, DirectorShow } from '@/types/director';
+import { parseFdx } from '@/lib/director/fdx-parser';
+import { serializeScreenplay, trimFdxTrailer } from '@/lib/director/screenplay';
 
 export const SCRIPT_ACCEPT = '.txt,.md,.fountain,.spmd,.fdx,.rtf';
 
@@ -54,9 +56,13 @@ export function extractScriptText(fileName: string, raw: string): string {
   if (ext === 'pdf') {
     throw new Error('PDF is not supported yet. Export the script as .txt, .md, or .fountain.');
   }
-  if (ext === 'fdx') return stripXml(raw);
+  if (ext === 'fdx' || /<FinalDraft\b/i.test(raw)) {
+    const parsed = parseFdx(raw);
+    if (parsed) return serializeScreenplay(parsed);
+    return trimFdxTrailer(stripXml(raw));
+  }
   if (ext === 'rtf') return stripRtf(raw);
-  return raw.replace(/^\uFEFF/, '').trim();
+  return trimFdxTrailer(raw.replace(/^\uFEFF/, '')).trim();
 }
 
 export function compiledLookFromRefs(show: Pick<DirectorShow, 'genre' | 'lookBible'>): string {
