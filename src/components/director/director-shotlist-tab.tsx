@@ -6,6 +6,7 @@ import { padTimecode, validateClipTimings } from '@/lib/director/prompt-compiler
 import { directorRunningLabel, setClipVariant, updateDirectorClip } from '@/lib/director/director-state';
 import { compileLookBible } from '@/lib/director/look-bible';
 import { DirectorSceneCoverage } from './director-scene-coverage';
+import { beatScriptContext } from '@/lib/director/craft/coverage';
 
 interface DirectorShotlistTabProps {
   show: DirectorShow;
@@ -397,12 +398,7 @@ function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue,
               return (
                 <div key={beat.n} className="director-tab__shotrow">
                   <span className="director-tab__shotrow-tc">S{beat.n} · {beat.from}–{beat.to}</span>
-                  <span className="director-tab__shotrow-text">
-                    {beat.text}
-                    {beat.quote?.trim() && (
-                      <em> &ldquo;{beat.quote}&rdquo;{beat.speaker ? ` — ${beat.speaker}` : ''}</em>
-                    )}
-                  </span>
+                  <span className="director-tab__shotrow-text">{beatScriptContext(beat)}</span>
                   {clip.beats.length > 1 && (
                     <span className="director-tab__shotrow-btns">
                       <button

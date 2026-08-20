@@ -94,8 +94,19 @@ export interface DirectorBeat {
   speaker?: string;
   /** Structured coverage — compiles into LENS: with beat.cam. */
   grammar?: DirectorShotGrammar;
+  /** LLM cam / action / line as first written, so Generate can reset chips. */
+  origin?: DirectorBeatOrigin;
   /** Per-shot FOV override; falls back to clip.fov. */
   fov?: number;
+}
+
+export interface DirectorBeatOrigin {
+  text: string;
+  dur: number;
+  cam?: string;
+  quote?: string;
+  speaker?: string;
+  grammar?: DirectorShotGrammar;
 }
 
 export interface DirectorTake {

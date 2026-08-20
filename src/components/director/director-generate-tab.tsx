@@ -21,7 +21,7 @@ import { getDirectorAdapter } from '@/lib/director/video-adapter';
 import { DirectorClipCraft } from './director-clip-craft';
 import { DirectorCameraMovePanel } from './director-camera-move';
 import { DirectorShotGrammarRow } from './director-shot-grammar';
-import { applyMatchSizeToScene, SHOT_SIZES } from '@/lib/director/craft/coverage';
+import { applyMatchSizeToScene, beatGrammarsForClip, beatHoldsPreviousSetup, beatIsDirtyFromOrigin, beatScriptContext, beatSetupColors, grammarSizeLabel, resetBeatToOrigin, SETUP_SWATCH_COUNT, SHOT_SIZES } from '@/lib/director/craft/coverage';
 import { DirectorStagingFrame, captureVideoFrame } from './director-staging-frame';
 import { ensureClipStaging } from '@/lib/director/staging-diagram';
 
@@ -96,6 +96,8 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const generating = directorJobIsRunning(show, 'generate');
   const liveTake = clip.takes.find((entry) => isDirectorTakeLive(entry));
   const variantLabel = variantTakeLabel(clip, key);
+  const beatGrammars = beatGrammarsForClip(clip.beats);
+  const setupColors = beatSetupColors(clip.beats);
 
   const setVariant = (next: IsolateVariant) => {
     const nextTakes = takesForVariant(clip, variantKey(next));
@@ -208,17 +210,25 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
               Full multishot
               {fullTakeCount > 0 && <span className="dgen-seg-count">{fullTakeCount}</span>}
             </button>
-            {clip.beats.map((entry) => {
+            {clip.beats.map((entry, index) => {
               const shotTakes = takeCountForShot(clip, entry.n);
+              const size = grammarSizeLabel(beatGrammars[index]);
+              const held = Boolean(size && beatHoldsPreviousSetup(entry) && index > 0);
+              const previous = index > 0 ? `S${clip.beats[index - 1].n}` : '';
+              const setup = setupColors[index];
+              const selected = isolated && variant.beatN === entry.n;
               return (
                 <button
                   key={entry.n}
                   type="button"
-                  className={`dgen-seg-btn${isolated && variant.beatN === entry.n ? ' dgen-seg-btn--on' : ''}`}
-                  title={entry.text}
+                  className={`dgen-seg-btn${selected ? ' dgen-seg-btn--on' : ''}${setup != null ? ' dgen-seg-btn--setup' : ''}`}
+                  data-setup={setup != null ? String(setup % SETUP_SWATCH_COUNT) : undefined}
+                  title={held
+                    ? `Same setup as ${previous} · ${size}. ${beatScriptContext(entry)}`
+                    : beatScriptContext(entry)}
                   onClick={() => pickShot(entry.n)}
                 >
-                  S{entry.n}
+                  S{entry.n}{size ? ` · ${size}` : ''}
                   {shotTakes > 0 && <span className="dgen-seg-count">{shotTakes}</span>}
                 </button>
               );
@@ -354,8 +364,8 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                 </button>
               )}
               {(() => {
-                const active = clip.beats.find((entry) => entry.n === beatN);
-                const size = active?.grammar?.size;
+                const activeIndex = clip.beats.findIndex((entry) => entry.n === beatN);
+                const size = beatGrammars[activeIndex]?.size;
                 const sizeLabel = SHOT_SIZES.find((entry) => entry.id === size)?.label;
                 if (!size || !scene) return null;
                 return (
@@ -378,35 +388,58 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
               <span className="director-tab__meta">{clip.beats.length} · durations must sum to {clip.seconds}s</span>
             </summary>
             <div className="dgen-section-body">
-              {clip.beats.map((entry) => (
-                <div key={entry.n} className="dcov-shot">
-                  <div className="dgen-shotedit">
-                    <button
-                      type="button"
-                      className={`director-tab__iso${entry.n === beatN ? ' director-tab__iso--active' : ''}`}
-                      title="Select this shot for isolation"
-                      onClick={() => pickShot(entry.n)}
-                    >
-                      S{entry.n}
-                    </button>
-                    <input
-                      type="number" min={1} value={entry.dur} className="dgen-shotedit-dur"
-                      onChange={(event) => patchClip((current) => applyBeatDurations({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, dur: Math.max(1, Number(event.target.value) || row.dur) } : row) }))}
-                    />
-                    <input
-                      value={entry.text}
-                      onChange={(event) => patchClip((current) => ({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, text: event.target.value } : row) }))}
+              {clip.beats.map((entry, index) => {
+                const size = grammarSizeLabel(beatGrammars[index]);
+                const setup = setupColors[index];
+                return (
+                  <div key={entry.n} className="dcov-shot">
+                    <div className="dgen-shotedit">
+                      <button
+                        type="button"
+                        className={`director-tab__iso${entry.n === beatN ? ' director-tab__iso--active' : ''}${setup != null ? ' director-tab__iso--setup' : ''}`}
+                        data-setup={setup != null ? String(setup % SETUP_SWATCH_COUNT) : undefined}
+                        title="Select this shot for isolation"
+                        onClick={() => pickShot(entry.n)}
+                      >
+                        S{entry.n}{size ? ` · ${size}` : ''}
+                      </button>
+                      <input
+                        type="number" min={1} value={entry.dur} className="dgen-shotedit-dur"
+                        onChange={(event) => patchClip((current) => applyBeatDurations({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, dur: Math.max(1, Number(event.target.value) || row.dur) } : row) }))}
+                      />
+                      <button
+                        type="button"
+                        className="director-tab__btn"
+                        disabled={!beatIsDirtyFromOrigin(entry)}
+                        title="Restore the LLM cam, action, line, and coverage chips"
+                        onClick={() => patchClip((current) => applyBeatDurations({
+                          ...current,
+                          beats: current.beats.map((row) => row.n === entry.n ? resetBeatToOrigin(row) : row),
+                        }))}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <p className="dcov-beat-context">{beatScriptContext(entry)}</p>
+                    <label className="dsl-scenefield">
+                      <span className="dsl-scenefield-label">Action</span>
+                      <input
+                        value={entry.text}
+                        onChange={(event) => patchClip((current) => ({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, text: event.target.value } : row) }))}
+                      />
+                    </label>
+                    <DirectorShotGrammarRow
+                      beat={entry}
+                      resolved={beatGrammars[index]}
+                      inherited={beatHoldsPreviousSetup(entry) && index > 0}
+                      onPatch={(grammar) => patchClip((current) => ({
+                        ...current,
+                        beats: current.beats.map((row) => row.n === entry.n ? { ...row, grammar } : row),
+                      }))}
                     />
                   </div>
-                  <DirectorShotGrammarRow
-                    beat={entry}
-                    onPatch={(grammar) => patchClip((current) => ({
-                      ...current,
-                      beats: current.beats.map((row) => row.n === entry.n ? { ...row, grammar } : row),
-                    }))}
-                  />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </details>
 

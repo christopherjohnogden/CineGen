@@ -8,6 +8,7 @@ import type {
 } from '@/types/director';
 import { generateId } from '@/lib/utils/ids';
 import { nearestFovAnchor } from './craft/optics';
+import { ensureBeatOrigin } from './craft/coverage';
 import { padTimecode, retimeClipToSeconds, validateClipTimings } from './prompt-compiler';
 import { STAGING_COLORS, STAGING_LETTERS } from './staging-map';
 
@@ -51,7 +52,7 @@ function parseBeat(raw: unknown, index: number): DirectorBeat | null {
   if (!dur && fromSec !== null && toSec !== null && toSec > fromSec) dur = toSec - fromSec;
   const quote = firstString(row.quote, row.dialogue, row.line);
   const speaker = firstString(row.speaker, row.character);
-  return {
+  const beat: DirectorBeat = {
     n: typeof row.n === 'number' ? row.n : index + 1,
     from: fromSec !== null ? padTimecode(fromSec) : '0:00',
     to: toSec !== null ? padTimecode(toSec) : '0:00',
@@ -65,6 +66,7 @@ function parseBeat(raw: unknown, index: number): DirectorBeat | null {
       ? (speaker.startsWith('@') ? speaker : `@${speaker}`)
       : undefined,
   };
+  return ensureBeatOrigin(beat);
 }
 
 function parseActingTasks(raw: unknown): DirectorActingTask[] | undefined {

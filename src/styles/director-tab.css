@@ -7,6 +7,14 @@
   min-height: 0;
   /* Shared left-rail width: Script scenes panel, Breakdown scene nav, Shotlist/Generate structure rail. */
   --director-left-rail: 270px;
+  --setup-0: #6d8fad;
+  --setup-1: #6f9a78;
+  --setup-2: #c17b6e;
+  --setup-3: #5c9a94;
+  --setup-4: #9aa36b;
+  --setup-5: #8b93a8;
+  --setup-6: #b8886a;
+  --setup-7: #a8868a;
 }
 
 .director-tab__toolbar {
@@ -670,10 +678,22 @@
 .director-tab__shotrow-text { color:var(--text-secondary); flex:1 1 auto; }
 .director-tab__shotrow-text em { color:var(--text-primary); font-style:italic; }
 .director-tab__shotrow-btns { display:inline-flex; gap:4px; flex-shrink:0; align-self:center; }
-.director-tab__iso { font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; background:transparent; color:var(--text-secondary); border:1px solid var(--border-medium); border-radius:6px; padding:3px 8px; cursor:pointer; transition:color .15s,border-color .15s,background .15s; white-space:nowrap; }
+.director-tab__iso { font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; background:transparent; color:var(--text-secondary); border:1px solid var(--border-medium); border-radius:6px; padding:3px 8px; cursor:pointer; transition:color .15s,border-color .15s,background .15s,box-shadow .15s; white-space:nowrap; }
 .director-tab__iso:hover { color:var(--accent); border-color:var(--accent); }
 .director-tab__iso--active { background:var(--accent); border-color:var(--accent); color:var(--bg-base); }
 .director-tab__iso--active:hover { color:var(--bg-base); }
+.director-tab__iso--setup[data-setup="0"] { --setup:var(--setup-0); }
+.director-tab__iso--setup[data-setup="1"] { --setup:var(--setup-1); }
+.director-tab__iso--setup[data-setup="2"] { --setup:var(--setup-2); }
+.director-tab__iso--setup[data-setup="3"] { --setup:var(--setup-3); }
+.director-tab__iso--setup[data-setup="4"] { --setup:var(--setup-4); }
+.director-tab__iso--setup[data-setup="5"] { --setup:var(--setup-5); }
+.director-tab__iso--setup[data-setup="6"] { --setup:var(--setup-6); }
+.director-tab__iso--setup[data-setup="7"] { --setup:var(--setup-7); }
+.director-tab__iso--setup { background:color-mix(in srgb, var(--setup) 22%, transparent); border-color:color-mix(in srgb, var(--setup) 45%, var(--border-medium)); color:color-mix(in srgb, var(--setup) 35%, var(--text-primary)); }
+.director-tab__iso--setup:hover { background:color-mix(in srgb, var(--setup) 32%, transparent); color:var(--text-primary); border-color:color-mix(in srgb, var(--setup) 60%, var(--accent)); }
+.director-tab__iso--setup.director-tab__iso--active { background:color-mix(in srgb, var(--setup) 38%, transparent); border-color:var(--accent); color:var(--text-primary); box-shadow:0 0 0 1px var(--accent); }
+.director-tab__iso--setup.director-tab__iso--active:hover { color:var(--text-primary); }
 .director-tab__isotag { color:var(--accent); }
 
 /* ── Shotlist planning document: sections, asset registry, prompts ── */
@@ -737,6 +757,17 @@
 .dgen-seg-btn:hover { color:var(--text-primary); background:var(--bg-elevated); }
 .dgen-seg-btn--on { background:var(--accent-dim); color:var(--accent); }
 .dgen-seg-btn--hint { color:var(--accent); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.dgen-seg-btn--setup[data-setup="0"] { --setup:var(--setup-0); }
+.dgen-seg-btn--setup[data-setup="1"] { --setup:var(--setup-1); }
+.dgen-seg-btn--setup[data-setup="2"] { --setup:var(--setup-2); }
+.dgen-seg-btn--setup[data-setup="3"] { --setup:var(--setup-3); }
+.dgen-seg-btn--setup[data-setup="4"] { --setup:var(--setup-4); }
+.dgen-seg-btn--setup[data-setup="5"] { --setup:var(--setup-5); }
+.dgen-seg-btn--setup[data-setup="6"] { --setup:var(--setup-6); }
+.dgen-seg-btn--setup[data-setup="7"] { --setup:var(--setup-7); }
+.dgen-seg-btn--setup { background:color-mix(in srgb, var(--setup) 22%, transparent); color:color-mix(in srgb, var(--setup) 40%, var(--text-primary)); }
+.dgen-seg-btn--setup:hover { background:color-mix(in srgb, var(--setup) 32%, transparent); color:var(--text-primary); }
+.dgen-seg-btn--setup.dgen-seg-btn--on { background:color-mix(in srgb, var(--setup) 36%, transparent); color:var(--text-primary); box-shadow:inset 0 0 0 1.5px var(--accent); }
 .dgen-seg-count { font-size:10px; font-weight:700; letter-spacing:.04em; color:var(--text-tertiary); }
 .dgen-seg-btn--on .dgen-seg-count { color:inherit; opacity:.8; }
 .dgen-viewer { position:relative; aspect-ratio:16/9; min-height:0; display:flex; align-items:stretch; justify-content:stretch; overflow:hidden; }
@@ -837,6 +868,7 @@
 .dgen-two .dsl-scenefield { flex:1; }
 .dgen-shotedit { display:flex; gap:8px; align-items:center; }
 .dgen-shotedit-dur { width:64px; flex-shrink:0; }
+.dcov-beat-context { margin:0; font-size:13px; line-height:1.45; color:var(--text-primary); }
 .dcov-shot { display:flex; flex-direction:column; gap:8px; padding-bottom:10px; border-bottom:1px solid var(--border-subtle); }
 .dcov-shot:last-child { border-bottom:none; padding-bottom:0; }
 .dcov-grammar, .dcov-scene, .dcov-move, .dcov-acting { display:flex; flex-direction:column; gap:8px; }

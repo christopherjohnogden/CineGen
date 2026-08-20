@@ -4,33 +4,33 @@ import type {
 } from '@/types/director';
 import { updateDirectorClip } from '../director-state';
 
-export const SHOT_SIZES: Array<{ id: ShotSize; label: string; lens: string }> = [
-  { id: 'ews', label: 'EWS', lens: 'extreme wide' },
-  { id: 'ws', label: 'WS', lens: 'wide' },
-  { id: 'ms', label: 'MS', lens: 'medium' },
-  { id: 'mcu', label: 'MCU', lens: 'medium close-up' },
-  { id: 'cu', label: 'CU', lens: 'close-up' },
-  { id: 'ecu', label: 'ECU', lens: 'extreme close-up' },
+export const SHOT_SIZES: Array<{ id: ShotSize; label: string; lens: string; hint: string }> = [
+  { id: 'ews', label: 'EWS', lens: 'extreme wide', hint: 'Extreme wide — the location first; people are small in the geography' },
+  { id: 'ws', label: 'WS', lens: 'wide', hint: 'Wide shot — full bodies and the room they stand in' },
+  { id: 'ms', label: 'MS', lens: 'medium', hint: 'Medium — waist-up; face and gesture both read' },
+  { id: 'mcu', label: 'MCU', lens: 'medium close-up', hint: 'Medium close-up — chest-up; shoulders and face' },
+  { id: 'cu', label: 'CU', lens: 'close-up', hint: 'Close-up — the face fills the frame' },
+  { id: 'ecu', label: 'ECU', lens: 'extreme close-up', hint: 'Extreme close-up — an eye, a mouth, a hand, a detail' },
 ];
 
 export const SHOT_BODIES = [
-  { id: 'one', label: 'One', lens: 'single' },
-  { id: 'two', label: 'Two-shot', lens: 'two-shot' },
-  { id: 'group', label: 'Group', lens: 'group' },
-  { id: 'ots', label: 'OTS', lens: 'over-the-shoulder' },
-  { id: 'insert', label: 'Insert', lens: 'insert' },
+  { id: 'one', label: 'One', lens: 'single', hint: 'Single — one person owns the frame' },
+  { id: 'two', label: 'Two-shot', lens: 'two-shot', hint: 'Two-shot — two people, both readable' },
+  { id: 'group', label: 'Group', lens: 'group', hint: 'Group — three or more in frame' },
+  { id: 'ots', label: 'OTS', lens: 'over-the-shoulder', hint: 'Over-the-shoulder — we look past one person to the other' },
+  { id: 'insert', label: 'Insert', lens: 'insert', hint: 'Insert — a prop, hand, or detail; not a face' },
 ] as const;
 
 export const SHOT_CLEAN = [
-  { id: 'clean', label: 'Clean', lens: 'clean' },
-  { id: 'dirty', label: 'Dirty', lens: 'dirty' },
+  { id: 'clean', label: 'Clean', lens: 'clean', hint: 'Clean — no other body in the foreground' },
+  { id: 'dirty', label: 'Dirty', lens: 'dirty', hint: 'Dirty — a foreground shoulder, head, or object eats the edge' },
 ] as const;
 
 export const SHOT_ANGLES = [
-  { id: 'eye', label: 'Eye', lens: 'eye-level' },
-  { id: 'high', label: 'High', lens: 'high angle' },
-  { id: 'low', label: 'Low', lens: 'low angle' },
-  { id: 'dutch', label: 'Dutch', lens: 'dutch angle' },
+  { id: 'eye', label: 'Eye', lens: 'eye-level', hint: 'Eye-level — camera at the subject\'s eyeline' },
+  { id: 'high', label: 'High', lens: 'high angle', hint: 'High angle — looking down on them' },
+  { id: 'low', label: 'Low', lens: 'low angle', hint: 'Low angle — looking up at them' },
+  { id: 'dutch', label: 'Dutch', lens: 'dutch angle', hint: 'Dutch — horizon tilted; unease' },
 ] as const;
 
 export const CAMERA_MOVES: Array<{ id: CameraMoveId; label: string; verb: string }> = [
@@ -47,12 +47,12 @@ export const CAMERA_MOVES: Array<{ id: CameraMoveId; label: string; verb: string
   { id: 'tilt-down', label: 'Tilt down', verb: 'slow tilt down from a fixed position' },
 ];
 
-export const COVERAGE_KINDS: Array<{ id: CoverageKind; label: string; grammar: DirectorShotGrammar }> = [
-  { id: 'master', label: 'Master', grammar: { size: 'ws', bodies: 'two', clean: 'clean' } },
-  { id: 'singles', label: 'Singles', grammar: { size: 'cu', bodies: 'one', clean: 'clean' } },
-  { id: 'ots', label: 'OTS pair', grammar: { size: 'mcu', bodies: 'ots', clean: 'dirty' } },
-  { id: 'two-shot', label: 'Two-shot', grammar: { size: 'ms', bodies: 'two', clean: 'clean' } },
-  { id: 'insert', label: 'Insert', grammar: { size: 'ecu', bodies: 'insert', clean: 'clean' } },
+export const COVERAGE_KINDS: Array<{ id: CoverageKind; label: string; hint: string; grammar: DirectorShotGrammar }> = [
+  { id: 'master', label: 'Master', hint: 'Master — a wide that holds the whole scene geography', grammar: { size: 'ws', bodies: 'two', clean: 'clean' } },
+  { id: 'singles', label: 'Singles', hint: 'Singles — clean close-up of one speaker at a time', grammar: { size: 'cu', bodies: 'one', clean: 'clean' } },
+  { id: 'ots', label: 'OTS pair', hint: 'OTS pair — matching over-the-shoulders both ways', grammar: { size: 'mcu', bodies: 'ots', clean: 'dirty' } },
+  { id: 'two-shot', label: 'Two-shot', hint: 'Two-shot — both people readable in one frame', grammar: { size: 'ms', bodies: 'two', clean: 'clean' } },
+  { id: 'insert', label: 'Insert', hint: 'Insert — a detail cutaway (hands, prop, object)', grammar: { size: 'ecu', bodies: 'insert', clean: 'clean' } },
 ];
 
 export interface ResolvedCameraMove {
@@ -112,6 +112,85 @@ export function grammarLensLine(grammar?: DirectorShotGrammar): string {
   return [size, clean, bodies, angle].filter(Boolean).join(', ');
 }
 
+export function grammarChoiceHint(grammar?: DirectorShotGrammar): string {
+  if (!grammar) return '';
+  return [
+    SHOT_SIZES.find((entry) => entry.id === grammar.size)?.hint,
+    SHOT_BODIES.find((entry) => entry.id === grammar.bodies)?.hint,
+    SHOT_CLEAN.find((entry) => entry.id === grammar.clean)?.hint,
+    SHOT_ANGLES.find((entry) => entry.id === grammar.angle)?.hint,
+  ].filter(Boolean).join(' · ');
+}
+
+export function captureBeatOrigin(beat: DirectorBeat): NonNullable<DirectorBeat['origin']> {
+  return {
+    text: beat.text,
+    dur: beat.dur,
+    cam: beat.cam,
+    quote: beat.quote,
+    speaker: beat.speaker,
+    grammar: beat.grammar ? { ...beat.grammar } : undefined,
+  };
+}
+
+function beatHasGrammarChips(beat: DirectorBeat): boolean {
+  const grammar = beat.grammar;
+  return Boolean(grammar?.size || grammar?.bodies || grammar?.clean || grammar?.angle);
+}
+
+/** Fill coverage chips from the LLM cam line when the beat has none yet. */
+export function ensureBeatOrigin(beat: DirectorBeat): DirectorBeat {
+  const inferred = beatHasGrammarChips(beat) ? undefined : inferBeatGrammar(beat);
+  const next = inferred ? { ...beat, grammar: inferred } : beat;
+  if (!next.origin) return { ...next, origin: captureBeatOrigin(next) };
+  if (!next.origin.grammar && next.grammar && inferred) {
+    return { ...next, origin: { ...next.origin, grammar: { ...next.grammar } } };
+  }
+  return next;
+}
+
+export function resetBeatToOrigin(beat: DirectorBeat): DirectorBeat {
+  const origin = beat.origin ?? captureBeatOrigin(beat);
+  return {
+    ...beat,
+    text: origin.text,
+    dur: origin.dur,
+    cam: origin.cam,
+    quote: origin.quote,
+    speaker: origin.speaker,
+    grammar: origin.grammar ? { ...origin.grammar } : undefined,
+    origin,
+  };
+}
+
+export function beatIsDirtyFromOrigin(beat: DirectorBeat): boolean {
+  const origin = beat.origin;
+  if (!origin) return Boolean(beat.grammar);
+  return beat.text !== origin.text
+    || beat.dur !== origin.dur
+    || (beat.cam ?? '') !== (origin.cam ?? '')
+    || (beat.quote ?? '') !== (origin.quote ?? '')
+    || (beat.speaker ?? '') !== (origin.speaker ?? '')
+    || JSON.stringify(beat.grammar ?? null) !== JSON.stringify(origin.grammar ?? null);
+}
+
+/** LLM shot in plain language: framing, who, action, line. Uses origin so chip edits don't rewrite the story. */
+export function beatScriptContext(beat: DirectorBeat): string {
+  const source = beat.origin ?? beat;
+  const who = source.speaker?.replace(/^@/, '');
+  const framing = grammarHeading(source.grammar) || source.cam?.trim().replace(/[.]$/, '') || '';
+  const head = framing
+    ? (who && !framing.toLowerCase().includes(who.toLowerCase()) ? `${framing} on ${who}` : framing)
+    : (who ? `On ${who}` : `S${beat.n}`);
+  const action = source.text.trim();
+  const quote = source.quote?.trim();
+  const body = action ? `${head} — ${action}` : head;
+  if (quote && !action.toLowerCase().includes(quote.toLowerCase())) {
+    return `${body}. "${quote}"`;
+  }
+  return body;
+}
+
 export function grammarHeading(grammar?: DirectorShotGrammar): string {
   if (!grammar) return '';
   const size = SHOT_SIZES.find((entry) => entry.id === grammar.size)?.label;
@@ -155,6 +234,19 @@ export function axisLockLine(axis?: string): string {
   return `Line of action: ${text}. A reverse of this screen direction is a failed take.`;
 }
 
+export function beatSizeLabel(beat: DirectorBeat): string {
+  if (beat.grammar?.size) {
+    return SHOT_SIZES.find((entry) => entry.id === beat.grammar?.size)?.label ?? '';
+  }
+  const order: ShotSize[] = ['ews', 'ecu', 'mcu', 'cu', 'ms', 'ws'];
+  for (const size of order) {
+    if (beatLooksLikeSize(beat, size)) {
+      return SHOT_SIZES.find((entry) => entry.id === size)?.label ?? '';
+    }
+  }
+  return '';
+}
+
 export function beatLooksLikeSize(beat: DirectorBeat, size: ShotSize): boolean {
   if (beat.grammar?.size === size) return true;
   const cam = `${beat.cam ?? ''} ${beat.framing ?? ''} ${beat.text}`.toLowerCase();
@@ -167,22 +259,152 @@ export function beatLooksLikeSize(beat: DirectorBeat, size: ShotSize): boolean {
   return false;
 }
 
+function beatCamBlob(beat: DirectorBeat): string {
+  return `${beat.cam ?? ''} ${beat.framing ?? ''} ${beat.gist ?? ''}`.toLowerCase();
+}
+
+const NEW_SETUP_RE = /hard cut|reverse cut|smash cut|match cut|insert cut|whip cut|\bcut to\b/;
+
+export function beatIsNewSetup(beat: DirectorBeat): boolean {
+  return NEW_SETUP_RE.test(beatCamBlob(beat));
+}
+
+function sizeFromPortrait(cam: string): ShotSize | undefined {
+  if (/close portrait|tight portrait/.test(cam)) return 'cu';
+  if (/medium portrait/.test(cam)) return 'ms';
+  if (/\bportrait\b/.test(cam)) return 'mcu';
+  return undefined;
+}
+
+/** Read size / bodies / clean / angle out of the LLM cam line so the chips match the shot. */
+export function inferBeatGrammar(beat: DirectorBeat): DirectorShotGrammar | undefined {
+  const cam = beatCamBlob(beat);
+  const probe: DirectorBeat = { ...beat, grammar: undefined };
+  const sized = (['ews', 'ecu', 'mcu', 'cu', 'ms', 'ws'] as const)
+    .find((id) => beatLooksLikeSize({ ...probe, cam: beat.cam, framing: beat.framing, text: '' }, id));
+  const size = sized ?? sizeFromPortrait(cam);
+  let bodies: DirectorShotGrammar['bodies'];
+  if (/\binsert\b|cutaway/.test(cam)) bodies = 'insert';
+  else if (/over-?the-?shoulder|\bots\b|from behind .{0,80}shoulder|over .{0,40}shoulder|shoulder a (?:fixed |visible )?left foreground|foreground (?:edge|anchor)/.test(cam)) bodies = 'ots';
+  else if (/two-?shot|2-?shot|two shot|both men|both women|both people/.test(cam)) bodies = 'two';
+  else if (/\bgroup\b|three-?shot|\bcrowd\b/.test(cam)) bodies = 'group';
+  else if (/\bsingle\b|one-?shot|\bportrait\b|reverse cut/.test(cam)) bodies = 'one';
+  let clean: DirectorShotGrammar['clean'];
+  if (bodies === 'ots' || /dirty|foreground|occlud/.test(cam)) clean = 'dirty';
+  else if (/\bclean\b/.test(cam)) clean = 'clean';
+  let angle: DirectorShotGrammar['angle'];
+  if (/\bdutch\b|canted|horizon tilted/.test(cam)) angle = 'dutch';
+  else if (/high[- ]angle|looking down|from above/.test(cam)) angle = 'high';
+  else if (/low[- ]angle|looking up|from below/.test(cam)) angle = 'low';
+  else if (/eye-?level|eye level/.test(cam)) angle = 'eye';
+  const grammar: DirectorShotGrammar = { size, bodies, clean, angle };
+  return grammar.size || grammar.bodies || grammar.clean || grammar.angle ? grammar : undefined;
+}
+
+function compactGrammar(grammar?: DirectorShotGrammar): DirectorShotGrammar {
+  if (!grammar) return {};
+  return Object.fromEntries(
+    Object.entries(grammar).filter(([, value]) => value !== undefined),
+  ) as DirectorShotGrammar;
+}
+
+function grammarHasChips(grammar?: DirectorShotGrammar): boolean {
+  return Boolean(grammar?.size || grammar?.bodies || grammar?.clean || grammar?.angle);
+}
+
+/** Fill blank coverage from the previous beat — a cam line with no size is the same setup continuing. */
+export function resolveBeatGrammar(
+  beat: DirectorBeat,
+  previous?: DirectorShotGrammar,
+): DirectorShotGrammar | undefined {
+  const local = { ...compactGrammar(inferBeatGrammar(beat)), ...compactGrammar(beat.grammar) };
+  if (beatDescribesOwnSetup(beat)) {
+    return grammarHasChips(local) ? local : undefined;
+  }
+  const sizeChanged = Boolean(local.size && previous?.size && local.size !== previous.size);
+  const resolved: DirectorShotGrammar = {
+    size: local.size ?? previous?.size,
+    bodies: local.bodies ?? (sizeChanged ? undefined : previous?.bodies),
+    clean: local.clean ?? (sizeChanged ? undefined : previous?.clean),
+    angle: local.angle ?? previous?.angle,
+    move: local.move ?? previous?.move,
+  };
+  return grammarHasChips(resolved) ? resolved : undefined;
+}
+
+export function beatGrammarsForClip(beats: DirectorBeat[]): Array<DirectorShotGrammar | undefined> {
+  const resolved: Array<DirectorShotGrammar | undefined> = [];
+  for (const beat of beats) {
+    resolved.push(resolveBeatGrammar(beat, resolved[resolved.length - 1]));
+  }
+  return resolved;
+}
+
+export function grammarSizeLabel(grammar?: DirectorShotGrammar): string {
+  return grammar?.size ? (SHOT_SIZES.find((entry) => entry.id === grammar.size)?.label ?? '') : '';
+}
+
+export function beatInheritsSize(beat: DirectorBeat): boolean {
+  return !beat.grammar?.size && !inferBeatGrammar(beat)?.size;
+}
+
+function beatDescribesOwnSetup(beat: DirectorBeat): boolean {
+  if (beatIsNewSetup(beat) || beat.grammar?.size || beat.grammar?.bodies) return true;
+  const inferred = inferBeatGrammar(beat);
+  return Boolean(inferred?.size || inferred?.bodies);
+}
+
+export function beatHoldsPreviousSetup(beat: DirectorBeat): boolean {
+  return !beatDescribesOwnSetup(beat);
+}
+
+export const SETUP_SWATCH_COUNT = 8;
+
+/** Only true holds share a swatch — a restated MS after a cut is a new shot. */
+export function beatSetupColors(beats: DirectorBeat[]): Array<number | undefined> {
+  const grammars = beatGrammarsForClip(beats);
+  const runs: Array<number | undefined> = [];
+  let run = -1;
+  for (let index = 0; index < beats.length; index += 1) {
+    if (!grammars[index]?.size) {
+      runs.push(undefined);
+      continue;
+    }
+    if (index === 0 || !beatHoldsPreviousSetup(beats[index])) run += 1;
+    runs.push(run);
+  }
+  const counts = new Map<number, number>();
+  for (const id of runs) {
+    if (id == null) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  const remap = new Map<number, number>();
+  for (const id of runs) {
+    if (id == null || (counts.get(id) ?? 0) < 2 || remap.has(id)) continue;
+    remap.set(id, remap.size);
+  }
+  return runs.map((id) => (id == null ? undefined : remap.get(id)));
+}
+
 export function applyMatchSizeToScene(
   show: DirectorShow,
   sceneId: string,
   source: { clipId: string; beatN: number },
 ): DirectorShow {
   const sourceClip = show.clips.find((clip) => clip.id === source.clipId);
-  const sourceBeat = sourceClip?.beats.find((beat) => beat.n === source.beatN);
-  const size = sourceBeat?.grammar?.size;
+  const sourceIndex = sourceClip?.beats.findIndex((beat) => beat.n === source.beatN) ?? -1;
+  const sourceBeat = sourceIndex >= 0 ? sourceClip?.beats[sourceIndex] : undefined;
+  const resolved = sourceClip ? beatGrammarsForClip(sourceClip.beats)[sourceIndex] : undefined;
+  const size = resolved?.size;
   if (!sourceClip || !sourceBeat || !size) return show;
-  const grammar = { ...sourceBeat.grammar };
+  const grammar = { ...sourceBeat.grammar, ...resolved };
   const fov = sourceBeat.fov ?? sourceClip.fov;
   let next = show;
   for (const clip of show.clips) {
     if (clip.sceneId !== sceneId || clip.altOf) continue;
-    const beats = clip.beats.map((beat) => {
-      if (!beatLooksLikeSize(beat, size) && !(beat.grammar?.size === size)) return beat;
+    const resolvedBeats = beatGrammarsForClip(clip.beats);
+    const beats = clip.beats.map((beat, index) => {
+      if (resolvedBeats[index]?.size !== size && !beatLooksLikeSize(beat, size)) return beat;
       return {
         ...beat,
         grammar: { ...beat.grammar, ...grammar, size },

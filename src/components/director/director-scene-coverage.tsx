@@ -28,6 +28,7 @@ export function DirectorSceneCoverage({ show, scene, onChange }: DirectorSceneCo
               key={entry.id}
               type="button"
               className={`dgen-seg-btn${selected.has(entry.id) ? ' dgen-seg-btn--on' : ''}`}
+              title={entry.hint}
               onClick={() => toggle(entry.id)}
             >
               {entry.label}

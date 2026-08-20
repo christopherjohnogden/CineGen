@@ -43,6 +43,7 @@ export function DirectorCameraMovePanel({
             key={entry.id}
             type="button"
             className={`dgen-seg-btn${plan.move === entry.id ? ' dgen-seg-btn--on' : ''}${plan.move === 'locked' && plan.intensity > 0 && entry.id === filmicId ? ' dgen-seg-btn--hint' : ''}`}
+            title={entry.verb}
             onClick={() => setMove(entry.id)}
           >
             {entry.label}
