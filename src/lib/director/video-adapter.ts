@@ -21,6 +21,7 @@ export interface DirectorGenerateRequest {
   prompt: string;
   durationSec: number;
   params: Record<string, unknown>;
+  medias?: Array<{ value: string; role: 'image' | 'start_image' | 'end_image' | 'video' | 'audio' }>;
 }
 
 export interface DirectorVideoAdapter {
@@ -33,6 +34,7 @@ export interface DirectorVideoAdapter {
     show: DirectorShow;
     clip: DirectorClip;
     variant: IsolateVariant;
+    referenceImages?: string[];
   }) => DirectorGenerateRequest;
 }
 
@@ -87,24 +89,23 @@ export const seedance25Adapter: DirectorVideoAdapter = {
     referenceInputs: true,
     generateAudio: true,
   },
-  buildRequest({ show, clip, variant }) {
+  buildRequest({ show, clip, variant, referenceImages = [] }) {
     const compiled = compiledPrompt(show, clip, variant);
+    // Live `higgsfield model get seedance_2_5` has no genre / multi_shots / multi_prompt.
+    // Genre and shot list already live in the compiled prompt (look bible + clip body).
     const params: Record<string, unknown> = {
       aspect_ratio: show.aspectRatio,
       duration: compiled.durationSec,
       resolution: show.resolution,
       generate_audio: show.generateAudio,
-      genre: show.genre,
     };
-    if (!compiled.isolated && clip.beats.length > 1) {
-      params.multi_shots = true;
-      params.multi_shot_mode = 'custom';
-      params.multi_prompt = clip.beats.map((beat) => ({
-        prompt: beat.text,
-        duration: beat.dur,
-      }));
-    } else {
-      params.multi_shots = false;
+    const medias = [...new Set(referenceImages.map((url) => url.trim()).filter(Boolean))]
+      .map((value) => ({ value, role: 'image' as const }));
+    let prompt = compiled.prompt;
+    if (medias.length > 0) {
+      // t2v rejects reference media; omni_reference is how Seedance 2.5 locks to stills.
+      params.mode = 'omni_reference';
+      prompt = `${prompt}\n\nREFERENCE STILLS — the attached images are LOCKED identity for the ELEMENTS tagged above. Faces, bodies, wardrobe and locations must match those stills.`;
     }
     return {
       adapterId: this.id,
@@ -112,9 +113,10 @@ export const seedance25Adapter: DirectorVideoAdapter = {
       provider: this.provider,
       modelId: this.modelId,
       outputType: 'video',
-      prompt: compiled.prompt,
+      prompt,
       durationSec: compiled.durationSec,
       params,
+      ...(medias.length > 0 ? { medias } : {}),
     };
   },
 };

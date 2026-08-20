@@ -78,6 +78,7 @@ describe('director isolate prompt', () => {
   it('rewrites native isolate to the beat duration', () => {
     const body = isolatedPrompt(clip, 3, 'native', { aspectRatio: '16:9' });
     expect(body).toContain('SINGLE UNBROKEN TAKE, 6 SECONDS');
+    expect(body).toContain('ELEMENTS — @Peter-Boy + @Dr-Jordan');
     expect(body).toContain('one beat lifted out');
     expect(body).toContain('TOTAL RUNTIME IS 6 SECONDS');
     expect(body).not.toContain('BEAT 1 of the same take');
@@ -91,20 +92,44 @@ describe('director isolate prompt', () => {
 });
 
 describe('seedance 2.5 adapter', () => {
-  it('uses multi_prompt for full clips and disables it when isolated', () => {
+  it('uses the compiled prompt for shots — Seedance 2.5 has no multi_shots flag', () => {
     const show = createEmptyDirectorShow();
     const full = seedance25Adapter.buildRequest({ show, clip, variant: { kind: 'full' } });
     expect(full.modelId).toBe('seedance_2_5');
-    expect(full.params.multi_shots).toBe(true);
-    expect(full.params.multi_prompt).toHaveLength(3);
+    expect(full.params).toEqual({
+      aspect_ratio: show.aspectRatio,
+      duration: 20,
+      resolution: show.resolution,
+      generate_audio: show.generateAudio,
+    });
+    expect(full.params).not.toHaveProperty('genre');
+    expect(full.params).not.toHaveProperty('multi_shots');
+    expect(full.params).not.toHaveProperty('multi_prompt');
     expect(full.durationSec).toBe(20);
+    expect(full.prompt).toMatch(/SHOT 1|THREE SHOTS|hard cuts/i);
 
     const native = seedance25Adapter.buildRequest({
       show, clip, variant: { kind: 'isolated', beatN: 3, mode: 'native' },
     });
-    expect(native.params.multi_shots).toBe(false);
+    expect(native.params.duration).toBe(6);
+    expect(native.params).not.toHaveProperty('multi_shots');
     expect(native.durationSec).toBe(6);
     expect(native.prompt).toContain('SINGLE UNBROKEN TAKE, 6 SECONDS');
+  });
+
+  it('attaches element stills as Seedance 2.5 omni_reference images', () => {
+    const show = createEmptyDirectorShow();
+    const withRefs = seedance25Adapter.buildRequest({
+      show, clip, variant: { kind: 'isolated', beatN: 2, mode: 'native' },
+      referenceImages: ['https://cdn.example/peter.png', 'https://cdn.example/jordan.png'],
+    });
+    expect(withRefs.params.mode).toBe('omni_reference');
+    expect(withRefs.medias).toEqual([
+      { value: 'https://cdn.example/peter.png', role: 'image' },
+      { value: 'https://cdn.example/jordan.png', role: 'image' },
+    ]);
+    expect(withRefs.prompt).toContain('REFERENCE STILLS');
+    expect(withRefs.prompt).toContain('ELEMENTS — @Peter-Boy + @Dr-Jordan');
   });
 
   it('uses stored body edits for the active variant', () => {

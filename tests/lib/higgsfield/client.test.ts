@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCreateArgs,
   parseGenerateJson,
+  parseJobSnapshot,
+  extractHiggsfieldJobId,
+  isTransientHiggsfieldError,
   extractMediaUrl,
   extractMediaUrls,
   extractTextOutput,
   parseConnectionState,
+  pickHiggsfieldBinaries,
+  higgsfieldBinaryCandidates,
 } from '../../../electron/ipc/higgsfield';
 import {
   buildHiggsfieldWorkflowRequest,
@@ -16,6 +21,14 @@ describe('buildCreateArgs', () => {
   it('builds a minimal text-to-video create command with --wait --json', () => {
     const args = buildCreateArgs({ model: 'seedance_2_0', prompt: '  rain on a window  ', mediaType: 'video' });
     expect(args).toEqual(['generate', 'create', 'seedance_2_0', '--prompt', 'rain on a window', '--wait', '--json']);
+  });
+
+  it('can submit without --wait so a later 503 poll can rejoin the job', () => {
+    const args = buildCreateArgs({
+      model: 'seedance_2_5', prompt: 'Peter waits', mediaType: 'video', wait: false,
+    });
+    expect(args).toEqual(['generate', 'create', 'seedance_2_5', '--prompt', 'Peter waits', '--json']);
+    expect(args).not.toContain('--wait');
   });
 
   it('maps media roles to the correct CLI flags', () => {
@@ -83,6 +96,31 @@ describe('buildCreateArgs', () => {
       '--config', '{"mode":"fast","strength":0}',
       '--wait', '--json',
     ]);
+  });
+
+  it('drops Seedance 2.5 flags the live CLI rejects', () => {
+    const args = buildCreateArgs({
+      model: 'seedance_2_5',
+      prompt: 'Peter waits',
+      mediaType: 'video',
+      params: {
+        aspect_ratio: '16:9',
+        duration: 6,
+        genre: 'noir',
+        multi_shots: false,
+        generate_audio: true,
+      },
+    });
+    expect(args).toEqual([
+      'generate', 'create', 'seedance_2_5',
+      '--prompt', 'Peter waits',
+      '--aspect_ratio', '16:9',
+      '--duration', '6',
+      '--generate_audio', 'true',
+      '--wait', '--json',
+    ]);
+    expect(args).not.toContain('--genre');
+    expect(args).not.toContain('--multi_shots');
   });
 
   it('lets the new params map override the legacy extra map', () => {
@@ -244,6 +282,31 @@ describe('parseGenerateJson', () => {
   });
 });
 
+describe('Higgsfield 503 / job rejoin', () => {
+  it('treats HTTP 503 as transient', () => {
+    expect(isTransientHiggsfieldError('Higgsfield API error (HTTP 503). request failed with status 503 Service Unavailable')).toBe(true);
+    expect(isTransientHiggsfieldError('nsfw blocked')).toBe(false);
+  });
+
+  it('reads a queued job id from create --json output', () => {
+    const queued = JSON.stringify([{
+      id: '572aea65-7865-48f9-b550-cdc9e494d065',
+      status: 'queued',
+      job_set_type: 'seedance_2_5',
+    }]);
+    expect(parseJobSnapshot(queued)).toMatchObject({
+      status: 'queued',
+      jobId: '572aea65-7865-48f9-b550-cdc9e494d065',
+    });
+    expect(() => parseGenerateJson(queued, { model: 'seedance_2_5', mediaType: 'video' }))
+      .toThrow(/without a media URL/);
+    expect(extractHiggsfieldJobId(
+      'Error: Higgsfield API error (HTTP 503). request failed with status 503 Service Unavailable',
+      queued,
+    )).toBe('572aea65-7865-48f9-b550-cdc9e494d065');
+  });
+});
+
 describe('schema-driven workflow adapter', () => {
   it('turns model media params into typed CLI refs and forwards every other value', () => {
     const request = buildHiggsfieldWorkflowRequest('all_inputs', {
@@ -374,5 +437,27 @@ describe('parseConnectionState', () => {
     expect(s.connected).toBe(true);
     expect(s.email).toBe('x@y.com');
     expect(s.credits).toBe(50);
+  });
+});
+
+describe('pickHiggsfieldBinaries', () => {
+  it('skips missing absolute paths and keeps PATH names', () => {
+    expect(pickHiggsfieldBinaries([
+      '/missing/higgsfield',
+      '/opt/homebrew/bin/higgsfield',
+      'higgsfield',
+      'higgs',
+    ], (file) => file === '/opt/homebrew/bin/higgsfield')).toEqual([
+      '/opt/homebrew/bin/higgsfield',
+      'higgsfield',
+      'higgs',
+    ]);
+  });
+
+  it('does not treat HuggingFace Hub `hf` as the Higgsfield CLI', () => {
+    const candidates = higgsfieldBinaryCandidates('/Users/me');
+    expect(candidates).toContain('/Users/me/.npm-global/bin/higgsfield');
+    expect(candidates).toContain('higgs');
+    expect(candidates.some((bin) => bin === 'hf' || /(^|\/)hf$/.test(bin))).toBe(false);
   });
 });

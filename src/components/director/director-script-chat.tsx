@@ -8,12 +8,15 @@ import {
   buildAssistantMessage, buildBeatsheetMessage, parseAssistantResponse,
   needsJsonRetry, JSON_REPAIR_INSTRUCTION, type AssistantResponse,
 } from '@/lib/director/script-assistant';
+import { quotePreview, type ScriptQuote } from '@/lib/director/script-selection';
 
 interface DirectorScriptChatProps {
   doc: Screenplay;
   provider: CliLlmProviderId;
   selectedId?: string;
   selectedText?: string;
+  quote?: ScriptQuote;
+  onClearQuote?: () => void;
   onProposeEdits: (res: AssistantResponse) => void;
   docKind: 'screenplay' | 'beatsheet';
   beatSheet?: import('@/lib/director/beatsheet').BeatSheet;
@@ -26,7 +29,7 @@ interface DirectorScriptChatProps {
   onMessagesChange: (messages: DirectorChatMessage[]) => void;
 }
 
-export function DirectorScriptChat({ doc, provider, selectedId, selectedText, onProposeEdits, docKind, beatSheet, onProposeBeatEdits, initialMessage, onInitialConsumed, messages, onMessagesChange }: DirectorScriptChatProps) {
+export function DirectorScriptChat({ doc, provider, selectedId, selectedText, quote, onClearQuote, onProposeEdits, docKind, beatSheet, onProposeBeatEdits, initialMessage, onInitialConsumed, messages, onMessagesChange }: DirectorScriptChatProps) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   // A ref mirror of the latest thread so an in-flight send() appends onto the freshest
@@ -52,7 +55,9 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
       // In brainstorm mode, nudge the model to converse only (no edits/beatEdits this turn).
       const userMessage = (isBeat
         ? buildBeatsheetMessage(beatSheet ?? { beats: [] }, text, selectedId ? { beatId: selectedId } : undefined)
-        : buildAssistantMessage(doc, text, selectedId ? { elementId: selectedId } : undefined))
+        : buildAssistantMessage(doc, text, quote?.text
+          ? { quote: quote.text, elementIds: quote.elementIds }
+          : selectedId ? { elementId: selectedId } : undefined))
         + (brainstorm ? '\n\n(Brainstorm mode: discuss and outline only — do NOT return edits/beatEdits this turn.)' : '');
       // injectProjectContext:true is REQUIRED — without it the electron handler drops the
       // systemPrompt entirely (it only appends it on resume or when this flag is set), so the
@@ -128,7 +133,14 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
         <div ref={bottomRef} />
       </div>
       <div className="dch-composer">
-        {selectedId && <span className="dch-sel">◉ Selected: {(selectedText ?? '').slice(0, 42) || 'element'}</span>}
+        {quote?.text ? (
+          <span className="dch-sel">
+            <span className="dch-sel-text">{chipLabel(quote)}</span>
+            <button type="button" className="dch-sel-x" onClick={onClearQuote} title="Clear selection" aria-label="Clear selection">✕</button>
+          </span>
+        ) : selectedId ? (
+          <span className="dch-sel">◉ Selected: {(selectedText ?? '').slice(0, 42) || 'element'}</span>
+        ) : null}
         <div className="dch-inputbox">
           <textarea
             value={draft}
@@ -145,8 +157,14 @@ export function DirectorScriptChat({ doc, provider, selectedId, selectedText, on
             aria-label="Send"
           >{busy ? '…' : '↑'}</button>
         </div>
-        <span className="dch-hint">Edits appear as an inline diff · ⌘↵ to send</span>
+        <span className="dch-hint">Drag across lines or ⌘-click to add · ⌘↵ to send</span>
       </div>
     </div>
   );
+}
+
+function chipLabel(quote: ScriptQuote): string {
+  const n = quote.elementIds.length;
+  if (n > 1) return `Selected · ${n} lines: ${quotePreview(quote.text, 48)}`;
+  return `Selected: ${quotePreview(quote.text)}`;
 }

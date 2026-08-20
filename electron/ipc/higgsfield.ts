@@ -6,17 +6,19 @@
 //
 // Transport: the official `higgsfield` CLI (aliases `higgs`/`hf`), spawned from the Electron main
 // process (same pattern as gemini-cli.ts). The CLI owns auth (device login, local token store),
-// auto-uploads local media paths passed to --image/--start-image/etc., and `generate create
-// --wait --json` does submit→poll→result in one call. This sidesteps an undocumented REST gateway
-// and a bespoke OAuth/keychain flow.
+// auto-uploads local media paths passed to --image/--start-image/etc. Submit is `generate create
+// --json` (no wait); a 503 while polling does not cancel the job — we `generate wait` / `get` the
+// id. `generate create --wait --json` is still the default argv for callers that opt in.
 //
 // The arg-building and JSON-parsing logic is PURE and unit-tested (tests/lib/higgsfield/client.test.ts).
 // The spawn itself is thin and mockable.
 
 import { ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pickKnownHiggsfieldParams } from '../../src/lib/higgsfield/model-catalog.js';
 
 // Single source of truth for model ids (shared with the renderer).
 export { HIGGSFIELD_MODELS } from '../../src/lib/higgsfield/higgsfield-models.js';
@@ -44,6 +46,8 @@ export interface HiggsfieldGenerateParams {
   params?: Record<string, unknown>;
   /** Backward-compatible alias for older callers. `params` wins when the same key is present. */
   extra?: Record<string, unknown>;
+  /** When false, submit only (no `--wait`). Default true. */
+  wait?: boolean;
 }
 
 export interface HiggsfieldOutput {
@@ -87,7 +91,9 @@ const RESERVED_PARAM_NAMES = new Set(['json', 'wait', 'no_color']);
  */
 export function buildCreateArgs(params: HiggsfieldGenerateParams): string[] {
   const args = ['generate', 'create', params.model];
-  const genericParams: Record<string, unknown> = { ...params.extra, ...params.params };
+  const genericParams: Record<string, unknown> = {
+    ...(pickKnownHiggsfieldParams(params.model, { ...params.extra, ...params.params }) ?? {}),
+  };
 
   const appendParam = (name: string, value: unknown): void => {
     if (value === undefined || value === null) return;
@@ -141,8 +147,83 @@ export function buildCreateArgs(params: HiggsfieldGenerateParams): string[] {
   for (const [key, value] of Object.entries(genericParams)) {
     appendParam(key, value);
   }
-  args.push('--wait', '--json');
+  if (params.wait !== false) args.push('--wait');
+  args.push('--json');
   return args;
+}
+
+export class HiggsfieldCliError extends Error {
+  readonly stdout: string;
+  readonly stderr: string;
+  constructor(message: string, stdout = '', stderr = '') {
+    super(message);
+    this.name = 'HiggsfieldCliError';
+    this.stdout = stdout;
+    this.stderr = stderr;
+  }
+}
+
+export function isTransientHiggsfieldError(message: string): boolean {
+  return /HTTP\s*50[234]|50[234]\s+[\w\s]*Unavailable|502 Bad Gateway|504 Gateway|ECONNRESET|ETIMEDOUT|socket hang up|no response received|HTTP\s*429|rate limit|temporarily unavailable|service unavailable/i.test(message);
+}
+
+const JOB_ID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+export interface HiggsfieldJobSnapshot {
+  status: string;
+  jobId?: string;
+  record: Record<string, unknown>;
+  parsed: Record<string, unknown>;
+}
+
+function firstJobRecord(parsed: Record<string, unknown>): Record<string, unknown> {
+  const results = parsed.results;
+  if (Array.isArray(results) && results.length > 0 && typeof results[0] === 'object' && results[0]) {
+    return results[0] as Record<string, unknown>;
+  }
+  return parsed;
+}
+
+/** Parse CLI JSON into a job snapshot. Does not require a result URL. */
+export function parseJobSnapshot(stdout: string): HiggsfieldJobSnapshot {
+  const trimmed = stdout.trim();
+  if (!trimmed) throw new Error('Higgsfield CLI returned no output');
+
+  const normalize = (obj: unknown): Record<string, unknown> => {
+    if (Array.isArray(obj)) return { results: obj };
+    if (isRecord(obj)) return obj;
+    return { result: obj };
+  };
+
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = normalize(JSON.parse(trimmed));
+  } catch {
+    for (const line of trimmed.split(/\r?\n/).reverse()) {
+      const s = line.trim();
+      if (!s.startsWith('{') && !s.startsWith('[')) continue;
+      try { parsed = normalize(JSON.parse(s)); break; } catch { /* keep scanning */ }
+    }
+  }
+  if (!parsed) throw new Error('Higgsfield CLI output was not valid JSON');
+
+  const record = firstJobRecord(parsed);
+  const jobIdRaw = record.job_id ?? record.id ?? record.jobId;
+  return {
+    status: String(record.state ?? record.status ?? '').toLowerCase(),
+    jobId: typeof jobIdRaw === 'string' && jobIdRaw.trim() ? jobIdRaw.trim() : undefined,
+    record,
+    parsed,
+  };
+}
+
+export function extractHiggsfieldJobId(...chunks: Array<string | undefined>): string | undefined {
+  const text = chunks.filter(Boolean).join('\n');
+  try {
+    const id = parseJobSnapshot(text).jobId;
+    if (id) return id;
+  } catch { /* not JSON */ }
+  return text.match(JOB_ID_RE)?.[0];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -219,50 +300,23 @@ export function parseGenerateJson(
   stdout: string,
   params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
 ): HiggsfieldResult {
-  const trimmed = stdout.trim();
-  if (!trimmed) throw new Error('Higgsfield CLI returned no output');
-
-  const normalize = (obj: unknown): Record<string, unknown> => {
-    if (Array.isArray(obj)) return { results: obj };
-    if (isRecord(obj)) return obj;
-    return { result: obj };
-  };
-
-  // The `--wait --json` output is normally a single (possibly pretty-printed, multi-line) JSON
-  // value — array or object. Parse the whole thing first.
-  let parsed: Record<string, unknown> | null = null;
-  try {
-    parsed = normalize(JSON.parse(trimmed));
-  } catch {
-    // Fallback for streamed multi-object output: scan from the end for the last parseable
-    // single-line JSON value.
-    for (const line of trimmed.split(/\r?\n/).reverse()) {
-      const s = line.trim();
-      if (!s.startsWith('{') && !s.startsWith('[')) continue;
-      try { parsed = normalize(JSON.parse(s)); break; } catch { /* keep scanning */ }
-    }
+  const snap = parseJobSnapshot(stdout);
+  if (snap.status === 'failed' || snap.status === 'error' || snap.status === 'fail') {
+    throw new Error(typeof snap.record.error === 'string' ? snap.record.error : 'Higgsfield generation failed');
   }
-  if (!parsed) throw new Error('Higgsfield CLI output was not valid JSON');
+  const result = snapshotToResult(snap, params);
+  if (!result.url && !result.text) throw new Error('Higgsfield generation finished without a media URL or text output');
+  return result;
+}
 
-  // When the CLI returns a JSON array, the per-job fields (status, id, duration, result_url) live
-  // in the first element; for a single object they're at the top level.
-  const results = parsed.results;
-  const record = (Array.isArray(results) && results.length > 0 && typeof results[0] === 'object')
-    ? results[0] as Record<string, unknown>
-    : parsed;
-
-  const state = String(record.state ?? record.status ?? '').toLowerCase();
-  if (state === 'failed' || state === 'error' || state === 'fail') {
-    throw new Error(typeof record.error === 'string' ? record.error : 'Higgsfield generation failed');
-  }
-
-  const urls = extractMediaUrls(parsed);
+function snapshotToResult(
+  snap: HiggsfieldJobSnapshot,
+  params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
+): HiggsfieldResult {
+  const urls = extractMediaUrls(snap.parsed);
   const url = urls[0];
-  const text = extractTextOutput(parsed);
-  if (!url && !text) throw new Error('Higgsfield generation finished without a media URL or text output');
-
-  const duration = record.duration ?? (record.output as Record<string, unknown> | undefined)?.duration;
-  const jobId = record.job_id ?? record.id ?? record.jobId;
+  const text = extractTextOutput(snap.parsed);
+  const duration = snap.record.duration ?? (snap.record.output as Record<string, unknown> | undefined)?.duration;
   const outputKind = params.mediaType;
   const outputs: HiggsfieldOutput[] = urls.map((outputUrl) => ({ kind: outputKind, url: outputUrl }));
   if (text) outputs.push({ kind: 'text', text });
@@ -275,20 +329,72 @@ export function parseGenerateJson(
     durationSec: typeof duration === 'number'
       ? duration
       : (typeof duration === 'string' && Number.isFinite(Number(duration)) ? Number(duration) : undefined),
-    jobId: typeof jobId === 'string' ? jobId : undefined,
+    jobId: snap.jobId,
     model: params.model,
   };
 }
 
+function cliErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function cliErrorOutput(error: unknown): { stdout: string; stderr: string } {
+  if (error instanceof HiggsfieldCliError) return { stdout: error.stdout, stderr: error.stderr };
+  return { stdout: '', stderr: '' };
+}
+
+async function resultFromStdout(
+  stdout: string,
+  params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
+): Promise<HiggsfieldResult | undefined> {
+  if (!stdout.trim()) return undefined;
+  try {
+    return parseGenerateJson(stdout, params);
+  } catch {
+    return undefined;
+  }
+}
+
 // --- CLI transport (thin, mockable) ---------------------------------------------
 
-const HIGGSFIELD_BINARIES = [
-  path.join(os.homedir(), '.npm-global/bin/higgsfield'),
-  path.join(os.homedir(), '.local/bin/hf'),
-  '/opt/homebrew/bin/higgsfield',
-  '/usr/local/bin/higgsfield',
-  'higgsfield',
-];
+/** Absolute installs plus PATH names. Do not include a bare `hf` — that is often HuggingFace Hub. */
+export function higgsfieldBinaryCandidates(home = os.homedir()): string[] {
+  return [
+    path.join(home, '.npm-global/bin/higgsfield'),
+    path.join(home, '.npm-global/bin/higgs'),
+    path.join(home, '.local/bin/higgsfield'),
+    path.join(home, '.local/bin/higgs'),
+    '/opt/homebrew/bin/higgsfield',
+    '/opt/homebrew/bin/higgs',
+    '/usr/local/bin/higgsfield',
+    '/usr/local/bin/higgs',
+    'higgsfield',
+    'higgs',
+  ];
+}
+
+export function isBareBinaryName(file: string): boolean {
+  return !file.includes('/') && !file.includes('\\');
+}
+
+/** Keep PATH names; drop missing absolute paths so we never spawn HuggingFace `hf` by accident. */
+export function pickHiggsfieldBinaries(
+  candidates: readonly string[] = higgsfieldBinaryCandidates(),
+  exists: (file: string) => boolean = (file) => {
+    try { return fs.existsSync(file); } catch { return false; }
+  },
+): string[] {
+  const found: string[] = [];
+  const pathNames: string[] = [];
+  for (const bin of candidates) {
+    if (isBareBinaryName(bin)) {
+      if (!pathNames.includes(bin)) pathNames.push(bin);
+      continue;
+    }
+    if (exists(bin) && !found.includes(bin)) found.push(bin);
+  }
+  return [...found, ...pathNames];
+}
 
 function higgsfieldEnv(): NodeJS.ProcessEnv {
   const home = os.homedir();
@@ -296,17 +402,29 @@ function higgsfieldEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: [...extra, process.env.PATH ?? ''].filter(Boolean).join(path.delimiter), NO_COLOR: '1' };
 }
 
-const GENERATE_TIMEOUT_MS = 8 * 60 * 1000;
+const GENERATE_TIMEOUT_MS = 21 * 60 * 1000;
+const SUBMIT_TIMEOUT_MS = 90_000;
+const WAIT_ATTEMPTS = 4;
+const CLI_MISSING_MESSAGE = 'Higgsfield CLI not found. Install @higgsfield/cli, then run higgsfield auth login — or connect Higgsfield in Settings.';
 
-/** Run a higgsfield CLI subcommand, returning stdout. Throws on non-zero exit with stderr. */
-export function runHiggsfieldCli(args: string[], timeoutMs = 60_000): Promise<string> {
+function isMissingBinaryError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as NodeJS.ErrnoException).code) : '';
+  const message = error instanceof Error ? error.message : String(error);
+  return code === 'ENOENT' || /ENOENT|spawn .* ENOENT/i.test(message);
+}
+
+let cachedHiggsfieldBinary: string | null = null;
+
+function spawnHiggsfield(binary: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const binary = HIGGSFIELD_BINARIES[0];
-    const finalArgs = args.includes('--json') ? args : [...args, '--json'];
-    const child = spawn(binary, finalArgs, { env: higgsfieldEnv() });
+    const child = spawn(binary, args, { env: higgsfieldEnv() });
     let stdout = '';
     let stderr = '';
-    const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Higgsfield CLI timed out')); }, timeoutMs);
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(new HiggsfieldCliError('Higgsfield CLI timed out', stdout, stderr));
+    }, timeoutMs);
     child.stdout?.on('data', (d) => { stdout += d.toString(); });
     child.stderr?.on('data', (d) => { stderr += d.toString(); });
     child.on('error', (e) => { clearTimeout(timer); reject(e); });
@@ -314,15 +432,126 @@ export function runHiggsfieldCli(args: string[], timeoutMs = 60_000): Promise<st
       clearTimeout(timer);
       if (code === 0) { resolve(stdout); return; }
       const msg = stderr.trim() || stdout.trim() || `Higgsfield CLI exited with code ${code}`;
-      reject(new Error(/session expired/i.test(msg) ? 'Higgsfield is not connected. Run "higgsfield auth login" or connect it in Settings.' : msg));
+      const message = /session expired/i.test(msg)
+        ? 'Higgsfield is not connected. Run "higgsfield auth login" or connect it in Settings.'
+        : msg;
+      reject(new HiggsfieldCliError(message, stdout, stderr));
     });
   });
 }
 
-/** Submit + wait for a generation via the CLI. */
+/** Run a higgsfield CLI subcommand, returning stdout. Throws on non-zero exit with stderr. */
+export async function runHiggsfieldCli(args: string[], timeoutMs = 60_000): Promise<string> {
+  const finalArgs = args.includes('--json') ? args : [...args, '--json'];
+  const ordered = pickHiggsfieldBinaries();
+  const candidates = cachedHiggsfieldBinary
+    ? [cachedHiggsfieldBinary, ...ordered.filter((bin) => bin !== cachedHiggsfieldBinary)]
+    : ordered;
+  if (candidates.length === 0) throw new Error(CLI_MISSING_MESSAGE);
+
+  let lastMissing: unknown;
+  for (const binary of candidates) {
+    try {
+      const stdout = await spawnHiggsfield(binary, finalArgs, timeoutMs);
+      cachedHiggsfieldBinary = binary;
+      return stdout;
+    } catch (error) {
+      if (isMissingBinaryError(error)) {
+        if (cachedHiggsfieldBinary === binary) cachedHiggsfieldBinary = null;
+        lastMissing = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  const tried = candidates.join(', ');
+  const detail = lastMissing instanceof Error ? lastMissing.message : '';
+  throw new Error(detail ? `${CLI_MISSING_MESSAGE} Tried: ${tried}. ${detail}` : `${CLI_MISSING_MESSAGE} Tried: ${tried}.`);
+}
+
+/** Submit the job, then wait — a 503 during poll does not cancel a job already on Higgsfield. */
 export async function generateHiggsfield(params: HiggsfieldGenerateParams): Promise<HiggsfieldResult> {
-  const stdout = await runHiggsfieldCli(buildCreateArgs(params), GENERATE_TIMEOUT_MS);
-  return parseGenerateJson(stdout, params);
+  const submitted = await submitHiggsfieldJob(params);
+  if ('outputs' in submitted) return submitted;
+  return waitForHiggsfieldJob(submitted.jobId, params);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function submitHiggsfieldJob(
+  params: HiggsfieldGenerateParams,
+): Promise<HiggsfieldResult | { jobId: string }> {
+  const args = buildCreateArgs({ ...params, wait: false });
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const stdout = await runHiggsfieldCli(args, SUBMIT_TIMEOUT_MS);
+      const done = await resultFromStdout(stdout, params);
+      if (done) return done;
+      const jobId = extractHiggsfieldJobId(stdout);
+      if (jobId) return { jobId };
+      throw new Error('Higgsfield accepted the request but did not return a job id.');
+    } catch (error) {
+      lastError = error;
+      const { stdout, stderr } = cliErrorOutput(error);
+      const done = await resultFromStdout(stdout, params);
+      if (done) return done;
+      const jobId = extractHiggsfieldJobId(stdout, stderr, cliErrorMessage(error));
+      if (jobId) return { jobId };
+      if (!isTransientHiggsfieldError(cliErrorMessage(error)) || attempt === 3) throw error;
+      await sleep(1500 * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Higgsfield submit failed');
+}
+
+async function readHiggsfieldJob(
+  jobId: string,
+  params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
+): Promise<HiggsfieldResult | undefined> {
+  const stdout = await runHiggsfieldCli(['generate', 'get', jobId], 20_000);
+  const snap = parseJobSnapshot(stdout);
+  if (snap.status === 'failed' || snap.status === 'error' || snap.status === 'fail') {
+    throw new Error(typeof snap.record.error === 'string' ? snap.record.error : 'Higgsfield generation failed');
+  }
+  const result = snapshotToResult(snap, params);
+  return result.url || result.text ? result : undefined;
+}
+
+async function waitForHiggsfieldJob(
+  jobId: string,
+  params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
+): Promise<HiggsfieldResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= WAIT_ATTEMPTS; attempt++) {
+    try {
+      const stdout = await runHiggsfieldCli(
+        ['generate', 'wait', jobId, '--timeout', '20m', '--interval', '5s'],
+        GENERATE_TIMEOUT_MS,
+      );
+      return parseGenerateJson(stdout, params);
+    } catch (error) {
+      lastError = error;
+      const { stdout } = cliErrorOutput(error);
+      const done = await resultFromStdout(stdout, params);
+      if (done) return done;
+      try {
+        const got = await readHiggsfieldJob(jobId, params);
+        if (got) return got;
+      } catch (getError) {
+        if (!isTransientHiggsfieldError(cliErrorMessage(getError))) throw getError;
+      }
+      const message = cliErrorMessage(error);
+      if (!isTransientHiggsfieldError(message) && !/timed out/i.test(message)) throw error;
+      if (attempt === WAIT_ATTEMPTS) break;
+      await sleep(2000 * attempt);
+    }
+  }
+  throw new Error(
+    `${cliErrorMessage(lastError)} The job was submitted (${jobId}) and may still finish on Higgsfield.`,
+  );
 }
 
 /** Account/connection status (email, plan, credits) or null when not signed in. */
@@ -472,7 +701,12 @@ export function registerHiggsfieldHandlers(): void {
     medias?: HiggsfieldMedia[];
     params?: Record<string, unknown>;
   }): Promise<HiggsfieldResult> => {
-    const medias: HiggsfieldMedia[] = [...(params.medias ?? [])];
+    const { resolveLocalSourcePath } = await import('./copilot-visual-media.js');
+    const medias: HiggsfieldMedia[] = [...(params.medias ?? [])].map((media) => {
+      if (!media.value || /^https?:\/\//i.test(media.value)) return media;
+      const local = resolveLocalSourcePath(media.value);
+      return local ? { ...media, value: local } : media;
+    });
     if (params.referenceValue) {
       medias.push({
         value: params.referenceValue,

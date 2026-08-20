@@ -69,7 +69,8 @@ describe('director look bible', () => {
     expect(lookBibleImageUrls(show)).toEqual(['https://example.test/still.jpg']);
 
     const request = seedance25Adapter.buildRequest({ show, clip, variant: { kind: 'full' } });
-    expect(request.params.genre).toBe('noir');
+    expect(request.params).not.toHaveProperty('genre');
+    expect(request.prompt).toContain('Genre: noir');
     expect(request.prompt).toContain('Film references: No Country for Old Men');
   });
 

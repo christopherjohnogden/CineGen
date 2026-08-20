@@ -4,6 +4,7 @@ import {
   HIGGSFIELD_MODEL_REGISTRY,
   HIGGSFIELD_MODEL_SCHEMAS,
   getHiggsfieldSchema,
+  pickKnownHiggsfieldParams,
 } from '@/lib/higgsfield/model-catalog';
 
 describe('generated Higgsfield model catalog', () => {
@@ -62,5 +63,22 @@ describe('generated Higgsfield model catalog', () => {
         }
       }
     }
+  });
+
+  it('matches the live Seedance 2.5 CLI schema (no genre / multi_shots)', () => {
+    const names = getHiggsfieldSchema('seedance_2_5')?.params.map((param) => param.name) ?? [];
+    expect(names).toContain('prompt');
+    expect(names).toContain('duration');
+    expect(names).toContain('mode');
+    expect(names).not.toContain('genre');
+    expect(names).not.toContain('multi_shots');
+    expect(names).not.toContain('multi_prompt');
+    expect(pickKnownHiggsfieldParams('seedance_2_5', {
+      duration: 6,
+      genre: 'noir',
+      multi_shots: false,
+      generate_audio: true,
+    })).toEqual({ duration: 6, generate_audio: true });
+    expect(pickKnownHiggsfieldParams('unknown_model', { genre: 'noir' })).toEqual({ genre: 'noir' });
   });
 });

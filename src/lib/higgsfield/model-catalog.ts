@@ -243,3 +243,20 @@ export const HIGGSFIELD_MODEL_REGISTRY = buildHiggsfieldModelRegistry();
 export function getHiggsfieldSchema(modelId: string): HiggsfieldModelSchema | undefined {
   return HIGGSFIELD_MODEL_SCHEMAS.find((model) => model.job_set_type === modelId);
 }
+
+/** Drop CLI flags the live model schema does not list. Unknown models pass through unchanged. */
+export function pickKnownHiggsfieldParams(
+  modelId: string,
+  params: Record<string, unknown> | undefined,
+  schemas: readonly HiggsfieldModelSchema[] = HIGGSFIELD_MODEL_SCHEMAS,
+): Record<string, unknown> | undefined {
+  if (!params) return params;
+  const schema = schemas.find((model) => model.job_set_type === modelId);
+  if (!schema) return params;
+  const known = new Set(schema.params.map((param) => param.name));
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (known.has(key)) next[key] = value;
+  }
+  return next;
+}

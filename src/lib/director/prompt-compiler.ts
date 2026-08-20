@@ -38,10 +38,12 @@ export function compileVoiceBlock(clip: Pick<DirectorClip, 'beats'>, voices: Rec
   return `VOICE —\n${lines.join('\n')}`;
 }
 
+export function elementTagsLine(clip: Pick<DirectorClip, 'elementTags'>): string {
+  if (clip.elementTags.length === 0) return 'none';
+  return clip.elementTags.map((tag) => tag.startsWith('@') ? tag : `@${tag}`).join(' + ');
+}
+
 export function compileClipBody(clip: DirectorClip, options: CompileClipOptions = {}): string {
-  const tags = clip.elementTags.length > 0
-    ? clip.elementTags.map((tag) => tag.startsWith('@') ? tag : `@${tag}`).join(' + ')
-    : 'none';
   const shotCount = clip.beats.length;
   const actionShots = clip.beats.map((beat, index) => (
     formatShotHeading(beat, index === clip.beats.length - 1)
@@ -54,7 +56,7 @@ export function compileClipBody(clip: DirectorClip, options: CompileClipOptions 
     : `FORMAT — ${clip.seconds} SECONDS, ${numberWord(shotCount)} SHOTS with hard cuts.`;
 
   const blocks = [
-    `ELEMENTS — ${tags}`,
+    `ELEMENTS — ${elementTagsLine(clip)}`,
     format,
     `SUBJECT — ${clip.subject.trim()}`,
     `LOCATION — ${clip.location.trim()}`,

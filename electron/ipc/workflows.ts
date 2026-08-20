@@ -111,14 +111,17 @@ const HIGGSFIELD_MEDIA_ROLES = new Set<HiggsfieldMedia['role']>([
 const HIGGSFIELD_MEDIA_PARAM_ROLES: Record<string, HiggsfieldMedia['role'] | 'legacy-image'> = {
   // Exact CLI role keys and their common URL aliases.
   image: 'image',
+  image_references: 'image',
   start_image: 'start_image',
   start_image_url: 'start_image',
   end_image: 'end_image',
   end_image_url: 'end_image',
   video: 'video',
   video_url: 'video',
+  video_references: 'video',
   audio: 'audio',
   audio_url: 'audio',
+  audio_references: 'audio',
 
   // Model-schema media params returned by `higgsfield model get`.
   input_images: 'image',

@@ -236,6 +236,11 @@
   background: var(--accent-dim);
 }
 
+.director-tab__take--failed {
+  border-color: var(--error);
+  color: var(--error);
+}
+
 .director-tab__viewer {
   background: #000;
   border-radius: var(--radius-sm);
@@ -254,6 +259,13 @@
 .director-tab__empty {
   font-size: 13px;
   color: var(--text-tertiary);
+}
+
+.director-tab__empty--err {
+  color: var(--error);
+  padding: 16px 24px;
+  text-align: center;
+  max-width: 36em;
 }
 
 .director-tab__warn {
@@ -676,7 +688,8 @@
 .dse-paper { width:620px; max-width:100%; background:#f4f1ea; color:#16130d; border-radius:4px; box-shadow:0 8px 40px rgba(0,0,0,.5); padding:48px 60px 56px 82px; font-family:'Courier New',Courier,monospace; font-size:14.5px; line-height:1.5; min-height:820px; }
 /* min-height keeps an EMPTY element one line tall — with no line box it would
    render 0px and be impossible to click into. */
-.dse-el { white-space:pre-wrap; outline:none; min-height:1.5em; }
+.dse-el { white-space:pre-wrap; outline:none; min-height:1.5em; user-select:text; }
+.dse-el::selection { background:#b5d0ff; color:#16130d; }
 .dse-el--scene { font-weight:700; text-transform:uppercase; margin:22px 0 10px; color:#3a2f10; }
 .dse-el--scene:first-child { margin-top:0; }
 .dse-el--action { margin:0 0 11px; }
@@ -684,7 +697,10 @@
 .dse-el--parenthetical { margin:0; padding-left:150px; }
 .dse-el--dialogue { margin:0 0 4px; padding-left:96px; padding-right:96px; }
 .dse-el--transition { margin:12px 0; text-align:right; text-transform:uppercase; }
+.dse-paperwrap--linerange .dse-el { user-select:none; caret-color:transparent; }
 .dse-el--sel { background:rgba(79,123,255,.14); border-radius:2px; }
+.dse-el--ctx { background:rgba(79,123,255,.12); box-shadow:inset 0 -2px 0 rgba(79,123,255,.55); }
+.dse-el--drag { background:#b5d0ff; color:#16130d; border-radius:2px; }
 .dse-el--diffdel { background:rgba(160,58,58,.18); border-left:3px solid #a03a3a; text-decoration:line-through; opacity:.8; padding-left:6px; }
 .dse-el--diffadd { background:rgba(47,125,79,.2); border-left:3px solid #2f7d4f; padding-left:6px; }
 .dse-diffbar { display:flex; gap:8px; align-items:center; margin:10px 0 20px; padding-left:6px; }
@@ -738,7 +754,10 @@
 
 /* Composer */
 .dch-composer { border-top:1px solid var(--border-subtle); padding:12px; display:flex; flex-direction:column; gap:8px; background:var(--bg-raised); }
-.dch-sel { font-size:10px; color:#9db4ff; background:var(--accent-dim); border:1px solid var(--border-medium); border-radius:6px; padding:3px 8px; align-self:flex-start; }
+.dch-sel { display:flex; align-items:center; gap:6px; max-width:100%; font-size:10px; color:#9db4ff; background:var(--accent-dim); border:1px solid var(--border-medium); border-radius:6px; padding:4px 6px 4px 8px; align-self:flex-start; }
+.dch-sel-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dch-sel-x { flex-shrink:0; width:16px; height:16px; padding:0; border:none; border-radius:4px; background:transparent; color:inherit; font-size:10px; line-height:1; cursor:pointer; }
+.dch-sel-x:hover { background:var(--bg-elevated); }
 .dch-inputbox { position:relative; display:flex; align-items:flex-end; background:var(--bg-input); border:1px solid var(--border-medium); border-radius:12px; padding:6px 6px 6px 12px; transition:border-color .15s, box-shadow .15s; }
 .dch-inputbox:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim); }
 .dch-inputbox textarea { flex:1; resize:none; min-height:38px; max-height:140px; background:transparent; border:none; outline:none; color:var(--text-primary); font:inherit; font-size:12.5px; line-height:1.5; padding:6px 0; }

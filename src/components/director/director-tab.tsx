@@ -69,9 +69,11 @@ export function DirectorTab() {
   const show = state.director ?? createEmptyDirectorShow();
   const showRef = useRef(show);
   const foldersRef = useRef(state.mediaFolders);
+  const elementsRef = useRef(state.elements);
   const enrichingTags = useRef<Set<string>>(new Set());
   showRef.current = show;
   foldersRef.current = state.mediaFolders;
+  elementsRef.current = state.elements;
 
   const [selectedBeatN, setSelectedBeatN] = useState(1);
   const [preflight, setPreflight] = useState('Seedance 2.5');
@@ -461,23 +463,33 @@ export function DirectorTab() {
     }
   }, [setShow]);
 
-  const generateOne = useCallback(async (clipId: string) => {
+  const generateOne = useCallback(async (clipId: string): Promise<string | null> => {
     const current = showRef.current;
     const clip = current.clips.find((entry) => entry.id === clipId);
-    const scene = clip ? current.scenes.find((entry) => entry.id === clip.sceneId) : undefined;
-    if (!clip || !scene) return;
-    // Lazily fill in acting profiles/voices for this clip's characters (best-effort).
+    const scene = clip
+      ? (current.scenes.find((entry) => entry.id === clip.sceneId) ?? selectedScene(current) ?? current.scenes[0])
+      : undefined;
+    if (!clip || !scene) {
+      const message = 'Select a clip before generating.';
+      setShow({ ...current, jobStatus: { type: 'generate', message, error: true } });
+      return message;
+    }
+    if (!window.electronAPI?.higgsfield?.generate) {
+      const message = 'Higgsfield generate is only available in the CineGen desktop app.';
+      setShow({ ...current, jobStatus: { type: 'generate', message, error: true } });
+      return message;
+    }
+    // Enrich in the background — waiting here made Generate look dead while the LLM ran.
     const charTags = current.breakdown
       .filter((b) => b.kind === 'character' && clip.elementTags.includes(b.tag) && !b.enrichedAt && !b.actingProfile?.trim())
       .map((b) => b.tag);
-    for (const tag of charTags) await enrichCharacter(tag);
-    const fresh = showRef.current; // re-read after enrich commits
-    const freshScene = fresh.scenes.find((entry) => entry.id === clip.sceneId) ?? scene;
+    for (const tag of charTags) void enrichCharacter(tag);
     const prepared = prepareDirectorGeneration({
-      show: fresh,
-      scene: freshScene,
+      show: current,
+      scene,
       clip,
       folders: foldersRef.current,
+      elements: elementsRef.current,
     });
     foldersRef.current = [...foldersRef.current, ...prepared.foldersToAdd];
     for (const folder of prepared.foldersToAdd) {
@@ -498,7 +510,9 @@ export function DirectorTab() {
         model: prepared.request.modelId,
         outputType: 'video',
         params: prepared.request.params,
+        medias: prepared.request.medias,
       });
+      if (!result.url) throw new Error('Higgsfield finished but returned no video URL.');
       dispatch({
         type: 'UPDATE_ASSET',
         asset: {
@@ -510,7 +524,9 @@ export function DirectorTab() {
         },
       });
       setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, { status: 'done' }));
+      return null;
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Generation failed';
       dispatch({
         type: 'UPDATE_ASSET',
         asset: {
@@ -519,23 +535,39 @@ export function DirectorTab() {
           metadata: { generating: false, error: true, generatedVia: 'director' },
         },
       });
-      setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, {
+      setShow(updateDirectorTake({
+        ...showRef.current,
+        jobStatus: { type: 'generate', message, error: true },
+      }, clip.id, prepared.take.id, {
         status: 'failed',
-        error: error instanceof Error ? error.message : 'Generation failed',
+        error: message,
       }));
+      return message;
     }
   }, [dispatch, setShow, enrichCharacter]);
 
   const runGenerate = useCallback(async (scope: 'active' | 'queued' | 'scene') => {
     const current = showRef.current;
-    const sceneId = selectedClip(current)?.sceneId ?? selectedScene(current)?.id;
-    const targets = clipsForGenerateScope(current.clips, scope, current.selectedClipId, sceneId);
-    if (targets.length === 0) return;
-    setShow({ ...current, mode: 'generate', jobStatus: { type: 'generate', message: `Generating ${targets.length} clip${targets.length === 1 ? '' : 's'}…` } });
-    for (const clip of targets) {
-      await generateOne(clip.id);
+    const clip = selectedClip(current);
+    const sceneId = clip?.sceneId ?? selectedScene(current)?.id;
+    const targets = clipsForGenerateScope(current.clips, scope, current.selectedClipId ?? clip?.id, sceneId);
+    if (targets.length === 0) {
+      const message = scope === 'queued'
+        ? 'Queue is empty. Tick Queue on clips, then generate queued.'
+        : 'Select a clip before generating.';
+      setShow({ ...current, jobStatus: { type: 'generate', message, error: true } });
+      return;
     }
-    setShow({ ...showRef.current, jobStatus: null });
+    setShow({ ...current, mode: 'generate', jobStatus: { type: 'generate', message: `Generating ${targets.length} clip${targets.length === 1 ? '' : 's'}…` } });
+    let lastError: string | null = null;
+    for (const target of targets) {
+      const error = await generateOne(target.id);
+      if (error) lastError = error;
+    }
+    setShow({
+      ...showRef.current,
+      jobStatus: lastError ? { type: 'generate', message: lastError, error: true } : null,
+    });
   }, [generateOne, setShow]);
 
   const runRewrite = useCallback(async (notes: string) => {

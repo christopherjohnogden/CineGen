@@ -41,17 +41,25 @@ JSON shape:
     { "op": "delete", "targetElementId": "<id>" }
   ]
 }
-Omit "edits" entirely for a pure question/answer. Never invent element ids for replace/delete — use ids from the script. Keep replacements screenplay-formatted.`;
+Omit "edits" entirely for a pure question/answer. Never invent element ids for replace/delete — use ids from the script. Keep replacements screenplay-formatted.
+If SELECTED TEXT is present, that quote is the user's focus (it may be part of a line or span several elements). Prefer editing the listed element ids.`;
 
 export function buildAssistantMessage(
   doc: Screenplay,
   userText: string,
-  selection?: { elementId?: string; sceneIndex?: number },
+  selection?: { elementId?: string; elementIds?: string[]; quote?: string; sceneIndex?: number },
 ): string {
   const script = doc.elements.map((e) => `[${e.id}] (${e.type}) ${e.text}`).join('\n');
-  const sel = selection?.elementId ? `\nSELECTED ELEMENT: ${selection.elementId}` : '';
-  const scene = selection?.sceneIndex != null ? `\nSELECTED SCENE INDEX: ${selection.sceneIndex}` : '';
-  return `SCRIPT:\n${script}${sel}${scene}\n\nUSER:\n${userText}`;
+  const ids = selection?.elementIds?.length
+    ? selection.elementIds
+    : selection?.elementId ? [selection.elementId] : [];
+  const quote = selection?.quote?.trim();
+  const sel = [
+    quote ? `\nSELECTED TEXT:\n${quote}` : '',
+    ids.length ? `\nSELECTED ELEMENT IDS: ${ids.join(', ')}` : '',
+    selection?.sceneIndex != null ? `\nSELECTED SCENE INDEX: ${selection.sceneIndex}` : '',
+  ].join('');
+  return `SCRIPT:\n${script}${sel}\n\nUSER:\n${userText}`;
 }
 
 export const BEATSHEET_ASSISTANT_SYSTEM_PROMPT = `You are a video beat-sheet assistant. A beat sheet has NO dialogue — it is a list of beats, each describing what happens on screen so it can become a video-generation prompt.

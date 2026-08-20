@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type MouseEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { paginate } from '@/lib/director/paginate';
 import { useMeasuredHeights } from './use-measured-heights';
 
@@ -25,9 +25,13 @@ interface PaginatedPagesProps<T extends PaginatedItem> {
   leading?: ReactNode;
   /** Click anywhere on the page surface (used by the editor for click-to-type). */
   onFlowClick?: (event: MouseEvent<HTMLDivElement>) => void;
+  /** Mouse/key up on the paper (used to snapshot a text highlight for the assistant). */
+  onFlowSelect?: (event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => void;
+  onFlowPointerDown?: (event: MouseEvent<HTMLDivElement>) => void;
+  lineSelecting?: boolean;
 }
 
-export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, trailing, leading, onFlowClick }: PaginatedPagesProps<T>) {
+export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, trailing, leading, onFlowClick, onFlowSelect, onFlowPointerDown, lineSelecting }: PaginatedPagesProps<T>) {
   const flowRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef<HTMLDivElement>(null);
 
@@ -67,7 +71,12 @@ export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, tra
   }, [breakSignature, heightSignature, items.length]);
 
   return (
-    <div className="dse-paperwrap">
+    <div
+      className={`dse-paperwrap${lineSelecting ? ' dse-paperwrap--linerange' : ''}`}
+      onMouseDown={(event) => onFlowPointerDown?.(event)}
+      onMouseUp={(event) => onFlowSelect?.(event)}
+      onKeyUp={(event) => onFlowSelect?.(event)}
+    >
       {leading && <div className="dxf-stickywrap">{leading}</div>}
       <div className="dse-pageflow">
         <div className="dse-pages" ref={pagesRef} aria-hidden="true" />

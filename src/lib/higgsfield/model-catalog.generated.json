@@ -4325,9 +4325,9 @@
           ]
         },
         {
-          "name": "batch_size",
-          "type": "integer",
-          "default": 1,
+          "name": "audio_references",
+          "type": "array",
+          "default": null,
           "required": false
         },
         {
@@ -4347,22 +4347,20 @@
           "required": false
         },
         {
-          "name": "enhance_prompt",
-          "type": "boolean",
-          "default": false,
+          "name": "end_image",
+          "type": "object",
+          "default": null,
           "required": false
         },
         {
           "name": "extension_mode",
-          "type": "object",
+          "type": "string",
           "default": null,
-          "required": false
-        },
-        {
-          "name": "folder_id",
-          "type": "object",
-          "default": null,
-          "required": false
+          "required": false,
+          "enum": [
+            "backward",
+            "forward"
+          ]
         },
         {
           "name": "generate_audio",
@@ -4371,28 +4369,7 @@
           "required": false
         },
         {
-          "name": "genre",
-          "type": "string",
-          "default": "auto",
-          "required": false,
-          "enum": [
-            "auto",
-            "action",
-            "horror",
-            "comedy",
-            "noir",
-            "drama",
-            "epic"
-          ]
-        },
-        {
-          "name": "height",
-          "type": "integer",
-          "default": null,
-          "required": true
-        },
-        {
-          "name": "medias",
+          "name": "image_references",
           "type": "array",
           "default": null,
           "required": false
@@ -4400,67 +4377,20 @@
         {
           "name": "mode",
           "type": "string",
-          "default": "std",
+          "default": "t2v",
           "required": false,
           "enum": [
-            "std",
-            "fast"
-          ]
-        },
-        {
-          "name": "model",
-          "type": "string",
-          "default": "default",
-          "required": false,
-          "enum": [
-            "default",
+            "t2v",
+            "omni_reference",
             "video_edit",
             "video_extension"
           ]
-        },
-        {
-          "name": "multi_prompt",
-          "type": "array",
-          "default": null,
-          "required": false
-        },
-        {
-          "name": "multi_shot_mode",
-          "type": "string",
-          "default": "custom",
-          "required": false,
-          "enum": [
-            "auto",
-            "custom"
-          ]
-        },
-        {
-          "name": "multi_shots",
-          "type": "boolean",
-          "default": false,
-          "required": false
-        },
-        {
-          "name": "preset_id",
-          "type": "object",
-          "default": null,
-          "required": false
         },
         {
           "name": "prompt",
           "type": "string",
           "default": null,
           "required": true
-        },
-        {
-          "name": "prompt_language",
-          "type": "string",
-          "default": "zh",
-          "required": false,
-          "enum": [
-            "en",
-            "zh"
-          ]
         },
         {
           "name": "resolution",
@@ -4474,34 +4404,16 @@
           ]
         },
         {
-          "name": "speedramp",
+          "name": "start_image",
           "type": "object",
-          "default": "auto",
-          "required": false
-        },
-        {
-          "name": "use_blur",
-          "type": "boolean",
-          "default": false,
-          "required": false
-        },
-        {
-          "name": "use_eye_mask",
-          "type": "boolean",
-          "default": false,
-          "required": false
-        },
-        {
-          "name": "use_transparency",
-          "type": "boolean",
-          "default": false,
-          "required": false
-        },
-        {
-          "name": "width",
-          "type": "integer",
           "default": null,
-          "required": true
+          "required": false
+        },
+        {
+          "name": "video_references",
+          "type": "array",
+          "default": null,
+          "required": false
         }
       ]
     },

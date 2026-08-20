@@ -1,7 +1,7 @@
 # Upcoming Release — Feature Changelog
 
 > **Status:** Draft — update this file as work continues, then copy into a GitHub Release when you ship.  
-> **Last updated:** August 19, 2026
+> **Last updated:** August 20, 2026
 
 Use this document to announce what’s new in the next CineGen update. Items marked **(committed)** are already on `main`; items marked **(in progress)** include local/uncommitted work from the current session.
 
@@ -61,10 +61,12 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 ### Director tab: Setup + Look bible chrome **(in progress)**
 
 - **Setup** and **Look bible** are a paired control next to Auto-sync (same treatment as the stage tabs), with line icons instead of emoji and a quiet active state
+- Script page **Start over** / **Upload** use the same paired control (line icons, shared pill) as Setup / Look bible; **Run breakdown** stays the accent action
 - Setup is a full-width production strip: segmented **Clip length / Aspect / Resolution**, a flattened Adapter select (no native 3D dropdown), and **Generate audio** on the same switch as Auto-sync. **Clip length** here is the source of truth for shotlisting (how long each new clip runs); the duplicate picker next to **Shotlist show** is gone
 - Look bible is a two-column sheet: genre chips, film-reference composer, and a drag-and-drop mood board (capped at 6 stills) on the left; **Look notes** as the document on the right with Rewrite / Update from refs in the header
 - Left rails share the Script panel's **270px** width (Breakdown scene nav, Shotlist/Generate structure tree) so switching tabs doesn't jump the center column **(in progress)**
 - Script scene list: stacked **SC#** over the heading, with card padding and 8px gaps so rows no longer sit on top of each other **(in progress)**
+- Script Assistant context: **drag across lines** (or ⌘-click to add) — each script line is its own block, so a normal text highlight couldn't span them; the chip shows **N lines** and those blocks stay tinted **(in progress)**
 
 ### Director tab: Shotlist page redesign **(in progress)**
 
@@ -300,6 +302,10 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Copilot skill inventory:** Inject **CineGen SKILLS** catalog into system context; auto-retry when Claude deflects with “let me check / use Skill tool” instead of listing skills **(in progress)**
 - **Director breakdown remove:** ✕ on a side-panel card already hid it from that scene’s assets; the script highlight now uses the same per-scene list, so the mark in the script goes too **(in progress)**
 - **Director FDX trailer:** `.fdx` import only reads the `<Content>` script block, so Final Draft `ElementSettings` / `FontSpec` / `ParagraphSpec` chrome no longer appears after `CUT TO:`. Already-open shows are scrubbed on load; a `.txt` that is actually FDX is sniffed and parsed the same way **(in progress)**
+- **Director Generate looked dead:** clicking Generate could no-op when no clip id was stored, hide a failed Higgsfield take as “No take yet”, and wait on character enrich before any UI. Failed takes now show the CLI error; Generate starts immediately via Higgsfield CLI (`higgsfield` / `higgs`) **(in progress)**
+- **Seedance 2.5 unknown params:** Generate no longer sends `genre` or `multi_shots` — the live Higgsfield CLI dropped those flags. Genre and shot list stay in the prompt; CLI args are filtered to the current `seedance_2_5` schema **(in progress)**
+- **Higgsfield 503 during Generate:** a 503 while polling no longer kills a job that already landed. CineGen submits, then `generate wait` / `get` the job id and retries transient errors; the Generating spinner clears if the job really failed **(in progress)**
+- **Director element stills on Generate:** isolated prompts include `ELEMENTS`, and tagged library stills are sent to Seedance 2.5 as `omni_reference` `--image` refs so identity is locked to Peter / Jordan / locations, not invented from text **(in progress)**
 
 ---
 

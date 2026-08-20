@@ -5,6 +5,7 @@ import {
   compileOpticsBlock,
   compileStagingBlock,
   compileVoiceBlock,
+  elementTagsLine,
 } from './prompt-compiler';
 
 function shotOf(clip: DirectorClip, n: number): DirectorBeat | undefined {
@@ -160,6 +161,7 @@ export function isolatedPrompt(
 
   const body = [
     head,
+    `ELEMENTS — ${elementTagsLine(clip)}`,
     `SUBJECT — ${subject}`,
     `LOCATION — ${clip.location}`,
     compileStagingBlock(clip),

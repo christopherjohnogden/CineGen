@@ -47,4 +47,14 @@ describe('buildAssistantMessage', () => {
     expect(msg).toMatch(/Old action\./);
     expect(msg).toMatch(new RegExp(doc.elements[1].id));
   });
+
+  it('attaches a highlighted quote that can span elements', () => {
+    const doc = parseToScreenplay('INT. OFFICE - DAY\nHe waits.\nThe door opens.');
+    const msg = buildAssistantMessage(doc, 'make this quieter', {
+      quote: 'He waits.\nThe door opens.',
+      elementIds: [doc.elements[1].id, doc.elements[2].id],
+    });
+    expect(msg).toContain('SELECTED TEXT:\nHe waits.\nThe door opens.');
+    expect(msg).toContain(`SELECTED ELEMENT IDS: ${doc.elements[1].id}, ${doc.elements[2].id}`);
+  });
 });

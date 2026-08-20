@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import type { Screenplay, ScreenplayElement, ScreenplayElementType } from '@/lib/director/screenplay';
 import { nextElementType, typeAfterEnter } from '@/lib/director/screenplay';
 import { generateId } from '@/lib/utils/ids';
 import type { AssistantEdit } from '@/lib/director/script-assistant';
+import { readScriptQuote, resolveScriptQuote, quoteFromElementRange, type ScriptQuote } from '@/lib/director/script-selection';
 import { PaginatedPages } from './paginated-pages';
 
 export const ELEMENT_TYPES: { id: ScreenplayElementType; name: string; color: string }[] = [
@@ -20,16 +21,22 @@ interface PaginatedEditorProps {
   pendingEdits?: AssistantEdit[];
   onChange: (doc: Screenplay) => void;
   onSelect: (elementId: string) => void;
+  contextIds?: string[];
+  onContextSelect: (quote: ScriptQuote | null) => void;
   onAcceptEdits: () => void;
   onDeclineEdits: () => void;
 }
 
-export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSelect, onAcceptEdits, onDeclineEdits }: PaginatedEditorProps) {
+export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSelect, contextIds, onContextSelect, onAcceptEdits, onDeclineEdits }: PaginatedEditorProps) {
   const patch = useCallback((elements: ScreenplayElement[]) => onChange({ elements }), [onChange]);
   // Element to focus after the next render — used when an element was just
   // created (Enter, or click-to-type on an empty page) and its node doesn't
   // exist yet at the moment of the event.
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [dragIds, setDragIds] = useState<string[] | undefined>();
+  const dragFrom = useRef<string | undefined>();
+  const dragMoved = useRef(false);
+  const rangeMode = useRef(false);
 
   useEffect(() => {
     if (!focusId) return;
@@ -59,6 +66,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
   // Click-to-type: a click on the page surface (not inside an element) focuses
   // the nearest line — or, on a brand-new empty script, creates the first one.
   const onFlowClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (dragMoved.current) return;
     if ((e.target as HTMLElement).closest('.dse-el')) return; // native caret handling
     if (pendingEdits && pendingEdits.length > 0) return;      // read-only while a diff is pending
     if (doc.elements.length === 0) {
@@ -77,6 +85,63 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
     best.focus();
     placeCaretAtEnd(best);
   };
+
+  const onFlowPointerDown = (e: MouseEvent<HTMLDivElement>) => {
+    dragFrom.current = elementIdFromTarget(e.target);
+    dragMoved.current = false;
+    rangeMode.current = false;
+    setDragIds(undefined);
+    const root = e.currentTarget;
+    const onMove = (ev: globalThis.MouseEvent) => {
+      if (ev.buttons !== 1 || !dragFrom.current) return;
+      const toId = elementIdAtPoint(root, ev.clientX, ev.clientY);
+      if (!toId) return;
+      if (toId === dragFrom.current && !rangeMode.current) return;
+      rangeMode.current = true;
+      dragMoved.current = true;
+      ev.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      const next = quoteFromElementRange(doc.elements, dragFrom.current, toId)?.elementIds ?? [dragFrom.current, toId];
+      setDragIds((prev) => (prev && prev.length === next.length && prev.every((id, i) => id === next[i]) ? prev : next));
+    };
+    const onUp = (ev: globalThis.MouseEvent) => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      const from = dragFrom.current;
+      if (!from) return;
+      const toId = elementIdAtPoint(root, ev.clientX, ev.clientY) ?? from;
+      const quote = resolveScriptQuote({
+        elements: doc.elements,
+        fromId: from,
+        toId,
+        native: rangeMode.current ? null : readScriptQuote(root),
+        additive: ev.metaKey || ev.ctrlKey,
+        existingIds: contextIds,
+        extendFromId: ev.shiftKey ? (contextIds?.[0] ?? selectedId) : undefined,
+      });
+      dragFrom.current = undefined;
+      rangeMode.current = false;
+      setDragIds(undefined);
+      if (quote || ev.metaKey || ev.ctrlKey) onContextSelect(quote);
+    };
+    window.addEventListener('mousemove', onMove, { passive: false });
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const onFlowSelect = (e: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => {
+    if ('clientX' in e) return;
+    const quote = resolveScriptQuote({
+      elements: doc.elements,
+      fromId: dragFrom.current,
+      toId: elementIdFromTarget(e.target),
+      native: readScriptQuote(e.currentTarget),
+      existingIds: contextIds,
+    });
+    if (quote) onContextSelect(quote);
+  };
+  const liveIds = dragIds ?? contextIds ?? [];
+  const liveSet = new Set(liveIds);
+  const dragging = Boolean(dragIds?.length);
 
   const diffTargets = new Set(
     (pendingEdits ?? []).filter((ed) => ed.op === 'replace' || ed.op === 'delete').map((ed) => ed.targetElementId).filter(Boolean) as string[],
@@ -113,6 +178,9 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
     <PaginatedPages
       items={items}
       onFlowClick={onFlowClick}
+      onFlowSelect={onFlowSelect}
+      onFlowPointerDown={onFlowPointerDown}
+      lineSelecting={dragging}
       renderItem={(el) => {
         if (el.__add) {
           return (
@@ -127,7 +195,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
           <>
             <div
               data-el-id={el.id}
-              className={`dse-el dse-el--${el.type}${el.id === selectedId ? ' dse-el--sel' : ''}${isDiff ? ' dse-el--diffdel' : ''}`}
+              className={`dse-el dse-el--${el.type}${el.id === selectedId && !dragging ? ' dse-el--sel' : ''}${liveSet.has(el.id) ? (dragging ? ' dse-el--drag' : ' dse-el--ctx') : ''}${isDiff ? ' dse-el--diffdel' : ''}`}
               contentEditable={!hasPendingEdits}
               suppressContentEditableWarning
               spellCheck={false}
@@ -167,6 +235,21 @@ function placeCaretAtEnd(node: HTMLElement) {
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
+}
+
+function elementIdFromTarget(target: EventTarget | null): string | undefined {
+  return (target instanceof Element ? target : null)?.closest('.dse-el')?.getAttribute('data-el-id') ?? undefined;
+}
+
+function elementIdAtPoint(root: HTMLElement, clientX: number, clientY: number): string | undefined {
+  const hit = document.elementFromPoint(clientX, clientY)?.closest('.dse-el');
+  if (hit?.getAttribute('data-el-id')) return hit.getAttribute('data-el-id') ?? undefined;
+  const nodes = [...root.querySelectorAll<HTMLElement>('.dse-el[data-el-id]')];
+  let best: HTMLElement | undefined;
+  for (const node of nodes) {
+    if (node.getBoundingClientRect().top <= clientY) best = node;
+  }
+  return best?.getAttribute('data-el-id') ?? undefined;
 }
 
 function renderDiffAdds(edits: AssistantEdit[], targetId: string) {

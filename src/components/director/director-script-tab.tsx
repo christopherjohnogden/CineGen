@@ -4,6 +4,7 @@ import { extractScriptText, SCRIPT_ACCEPT } from '@/lib/director/look-bible';
 import { parseToScreenplay, serializeScreenplay, scrubFdxChrome, trimFdxTrailer, type Screenplay } from '@/lib/director/screenplay';
 import { looksLikeFdx, parseFdx } from '@/lib/director/fdx-parser';
 import { applyAssistantEdits, applyBeatEdits, type AssistantEdit, type AssistantResponse, type BeatEdit } from '@/lib/director/script-assistant';
+import type { ScriptQuote } from '@/lib/director/script-selection';
 import { cliProviderFor, parseDirectorLlmProvider } from '@/lib/director/cli-provider';
 import { CollapsiblePanel } from './collapsible-panel';
 import { PaginatedEditor, ELEMENT_TYPES } from './paginated-editor';
@@ -31,6 +32,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [scriptQuote, setScriptQuote] = useState<ScriptQuote | undefined>();
   const [pending, setPending] = useState<AssistantEdit[] | undefined>();
   const [pendingBeats, setPendingBeats] = useState<BeatEdit[] | undefined>();
   const [createSeed, setCreateSeed] = useState<{ idea: string; mode: 'draft' | 'brainstorm' } | undefined>();
@@ -175,9 +177,22 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
         <span className="director-tab__label" style={{ margin: 0 }}>Script</span>
         {show.sourceFileName && <span className="director-tab__meta">{show.sourceFileName}</span>}
         <input ref={fileRef} type="file" accept={SCRIPT_ACCEPT} className="director-tab__file-input" onChange={(e) => void loadScript(e.target.files?.[0])} />
-        <div className="director-tab__row" style={{ marginLeft: 'auto' }}>
-          {!isEmpty && <button type="button" className="director-tab__btn" onClick={startOver} title="Discard the current script and start over">↺ Start over</button>}
-          <button type="button" className="director-tab__btn" onClick={() => fileRef.current?.click()}>⬆ Upload</button>
+        <div className="director-tab__row" style={{ marginLeft: 'auto', alignItems: 'center' }}>
+          <div className="dtool">
+            {!isEmpty && (
+              <>
+                <button type="button" className="dtool-btn" onClick={startOver} title="Discard the current script and start over">
+                  <StartOverIcon />
+                  Start over
+                </button>
+                <span className="dtool-vr" aria-hidden />
+              </>
+            )}
+            <button type="button" className="dtool-btn" onClick={() => fileRef.current?.click()}>
+              <UploadIcon />
+              Upload
+            </button>
+          </div>
           <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onBreakdown} disabled={!show.sourceText.trim()}>Run breakdown →</button>
         </div>
       </div>
@@ -213,6 +228,8 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
               pendingEdits={pending}
               onChange={setDoc}
               onSelect={setSelectedId}
+              contextIds={scriptQuote?.elementIds}
+              onContextSelect={(quote) => setScriptQuote(quote ?? undefined)}
               onAcceptEdits={acceptEdits}
               onDeclineEdits={declineEdits}
             />
@@ -225,6 +242,8 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
                 provider={cliProviderFor(parseDirectorLlmProvider(show.llmProvider))}
                 selectedId={selectedId}
                 selectedText={selectedText}
+                quote={scriptQuote}
+                onClearQuote={() => setScriptQuote(undefined)}
                 onProposeEdits={(res: AssistantResponse) => setPending(res.edits)}
                 docKind={docKind}
                 beatSheet={beatSheet}
@@ -254,5 +273,29 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
         </div>
       )}
     </div>
+  );
+}
+
+function StartOverIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4.2 12a7.8 7.8 0 1 0 2.3-5.6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path d="M4.2 5.2v5.2h5.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M12 15.5V5.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M8.2 8.6 12 4.8l3.8 3.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 15.8v2.4A1.8 1.8 0 0 0 6.8 20h10.4A1.8 1.8 0 0 0 19 18.2v-2.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }

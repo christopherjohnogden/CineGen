@@ -97,6 +97,7 @@ describe('director generate folders', () => {
     expect(prepared.asset.folderId).toBe(prepared.variantFolderId);
     expect(prepared.asset.name).toMatch(/^S09_2-9b_T01$/);
     expect(prepared.take.number).toBe(1);
-    expect(prepared.request.params.multi_shots).toBe(true);
+    expect(prepared.request.params).not.toHaveProperty('multi_shots');
+    expect(prepared.request.params.duration).toBe(20);
   });
 });

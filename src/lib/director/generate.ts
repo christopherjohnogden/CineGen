@@ -1,9 +1,11 @@
 import type { Asset, MediaFolder } from '@/types/project';
-import type { DirectorClip, DirectorScene, DirectorShow, DirectorTake, IsolateVariant } from '@/types/director';
+import type { DirectorBreakdownItem, DirectorClip, DirectorScene, DirectorShow, DirectorTake, IsolateVariant } from '@/types/director';
+import type { Element } from '@/types/elements';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { nextTakeNumber, takeDisplayName, variantKey } from './slate';
 import { planDirectorFolders } from './folders';
 import { getDirectorAdapter } from './video-adapter';
+import { findMatchingElement, normalizeElementName, normalizeTag } from './breakdown';
 
 export function createPendingTake(args: {
   clip: DirectorClip;
@@ -46,13 +48,71 @@ export function clipsForGenerateScope(
   sceneId?: string,
 ): DirectorClip[] {
   if (scope === 'active') {
-    return clips.filter((clip) => clip.id === selectedClipId);
+    const id = selectedClipId ?? clips[0]?.id;
+    return clips.filter((clip) => clip.id === id);
   }
   if (scope === 'scene') {
     return clips.filter((clip) => clip.sceneId === sceneId && !clip.altOf);
   }
   // Queued means queued only — an empty queue does not fall back to the whole show.
   return clips.filter((clip) => clip.queued);
+}
+
+const MAX_ELEMENT_REFS = 8;
+
+function elementForTag(
+  tag: string,
+  item: DirectorBreakdownItem | undefined,
+  elements: Element[],
+): Element | undefined {
+  if (item?.elementId) {
+    const linked = elements.find((element) => element.id === item.elementId);
+    if (linked) return linked;
+  }
+  if (item) {
+    const matched = findMatchingElement(elements, item);
+    if (matched) return matched;
+  }
+  return elements.find((element) => (
+    normalizeTag(element.name) === tag
+    || normalizeElementName(element.name) === normalizeElementName(tag)
+  ));
+}
+
+/** First still for each tagged clip element (and framing ref), in tag order. */
+export function collectClipElementRefs(
+  clip: DirectorClip,
+  breakdown: DirectorBreakdownItem[],
+  elements: Element[],
+): string[] {
+  const tags: string[] = [];
+  const push = (raw?: string) => {
+    if (!raw?.trim()) return;
+    const tag = raw.startsWith('@') ? raw : `@${raw}`;
+    if (!tags.includes(tag)) tags.push(tag);
+  };
+  for (const tag of clip.elementTags) push(tag);
+  if (clip.framingRefOn) push(clip.framingRefTag);
+
+  const urls: string[] = [];
+  for (const tag of tags) {
+    if (urls.length >= MAX_ELEMENT_REFS) break;
+    const item = breakdown.find((entry) => entry.tag === tag);
+    const url = elementForTag(tag, item, elements)?.images.find((image) => image.url.trim())?.url.trim();
+    if (url && !urls.includes(url)) urls.push(url);
+  }
+  return urls;
+}
+
+export function generateViewerMessage(take: DirectorTake | undefined, hasUrl: boolean): string {
+  if (hasUrl) return '';
+  if (take?.status === 'running' || take?.status === 'queued') {
+    return `T${String(take.number).padStart(2, '0')} generating…`;
+  }
+  if (take?.status === 'failed') {
+    return take.error?.trim() || 'Generation failed. Check Higgsfield CLI is installed and connected in Settings.';
+  }
+  return 'No take yet for this variant';
 }
 
 export function generationPreflight(args: {
@@ -77,6 +137,7 @@ export function prepareDirectorGeneration(args: {
   scene: DirectorScene;
   clip: DirectorClip;
   folders: MediaFolder[];
+  elements?: Element[];
 }): {
   foldersToAdd: MediaFolder[];
   take: DirectorTake;
@@ -86,7 +147,8 @@ export function prepareDirectorGeneration(args: {
 } {
   const adapter = getDirectorAdapter(args.show.adapterId);
   const variant = args.clip.activeVariant;
-  const request = adapter.buildRequest({ show: args.show, clip: args.clip, variant });
+  const referenceImages = collectClipElementRefs(args.clip, args.show.breakdown, args.elements ?? []);
+  const request = adapter.buildRequest({ show: args.show, clip: args.clip, variant, referenceImages });
   const key = variantKey(variant);
   const planned = planDirectorFolders({
     folders: args.folders,

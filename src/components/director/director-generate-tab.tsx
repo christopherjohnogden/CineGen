@@ -1,9 +1,9 @@
 import type { Asset } from '@/types/project';
 import type { DirectorClip, DirectorShow, IsolateVariant } from '@/types/director';
 import {
-  selectedClip, selectedScene, setClipVariant, setHeroTake, updateDirectorClip,
+  directorJobIsRunning, selectedClip, selectedScene, setClipVariant, setHeroTake, updateDirectorClip,
 } from '@/lib/director/director-state';
-import { runtimeSeconds, takesForVariant } from '@/lib/director/generate';
+import { generateViewerMessage, runtimeSeconds, takesForVariant } from '@/lib/director/generate';
 import { variantKey } from '@/lib/director/slate';
 import {
   applyBeatDurations, compileClipBody, retimeClipToSeconds, validateClipTimings, voicesFromBreakdown,
@@ -67,6 +67,8 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const queuedCount = show.clips.filter((entry) => entry.queued).length;
   const sceneClipCount = show.clips.filter((entry) => entry.sceneId === scene?.id && !entry.altOf).length;
   const thisLabel = clipLabel ?? 'clip';
+  const generating = directorJobIsRunning(show, 'generate');
+  const viewerMessage = generateViewerMessage(selectedTake, Boolean(asset?.url));
 
   const setVariant = (next: IsolateVariant) => onChange({ ...setClipVariant(show, clip.id, next), selectedClipId: clip.id });
   const pickShot = (n: number) => {
@@ -92,8 +94,14 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             </div>
             <div className="dgen-actions-col">
               <div className="dgen-actions">
-                <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={() => onGenerate('active')} disabled={Boolean(timingError)}>
-                  Generate {thisLabel}{isolated ? ` · S${beatN}` : ''}
+                <button
+                  type="button"
+                  className="director-tab__btn director-tab__btn--accent"
+                  onClick={() => onGenerate('active')}
+                  disabled={generating}
+                  title={generating ? 'Generating via Higgsfield CLI…' : `Generate this clip with ${adapter.label} (Higgsfield CLI)`}
+                >
+                  {generating ? 'Generating…' : `Generate ${thisLabel}${isolated ? ` · S${beatN}` : ''}`}
                 </button>
                 <span className="dgen-actions-rule" aria-hidden />
                 <label className="dsl-queue dgen-queue" title="Queue this clip for batch generate">
@@ -107,7 +115,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                 <button
                   type="button"
                   className="director-tab__btn"
-                  disabled={queuedCount === 0}
+                  disabled={queuedCount === 0 || generating}
                   title={queuedCount === 0 ? 'Tick Queue on clips first — an empty queue does not generate the show' : `Generate ${queuedCount} queued clip${queuedCount === 1 ? '' : 's'}`}
                   onClick={() => onGenerate('queued')}
                 >
@@ -116,7 +124,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                 <button
                   type="button"
                   className="director-tab__btn"
-                  disabled={sceneClipCount === 0}
+                  disabled={sceneClipCount === 0 || generating}
                   title={`Generate all ${sceneClipCount} clip${sceneClipCount === 1 ? '' : 's'} in ${scene?.label ?? 'this scene'}`}
                   onClick={() => onGenerate('scene')}
                 >
@@ -175,10 +183,8 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
 
           <div className="director-tab__viewer dgen-viewer">
             {asset?.url ? <video src={asset.url} controls /> : (
-              <span className="director-tab__empty">
-                {selectedTake?.status === 'running' || selectedTake?.status === 'queued'
-                  ? `T${String(selectedTake.number).padStart(2, '0')} generating…`
-                  : 'No take yet for this variant'}
+              <span className={`director-tab__empty${selectedTake?.status === 'failed' ? ' director-tab__empty--err' : ''}`}>
+                {viewerMessage}
               </span>
             )}
           </div>
@@ -188,8 +194,8 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             <div className="director-tab__takes">
               {takes.length === 0 && <span className="director-tab__meta">None yet</span>}
               {takes.map((take) => (
-                <button key={take.id} type="button" title={take.status}
-                  className={`director-tab__take${take.id === selectedTake?.id ? ' director-tab__take--active' : ''}${take.hero ? ' director-tab__take--hero' : ''}`}
+                <button key={take.id} type="button" title={take.error || take.status}
+                  className={`director-tab__take${take.id === selectedTake?.id ? ' director-tab__take--active' : ''}${take.hero ? ' director-tab__take--hero' : ''}${take.status === 'failed' ? ' director-tab__take--failed' : ''}`}
                   onClick={() => onChange({ ...show, selectedTakeId: take.id })}
                   onDoubleClick={() => onChange(setHeroTake(show, clip.id, take.id))}>
                   T{String(take.number).padStart(2, '0')}{take.hero ? ' ★' : ''}
