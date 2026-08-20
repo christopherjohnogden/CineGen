@@ -4,6 +4,7 @@ import { lookBibleFrom } from './look-bible';
 import { parseDirectorLlmProvider } from './cli-provider';
 import { ensureBeatOrigin } from './craft/coverage';
 import { ensureClipLlmOrigin } from './llm-origin';
+import { adoptClipFramings } from './framing-reserve';
 import { directorLlmSpendFrom } from '@/lib/llm/openai-usage';
 import { looksLikeFdx, parseFdx } from './fdx-parser';
 import { scrubFdxChrome, serializeScreenplay, trimFdxTrailer } from './screenplay';
@@ -30,7 +31,7 @@ function scrubLoadedScript(show: DirectorShow): Pick<DirectorShow, 'sourceText' 
 export function normalizeDirectorShow(value: DirectorShow): DirectorShow {
   const empty = createEmptyDirectorShow();
   const script = scrubLoadedScript(value);
-  return {
+  const normalized: DirectorShow = {
     ...empty,
     ...value,
     ...script,
@@ -41,11 +42,13 @@ export function normalizeDirectorShow(value: DirectorShow): DirectorShow {
     llmSpend: directorLlmSpendFrom(value.llmSpend),
     sourceFileName: typeof value.sourceFileName === 'string' ? value.sourceFileName : undefined,
     jobStatus: null,
-    clips: value.clips.map((clip) => ensureClipLlmOrigin({
+    clips: (value.clips ?? []).map((clip) => ensureClipLlmOrigin({
       ...clip,
       beats: clip.beats.map(ensureBeatOrigin),
     })),
+    framingReserve: Array.isArray(value.framingReserve) ? value.framingReserve : [],
   };
+  return adoptClipFramings(normalized);
 }
 
 export function directorFromUnknown(value: unknown): DirectorShow {

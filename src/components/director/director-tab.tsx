@@ -56,7 +56,7 @@ import {
 } from '@/lib/director/generate';
 import { matchListedJobToTake } from '@/lib/director/rejoin-takes';
 import { getDirectorAdapter } from '@/lib/director/video-adapter';
-import { variantKey } from '@/lib/director/slate';
+import { parseVariantKey, variantKey, variantTakeLabel } from '@/lib/director/slate';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { defaultFolderForNewElement, projectFolderId } from '@/lib/elements/library';
 import { HIGGSFIELD_MODELS } from '@/lib/higgsfield/higgsfield-models';
@@ -66,6 +66,8 @@ import {
   bindStagingDiagram, ensureClipStaging, listedStagingJobId, listedStagingMediaUrl,
   matchListedStagingJob, patchClipStaging,
 } from '@/lib/director/staging-diagram';
+import { captureFramingLook, bindKeyForFrameGrab, stagingBindKey } from '@/lib/director/framing-reserve';
+import { grammarSizeLabel } from '@/lib/director/craft/coverage';
 import type { Asset } from '@/types/project';
 import '@/styles/director-tab.css';
 
@@ -321,6 +323,8 @@ export function DirectorTab() {
     dataUrl?: string;
     fileRef?: string;
     timeSec?: number;
+    durationSec?: number;
+    variantKey?: string;
   }) => {
     const current = showRef.current;
     const clip = selectedClip(current);
@@ -366,21 +370,38 @@ export function DirectorTab() {
       ));
       dispatch({ type: 'UPDATE_FOLDER', folder });
     }
+    const bindKey = bindKeyForFrameGrab(clip, {
+      variant: source.variantKey ? parseVariantKey(source.variantKey) : clip.activeVariant,
+      timeSec: source.timeSec,
+      durationSec: source.durationSec,
+    });
+    const look = captureFramingLook(clip, bindKey);
+    const size = grammarSizeLabel(look.grammar);
+    const shotLabel = bindKey === 'full'
+      ? variantTakeLabel(clip, variantKey(clip.activeVariant))
+      : `S${bindKey}`;
     const asset: Asset = {
       id: generateId(),
-      name: `${clipLabel ?? clip.title} frame`,
+      name: `${clipLabel ?? clip.title} ${shotLabel}${size ? ` · ${size}` : ''} frame`,
       type: 'image',
       url,
       fileRef: framePath,
       thumbnailUrl: url,
       createdAt: timestamp(),
       folderId: planned.clipId,
-      metadata: { generatedVia: 'director-staging-frame', directorClipId: clip.id },
+      metadata: {
+        generatedVia: 'director-staging-frame',
+        directorClipId: clip.id,
+        directorBindKey: bindKey,
+        directorLook: look,
+      },
     };
     dispatch({ type: 'ADD_ASSET', asset });
     setShow(patchClipStaging(showRef.current, clip.id, {
       sourceFrameUrl: url,
       sourceAssetId: asset.id,
+      sourceBindKey: bindKey,
+      sourceLook: look,
       error: undefined,
       status: clip.staging?.diagramUrl ? 'ready' : 'idle',
     }, scene.label));
@@ -437,9 +458,16 @@ export function DirectorTab() {
     });
     foldersRef.current = [...foldersRef.current, ...planned.foldersToAdd];
     for (const folder of planned.foldersToAdd) dispatch({ type: 'ADD_FOLDER', folder });
+    const grab = clip.staging;
+    const bindKey = grab?.sourceBindKey ?? stagingBindKey(clip.activeVariant);
+    const look = grab?.sourceLook ?? captureFramingLook(clip, bindKey);
+    const size = grammarSizeLabel(look.grammar);
+    const shotLabel = bindKey === 'full'
+      ? variantTakeLabel(clip, variantKey(clip.activeVariant))
+      : `S${bindKey}`;
     const diagramAsset: Asset = {
       id: generateId(),
-      name: `${clipLabel ?? clip.title} map`,
+      name: `${clipLabel ?? clip.title} ${shotLabel}${size ? ` · ${size}` : ''} map`,
       type: 'image',
       url: args.url,
       sourceUrl: args.url,
@@ -449,6 +477,8 @@ export function DirectorTab() {
       metadata: {
         generatedVia: 'director-staging-map',
         directorClipId: clip.id,
+        directorBindKey: bindKey,
+        directorLook: look,
         higgsfieldModel: HIGGSFIELD_MODELS.nanoBanana,
         higgsfieldJobId: args.jobId,
       },
@@ -462,29 +492,42 @@ export function DirectorTab() {
       assetId: diagramAsset.id,
       jobId: args.jobId,
       scope: args.scope,
+      framingName: `${clipLabel ?? clip.title} · ${shotLabel}${size ? ` · ${size}` : ''}`,
     }));
   }, [dispatch, projectId, setShow, state.elementFolders]);
 
   const pullStagingDiagram = useCallback(async (jobId?: string) => {
     const hf = window.electronAPI?.higgsfield;
+    const fromList = async () => {
+      if (!hf?.generateList) return undefined;
+      const listed = await hf.generateList({ size: 50 });
+      const match = matchListedStagingJob(listed, { jobId });
+      const url = match ? listedStagingMediaUrl(match) : undefined;
+      if (!match || !url) return undefined;
+      return { url, jobId: listedStagingJobId(match) ?? jobId };
+    };
+    const listed = await fromList();
+    if (listed) return listed;
     if (jobId && hf?.generate) {
       try {
-        const waited = await hf.generate({
+        const got = await hf.generate({
           jobId,
           model: HIGGSFIELD_MODELS.nanoBanana,
           outputType: 'image',
+          wait: false,
         });
-        if (waited.url) return { url: waited.url, jobId: waited.jobId ?? jobId };
+        if (got.url) return { url: got.url, jobId: got.jobId ?? jobId };
       } catch {
-        // List image jobs next — wait/get often miss Nano Banana Pro's result_url.
+        // Still running — poll the image list instead of a 20-minute wait.
       }
     }
-    if (!hf?.generateList) return undefined;
-    const listed = await hf.generateList({ size: 50 });
-    const match = matchListedStagingJob(listed, { jobId });
-    const url = match ? listedStagingMediaUrl(match) : undefined;
-    if (!match || !url) return undefined;
-    return { url, jobId: listedStagingJobId(match) ?? jobId };
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      const again = await fromList();
+      if (again) return again;
+    }
+    return undefined;
   }, []);
 
   const fetchStagingDiagram = useCallback(async () => {
@@ -515,6 +558,29 @@ export function DirectorTab() {
       }, scene.label));
     }
   }, [commitStagingDiagram, pullStagingDiagram, setShow]);
+
+  const keepStagingFraming = useCallback(() => {
+    const clip = selectedClip(showRef.current);
+    const url = clip?.staging?.diagramUrl?.trim();
+    if (!clip || !url) return;
+    commitStagingDiagram({
+      clipId: clip.id,
+      url,
+      jobId: clip.staging?.jobId,
+      scope: clip.staging?.scope ?? 'clip',
+    });
+  }, [commitStagingDiagram]);
+
+  const cancelStagingDiagram = useCallback(() => {
+    const current = showRef.current;
+    const clip = selectedClip(current);
+    const scene = selectedScene(current);
+    if (!clip || !scene) return;
+    setShow(patchClipStaging(current, clip.id, {
+      status: clip.staging?.diagramUrl ? 'ready' : 'idle',
+      error: undefined,
+    }, scene.label));
+  }, [setShow]);
 
   const makeStagingDiagram = useCallback(async () => {
     const current = showRef.current;
@@ -1278,6 +1344,8 @@ export function DirectorTab() {
             onSetStagingFrame={(source) => void setStagingFrame(source)}
             onMakeStagingDiagram={() => void makeStagingDiagram()}
             onFetchStagingDiagram={() => void fetchStagingDiagram()}
+            onKeepStagingFraming={keepStagingFraming}
+            onCancelStagingDiagram={cancelStagingDiagram}
           />
         )}
       </div>

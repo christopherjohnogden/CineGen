@@ -19,6 +19,7 @@ export function createEmptyDirectorShow(): DirectorShow {
     breakdownApproved: false,
     scenes: [],
     clips: [],
+    framingReserve: [],
     jobStatus: null,
   };
 }

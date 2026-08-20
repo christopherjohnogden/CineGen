@@ -23,9 +23,12 @@ import { DirectorCameraMovePanel } from './director-camera-move';
 import { DirectorShotGrammarRow } from './director-shot-grammar';
 import { applyMatchSizeToScene, beatGrammarsForClip, beatHoldsPreviousSetup, beatIsDirtyFromOrigin, beatScriptContext, beatSetupColors, grammarSizeLabel, resetBeatToOrigin, SETUP_SWATCH_COUNT, SHOT_SIZES } from '@/lib/director/craft/coverage';
 import { DirectorStagingFrame, captureVideoFrame } from './director-staging-frame';
+import { DirectorFramingBoard, DirectorShotFramingPick } from './director-framing-board';
 import { DirectorsNotesField } from './director-notes-field';
 import { ensureClipStaging } from '@/lib/director/staging-diagram';
+import { adoptClipFramings, applyFraming, applyFramingToBeat, beatFramingId, boundFramingId, clearFramingBind, resolveClipStaging, revertFramingOnBeat } from '@/lib/director/framing-reserve';
 import { clipIsDirtyFromLlmOrigin, resetClipToLlmOrigin } from '@/lib/director/llm-origin';
+import { copyButtonLabel, useCopiedFlash } from '@/hooks/use-copied-flash';
 
 interface DirectorGenerateTabProps {
   show: DirectorShow;
@@ -40,9 +43,17 @@ interface DirectorGenerateTabProps {
   fetchingTake?: boolean;
   onClipNotes: (notes: string) => Promise<boolean>;
   onRemoveAsset?: (assetId: string) => void;
-  onSetStagingFrame?: (source: { dataUrl?: string; fileRef?: string; timeSec?: number }) => void;
+  onSetStagingFrame?: (source: {
+    dataUrl?: string;
+    fileRef?: string;
+    timeSec?: number;
+    durationSec?: number;
+    variantKey?: string;
+  }) => void;
   onMakeStagingDiagram?: () => void;
   onFetchStagingDiagram?: () => void;
+  onKeepStagingFraming?: () => void;
+  onCancelStagingDiagram?: () => void;
 }
 
 function activeBody(show: DirectorShow, clip: DirectorClip): string {
@@ -66,8 +77,47 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const shotsSectionRef = useRef<HTMLDetailsElement>(null);
   const shotsBodyRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDetailsElement>(null);
+  const framingSearchRef = useRef<HTMLInputElement>(null);
+  const pickerSearchRef = useRef<HTMLInputElement>(null);
   const [notesDraft, setNotesDraft] = useState('');
+  const [framingQuery, setFramingQuery] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const promptCopy = useCopiedFlash();
   useEffect(() => { setNotesDraft(''); }, [clip?.id]);
+  useEffect(() => { setFramingQuery(''); setPickerOpen(false); }, [clip?.id, clip?.activeVariant]);
+  useEffect(() => {
+    const next = adoptClipFramings(show);
+    if (next !== show) onChange(next);
+  }, [show, onChange]);
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const focus = () => pickerSearchRef.current?.focus();
+    requestAnimationFrame(focus);
+  }, [pickerOpen]);
+  useEffect(() => {
+    function isEditingContent(event: KeyboardEvent) {
+      const element = event.target as HTMLElement | null;
+      if (!element) return false;
+      const tagName = element.tagName;
+      return element.isContentEditable || tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA';
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && pickerOpen) {
+        event.preventDefault();
+        setPickerOpen(false);
+        return;
+      }
+      if ((event.key === '/' || event.key === '@') && !pickerOpen && !isEditingContent(event)) {
+        event.preventDefault();
+        if (stageRef.current) stageRef.current.open = true;
+        setFramingQuery('');
+        setPickerOpen(true);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pickerOpen]);
 
   const patchClip = (updater: (current: DirectorClip) => DirectorClip) => {
     if (!clip) return;
@@ -103,6 +153,19 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const variantLabel = variantTakeLabel(clip, key);
   const beatGrammars = beatGrammarsForClip(clip.beats);
   const setupColors = beatSetupColors(clip.beats);
+  const framings = show.framingReserve ?? [];
+  const resolvedStaging = resolveClipStaging(show, clip, variant);
+  const staging = resolvedStaging
+    ? { ...resolvedStaging, scope: clip.staging?.scope ?? resolvedStaging.scope ?? 'clip' }
+    : clip.staging;
+  const boundId = boundFramingId(clip, variant);
+  const boundName = framings.find((entry) => entry.id === boundId)?.name;
+  const pickFraming = (id: string) => {
+    const scope = clip.staging?.scope ?? 'clip';
+    const target = isolated && scope !== 'scene' ? 'variant' : (scope === 'scene' ? 'scene' : 'clip');
+    onChange(applyFraming(show, clip.id, id, target));
+    setPickerOpen(false);
+  };
 
   const setVariant = (next: IsolateVariant) => {
     const nextTakes = takesForVariant(clip, variantKey(next));
@@ -284,12 +347,25 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             fetchingTake={props.fetchingTake}
           />
           <DirectorStagingFrame
-            staging={clip.staging}
+            staging={staging}
+            framings={framings}
+            boundId={boundId}
+            boundName={boundName}
+            query={framingQuery}
+            onQuery={setFramingQuery}
+            onPickFraming={pickFraming}
+            onClearFraming={() => onChange(clearFramingBind(show, clip.id, variant))}
+            onKeepFraming={props.onKeepStagingFraming}
+            onCancel={props.onCancelStagingDiagram}
+            searchRef={framingSearchRef}
+            detailsRef={stageRef}
             canCapture={Boolean(asset?.url)}
             onSetFrame={() => props.onSetStagingFrame?.({
               dataUrl: captureVideoFrame(videoRef.current) ?? undefined,
               fileRef: asset?.fileRef || asset?.url,
               timeSec: videoRef.current?.currentTime,
+              durationSec: videoRef.current?.duration,
+              variantKey: selectedTake?.variantKey ?? key,
             })}
             onMakeDiagram={() => props.onMakeStagingDiagram?.()}
             onFetchDiagram={props.onFetchStagingDiagram}
@@ -355,9 +431,9 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                 type="button"
                 className="director-tab__btn"
                 style={{ marginLeft: 'auto' }}
-                onClick={(event) => { event.preventDefault(); void navigator.clipboard.writeText(compiled); }}
+                onClick={(event) => { event.preventDefault(); void promptCopy.copyText(compiled, clip.id); }}
               >
-                Copy
+                {copyButtonLabel(promptCopy.isCopied(clip.id), 'Copy')}
               </button>
             </summary>
             <div className="dgen-section-body">
@@ -425,6 +501,9 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
               <span className="director-tab__meta">{clip.beats.length} · durations must sum to {clip.seconds}s</span>
             </summary>
             <div className="dgen-section-body dgen-shots" ref={shotsBodyRef}>
+              {framings.length === 0 && (
+                <p className="director-tab__meta">No saved framings yet — Set as frame in Frame · map, then pick a card here to restage that shot.</p>
+              )}
               {clip.beats.map((entry, index) => {
                 const size = grammarSizeLabel(beatGrammars[index]);
                 const setup = setupColors[index];
@@ -473,6 +552,13 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                         ...current,
                         beats: current.beats.map((row) => row.n === entry.n ? { ...row, grammar } : row),
                       }))}
+                    />
+                    <DirectorShotFramingPick
+                      show={show}
+                      framings={framings}
+                      boundId={beatFramingId(clip, entry.n)}
+                      onPick={(id) => onChange(applyFramingToBeat(show, clip.id, id, entry.n))}
+                      onClear={() => onChange(revertFramingOnBeat(show, clip.id, entry.n))}
                     />
                   </div>
                 );
@@ -561,6 +647,32 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
           </details>
         </div>
       </div>
+      {pickerOpen && (
+        <div
+          className="dframe-picker"
+          role="dialog"
+          aria-label="Reuse a saved framing"
+          onClick={() => setPickerOpen(false)}
+        >
+          <div className="dframe-picker-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="dframe-picker-head">
+              <span className="dsl-section-title">Storyboard</span>
+              <span className="director-tab__meta">
+                {isolated ? `S${variant.beatN}` : thisLabel} · Esc to close
+              </span>
+            </div>
+            <DirectorFramingBoard
+              framings={framings}
+              boundId={boundId}
+              query={framingQuery}
+              onQuery={setFramingQuery}
+              onPick={pickFraming}
+              searchRef={pickerSearchRef}
+              heading="Find a framing"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

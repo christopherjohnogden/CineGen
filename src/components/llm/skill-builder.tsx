@@ -16,6 +16,7 @@ import {
   formatSkillSurfaces,
   type LLMSkill,
 } from '@/lib/llm/skills';
+import { copyButtonLabel, useCopiedFlash } from '@/hooks/use-copied-flash';
 
 type LLMMode = 'cloud' | 'local' | CliLlmProviderId;
 
@@ -58,6 +59,7 @@ export function SkillBuilder({
   const [panelMode, setPanelMode] = useState<EditorPanelMode>('empty');
   const [createPrompt, setCreatePrompt] = useState('');
   const [authorSeed, setAuthorSeed] = useState('');
+  const skillCopy = useCopiedFlash();
 
   const selectedSkill = useMemo(
     () => skills.find((skill) => skill.id === selectedId) ?? null,
@@ -215,13 +217,8 @@ export function SkillBuilder({
 
   const handleExport = useCallback(async () => {
     if (!draft) return;
-    const markdown = serializeSkillToMarkdown(draft);
-    try {
-      await navigator.clipboard.writeText(markdown);
-    } catch {
-      // ignore clipboard failures
-    }
-  }, [draft]);
+    await skillCopy.copyText(serializeSkillToMarkdown(draft));
+  }, [draft, skillCopy]);
 
   const handleImport = useCallback(() => {
     const raw = window.prompt('Paste SKILL.md content (YAML frontmatter + markdown body):');
@@ -406,7 +403,7 @@ export function SkillBuilder({
 
                 <div className="copilot__skills-editor-footer">
                   <div className="copilot__skills-editor-left">
-                    <button type="button" className="copilot__btn copilot__btn--ghost" onClick={handleExport}>Copy SKILL.md</button>
+                    <button type="button" className="copilot__btn copilot__btn--ghost" onClick={handleExport}>{copyButtonLabel(skillCopy.copied, 'Copy SKILL.md')}</button>
                     <button type="button" className="copilot__btn copilot__btn--ghost copilot__btn--danger" onClick={handleDelete}>Delete</button>
                   </div>
                   <div className="copilot__skills-editor-right">

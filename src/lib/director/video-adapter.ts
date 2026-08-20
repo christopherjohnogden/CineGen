@@ -2,6 +2,7 @@ import type { DirectorClip, DirectorShow, IsolateVariant } from '@/types/directo
 import { bodyForVariant, compileClipBody, compileOptionsForShow, prependPrefix } from './prompt-compiler';
 import { isolatedPrompt, rewritePrefixForIsolate, withFramingReference } from './isolate-prompt';
 import { compileLookBible } from './look-bible';
+import { clipWithResolvedStaging } from './framing-reserve';
 
 export interface DirectorVideoCapabilities {
   multiPrompt: boolean;
@@ -38,11 +39,12 @@ export interface DirectorVideoAdapter {
   }) => DirectorGenerateRequest;
 }
 
-function compiledPrompt(show: DirectorShow, clip: DirectorClip, variant: IsolateVariant): {
+function compiledPrompt(show: DirectorShow, raw: DirectorClip, variant: IsolateVariant): {
   prompt: string;
   durationSec: number;
   isolated: boolean;
 } {
+  const clip = clipWithResolvedStaging(show, raw, variant);
   const prefix = compileLookBible(show);
   const options = compileOptionsForShow(show, clip);
   if (variant.kind === 'full') {

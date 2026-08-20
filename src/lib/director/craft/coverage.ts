@@ -174,16 +174,19 @@ export function beatIsDirtyFromOrigin(beat: DirectorBeat): boolean {
     || JSON.stringify(beat.grammar ?? null) !== JSON.stringify(origin.grammar ?? null);
 }
 
-/** LLM shot in plain language: framing, who, action, line. Uses origin so chip edits don't rewrite the story. */
+/** Live coverage heading + action. Origin keeps the unused quote/speaker if chips change. */
 export function beatScriptContext(beat: DirectorBeat): string {
   const source = beat.origin ?? beat;
-  const who = source.speaker?.replace(/^@/, '');
-  const framing = grammarHeading(source.grammar) || source.cam?.trim().replace(/[.]$/, '') || '';
+  const who = (beat.speaker ?? source.speaker)?.replace(/^@/, '');
+  const framing = grammarHeading(beat.grammar)
+    || beat.cam?.trim().replace(/[.]$/, '')
+    || source.cam?.trim().replace(/[.]$/, '')
+    || '';
   const head = framing
     ? (who && !framing.toLowerCase().includes(who.toLowerCase()) ? `${framing} on ${who}` : framing)
     : (who ? `On ${who}` : `S${beat.n}`);
-  const action = source.text.trim();
-  const quote = source.quote?.trim();
+  const action = beat.text.trim();
+  const quote = (beat.quote ?? source.quote)?.trim();
   const body = action ? `${head} — ${action}` : head;
   if (quote && !action.toLowerCase().includes(quote.toLowerCase())) {
     return `${body}. "${quote}"`;
@@ -342,6 +345,33 @@ export function beatGrammarsForClip(beats: DirectorBeat[]): Array<DirectorShotGr
 
 export function grammarSizeLabel(grammar?: DirectorShotGrammar): string {
   return grammar?.size ? (SHOT_SIZES.find((entry) => entry.id === grammar.size)?.label ?? '') : '';
+}
+
+/** Compact coverage tag for a storyboard option — CU, OTS, 2-shot — not the action line. */
+export function grammarShotTypeLabel(grammar?: DirectorShotGrammar): string {
+  if (!grammar) return '';
+  if (grammar.bodies === 'ots') return 'OTS';
+  if (grammar.bodies === 'two') return '2-shot';
+  if (grammar.bodies === 'insert') return 'Insert';
+  if (grammar.bodies === 'group') return 'Group';
+  return grammarSizeLabel(grammar);
+}
+
+/** Prose coverage for rewriting leftover CU / two-shot language in cam and action. */
+export function coveragePhrase(grammar?: DirectorShotGrammar): string {
+  if (grammar?.bodies === 'ots') return 'over-the-shoulder';
+  if (grammar?.bodies === 'two') return 'two-shot';
+  if (grammar?.bodies === 'insert') return 'insert';
+  if (grammar?.bodies === 'group') return 'group';
+  return SHOT_SIZES.find((entry) => entry.id === grammar?.size)?.lens ?? '';
+}
+
+const COVERAGE_TOKEN = /\b(?:extreme\s+close-?ups?|medium\s+close-?ups?|close-?ups?|two-?shots?|2-?shots?|over-the-shoulders?|\bots\b)\b/gi;
+
+export function rewriteCoverageCopy(text: string, grammar?: DirectorShotGrammar): string {
+  const phrase = coveragePhrase(grammar);
+  if (!phrase || !text.trim()) return text;
+  return text.replace(COVERAGE_TOKEN, phrase);
 }
 
 export function beatInheritsSize(beat: DirectorBeat): boolean {

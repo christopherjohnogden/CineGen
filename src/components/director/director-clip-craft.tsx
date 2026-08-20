@@ -1,4 +1,5 @@
 import type { DirectorActingTask, DirectorClip } from '@/types/director';
+import { useCopiedFlash, copyButtonLabel } from '@/hooks/use-copied-flash';
 import { FOV_ANCHORS } from '@/lib/director/craft/optics';
 import { weakSpatialWordsIn } from '@/lib/director/craft/blocking';
 import {
@@ -169,6 +170,7 @@ export function DirectorClipCraft({ clip, sceneLabel, aspectRatio, onPatch, onMa
 }
 
 function StagingBlock({ clip, sceneLabel, aspectRatio, onPatch, onMakeDiagram, onFetchDiagram }: DirectorClipCraftProps) {
+  const diagramCopy = useCopiedFlash();
   const map = clip.staging;
 
   return (
@@ -258,12 +260,12 @@ function StagingBlock({ clip, sceneLabel, aspectRatio, onPatch, onMakeDiagram, o
             <button
               type="button"
               className="director-tab__btn"
-              onClick={() => void navigator.clipboard.writeText(stagingDiagramPrompt({
+              onClick={() => void diagramCopy.copyText(stagingDiagramPrompt({
                 figures: map.figures,
                 aspectRatio,
               }))}
             >
-              Copy diagram prompt
+              {copyButtonLabel(diagramCopy.copied, 'Copy diagram prompt')}
             </button>
             <button
               type="button"

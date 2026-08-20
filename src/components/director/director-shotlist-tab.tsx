@@ -17,6 +17,7 @@ import { getDirectorAdapter } from '@/lib/director/video-adapter';
 import { DirectorSceneCoverage } from './director-scene-coverage';
 import { DirectorsNotesField } from './director-notes-field';
 import { beatScriptContext } from '@/lib/director/craft/coverage';
+import { copyButtonLabel, useCopiedFlash } from '@/hooks/use-copied-flash';
 
 interface DirectorShotlistTabProps {
   show: DirectorShow;
@@ -50,7 +51,7 @@ type PendingShotlist =
   | { kind: 'beat'; clipId: string; beatN: number; clipLabel: string };
 
 export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest, syncing, onChange, onShotlist, onStopShotlist, onSceneNotes, onClipNotes, onReshotBeat, onReshotClip, onSelectClip }: DirectorShotlistTabProps) {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copied = useCopiedFlash();
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
   const [clipNotesDraft, setClipNotesDraft] = useState<Record<string, string>>({});
@@ -125,9 +126,7 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
 
   const copyPrompt = (clip: DirectorClip) => {
     const { prompt } = adapter.buildRequest({ show, clip, variant: clip.activeVariant });
-    void navigator.clipboard.writeText(prompt);
-    setCopiedId(clip.id);
-    window.setTimeout(() => setCopiedId((current) => (current === clip.id ? null : current)), 1500);
+    void copied.copyText(prompt, clip.id);
   };
 
   const patchScene = (sceneId: string, patch: Partial<DirectorScene>) => {
@@ -208,9 +207,9 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
               type="button"
               className="director-tab__btn"
               style={{ marginLeft: 'auto' }}
-              onClick={(event) => { event.preventDefault(); void navigator.clipboard.writeText(stylePrefix.trim()); }}
+              onClick={(event) => { event.preventDefault(); void copied.copyText(stylePrefix.trim(), 'style-prefix'); }}
             >
-              Copy
+              {copyButtonLabel(copied.isCopied('style-prefix'), 'Copy')}
             </button>
           </summary>
           <pre className="dsl-prompt">{stylePrefix.trim()}</pre>
@@ -276,7 +275,7 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
                     label={clipLabels.get(clip.id)}
                     startSec={clipStart.get(clip.id)}
                     open={openIds.has(clip.id)}
-                    copied={copiedId === clip.id}
+                    copied={copied.isCopied(clip.id)}
                     onToggle={() => toggleClip(clip)}
                     onQueue={(queued) => setQueued(clip.id, queued)}
                     onVariant={(variant) => onChange(setClipVariant(show, clip.id, variant))}
@@ -487,7 +486,7 @@ function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue,
         </div>
         <span className="dsl-shotspill">{clip.beats.length === 1 ? 'held single' : `${clip.beats.length} shots`}</span>
         <button type="button" className="director-tab__btn" onClick={(event) => { event.stopPropagation(); onCopy(); }}>
-          {copied ? 'Copied ✓' : 'Copy prompt'}
+          {copyButtonLabel(copied, 'Copy prompt')}
         </button>
         {onReshotClip && (
           <button

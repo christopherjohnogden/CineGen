@@ -57,7 +57,41 @@ describe('staging diagram bind', () => {
       scope: 'clip',
     });
     expect(show.breakdown.some((entry) => entry.tag === show.clips[0].staging?.stagingTag && entry.elementId === 'el-map')).toBe(true);
+    expect(show.framingReserve).toHaveLength(1);
+    expect(show.clips[0].staging?.reserveId).toBe(show.framingReserve?.[0].id);
     expect(show.clips[1].staging?.diagramUrl).toBeUndefined();
+  });
+
+  it('stores the grabbed shot look on the card even if another beat is selected when the map returns', () => {
+    const show = bindStagingDiagram({
+      show: {
+        ...createEmptyDirectorShow(),
+        scenes: [scene],
+        clips: [clip('a', {
+          beats: [
+            { n: 1, from: '0:00', to: '0:07', dur: 7, text: '@Peter sits.', grammar: { size: 'cu', bodies: 'one' } },
+            { n: 2, from: '0:07', to: '0:14', dur: 7, text: '@Jordan stands.', grammar: { size: 'ws', bodies: 'two' } },
+          ],
+          activeVariant: { kind: 'isolated', beatN: 2, mode: 'held' },
+          staging: {
+            enabled: false,
+            stagingTag: '@staging_ward_v1',
+            locationTag: '@loc_ward',
+            figures: [],
+            sourceBindKey: '1',
+            sourceLook: { grammar: { size: 'cu', bodies: 'one', clean: 'clean' }, cam: 'close-up of Peter' },
+          },
+        })],
+      },
+      clipId: 'a',
+      diagramUrl: 'https://cdn/map.png',
+      elementId: 'el-map',
+      scope: 'clip',
+    });
+    expect(show.framingReserve?.[0].look?.grammar?.size).toBe('cu');
+    expect(show.framingReserve?.[0].variantKey).toBe('1');
+    expect(show.clips[0].stagingBinds?.['1']).toBe(show.framingReserve?.[0].id);
+    expect(show.clips[0].stagingBinds?.['2']).toBeUndefined();
   });
 
   it('copies the map onto every clip in the scene', () => {

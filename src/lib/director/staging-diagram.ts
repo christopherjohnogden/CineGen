@@ -2,6 +2,7 @@ import type { DirectorBreakdownItem, DirectorClip, DirectorShow, DirectorStaging
 import { generateId } from '@/lib/utils/ids';
 import { updateDirectorClip } from './director-state';
 import { assignStagingFigures, emptyStagingMap } from './staging-map';
+import { stagingBindKey, captureFramingLook, upsertFramingReserve } from './framing-reserve';
 
 function isGeometryTag(tag: string): boolean {
   return /^@(staging|loc|map)[_-]/i.test(tag.startsWith('@') ? tag : `@${tag}`);
@@ -80,6 +81,7 @@ export function bindStagingDiagram(args: {
   assetId?: string;
   jobId?: string;
   scope: 'clip' | 'scene';
+  framingName?: string;
 }): DirectorShow {
   const clip = args.show.clips.find((entry) => entry.id === args.clipId);
   if (!clip) return args.show;
@@ -96,9 +98,24 @@ export function bindStagingDiagram(args: {
     scope: args.scope,
   };
   let next = upsertStagingBreakdown(args.show, staging, args.elementId);
-  next = updateDirectorClip(next, args.clipId, (current) => ({ ...current, staging }));
+  const bindKey = staging.sourceBindKey ?? stagingBindKey(clip.activeVariant);
+  const look = staging.sourceLook ?? captureFramingLook(clip, bindKey);
+  const saved = upsertFramingReserve(next, {
+    name: args.framingName?.trim() || 'Framing',
+    map: { ...staging, sourceBindKey: bindKey, sourceLook: look },
+    sourceClipId: clip.id,
+    sourceSceneId: clip.sceneId,
+    variantKey: bindKey,
+    look,
+  });
+  const bound: DirectorStagingMap = { ...staging, reserveId: saved.framing.id, sourceBindKey: bindKey, sourceLook: look };
+  next = updateDirectorClip(saved.show, args.clipId, (current) => ({
+    ...current,
+    staging: bound,
+    stagingBinds: { ...current.stagingBinds, [bindKey]: saved.framing.id },
+  }));
   if (args.scope === 'scene' && clip.sceneId) {
-    next = applyStagingToScene(next, clip.sceneId, staging);
+    next = applyStagingToScene(next, clip.sceneId, bound);
   }
   return next;
 }

@@ -19,35 +19,44 @@ export function DirectorSceneCoverage({ show, scene, onChange }: DirectorSceneCo
   };
 
   return (
-    <div className="dcov-scene">
-      <div className="dcov-chips">
-        <span className="dsl-scenefield-label">Coverage</span>
-        <div className="dgen-seg" role="group" aria-label="Scene coverage">
-          {COVERAGE_KINDS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={`dgen-seg-btn${selected.has(entry.id) ? ' dgen-seg-btn--on' : ''}`}
-              title={entry.hint}
-              onClick={() => toggle(entry.id)}
-            >
-              {entry.label}
-            </button>
-          ))}
+    <details className="dsl-section">
+      <summary className="dsl-section-head">
+        <span className="dsl-tw" aria-hidden />
+        <span className="dsl-section-title">Coverage</span>
+        <span className="director-tab__meta">line of action · camera movement</span>
+      </summary>
+      <div className="dgen-section-body">
+        <div className="dcov-scene">
+          <div className="dcov-chips">
+            <span className="dsl-scenefield-label">Coverage</span>
+            <div className="dgen-seg" role="group" aria-label="Scene coverage">
+              {COVERAGE_KINDS.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className={`dgen-seg-btn${selected.has(entry.id) ? ' dgen-seg-btn--on' : ''}`}
+                  title={entry.hint}
+                  onClick={() => toggle(entry.id)}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="dsl-scenefield" title="Who stays camera-left of whom. A reverse is a failed take.">
+            <span className="dsl-scenefield-label">Line of action</span>
+            <input
+              value={scene.axis ?? ''}
+              placeholder="@Peter camera-left of @Jordan"
+              onChange={(event) => onChange(patchSceneCamera(show, scene.id, { axis: event.target.value }))}
+            />
+          </label>
+          <DirectorCameraMovePanel
+            value={scene.cameraMove}
+            onChange={(cameraMove) => onChange(patchSceneCamera(show, scene.id, { cameraMove }))}
+          />
         </div>
       </div>
-      <label className="dsl-scenefield" title="Who stays camera-left of whom. A reverse is a failed take.">
-        <span className="dsl-scenefield-label">Line of action</span>
-        <input
-          value={scene.axis ?? ''}
-          placeholder="@Peter camera-left of @Jordan"
-          onChange={(event) => onChange(patchSceneCamera(show, scene.id, { axis: event.target.value }))}
-        />
-      </label>
-      <DirectorCameraMovePanel
-        value={scene.cameraMove}
-        onChange={(cameraMove) => onChange(patchSceneCamera(show, scene.id, { cameraMove }))}
-      />
-    </div>
+    </details>
   );
 }

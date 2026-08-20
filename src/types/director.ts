@@ -149,6 +149,10 @@ export interface DirectorClip {
   acting?: DirectorActingTask[];
   /** Staging reference binding letters to character tags. */
   staging?: DirectorStagingMap;
+  /** Storyboard card per variant (`full`, `1:held`) — overrides clip.staging.reserveId. */
+  stagingBinds?: Record<string, string>;
+  /** Pre-storyboard coverage per beat, restored when the card is unselected. */
+  framingRestores?: Record<string, DirectorFramingRestore>;
   elementTags: string[];
   altOf?: string;
   framingRefTag?: string;
@@ -223,6 +227,25 @@ export interface DirectorStagingFigure {
 
 export type StagingDiagramStatus = 'idle' | 'generating' | 'ready' | 'failed';
 
+/** Coverage frozen on a liked framing so another shot can recreate it. */
+export interface DirectorFramingLook {
+  grammar?: DirectorShotGrammar;
+  cam?: string;
+  fov?: number;
+  cameraMove?: DirectorCameraMove;
+}
+
+/** Beat coverage + body edits as they were before a storyboard card stamped them. */
+export interface DirectorFramingRestore {
+  grammar?: DirectorShotGrammar;
+  cam?: string;
+  fov?: number;
+  text?: string;
+  held?: string;
+  native?: string;
+  full?: string;
+}
+
 /** tig-diagram staging reference: geometry only, attached after the photo references. */
 export interface DirectorStagingMap {
   enabled: boolean;
@@ -245,6 +268,24 @@ export interface DirectorStagingMap {
   error?: string;
   /** Where the last diagram apply landed. */
   scope?: 'clip' | 'scene';
+  /** Storyboard card this map was applied from. */
+  reserveId?: string;
+  /** Shot this still was grabbed from (`full` or beat number). Frozen at Set as frame. */
+  sourceBindKey?: string;
+  /** Coverage of that shot, frozen with the grab so the card can rewrite another prompt. */
+  sourceLook?: DirectorFramingLook;
+}
+
+/** A liked framing on the show storyboard — reusable shot to shot and scene to scene. */
+export interface DirectorFraming {
+  id: string;
+  name: string;
+  createdAt: string;
+  sourceClipId?: string;
+  sourceSceneId?: string;
+  variantKey?: string;
+  map: DirectorStagingMap;
+  look?: DirectorFramingLook;
 }
 
 export interface DirectorLookBible {
@@ -301,6 +342,8 @@ export interface DirectorShow {
   breakdownApproved: boolean;
   scenes: DirectorScene[];
   clips: DirectorClip[];
+  /** Liked framings (frame + blocking map) collected like a storyboard. */
+  framingReserve?: DirectorFraming[];
   selectedSceneId?: string;
   selectedClipId?: string;
   selectedTakeId?: string;

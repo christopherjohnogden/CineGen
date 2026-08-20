@@ -118,6 +118,28 @@ describe('coverage and match', () => {
     })).toBe('MCU on Peter — Peter walks to the bookshelf. "Wait what?"');
   });
 
+  it('uses the live coverage heading after a storyboard restage, not the origin CU Two-shot', () => {
+    expect(beatScriptContext({
+      n: 2, from: '0:05', to: '0:11', dur: 6,
+      text: 'it settles into a wide, Peter left, Jordan right',
+      cam: 'wide of Peter',
+      grammar: { size: 'ws', bodies: 'one' },
+      origin: {
+        text: 'it settles into a two-shot, Peter left, Jordan right',
+        dur: 6,
+        cam: 'CU Two-shot on Dr-Jordan',
+        grammar: { size: 'cu', bodies: 'two' },
+      },
+    })).toMatch(/^WS One/);
+    expect(beatScriptContext({
+      n: 2, from: '0:05', to: '0:11', dur: 6,
+      text: 'it settles into a wide',
+      cam: 'wide of Peter',
+      grammar: { size: 'ws', bodies: 'one' },
+      origin: { text: 'it settles into a two-shot', dur: 6, cam: 'CU Two-shot on Dr-Jordan' },
+    })).not.toMatch(/Two-shot|CU Two-shot/i);
+  });
+
   it('resets coverage chips back to the LLM origin', () => {
     const origin = {
       text: 'Peter turns',

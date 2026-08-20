@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { Asset, MediaFolder } from '@/types/project';
 import type { Timeline } from '@/types/timeline';
 import { generateId } from '@/lib/utils/ids';
+import { copyButtonLabel, useCopiedFlash } from '@/hooks/use-copied-flash';
 import { toFileUrl } from '@/lib/utils/file-url';
 import { createSyncedTimeline } from '@/lib/editor/timeline-operations';
 import { BatchSyncDialog } from './batch-sync-dialog';
@@ -274,6 +275,7 @@ export function LeftPanel({
     }>;
   } | null>(null);
   const [transcriptionViewMode, setTranscriptionViewMode] = useState<TranscriptionViewMode>('segments');
+  const transcriptCopy = useCopiedFlash();
   const [deleteTimelineConfirm, setDeleteTimelineConfirm] = useState<{ ids: string[]; names: string[] } | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [dragOverCrumbId, setDragOverCrumbId] = useState<string | null>(null);
@@ -1824,9 +1826,9 @@ export function LeftPanel({
             <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button
                 className="btn btn--secondary"
-                onClick={() => { void navigator.clipboard.writeText(transcriptionModal.text); }}
+                onClick={() => { void transcriptCopy.copyText(transcriptionModal.text); }}
               >
-                Copy Text
+                {copyButtonLabel(transcriptCopy.copied, 'Copy Text')}
               </button>
               <button className="btn btn--primary" onClick={() => setTranscriptionModal(null)}>Close</button>
             </div>

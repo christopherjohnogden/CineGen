@@ -7,6 +7,7 @@ import { planDirectorFolders } from './folders';
 import { clipDisplayLabels } from './shotlist';
 import { getDirectorAdapter } from './video-adapter';
 import { findMatchingElement, normalizeElementName, normalizeTag } from './breakdown';
+import { clipWithResolvedStaging } from './framing-reserve';
 
 export function createPendingTake(args: {
   clip: DirectorClip;
@@ -237,8 +238,9 @@ export function prepareDirectorGeneration(args: {
 } {
   const adapter = getDirectorAdapter(args.show.adapterId);
   const variant = args.clip.activeVariant;
-  const referenceImages = collectClipElementRefs(args.clip, args.show.breakdown, args.elements ?? []);
-  const request = adapter.buildRequest({ show: args.show, clip: args.clip, variant, referenceImages });
+  const resolved = clipWithResolvedStaging(args.show, args.clip, variant);
+  const referenceImages = collectClipElementRefs(resolved, args.show.breakdown, args.elements ?? []);
+  const request = adapter.buildRequest({ show: args.show, clip: resolved, variant, referenceImages });
   const key = variantKey(variant);
   const scenes = args.show.scenes.some((entry) => entry.id === args.scene.id)
     ? args.show.scenes
