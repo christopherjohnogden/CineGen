@@ -34,7 +34,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
   // exist yet at the moment of the event.
   const [focusId, setFocusId] = useState<string | null>(null);
   const [dragIds, setDragIds] = useState<string[] | undefined>();
-  const dragFrom = useRef<string | undefined>();
+  const dragFrom = useRef<string | undefined>(undefined);
   const dragMoved = useRef(false);
   const rangeMode = useRef(false);
 

@@ -52,7 +52,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ### Director tab: Generate page redesign **(in progress)**
 
-- Two-column workspace: the left column is the **production console** — clip identity with generate actions in the title row, 16:9 viewer, takes filmstrip (double-click = hero), and the rewrite notes card; the right column is the **prompt stack** — collapsible sections for the compiled Prompt (fixed 475px scroll box with Copy), manual body edits, Shots (durations + isolation), Setup, Craft (blocking/lens/acting/staging) and Style & constraints
+- Two-column workspace: the left column is the **production console** — clip identity with generate actions in the title row, 16:9 viewer, takes grouped by Full vs each isolated shot (native / held), and the rewrite notes card; the right column is the **prompt stack** — collapsible sections for the compiled Prompt (fixed 475px scroll box with Copy), manual body edits, Shots (durations + isolation), Setup, Craft (blocking/lens/acting/staging) and Style & constraints
 - Variant selection is a **segmented control**: Full multishot · S1 · S2 · S3, with a Held/Native length toggle appearing when a shot is isolated — replacing the old separate beat list + three buttons
 - Queue tick sits next to **Generate queued** (also still on Shotlist rows and the structure rail) so the prompt stack starts at the top of the column; Edit body textarea is taller (~320px) so more of the compiled prompt is visible without scrolling
 - Generate actions sit in the **title row, top right**: accent **Generate 1A** for this clip, a quiet divider, then the queue tick + **Queued · N** + **Scene N** — no boxed THIS CLIP / BATCH card under the viewer. Hover titles still spell out the scope. The Seedance / queued / scene / show line sits under that cluster.
@@ -286,6 +286,15 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 
 ---
 
+### Director Generate takes **(in progress)**
+
+- Takes on Generate are grouped by **Full** vs each isolated shot (`S1 · 7s` native, `S1 · 20s held`) so you can see isolate takes without clicking the shot then Held/Native
+- Clicking a take (or its group label) jumps to that variant; Full / S1…S5 buttons show take counts. Held/Native still chooses what Generate produces next
+- Generating is a monitor overlay (REC, take slate, render bar) instead of faded **Generating…** text on a black frame; the take chip pulses while that take is live
+- If Higgsfield finishes while CineGen still shows **Rendering**, Generate rejoins the job (`generate get` / recent video list) and attaches the mp4 instead of leaving T01 stuck — including the **web** Higgsfield service (`generateList` / get without wait). The overlay has **Load from Higgsfield** if it is still catching up
+
+---
+
 ## Bug Fixes
 
 - **FLUX 2 Max:** Wrong endpoint slug (`flux-2/max` → `flux-2-max`)
@@ -305,7 +314,9 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Director Generate looked dead:** clicking Generate could no-op when no clip id was stored, hide a failed Higgsfield take as “No take yet”, and wait on character enrich before any UI. Failed takes now show the CLI error; Generate starts immediately via Higgsfield CLI (`higgsfield` / `higgs`) **(in progress)**
 - **Seedance 2.5 unknown params:** Generate no longer sends `genre` or `multi_shots` — the live Higgsfield CLI dropped those flags. Genre and shot list stay in the prompt; CLI args are filtered to the current `seedance_2_5` schema **(in progress)**
 - **Higgsfield 503 during Generate:** a 503 while polling no longer kills a job that already landed. CineGen submits, then `generate wait` / `get` the job id and retries transient errors; the Generating spinner clears if the job really failed **(in progress)**
+- **Generate stuck on Rendering:** a take no longer stays “rendering” after Higgsfield has the mp4. CineGen stores the job id, fetches completed jobs (web `higgsfield.generateList` + `generate get`), and attaches the video; recovery retries instead of giving up after the first miss, and the overlay can **Load from Higgsfield** **(in progress)**
 - **Director element stills on Generate:** isolated prompts include `ELEMENTS`, and tagged library stills are sent to Seedance 2.5 as `omni_reference` `--image` refs so identity is locked to Peter / Jordan / locations, not invented from text **(in progress)**
+- **Generate take player:** the video fills the 16:9 viewer instead of sitting in a 240px-tall postage stamp with black padding **(in progress)**
 
 ---
 

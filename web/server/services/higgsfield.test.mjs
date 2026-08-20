@@ -10,6 +10,7 @@ import {
   higgsfieldCapabilities,
   parseHiggsfieldConnectionState,
   parseHiggsfieldGenerateJson,
+  parseHiggsfieldListJson,
 } from './higgsfield.mjs';
 
 const INSTALLED = Object.freeze({ installed: true, path: '/srv/cinegen/bin/higgsfield' });
@@ -135,6 +136,18 @@ test('generic argv supports optional prompts, every output kind, and lossless JS
     '{"status":"completed","audio_url":"https://cdn.example.com/voice.wav"}',
     { model: 'seed_audio', mediaType: 'audio' },
   ).url, 'https://cdn.example.com/voice.wav');
+
+  assert.throws(
+    () => parseHiggsfieldGenerateJson(
+      '{"status":"queued","id":"job_queued"}',
+      { model: 'seedance_2_5', mediaType: 'video' },
+    ),
+    (error) => error.code === 'HIGGSFIELD_JOB_PENDING',
+  );
+
+  assert.deepEqual(parseHiggsfieldListJson(JSON.stringify({
+    jobs: [{ id: 'job-1', job_type: 'seedance_2_5' }],
+  })), [{ id: 'job-1', job_type: 'seedance_2_5' }]);
 });
 
 test('an unavailable server runtime returns explicit status and capability errors', async () => {
@@ -570,4 +583,48 @@ test('timeouts, output caps, auth failures, and server shutdown cancellation are
   assert.equal(higgsfieldCapabilities.browserProgressEvents, false);
   assert.equal(higgsfieldCapabilities.browserCancellation, false);
   assert.equal(higgsfieldCapabilities.serverShutdownCancellation, true);
+  assert.equal(higgsfieldCapabilities.generateList, true);
+});
+
+test('generateList, get-by-jobId, and submit-without-wait follow the desktop CLI contract', async () => {
+  const specs = [];
+  const handlers = createHiggsfieldHandlers({
+    detector: async () => INSTALLED,
+    async processRunner(spec, io) {
+      specs.push(spec);
+      if (spec.args[1] === 'list') {
+        io.onStdout(JSON.stringify({
+          jobs: [{ id: 'job-1', job_type: 'seedance_2_5' }],
+        }));
+      } else if (spec.args[1] === 'get') {
+        io.onStdout(resultJson({ id: spec.args[2] }));
+      } else {
+        io.onStdout('{"status":"queued","id":"job_queued"}\n');
+      }
+      return { code: 0, signal: null };
+    },
+  });
+
+  assert.deepEqual(await handlers.generateList({ video: true, size: 20 }), [
+    { id: 'job-1', job_type: 'seedance_2_5' },
+  ]);
+  assert.deepEqual(specs[0].args, ['generate', 'list', '--video', '--size', '20', '--json']);
+
+  assert.equal((await handlers.generate({
+    jobId: '54a6e548-2a69-4073-80a0-bbce1641a7e9',
+    model: 'seedance_2_5',
+    outputType: 'video',
+    wait: false,
+  })).url, 'https://cdn.example.com/generated.mp4');
+  assert.deepEqual(specs[1].args, [
+    'generate', 'get', '54a6e548-2a69-4073-80a0-bbce1641a7e9', '--json',
+  ]);
+
+  assert.deepEqual(await handlers.generate(generationParams({ wait: false })), {
+    jobId: 'job_queued',
+    mediaType: 'video',
+    model: 'seedance_2_0',
+  });
+  assert.equal(specs[2].args.includes('--wait'), false);
+  assert.equal(specs[2].args.at(-1), '--json');
 });

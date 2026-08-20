@@ -1,8 +1,8 @@
 import type { Asset, MediaFolder } from '@/types/project';
-import type { DirectorBreakdownItem, DirectorClip, DirectorScene, DirectorShow, DirectorTake, IsolateVariant } from '@/types/director';
+import type { DirectorBreakdownItem, DirectorClip, DirectorScene, DirectorShow, DirectorTake, IsolateMode, IsolateVariant } from '@/types/director';
 import type { Element } from '@/types/elements';
 import { generateId, timestamp } from '@/lib/utils/ids';
-import { nextTakeNumber, takeDisplayName, variantKey } from './slate';
+import { nextTakeNumber, parseVariantKey, takeDisplayName, variantKey, variantTakeLabel } from './slate';
 import { planDirectorFolders } from './folders';
 import { getDirectorAdapter } from './video-adapter';
 import { findMatchingElement, normalizeElementName, normalizeTag } from './breakdown';
@@ -33,6 +33,55 @@ export function takesForVariant(clip: DirectorClip, key: string): DirectorTake[]
   return clip.takes
     .filter((take) => take.variantKey === key)
     .sort((a, b) => a.number - b.number);
+}
+
+export interface DirectorTakeGroup {
+  key: string;
+  variant: IsolateVariant;
+  label: string;
+  takes: DirectorTake[];
+}
+
+export function takeCountForShot(clip: DirectorClip, beatN: number): number {
+  return takesForVariant(clip, `${beatN}:native`).length + takesForVariant(clip, `${beatN}:held`).length;
+}
+
+/** When opening a shot from Full, land on the isolate mode that actually has takes. */
+export function preferredIsolateMode(
+  clip: DirectorClip,
+  beatN: number,
+  current?: IsolateVariant,
+): IsolateMode {
+  if (current?.kind === 'isolated') return current.mode;
+  const nativeCount = takesForVariant(clip, `${beatN}:native`).length;
+  const heldCount = takesForVariant(clip, `${beatN}:held`).length;
+  if (nativeCount > 0 && nativeCount >= heldCount) return 'native';
+  if (heldCount > 0) return 'held';
+  return 'native';
+}
+
+export function takesGroupedForClip(clip: DirectorClip, activeKey: string): DirectorTakeGroup[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const push = (key: string) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  };
+  push('full');
+  for (const beat of clip.beats) {
+    push(`${beat.n}:native`);
+    push(`${beat.n}:held`);
+  }
+  for (const take of clip.takes) push(take.variantKey);
+  return keys
+    .map((key) => ({
+      key,
+      variant: parseVariantKey(key),
+      label: variantTakeLabel(clip, key),
+      takes: takesForVariant(clip, key),
+    }))
+    .filter((group) => group.takes.length > 0 || group.key === activeKey);
 }
 
 export function runtimeSeconds(clips: DirectorClip[]): number {
@@ -102,6 +151,10 @@ export function collectClipElementRefs(
     if (url && !urls.includes(url)) urls.push(url);
   }
   return urls;
+}
+
+export function isDirectorTakeLive(take?: DirectorTake): boolean {
+  return take?.status === 'running' || take?.status === 'queued';
 }
 
 export function generateViewerMessage(take: DirectorTake | undefined, hasUrl: boolean): string {

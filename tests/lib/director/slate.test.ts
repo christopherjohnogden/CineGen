@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectorClip, DirectorScene } from '@/types/director';
-import { nextTakeNumber, takeDisplayName, variantFolderName, variantKey } from '@/lib/director/slate';
+import { nextTakeNumber, takeDisplayName, variantFolderName, variantKey, variantTakeLabel } from '@/lib/director/slate';
 
 const scene: DirectorScene = {
   id: 's9',
@@ -52,5 +52,11 @@ describe('director slate', () => {
     expect(variantFolderName(clip, variantKey({ kind: 'full' }))).toBe('Full');
     expect(variantFolderName(clip, '3:held')).toBe('Shot 3 · 20s');
     expect(variantFolderName(clip, '3:native')).toBe('Shot 3 · 6s');
+  });
+
+  it('labels take groups for the Generate board', () => {
+    expect(variantTakeLabel(clip, 'full')).toBe('Full');
+    expect(variantTakeLabel(clip, '3:native')).toBe('S3 · 6s');
+    expect(variantTakeLabel(clip, '3:held')).toBe('S3 · 20s held');
   });
 });

@@ -74,6 +74,7 @@ export const higgsfieldCapabilities = Object.freeze({
   deviceAuth: 'server-configured',
   quickEdit: true,
   generate: true,
+  generateList: true,
   browserProgressEvents: false,
   browserCancellation: false,
   serverShutdownCancellation: true,
@@ -204,6 +205,7 @@ function optionalAspectRatio(value) {
 
 function validateGenerateParams(value) {
   const params = requireRecord(value, 'Higgsfield generation parameters');
+  const jobId = optionalJobId(params.jobId);
   return {
     prompt: optionalPromptValue(params.prompt),
     model: validateModel(params.model),
@@ -216,7 +218,29 @@ function validateGenerateParams(value) {
     aspectRatio: params.aspectRatio,
     durationSec: params.durationSec,
     count: params.count,
+    jobId,
+    wait: params.wait === false ? false : undefined,
   };
+}
+
+function optionalJobId(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const jobId = requireString(value, 'Higgsfield job id', { maxLength: 256 });
+  if (!SAFE_JOB_ID.test(jobId)) {
+    throw new ServiceError('Higgsfield job id is invalid.', { code: 'INVALID_INPUT' });
+  }
+  return jobId;
+}
+
+function validateListParams(value) {
+  const params = value === undefined || value === null
+    ? {}
+    : requireRecord(value, 'Higgsfield list parameters');
+  const size = params.size === undefined ? 20 : Number(params.size);
+  if (!Number.isInteger(size) || size < 1 || size > 50) {
+    throw new ServiceError('Higgsfield list size must be between 1 and 50.', { code: 'INVALID_INPUT' });
+  }
+  return { video: params.video === true, size };
 }
 
 function validateQuickEditParams(value) {
@@ -313,7 +337,8 @@ export function buildHiggsfieldCreateArgs(params) {
       args.push(`--${name}`, serializeCliParamValue(value, `Higgsfield param ${name}`));
     }
   }
-  args.push('--wait', '--json');
+  args.push('--json');
+  if (params.wait !== false) args.splice(args.length - 1, 0, '--wait');
   return args;
 }
 
@@ -464,6 +489,28 @@ function parseLastJson(stdout, label) {
   });
 }
 
+export function parseHiggsfieldListJson(stdout) {
+  const parsed = parseLastJson(stdout, 'Higgsfield job list');
+  if (Array.isArray(parsed)) return parsed.filter((entry) => isPlainRecord(entry));
+  if (!isPlainRecord(parsed)) return [];
+  for (const key of ['jobs', 'results', 'data', 'items', 'generations']) {
+    if (Array.isArray(parsed[key])) return parsed[key].filter((entry) => isPlainRecord(entry));
+  }
+  return parsed.id || parsed.job_id ? [parsed] : [];
+}
+
+export function parseHiggsfieldJobId(stdout) {
+  const parsed = parseLastJson(stdout, 'Higgsfield CLI');
+  const envelope = Array.isArray(parsed) ? { results: parsed } : parsed;
+  const firstResult = Array.isArray(envelope?.results) && isPlainRecord(envelope.results[0])
+    ? envelope.results[0]
+    : envelope;
+  const jobIdValue = isPlainRecord(firstResult)
+    ? (firstResult.job_id ?? firstResult.id ?? firstResult.jobId)
+    : undefined;
+  return typeof jobIdValue === 'string' && SAFE_JOB_ID.test(jobIdValue) ? jobIdValue : undefined;
+}
+
 export function parseHiggsfieldGenerateJson(stdout, params) {
   const parsed = parseLastJson(stdout, 'Higgsfield CLI');
   const envelope = Array.isArray(parsed) ? { results: parsed } : parsed;
@@ -482,6 +529,12 @@ export function parseHiggsfieldGenerateJson(stdout, params) {
       ? firstResult.error.trim().slice(0, 2_000)
       : 'Higgsfield generation failed.';
     throw new ServiceError(detail, { code: 'HIGGSFIELD_GENERATION_FAILED', statusCode: 502 });
+  }
+  if (['queued', 'queue', 'pending', 'running', 'processing', 'waiting', 'in_progress', 'ns', 'created'].includes(state)) {
+    throw new ServiceError('Higgsfield job is still running', {
+      code: 'HIGGSFIELD_JOB_PENDING',
+      statusCode: 409,
+    });
   }
   const mediaType = validateOutputType(params.mediaType);
   const rawUrl = extractMediaUrl(envelope);
@@ -1122,12 +1175,56 @@ export function createHiggsfieldService(options = {}) {
 
   const generate = async (paramsValue) => {
     const params = validateGenerateParams(paramsValue);
+    if (params.jobId) {
+      return resolveExistingJob(params.jobId, params.model, params.outputType, {
+        wait: params.wait !== false,
+      });
+    }
     const generateParams = await normalizeGenerationRequest(params);
-    const stdout = await runCli(buildHiggsfieldCreateArgs(generateParams), {
+    const stdout = await runCli(buildHiggsfieldCreateArgs({ ...generateParams, wait: params.wait }), {
       label: 'Higgsfield generation',
-      timeoutMs: generateTimeoutMs,
+      timeoutMs: params.wait === false ? Math.min(generateTimeoutMs, 90_000) : generateTimeoutMs,
     });
-    return parseHiggsfieldGenerateJson(stdout, generateParams);
+    try {
+      return parseHiggsfieldGenerateJson(stdout, generateParams);
+    } catch (error) {
+      if (params.wait !== false) throw error;
+      const jobId = parseHiggsfieldJobId(stdout);
+      if (!jobId) throw error;
+      return { jobId, mediaType: generateParams.mediaType, model: generateParams.model };
+    }
+  };
+
+  const resolveExistingJob = async (jobId, model, outputType, options = {}) => {
+    const getStdout = await runCli(['generate', 'get', jobId], {
+      label: 'Higgsfield job lookup',
+      timeoutMs: commandTimeoutMs,
+    });
+    try {
+      return parseHiggsfieldGenerateJson(getStdout, { model, mediaType: outputType });
+    } catch (error) {
+      const pending = error instanceof ServiceError && (
+        error.code === 'HIGGSFIELD_JOB_PENDING' || /without a media URL/i.test(error.message)
+      );
+      if (!pending || options.wait === false) throw error;
+      const waitStdout = await runCli(
+        ['generate', 'wait', jobId, '--timeout', '20m', '--interval', '5s'],
+        { label: 'Higgsfield job wait', timeoutMs: generateTimeoutMs },
+      );
+      return parseHiggsfieldGenerateJson(waitStdout, { model, mediaType: outputType });
+    }
+  };
+
+  const generateList = async (paramsValue) => {
+    const opts = validateListParams(paramsValue);
+    const args = ['generate', 'list'];
+    if (opts.video) args.push('--video');
+    args.push('--size', String(opts.size));
+    const stdout = await runCli(args, {
+      label: 'Higgsfield job list',
+      timeoutMs: commandTimeoutMs,
+    });
+    return parseHiggsfieldListJson(stdout);
   };
 
   const quickEdit = async (paramsValue) => {
@@ -1242,7 +1339,7 @@ export function createHiggsfieldService(options = {}) {
     return undefined;
   };
 
-  const handlers = { accountStatus, authLogin, authLogout, quickEdit, generate };
+  const handlers = { accountStatus, authLogin, authLogout, quickEdit, generate, generateList };
   const context = {
     capabilities: higgsfieldCapabilities,
     authCommandsEnabled: allowAuthCommands,

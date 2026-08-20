@@ -36,6 +36,15 @@ export function variantFolderName(clip: DirectorClip, key: string): string {
   return `Shot ${variant.beatN} · ${seconds}s`;
 }
 
+/** Compact Generate-board label: Full vs S1 · 7s vs S1 · 20s held. */
+export function variantTakeLabel(clip: DirectorClip, key: string): string {
+  const variant = parseVariantKey(key);
+  if (variant.kind === 'full') return 'Full';
+  const beat = clip.beats.find((entry) => entry.n === variant.beatN);
+  if (variant.mode === 'native') return `S${variant.beatN} · ${beat?.dur ?? clip.seconds}s`;
+  return `S${variant.beatN} · ${clip.seconds}s held`;
+}
+
 export function takeDisplayName(
   scene: DirectorScene,
   clip: DirectorClip,

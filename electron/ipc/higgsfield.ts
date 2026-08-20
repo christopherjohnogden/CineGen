@@ -176,10 +176,24 @@ export interface HiggsfieldJobSnapshot {
   parsed: Record<string, unknown>;
 }
 
+export function isInFlightHiggsfieldStatus(status: string): boolean {
+  return /^(queued|queue|pending|running|processing|waiting|in_progress|ns|created)$/.test(status.trim());
+}
+
+export function isFinishedHiggsfieldResult(
+  value: HiggsfieldResult | { jobId: string },
+  mediaType: HiggsfieldOutputKind,
+): value is HiggsfieldResult {
+  if (!('outputs' in value) && !('mediaType' in value)) return false;
+  const result = value as HiggsfieldResult;
+  if (typeof result.url === 'string' && result.url.trim()) return true;
+  return mediaType === 'text' && typeof result.text === 'string' && Boolean(result.text.trim());
+}
+
 function firstJobRecord(parsed: Record<string, unknown>): Record<string, unknown> {
-  const results = parsed.results;
-  if (Array.isArray(results) && results.length > 0 && typeof results[0] === 'object' && results[0]) {
-    return results[0] as Record<string, unknown>;
+  for (const key of ['results', 'jobs']) {
+    const value = parsed[key];
+    if (Array.isArray(value) && value.length > 0 && isRecord(value[0])) return value[0];
   }
   return parsed;
 }
@@ -244,7 +258,10 @@ export function extractMediaUrls(value: unknown, depth = 0): string[] {
     const candidate = value[key];
     if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate)) urls.push(candidate);
   }
-  for (const key of ['output', 'result', 'data', 'job', 'results', 'outputs', 'medias', 'jobs', 'items']) {
+  if (typeof value.result_json === 'string' && value.result_json.trim()) {
+    try { urls.push(...extractMediaUrls(JSON.parse(value.result_json) as unknown, depth + 1)); } catch { /* not JSON */ }
+  }
+  for (const key of ['output', 'result', 'data', 'job', 'results', 'outputs', 'medias', 'jobs', 'items', 'raw', 'video', 'files', 'assets']) {
     urls.push(...extractMediaUrls(value[key], depth + 1));
   }
   return [...new Set(urls)];
@@ -304,8 +321,15 @@ export function parseGenerateJson(
   if (snap.status === 'failed' || snap.status === 'error' || snap.status === 'fail') {
     throw new Error(typeof snap.record.error === 'string' ? snap.record.error : 'Higgsfield generation failed');
   }
+  if (isInFlightHiggsfieldStatus(snap.status)) {
+    throw new Error('Higgsfield job is still running');
+  }
   const result = snapshotToResult(snap, params);
-  if (!result.url && !result.text) throw new Error('Higgsfield generation finished without a media URL or text output');
+  if (params.mediaType === 'text') {
+    if (!result.url && !result.text) throw new Error('Higgsfield generation finished without a media URL or text output');
+    return result;
+  }
+  if (!result.url) throw new Error('Higgsfield generation finished without a media URL');
   return result;
 }
 
@@ -472,8 +496,19 @@ export async function runHiggsfieldCli(args: string[], timeoutMs = 60_000): Prom
 /** Submit the job, then wait — a 503 during poll does not cancel a job already on Higgsfield. */
 export async function generateHiggsfield(params: HiggsfieldGenerateParams): Promise<HiggsfieldResult> {
   const submitted = await submitHiggsfieldJob(params);
-  if ('outputs' in submitted) return submitted;
-  return waitForHiggsfieldJob(submitted.jobId, params);
+  if (isFinishedHiggsfieldResult(submitted, params.mediaType)) return submitted;
+  const jobId = 'jobId' in submitted ? submitted.jobId : undefined;
+  if (!jobId) throw new Error('Higgsfield accepted the request but did not return a job id.');
+  if (params.wait === false) {
+    return {
+      jobId,
+      model: params.model,
+      mediaType: params.mediaType,
+      outputKind: params.mediaType,
+      outputs: [],
+    };
+  }
+  return waitForHiggsfieldJob(jobId, params);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -544,7 +579,11 @@ async function waitForHiggsfieldJob(
         if (!isTransientHiggsfieldError(cliErrorMessage(getError))) throw getError;
       }
       const message = cliErrorMessage(error);
-      if (!isTransientHiggsfieldError(message) && !/timed out/i.test(message)) throw error;
+      const keepPolling = isTransientHiggsfieldError(message)
+        || /timed out/i.test(message)
+        || /still running/i.test(message)
+        || /without a media URL/i.test(message);
+      if (!keepPolling) throw error;
       if (attempt === WAIT_ATTEMPTS) break;
       await sleep(2000 * attempt);
     }
@@ -552,6 +591,40 @@ async function waitForHiggsfieldJob(
   throw new Error(
     `${cliErrorMessage(lastError)} The job was submitted (${jobId}) and may still finish on Higgsfield.`,
   );
+}
+
+function listRowsFromParsed(parsed: unknown): Record<string, unknown>[] {
+  if (Array.isArray(parsed)) return parsed.filter((entry): entry is Record<string, unknown> => isRecord(entry));
+  if (!isRecord(parsed)) return [];
+  for (const key of ['jobs', 'results', 'data', 'items', 'generations'] as const) {
+    const rows = parsed[key];
+    if (Array.isArray(rows)) return rows.filter((entry): entry is Record<string, unknown> => isRecord(entry));
+  }
+  return parsed.id || parsed.job_id ? [parsed] : [];
+}
+
+export async function listHiggsfieldJobs(opts?: { video?: boolean; size?: number }): Promise<Record<string, unknown>[]> {
+  const args = ['generate', 'list'];
+  if (opts?.video) args.push('--video');
+  args.push('--size', String(opts?.size ?? 20));
+  const stdout = await runHiggsfieldCli(args, 20_000);
+  const trimmed = stdout.trim();
+  try {
+    return listRowsFromParsed(JSON.parse(trimmed) as unknown);
+  } catch {
+    const start = Math.max(trimmed.lastIndexOf('['), trimmed.lastIndexOf('{'));
+    if (start < 0) return [];
+    return listRowsFromParsed(JSON.parse(trimmed.slice(start)) as unknown);
+  }
+}
+
+export async function resolveHiggsfieldJob(
+  jobId: string,
+  params: Pick<HiggsfieldGenerateParams, 'model' | 'mediaType'>,
+): Promise<HiggsfieldResult> {
+  const got = await readHiggsfieldJob(jobId, params);
+  if (got && isFinishedHiggsfieldResult(got, params.mediaType)) return got;
+  return waitForHiggsfieldJob(jobId, params);
 }
 
 /** Account/connection status (email, plan, credits) or null when not signed in. */
@@ -700,8 +773,19 @@ export function registerHiggsfieldHandlers(): void {
     referenceValue?: string;
     medias?: HiggsfieldMedia[];
     params?: Record<string, unknown>;
+    jobId?: string;
+    wait?: boolean;
   }): Promise<HiggsfieldResult> => {
     const { resolveLocalSourcePath } = await import('./copilot-visual-media.js');
+    if (params.jobId) {
+      const lookup = { model: params.model, mediaType: params.outputType };
+      if (params.wait === false) {
+        const got = await readHiggsfieldJob(params.jobId, lookup);
+        if (got && isFinishedHiggsfieldResult(got, params.outputType)) return got;
+        throw new Error('Higgsfield job is still running');
+      }
+      return resolveHiggsfieldJob(params.jobId, lookup);
+    }
     const medias: HiggsfieldMedia[] = [...(params.medias ?? [])].map((media) => {
       if (!media.value || /^https?:\/\//i.test(media.value)) return media;
       const local = resolveLocalSourcePath(media.value);
@@ -719,7 +803,12 @@ export function registerHiggsfieldHandlers(): void {
       mediaType: params.outputType,
       medias: medias.length > 0 ? medias : undefined,
       params: params.params,
+      wait: params.wait,
     });
+  });
+
+  ipcMain.handle('higgsfield:generate-list', async (_event, params?: { video?: boolean; size?: number }) => {
+    return listHiggsfieldJobs(params);
   });
 
   // Browser-based device login. Resolves when the CLI exits (user completed or aborted in browser).

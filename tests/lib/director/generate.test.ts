@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectorClip } from '@/types/director';
-import { clipsForGenerateScope, collectClipElementRefs, generateViewerMessage } from '@/lib/director/generate';
+import { clipsForGenerateScope, collectClipElementRefs, generateViewerMessage, isDirectorTakeLive, preferredIsolateMode, takeCountForShot, takesGroupedForClip } from '@/lib/director/generate';
 
 const clip = (id: string, sceneId: string, queued?: boolean, altOf?: string): DirectorClip => ({
   id, title: id, seconds: 30, sceneId, altOf, queued, beats: [], subject: '', location: '',
@@ -43,6 +43,8 @@ describe('generateViewerMessage', () => {
   it('shows generating copy while a take is in flight', () => {
     expect(generateViewerMessage(take('running'), false)).toBe('T02 generating…');
     expect(generateViewerMessage(take('queued'), false)).toBe('T02 generating…');
+    expect(isDirectorTakeLive(take('running'))).toBe(true);
+    expect(isDirectorTakeLive(take('done'))).toBe(false);
   });
 
   it('surfaces the Higgsfield error instead of "no take yet"', () => {
@@ -82,5 +84,68 @@ describe('collectClipElementRefs', () => {
     ], [
       { id: 'el-peter', name: 'Peter', type: 'character', description: '', images: [], createdAt: '', updatedAt: '' },
     ])).toEqual([]);
+  });
+});
+
+describe('takesGroupedForClip', () => {
+  const take = (id: string, variantKey: string, number = 1): DirectorClip['takes'][number] => ({
+    id, number, variantKey, status: 'done', adapterId: 'seedance-2.5',
+    modelId: 'seedance_2_5', promptSnapshot: '', createdAt: '',
+  });
+
+  const target: DirectorClip = {
+    ...clip('1A', 's1'),
+    seconds: 20,
+    beats: [
+      { n: 1, from: '0:00', to: '0:07', dur: 7, text: 'wait' },
+      { n: 2, from: '0:07', to: '0:14', dur: 7, text: 'enter' },
+    ],
+    takes: [
+      take('full-1', 'full'),
+      take('s1-n', '1:native'),
+      take('s2-h', '2:held'),
+    ],
+  };
+
+  it('keeps full and isolated takes in separate labeled groups', () => {
+    const groups = takesGroupedForClip(target, 'full');
+    expect(groups.map((group) => group.label)).toEqual(['Full', 'S1 · 7s', 'S2 · 20s held']);
+    expect(groups.find((group) => group.key === '1:native')?.takes.map((entry) => entry.id)).toEqual(['s1-n']);
+  });
+
+  it('hides empty unused variants but keeps the active one', () => {
+    const groups = takesGroupedForClip(target, '1:held');
+    expect(groups.map((group) => group.key)).toEqual(['full', '1:native', '1:held', '2:held']);
+    expect(groups.find((group) => group.key === '1:held')?.takes).toEqual([]);
+  });
+
+  it('counts both native and held takes on a shot', () => {
+    expect(takeCountForShot(target, 1)).toBe(1);
+    expect(takeCountForShot(target, 2)).toBe(1);
+    expect(takeCountForShot(target, 3)).toBe(0);
+  });
+});
+
+describe('preferredIsolateMode', () => {
+  const take = (id: string, variantKey: string): DirectorClip['takes'][number] => ({
+    id, number: 1, variantKey, status: 'done', adapterId: 'seedance-2.5',
+    modelId: 'seedance_2_5', promptSnapshot: '', createdAt: '',
+  });
+  const target: DirectorClip = {
+    ...clip('1A', 's1'),
+    beats: [{ n: 1, from: '0:00', to: '0:07', dur: 7, text: 'wait' }],
+    takes: [take('n1', '1:native')],
+  };
+
+  it('opens a shot on native when those takes exist', () => {
+    expect(preferredIsolateMode(target, 1, { kind: 'full' })).toBe('native');
+  });
+
+  it('keeps the current isolate length when already on a shot', () => {
+    expect(preferredIsolateMode(target, 1, { kind: 'isolated', beatN: 2, mode: 'held' })).toBe('held');
+  });
+
+  it('defaults to native when the shot has no takes', () => {
+    expect(preferredIsolateMode(clip('1A', 's1'), 1)).toBe('native');
   });
 });

@@ -162,6 +162,16 @@ describe('extractMediaUrl', () => {
       ],
     })).toEqual(['https://a/one.png', 'https://a/two.png']);
   });
+
+  it('reads seedance result_url and result_json video payloads', () => {
+    expect(extractMediaUrls({
+      status: 'completed',
+      result_url: 'https://cdn/out.mp4',
+    })).toEqual(['https://cdn/out.mp4']);
+    expect(extractMediaUrls({
+      result_json: '{"video":{"url":"https://cdn/from-json.mp4"}}',
+    })).toEqual(['https://cdn/from-json.mp4']);
+  });
 });
 
 describe('extractTextOutput', () => {
@@ -299,7 +309,7 @@ describe('Higgsfield 503 / job rejoin', () => {
       jobId: '572aea65-7865-48f9-b550-cdc9e494d065',
     });
     expect(() => parseGenerateJson(queued, { model: 'seedance_2_5', mediaType: 'video' }))
-      .toThrow(/without a media URL/);
+      .toThrow(/still running/);
     expect(extractHiggsfieldJobId(
       'Error: Higgsfield API error (HTTP 503). request failed with status 503 Service Unavailable',
       queued,

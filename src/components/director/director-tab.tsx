@@ -49,9 +49,11 @@ import {
 import {
   clipsForGenerateScope,
   generationPreflight,
+  isDirectorTakeLive,
   prepareDirectorGeneration,
   runtimeSeconds,
 } from '@/lib/director/generate';
+import { matchListedJobToTake } from '@/lib/director/rejoin-takes';
 import { getDirectorAdapter } from '@/lib/director/video-adapter';
 import { variantKey } from '@/lib/director/slate';
 import { generateId, timestamp } from '@/lib/utils/ids';
@@ -71,6 +73,12 @@ export function DirectorTab() {
   const foldersRef = useRef(state.mediaFolders);
   const elementsRef = useRef(state.elements);
   const enrichingTags = useRef<Set<string>>(new Set());
+  const recoverAttempted = useRef<Set<string>>(new Set());
+  const recoverInFlight = useRef(false);
+  const recoverTries = useRef(0);
+  const recoverTimer = useRef<number>();
+  const [recoverNonce, setRecoverNonce] = useState(0);
+  const [fetchingTake, setFetchingTake] = useState(false);
   showRef.current = show;
   foldersRef.current = state.mediaFolders;
   elementsRef.current = state.elements;
@@ -505,13 +513,28 @@ export function DirectorTab() {
     }, clip.id, prepared.take));
 
     try {
-      const result = await window.electronAPI.higgsfield.generate({
+      const submitted = await window.electronAPI.higgsfield.generate({
         prompt: prepared.request.prompt,
         model: prepared.request.modelId,
         outputType: 'video',
         params: prepared.request.params,
         medias: prepared.request.medias,
+        wait: false,
       });
+      const jobId = submitted.jobId;
+      if (jobId) {
+        recoverAttempted.current.add(prepared.take.id);
+        setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, { jobId }));
+      }
+      const result = submitted.url
+        ? submitted
+        : jobId
+          ? await window.electronAPI.higgsfield.generate({
+              jobId,
+              model: prepared.request.modelId,
+              outputType: 'video',
+            })
+          : submitted;
       if (!result.url) throw new Error('Higgsfield finished but returned no video URL.');
       dispatch({
         type: 'UPDATE_ASSET',
@@ -523,7 +546,10 @@ export function DirectorTab() {
           metadata: { generating: false, generatedVia: 'director', higgsfieldModel: prepared.request.modelId },
         },
       });
-      setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, { status: 'done' }));
+      setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, {
+        status: 'done',
+        jobId: result.jobId ?? jobId,
+      }));
       return null;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed';
@@ -569,6 +595,93 @@ export function DirectorTab() {
       jobStatus: lastError ? { type: 'generate', message: lastError, error: true } : null,
     });
   }, [generateOne, setShow]);
+
+  const recoverLiveTakes = useCallback(async () => {
+    if (!window.electronAPI?.higgsfield?.generate || recoverInFlight.current) return;
+    if (directorJobIsRunning(showRef.current, 'generate')) return;
+    const live: Array<{ clipId: string; take: (typeof showRef.current.clips)[number]['takes'][number] }> = [];
+    for (const clip of showRef.current.clips) {
+      for (const take of clip.takes) {
+        if (!isDirectorTakeLive(take) || recoverAttempted.current.has(take.id)) continue;
+        live.push({ clipId: clip.id, take });
+      }
+    }
+    if (live.length === 0) return;
+    recoverInFlight.current = true;
+    let retry = false;
+    try {
+      let listed: Array<Record<string, unknown>> | undefined;
+      for (const row of live) {
+        try {
+          let jobId = row.take.jobId;
+          if (!jobId && window.electronAPI.higgsfield.generateList) {
+            listed ??= await window.electronAPI.higgsfield.generateList({ video: true, size: 30 });
+            jobId = matchListedJobToTake(listed, row.take);
+          }
+          if (!jobId) {
+            retry = true;
+            continue;
+          }
+          const result = await window.electronAPI.higgsfield.generate({
+            jobId,
+            model: row.take.modelId,
+            outputType: 'video',
+            wait: false,
+          });
+          if (!result.url) {
+            retry = true;
+            continue;
+          }
+          recoverAttempted.current.add(row.take.id);
+          if (row.take.assetId) {
+            dispatch({
+              type: 'UPDATE_ASSET',
+              asset: {
+                id: row.take.assetId,
+                url: result.url,
+                fileRef: result.url,
+                duration: result.durationSec,
+                metadata: { generating: false, generatedVia: 'director', higgsfieldModel: row.take.modelId },
+              },
+            });
+          }
+          setShow(updateDirectorTake(showRef.current, row.clipId, row.take.id, {
+            status: 'done',
+            jobId,
+          }));
+        } catch {
+          retry = true;
+        }
+      }
+    } finally {
+      recoverInFlight.current = false;
+    }
+    if (retry && recoverTries.current < 12) {
+      recoverTries.current += 1;
+      window.clearTimeout(recoverTimer.current);
+      recoverTimer.current = window.setTimeout(() => setRecoverNonce((n) => n + 1), 4_000);
+    }
+  }, [dispatch, setShow]);
+
+  useEffect(() => {
+    void recoverLiveTakes();
+    return () => window.clearTimeout(recoverTimer.current);
+  }, [recoverLiveTakes, recoverNonce, show]);
+
+  const fetchLiveTake = useCallback(async () => {
+    recoverTries.current = 0;
+    for (const clip of showRef.current.clips) {
+      for (const take of clip.takes) {
+        if (isDirectorTakeLive(take)) recoverAttempted.current.delete(take.id);
+      }
+    }
+    setFetchingTake(true);
+    try {
+      await recoverLiveTakes();
+    } finally {
+      setFetchingTake(false);
+    }
+  }, [recoverLiveTakes]);
 
   const runRewrite = useCallback(async (notes: string) => {
     const current = showRef.current;
@@ -625,9 +738,12 @@ export function DirectorTab() {
     const current = showRef.current;
     const requestId = current.jobStatus?.requestId;
     const provider = parseDirectorLlmProvider(current.llmProvider);
-    // Hosted calls (fal, Higgsfield) have no kill switch — cancelling stops waiting.
-    if (requestId && provider !== 'fal' && provider !== 'higgsfield') {
-      void cancelCliCopilotChat(provider, requestId);
+    // Hosted calls (fal, Higgsfield, OpenAI) have no kill switch — cancelling just stops
+    // waiting. cliTransportFor maps a provider to the CLI actually running it (luna ->
+    // codex) and returns null for hosted ones.
+    const transport = cliTransportFor(provider);
+    if (requestId && transport) {
+      void cancelCliCopilotChat(transport, requestId);
     }
     setShow({ ...current, jobStatus: { type: 'look-bible', message: 'Cancelled', error: true } });
   }, [setShow]);
@@ -793,6 +909,8 @@ export function DirectorTab() {
             selectedBeatN={selectedBeatN} onSelectBeat={setSelectedBeatN}
             onChange={setShow}
             onGenerate={(scope) => void runGenerate(scope)}
+            onFetchTake={() => void fetchLiveTake()}
+            fetchingTake={fetchingTake}
             onRewrite={(notes) => void runRewrite(notes)}
             onKeepRewrite={() => { const current = selectedClip(show); if (current) setShow(keepPendingRewrite(show, current.id)); }}
             onDiscardRewrite={() => { const current = selectedClip(show); if (current) setShow(discardPendingRewrite(show, current.id)); }}

@@ -349,6 +349,7 @@ export const browserElectronAPI: BrowserElectronAPI = {
     authLogout: () => rpc('higgsfield', 'authLogout'),
     quickEdit: (params) => rpc('higgsfield', 'quickEdit', params),
     generate: (params) => rpc('higgsfield', 'generate', params),
+    generateList: (params) => rpc('higgsfield', 'generateList', params),
   },
   copilot: {
     analyzeVisualRefs: (params) => rpc('copilot', 'analyzeVisualRefs', params),

@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     authLogout: () => ipcRenderer.invoke('higgsfield:auth-logout'),
     quickEdit: (params: unknown) => ipcRenderer.invoke('higgsfield:quick-edit', params),
     generate: (params: unknown) => ipcRenderer.invoke('higgsfield:generate', params),
+    generateList: (params?: unknown) => ipcRenderer.invoke('higgsfield:generate-list', params),
   },
   copilot: {
     analyzeVisualRefs: (params: {

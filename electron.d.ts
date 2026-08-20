@@ -294,8 +294,12 @@ export interface ElectronAPI {
       model: string;
       outputType: 'image' | 'video' | 'audio' | 'text' | '3d';
       referenceValue?: string;
+      medias?: Array<{ value: string; role: string }>;
       params?: Record<string, unknown>;
+      jobId?: string;
+      wait?: boolean;
     }) => Promise<{ url?: string; text?: string; mediaType: 'image' | 'video' | 'audio' | 'text' | '3d'; durationSec?: number; jobId?: string; model: string }>;
+    generateList: (params?: { video?: boolean; size?: number }) => Promise<Array<Record<string, unknown>>>;
   };
   copilot: {
     analyzeVisualRefs: (params: {

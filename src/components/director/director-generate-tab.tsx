@@ -1,10 +1,15 @@
 import type { Asset } from '@/types/project';
-import type { DirectorClip, DirectorShow, IsolateVariant } from '@/types/director';
+import type { DirectorClip, DirectorShow, DirectorTake, IsolateVariant } from '@/types/director';
 import {
   directorJobIsRunning, selectedClip, selectedScene, setClipVariant, setHeroTake, updateDirectorClip,
 } from '@/lib/director/director-state';
-import { generateViewerMessage, runtimeSeconds, takesForVariant } from '@/lib/director/generate';
-import { variantKey } from '@/lib/director/slate';
+import {
+  isDirectorTakeLive, preferredIsolateMode, runtimeSeconds, takeCountForShot,
+  takesForVariant, takesGroupedForClip,
+} from '@/lib/director/generate';
+import { parseVariantKey, variantKey, variantTakeLabel } from '@/lib/director/slate';
+import { DirectorTakesBoard } from './director-takes-board';
+import { DirectorGenerateViewer } from './director-generate-viewer';
 import {
   applyBeatDurations, compileClipBody, retimeClipToSeconds, validateClipTimings, voicesFromBreakdown,
 } from '@/lib/director/prompt-compiler';
@@ -22,6 +27,8 @@ interface DirectorGenerateTabProps {
   onSelectBeat: (n: number) => void;
   onChange: (show: DirectorShow) => void;
   onGenerate: (scope: 'active' | 'queued' | 'scene') => void;
+  onFetchTake?: () => void;
+  fetchingTake?: boolean;
   onRewrite: (notes: string) => void;
   onKeepRewrite: () => void;
   onDiscardRewrite: () => void;
@@ -56,7 +63,9 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const clipLabel = clipDisplayLabels(show.scenes, show.clips).get(clip.id);
   const key = variantKey(clip.activeVariant);
   const takes = takesForVariant(clip, key);
+  const takeGroups = takesGroupedForClip(clip, key);
   const selectedTake = takes.find((take) => take.id === show.selectedTakeId) ?? takes[takes.length - 1];
+  const fullTakeCount = takesForVariant(clip, 'full').length;
   const asset = assets.find((entry) => entry.id === selectedTake?.assetId);
   const timingError = validateClipTimings(clip);
   const compiled = adapter.buildRequest({ show, clip, variant: clip.activeVariant }).prompt;
@@ -64,16 +73,38 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const isolated = variant.kind === 'isolated';
   const beatN = isolated ? variant.beatN : (clip.beats.some((beat) => beat.n === selectedBeatN) ? selectedBeatN : clip.beats[0]?.n ?? 1);
   const beat = clip.beats.find((entry) => entry.n === beatN);
+  const heldTakeCount = takesForVariant(clip, `${beatN}:held`).length;
+  const nativeTakeCount = takesForVariant(clip, `${beatN}:native`).length;
   const queuedCount = show.clips.filter((entry) => entry.queued).length;
   const sceneClipCount = show.clips.filter((entry) => entry.sceneId === scene?.id && !entry.altOf).length;
   const thisLabel = clipLabel ?? 'clip';
   const generating = directorJobIsRunning(show, 'generate');
-  const viewerMessage = generateViewerMessage(selectedTake, Boolean(asset?.url));
+  const liveTake = clip.takes.find((entry) => isDirectorTakeLive(entry));
+  const variantLabel = variantTakeLabel(clip, key);
 
-  const setVariant = (next: IsolateVariant) => onChange({ ...setClipVariant(show, clip.id, next), selectedClipId: clip.id });
+  const setVariant = (next: IsolateVariant) => {
+    const nextTakes = takesForVariant(clip, variantKey(next));
+    const keep = nextTakes.find((take) => take.id === show.selectedTakeId)
+      ?? nextTakes.find((take) => take.hero)
+      ?? nextTakes[nextTakes.length - 1];
+    onChange({
+      ...setClipVariant(show, clip.id, next),
+      selectedClipId: clip.id,
+      selectedTakeId: keep?.id,
+    });
+  };
   const pickShot = (n: number) => {
     onSelectBeat(n);
-    setVariant({ kind: 'isolated', beatN: n, mode: isolated ? variant.mode : 'held' });
+    setVariant({ kind: 'isolated', beatN: n, mode: preferredIsolateMode(clip, n, isolated ? variant : undefined) });
+  };
+  const pickTake = (take: DirectorTake) => {
+    const next = parseVariantKey(take.variantKey);
+    if (next.kind === 'isolated') onSelectBeat(next.beatN);
+    onChange({
+      ...setClipVariant(show, clip.id, next),
+      selectedClipId: clip.id,
+      selectedTakeId: take.id,
+    });
   };
 
   return (
@@ -96,12 +127,19 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
               <div className="dgen-actions">
                 <button
                   type="button"
-                  className="director-tab__btn director-tab__btn--accent"
+                  className={`director-tab__btn director-tab__btn--accent${generating ? ' director-tab__btn--busy' : ''}`}
                   onClick={() => onGenerate('active')}
                   disabled={generating}
                   title={generating ? 'Generating via Higgsfield CLI…' : `Generate this clip with ${adapter.label} (Higgsfield CLI)`}
                 >
-                  {generating ? 'Generating…' : `Generate ${thisLabel}${isolated ? ` · S${beatN}` : ''}`}
+                  {generating ? (
+                    <>
+                      <span className="dgen-busy-dot" aria-hidden />
+                      {liveTake ? `Rendering T${String(liveTake.number).padStart(2, '0')}` : 'Rendering…'}
+                    </>
+                  ) : (
+                    `Generate ${thisLabel}${isolated ? ` · S${beatN}` : ''}`
+                  )}
                 </button>
                 <span className="dgen-actions-rule" aria-hidden />
                 <label className="dsl-queue dgen-queue" title="Queue this clip for batch generate">
@@ -149,18 +187,23 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
               onClick={() => setVariant({ kind: 'full' })}
             >
               Full multishot
+              {fullTakeCount > 0 && <span className="dgen-seg-count">{fullTakeCount}</span>}
             </button>
-            {clip.beats.map((entry) => (
-              <button
-                key={entry.n}
-                type="button"
-                className={`dgen-seg-btn${isolated && variant.beatN === entry.n ? ' dgen-seg-btn--on' : ''}`}
-                title={entry.text}
-                onClick={() => pickShot(entry.n)}
-              >
-                S{entry.n}
-              </button>
-            ))}
+            {clip.beats.map((entry) => {
+              const shotTakes = takeCountForShot(clip, entry.n);
+              return (
+                <button
+                  key={entry.n}
+                  type="button"
+                  className={`dgen-seg-btn${isolated && variant.beatN === entry.n ? ' dgen-seg-btn--on' : ''}`}
+                  title={entry.text}
+                  onClick={() => pickShot(entry.n)}
+                >
+                  S{entry.n}
+                  {shotTakes > 0 && <span className="dgen-seg-count">{shotTakes}</span>}
+                </button>
+              );
+            })}
           </div>
           {isolated && beat && (
             <div className="dgen-seg" role="group" aria-label="Isolation length">
@@ -170,6 +213,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                 onClick={() => setVariant({ kind: 'isolated', beatN, mode: 'held' })}
               >
                 Held · {clip.seconds}s
+                {heldTakeCount > 0 && <span className="dgen-seg-count">{heldTakeCount}</span>}
               </button>
               <button
                 type="button"
@@ -177,32 +221,32 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                 onClick={() => setVariant({ kind: 'isolated', beatN, mode: 'native' })}
               >
                 Native · {beat.dur}s
+                {nativeTakeCount > 0 && <span className="dgen-seg-count">{nativeTakeCount}</span>}
               </button>
             </div>
           )}
 
-          <div className="director-tab__viewer dgen-viewer">
-            {asset?.url ? <video src={asset.url} controls /> : (
-              <span className={`director-tab__empty${selectedTake?.status === 'failed' ? ' director-tab__empty--err' : ''}`}>
-                {viewerMessage}
-              </span>
-            )}
-          </div>
+          <DirectorGenerateViewer
+            assetUrl={asset?.url}
+            take={selectedTake}
+            variantLabel={variantLabel}
+            adapterLabel={adapter.label}
+            clipLabel={`${thisLabel} · ${clip.title}`}
+            onFetchTake={props.onFetchTake}
+            fetchingTake={props.fetchingTake}
+          />
 
-          <div className="dgen-takes">
-            <span className="dsl-scenefield-label">Takes · double-click to mark hero</span>
-            <div className="director-tab__takes">
-              {takes.length === 0 && <span className="director-tab__meta">None yet</span>}
-              {takes.map((take) => (
-                <button key={take.id} type="button" title={take.error || take.status}
-                  className={`director-tab__take${take.id === selectedTake?.id ? ' director-tab__take--active' : ''}${take.hero ? ' director-tab__take--hero' : ''}${take.status === 'failed' ? ' director-tab__take--failed' : ''}`}
-                  onClick={() => onChange({ ...show, selectedTakeId: take.id })}
-                  onDoubleClick={() => onChange(setHeroTake(show, clip.id, take.id))}>
-                  T{String(take.number).padStart(2, '0')}{take.hero ? ' ★' : ''}
-                </button>
-              ))}
-            </div>
-          </div>
+          <DirectorTakesBoard
+            groups={takeGroups}
+            activeKey={key}
+            selectedTakeId={selectedTake?.id}
+            onSelectGroup={(next) => {
+              if (next.kind === 'isolated') onSelectBeat(next.beatN);
+              setVariant(next);
+            }}
+            onSelectTake={pickTake}
+            onHeroTake={(takeId) => onChange(setHeroTake(show, clip.id, takeId))}
+          />
 
           <div className="dgen-notes">
             <span className="dsl-scenefield-label">Director&rsquo;s notes — rewrite this variant</span>

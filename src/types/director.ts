@@ -72,6 +72,8 @@ export interface DirectorTake {
   notes?: string;
   error?: string;
   createdAt: string;
+  /** Higgsfield job id so a reload can rejoin a take that already finished on their side. */
+  jobId?: string;
 }
 
 export interface DirectorClip {
