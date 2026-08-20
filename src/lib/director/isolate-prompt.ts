@@ -1,6 +1,7 @@
 import type { DirectorBeat, DirectorClip, IsolateMode } from '@/types/director';
 import {
   compileActingBlock,
+  compileDialogueBlock,
   compileOpticsBlock,
   compileStagingBlock,
   compileVoiceBlock,
@@ -167,6 +168,7 @@ export function isolatedPrompt(
     action,
     compileActingBlock(clip.acting),
     compileVoiceBlock(voiceScope, options?.voices),
+    compileDialogueBlock(voiceScope),
     camera,
     clip.style ? `STYLE — ${clip.style}` : '',
     clip.lock ? isoLock(clip.lock) : '',

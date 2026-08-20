@@ -1,6 +1,7 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { app, ipcMain, BrowserWindow } from 'electron';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -18,7 +19,7 @@ interface ClaudeCodeChatParams {
   resumeSessionId?: string;
   injectProjectContext?: boolean;
   contextRefresh?: boolean;
-  purpose?: 'copilot' | 'enhance-prompt';
+  purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
   systemPrompt?: string;
   userMessage: string;
   messages?: ClaudeCodeMessage[];
@@ -186,13 +187,28 @@ function extractStreamToken(obj: Record<string, unknown>): string {
   return '';
 }
 
-function buildPrompt(params: ClaudeCodeChatParams): string {
+function getClaudeWorkspaceDir(): string {
+  return path.join(app.getPath('userData'), 'claude-code-workspace');
+}
+
+/** Director (and other headless JSON) jobs must not boot inside the CineGen repo.
+ *  Copilot chat stays in the app cwd so session resume and project context keep working. */
+function isHeadlessJsonJob(params: ClaudeCodeChatParams): boolean {
+  if (params.purpose === 'json-job') return true;
+  if (params.purpose === 'copilot' || params.purpose === 'enhance-prompt') return false;
+  return !params.injectProjectContext
+    && !params.resumeSessionId
+    && !(params.messages && params.messages.length > 0);
+}
+
+function buildPrompt(params: ClaudeCodeChatParams, jsonJob: boolean): string {
   if (params.injectProjectContext) {
     const history = (params.messages ?? []).filter((message) => message.content.trim());
     if (history.length > 0) {
       return buildConversationPrompt(history);
     }
   }
+  if (jsonJob) return params.userMessage.trim();
   return `${params.userMessage.trim()}\n\nAssistant:\n`;
 }
 
@@ -211,14 +227,14 @@ async function streamClaudeCodeChat(
 
   const model = params.model?.trim() || 'sonnet';
   const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
+  const jsonJob = isHeadlessJsonJob(params);
 
   const args = [
     '-p',
-    canResume ? params.userMessage.trim() : buildPrompt(params),
+    canResume ? params.userMessage.trim() : buildPrompt(params, jsonJob),
     '--output-format',
     'stream-json',
     '--verbose',
-    '--include-partial-messages',
     '--max-turns',
     COPILOT_MAX_TURNS,
     '--model',
@@ -233,11 +249,28 @@ async function streamClaudeCodeChat(
     'dontAsk',
   ];
 
+  if (jsonJob) {
+    // Spawn used to inherit Electron's cwd (the CineGen repo). Claude Code then
+    // discovered CLAUDE.md, skills, hooks, plugins, and git status on EVERY
+    // shotlist batch — that's why a raw `claude -p` felt fast and the app did not.
+    // --safe-mode keeps OAuth/keychain auth (unlike --bare, which refuses both).
+    // Sessions are kept so later batches in the same scene can --resume and hit
+    // the prompt cache instead of paying a cold 15k-token prefill each round.
+    args.push('--safe-mode', '--effort', 'low', '--include-partial-messages');
+    if (!canResume && params.systemPrompt?.trim()) {
+      args.push('--system-prompt', params.systemPrompt.trim());
+    }
+  } else {
+    args.push('--include-partial-messages');
+  }
+
   if (canResume && params.resumeSessionId) {
     args.push('--resume', params.resumeSessionId);
-    const resumeAppend = [params.systemPrompt?.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join('\n\n');
-    args.push('--append-system-prompt', resumeAppend);
-  } else if (params.injectProjectContext && params.systemPrompt?.trim()) {
+    if (!jsonJob) {
+      const resumeAppend = [params.systemPrompt?.trim(), COPILOT_RESUME_REMINDER].filter(Boolean).join('\n\n');
+      args.push('--append-system-prompt', resumeAppend);
+    }
+  } else if (!jsonJob && params.injectProjectContext && params.systemPrompt?.trim()) {
     const refreshPrefix = params.contextRefresh
       ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
       : '';
@@ -246,6 +279,8 @@ async function streamClaudeCodeChat(
   }
 
   const win = getMainWindow();
+  const workDir = jsonJob ? getClaudeWorkspaceDir() : undefined;
+  if (workDir) await mkdir(workDir, { recursive: true });
   let fullContent = '';
   let stderrBuffer = '';
   let sessionId: string | undefined;
@@ -257,6 +292,7 @@ async function streamClaudeCodeChat(
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
       env: buildPathEnv(),
+      ...(workDir ? { cwd: workDir } : {}),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

@@ -1,6 +1,9 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { compactCodexCliError } from '@/lib/llm/codex-cli-error';
 import {
   buildCliPathEnv,
   buildConversationPrompt,
@@ -15,14 +18,36 @@ import {
 
 let activeRequest: ActiveCliRequest | null = null;
 
-function buildCodexPrompt(params: CliCopilotChatParams): string {
+function getCodexWorkspaceDir(): string {
+  return path.join(app.getPath('userData'), 'codex-workspace');
+}
+
+function isHeadlessJsonJob(params: CliCopilotChatParams): boolean {
+  if (params.purpose === 'json-job') return true;
+  if (params.purpose === 'copilot' || params.purpose === 'enhance-prompt') return false;
+  return !params.injectProjectContext
+    && !params.resumeSessionId
+    && !(params.messages && params.messages.length > 0);
+}
+
+function buildCodexPrompt(params: CliCopilotChatParams, jsonJob: boolean): string {
+  if (jsonJob) {
+    const system = params.systemPrompt?.trim() ?? '';
+    const user = params.userMessage.trim();
+    return system ? `${system}\n\n${user}` : user;
+  }
+
   const systemParts: string[] = [];
-  if (params.injectProjectContext && params.systemPrompt?.trim()) {
-    const refreshPrefix = params.contextRefresh
-      ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
-      : '';
-    const suffix = params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
-    systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}\n\n${suffix}`);
+  if (params.systemPrompt?.trim()) {
+    if (params.injectProjectContext) {
+      const refreshPrefix = params.contextRefresh
+        ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
+        : '';
+      const suffix = params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
+      systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}\n\n${suffix}`);
+    } else {
+      systemParts.push(params.systemPrompt.trim());
+    }
   }
 
   const history = (params.messages ?? []).filter((message) => message.content.trim());
@@ -72,22 +97,24 @@ async function streamCodexChat(
 
   const model = params.model?.trim() || 'gpt-5.3-codex';
   const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
-  const args = ['exec'];
+  const jsonJob = isHeadlessJsonJob(params);
+  const prompt = canResume ? params.userMessage.trim() : buildCodexPrompt(params, jsonJob);
+  const workDir = jsonJob ? getCodexWorkspaceDir() : undefined;
+  if (workDir) await mkdir(workDir, { recursive: true });
 
-  if (canResume && params.resumeSessionId) {
-    args.push('resume', params.resumeSessionId, params.userMessage.trim());
-  } else {
-    args.push(buildCodexPrompt(params));
+  const args = ['exec', '--json', '-s', 'read-only', '-m', model, '--skip-git-repo-check'];
+  if (jsonJob) {
+    // Spawn used to inherit Electron's cwd (the CineGen repo) and ~/.codex/config.toml,
+    // which boots the user's MCP fleet (Cloudflare, Linear, …) on every shotlist batch.
+    args.push('--ignore-user-config', '--ignore-rules');
+    if (workDir) args.push('-C', workDir);
   }
-
-  args.push(
-    '--json',
-    '-s',
-    'read-only',
-    '-m',
-    model,
-    '--skip-git-repo-check',
-  );
+  if (canResume && params.resumeSessionId) {
+    args.push('resume', params.resumeSessionId);
+    if (!jsonJob) args.push(prompt);
+  } else if (!jsonJob) {
+    args.push(prompt);
+  }
 
   const win = getMainWindow();
   let fullContent = '';
@@ -99,8 +126,14 @@ async function streamCodexChat(
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
       env: buildCliPathEnv(),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: workDir,
+      stdio: jsonJob ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
     });
+
+    if (jsonJob) {
+      child.stdin?.write(prompt);
+      child.stdin?.end();
+    }
 
     activeRequest = { child, requestId, provider: 'codex' };
 
@@ -162,7 +195,7 @@ async function streamCodexChat(
 
       const trimmed = fullContent.trim();
       if (!trimmed) {
-        reject(new Error(stderrBuffer.trim() || `Codex exited with code ${code ?? 'unknown'}`));
+        reject(new Error(compactCodexCliError(stderrBuffer, code)));
         return;
       }
 

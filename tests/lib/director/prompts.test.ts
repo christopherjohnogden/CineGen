@@ -4,7 +4,7 @@ import { isolatedPrompt, rewritePrefixForIsolate } from '@/lib/director/isolate-
 import { compileClipBody, retimeClipToSeconds, validateClipTimings } from '@/lib/director/prompt-compiler';
 import { seedance25Adapter } from '@/lib/director/video-adapter';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
-import { BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, BREAKDOWN_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
+import { BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, BREAKDOWN_SYSTEM_PROMPT, shotlistContinueSystemPrompt, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
 
 const clip: DirectorClip = {
   id: '2-9b',
@@ -34,6 +34,23 @@ describe('director prompt compiler', () => {
     expect(body).toContain('FORMAT — 20 SECONDS, THREE SHOTS');
     expect(body).toContain('SHOT 1 (0:00–0:07)');
     expect(body).toContain('SHOT 3 (0:14–0:20)');
+  });
+
+  it('ships the dialogue discipline with any clip that carries a quoted line', () => {
+    const body = compileClipBody(clip);
+    expect(body).toContain('DIALOGUE — Only the quoted scripted lines are spoken');
+    const silent = { ...clip, beats: clip.beats.map((beat) => ({ ...beat, quote: undefined })) };
+    expect(compileClipBody(silent)).not.toContain('DIALOGUE —');
+  });
+
+  it('formats a single-beat clip as one continuous take, never one shot with cuts', () => {
+    const single: DirectorClip = {
+      ...clip,
+      beats: [{ n: 1, from: '0:00', to: '0:20', dur: 20, text: 'He holds the look.', cam: 'CLOSE, locked' }],
+    };
+    const body = compileClipBody(single);
+    expect(body).toContain('ONE CONTINUOUS UNBROKEN TAKE');
+    expect(body).not.toContain('with hard cuts');
   });
 
   it('rejects mistimed clips', () => {
@@ -98,6 +115,30 @@ describe('seedance 2.5 adapter', () => {
     };
     const full = seedance25Adapter.buildRequest({ show, clip: edited, variant: { kind: 'full' } });
     expect(full.prompt).toContain('ELEMENTS — @Edited');
+  });
+});
+
+describe('shotlist system prompts', () => {
+  it('mandates full-scene coverage with page math', () => {
+    const prompt = shotlistSystemPrompt(20, '2–3 shots');
+    expect(prompt).toMatch(/COVERAGE — this is the most important rule/);
+    expect(prompt).toMatch(/first line to its last/);
+    expect(prompt).toMatch(/nine-page scene needs twenty or more/);
+    expect(prompt).toMatch(/"coveredToEnd"/);
+    expect(prompt).toMatch(/never claim true early/);
+  });
+  it('continuation prompt forbids repeating existing clips and demands the scene END', () => {
+    const prompt = shotlistContinueSystemPrompt(20, '2–3 shots');
+    expect(prompt).toMatch(/CONTINUATION/);
+    expect(prompt).toMatch(/Do NOT repeat/);
+    expect(prompt).toMatch(/scene's END/);
+    expect(prompt).toMatch(/never invent material past the script/);
+  });
+  it('batch mode caps clips per response without compressing the scene', () => {
+    const prompt = shotlistSystemPrompt(20, '2–3 shots', 6);
+    expect(prompt).toMatch(/BATCH MODE — return AT MOST 6 clips/);
+    expect(prompt).toMatch(/NEVER compress the scene/);
+    expect(shotlistSystemPrompt(20, '2–3 shots')).not.toMatch(/BATCH MODE/);
   });
 });
 

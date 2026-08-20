@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Element } from '@/types/elements';
-import { findMatchingElement, itemsMissingElements, mergeBreakdownItems, parseBreakdownPayload } from '@/lib/director/breakdown';
-import { mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
+import { assignBreakdownElement, findMatchingElement, itemsMissingElements, mergeBreakdownItems, parseBreakdownPayload } from '@/lib/director/breakdown';
+import { clipDisplayLabels, mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
 import { planDirectorFolders } from '@/lib/director/folders';
 import { createPendingTake } from '@/lib/director/generate';
 import type { DirectorBreakdownItem, DirectorClip, DirectorScene } from '@/types/director';
@@ -27,6 +27,15 @@ describe('director breakdown', () => {
     const merged = mergeBreakdownItems([], parsed.items, elements);
     expect(merged[0].elementId).toBe('el-1');
     expect(itemsMissingElements(merged, elements)).toEqual([]);
+  });
+
+  it('assigns a suggestion onto an existing library element without creating one', () => {
+    const items: DirectorBreakdownItem[] = [{
+      id: 'p1', kind: 'prop', name: 'Sofa', tag: '@Sofa', description: 'olive velvet',
+    }];
+    const assigned = assignBreakdownElement(items, '@Sofa', 'el-sofa');
+    expect(assigned[0].elementId).toBe('el-sofa');
+    expect(items[0].elementId).toBeUndefined();
   });
 
   it('does not duplicate on re-merge', () => {
@@ -98,6 +107,129 @@ describe('director shotlist parse', () => {
     }];
     const merged = mergeShotlist(incoming.scenes, existing, incoming);
     expect(merged.clips[0].takes[0].id).toBe('keep');
+  });
+
+  it('remaps LLM-invented scene ids onto the existing scenes so new clips never orphan', () => {
+    // The breakdown assigned real ids; the LLM answered with "scene-1"-style
+    // ids of its own. Clips must land on the existing scenes regardless.
+    const existingScenes: DirectorScene[] = [{
+      id: 'real-scene-a', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [],
+    }, {
+      id: 'real-scene-b', number: 2, label: 'EXT. FOREST - DAY', summary: '', elementIds: [], clipIds: [],
+    }];
+    const incoming = parseShotlistPayload({
+      scenes: [
+        { id: 'scene-1', number: 1, label: 'INT. OFFICE - DAY', summary: 's' },
+        { id: 'scene-2', number: 2, label: 'EXT. FOREST - DAY', summary: 's' },
+      ],
+      clips: [
+        {
+          id: '1-1a', title: 'Pill', seconds: 20, sceneId: 'scene-1', subject: '', location: '', style: '', constraints: '',
+          beats: [{ n: 1, from: '0:00', to: '0:20', dur: 20, text: 'He takes the pill.' }],
+        },
+        {
+          id: '2-1a', title: 'Forest', seconds: 20, sceneId: 'totally-unknown', subject: '', location: '', style: '', constraints: '',
+          beats: [{ n: 1, from: '0:00', to: '0:20', dur: 20, text: 'He wakes in the forest.' }],
+        },
+        {
+          // A model told to copy sceneIds verbatim sometimes bakes them into
+          // the clip id too — it must normalize back to "number-letter".
+          id: 'real-scene-a-1b', title: 'Arm', seconds: 20, sceneId: 'real-scene-a', subject: '', location: '', style: '', constraints: '',
+          beats: [{ n: 1, from: '0:00', to: '0:20', dur: 20, text: 'He shows the arm.' }],
+        },
+      ],
+    });
+    const merged = mergeShotlist(existingScenes, [], incoming);
+    expect(merged.scenes).toHaveLength(2); // matched by label, not appended
+    expect(merged.clips.find((c) => c.id === '1-1a')?.sceneId).toBe('real-scene-a');
+    // Unknown sceneId falls back to the scene number in the clip id prefix.
+    expect(merged.clips.find((c) => c.id === '2-1a')?.sceneId).toBe('real-scene-b');
+    expect(merged.scenes.find((s) => s.id === 'real-scene-a')?.clipIds).toContain('1-1a');
+    // Uuid-prefixed clip id normalized to scene number + suffix.
+    expect(merged.clips.some((c) => c.id === '1-1b')).toBe(true);
+    expect(merged.clips.some((c) => c.id.includes('real-scene-a-'))).toBe(false);
+  });
+
+  it('keeps clips whose identity fields drift (label/clipId/name) instead of dropping them', () => {
+    const parsed = parseShotlistPayload({
+      clips: [
+        { label: '1-c', name: 'The turn', seconds: 20, sceneId: 's1', beats: [{ n: 1, from: '0:00', to: '0:20', dur: 20, text: 'He turns.' }] },
+        { clipId: '1-d', gist: 'The reply', seconds: 20, sceneId: 's1', beats: [{ n: 1, from: '0:00', to: '0:20', dur: 20, text: 'She answers.' }] },
+      ],
+    }, 's1');
+    expect(parsed.rawClipCount).toBe(2);
+    expect(parsed.clips).toHaveLength(2);
+    expect(parsed.clips[0].id).toBe('1-c');
+    expect(parsed.clips[0].title).toBe('The turn');
+    expect(parsed.clips[1].id).toBe('1-d');
+    expect(parsed.clips[1].title).toBe('The reply');
+  });
+
+  it('reads drifted beat shapes ("shots", description text, timecode-only durations) and self-heals timing', () => {
+    const parsed = parseShotlistPayload({
+      clips: [{
+        id: '1-e', title: 'Drift', seconds: 20, sceneId: 's1',
+        // "shots" instead of "beats"; description instead of text; no dur — only from/to.
+        shots: [
+          { n: 1, from: '0:00', to: '0:12', description: 'He stands.' },
+          { n: 2, from: '0:12', to: '0:18', content: 'She replies.', dialogue: 'No.', character: 'Ada' },
+        ],
+      }],
+    }, 's1');
+    expect(parsed.errors).toEqual([]);
+    const clip = parsed.clips[0];
+    expect(clip.beats).toHaveLength(2);
+    expect(clip.beats[0].text).toBe('He stands.');
+    expect(clip.beats[1].quote).toBe('No.');
+    expect(clip.beats[1].speaker).toBe('@Ada');
+    // 12s + 6s ≠ 20s — proportionally retimed to the stated clip length.
+    expect(clip.beats.reduce((sum, beat) => sum + beat.dur, 0)).toBe(20);
+    expect(clip.seconds).toBe(20);
+  });
+
+  it('parses the coveredToEnd report in boolean and string forms', () => {
+    expect(parseShotlistPayload({ clips: [], coveredToEnd: true }, 's1').coveredToEnd).toBe(true);
+    expect(parseShotlistPayload({ clips: [], coveredToEnd: 'false' }, 's1').coveredToEnd).toBe(false);
+    expect(parseShotlistPayload({ clips: [] }, 's1').coveredToEnd).toBeUndefined();
+  });
+
+  it('labels clips by scene number + position letter, regardless of stored id', () => {
+    const scenes: DirectorScene[] = [
+      { id: 'sa', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+      { id: 'sb', number: 2, label: 'EXT. FOREST - DAY', summary: '', elementIds: [], clipIds: [] },
+    ];
+    const clip = (id: string, sceneId: string, altOf?: string): DirectorClip => ({
+      id, title: id, seconds: 20, sceneId, altOf, beats: [], subject: '', location: '', style: '', constraints: '',
+      elementTags: [], activeVariant: { kind: 'full' }, bodyEdits: {}, takes: [],
+    });
+    const labels = clipDisplayLabels(scenes, [
+      clip('ugly-uuid-1a', 'sa'),
+      clip('ugly-uuid-1b', 'sa'),
+      clip('x', 'sb'),
+      clip('x-alt', 'sb', 'x'),
+    ]);
+    expect(labels.get('ugly-uuid-1a')).toBe('1A');
+    expect(labels.get('ugly-uuid-1b')).toBe('1B');
+    expect(labels.get('x')).toBe('2A');
+    expect(labels.get('x-alt')).toBe('2A ALT');
+  });
+
+  it('slate letters skip O and roll over to AA after Z', () => {
+    const scenes: DirectorScene[] = [
+      { id: 'sa', number: 1, label: 'INT. OFFICE - DAY', summary: '', elementIds: [], clipIds: [] },
+    ];
+    const many = Array.from({ length: 52 }, (_, i) => ({
+      id: `c${i}`, title: `clip ${i}`, seconds: 20, sceneId: 'sa', beats: [], subject: '', location: '',
+      style: '', constraints: '', elementTags: [], activeVariant: { kind: 'full' as const }, bodyEdits: {}, takes: [],
+    }));
+    const labels = clipDisplayLabels(scenes, many);
+    expect(labels.get('c13')).toBe('1N');
+    expect(labels.get('c14')).toBe('1P');  // O skipped — reads as a zero
+    expect(labels.get('c24')).toBe('1Z');
+    expect(labels.get('c25')).toBe('1AA'); // rollover
+    expect(labels.get('c26')).toBe('1AB');
+    expect(labels.get('c49')).toBe('1AZ');
+    expect(labels.get('c50')).toBe('1BA');
   });
 });
 

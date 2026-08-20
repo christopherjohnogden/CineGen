@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import type { ScriptScene } from '@/lib/director/scene-split';
-import { highlightRuns } from '@/lib/director/scene-assets';
-import type { BreakdownKind, DirectorBreakdownItem } from '@/types/director';
+import { highlightRunsForScene } from '@/lib/director/scene-assets';
+import type { BreakdownKind, DirectorShow } from '@/types/director';
 import { PaginatedPages } from './paginated-pages';
 
 interface SceneScriptViewProps {
   scene: ScriptScene;
-  breakdown: DirectorBreakdownItem[];
+  sceneIndex: number;
+  show: DirectorShow;
   onAssetClick: (kind: BreakdownKind, name: string) => void;
   /** Tag the currently-highlighted text as a breakdown element of the given kind. */
   onTagSelection: (kind: BreakdownKind, name: string) => void;
@@ -21,7 +22,7 @@ const KIND_OPTIONS: { kind: BreakdownKind; label: string }[] = [
 
 interface Popover { name: string; x: number; y: number }
 
-export function SceneScriptView({ scene, breakdown, onAssetClick, onTagSelection }: SceneScriptViewProps) {
+export function SceneScriptView({ scene, sceneIndex, show, onAssetClick, onTagSelection }: SceneScriptViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [pop, setPop] = useState<Popover | null>(null);
 
@@ -57,7 +58,7 @@ export function SceneScriptView({ scene, breakdown, onAssetClick, onTagSelection
         items={scene.elements}
         renderItem={(el) => (
           <div data-el-id={el.id} className={`dse-el dse-el--${el.type}`}>
-            {highlightRuns(el.text, breakdown).map((run, i) =>
+            {highlightRunsForScene(el.text, show, sceneIndex, scene).map((run, i) =>
               run.kind ? (
                 <mark
                   key={i}

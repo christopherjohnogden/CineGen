@@ -187,7 +187,7 @@ function validateCliChatParams(value, provider) {
   const injectProjectContext = optionalBoolean(params.injectProjectContext, 'Project context flag');
   const contextRefresh = optionalBoolean(params.contextRefresh, 'Context refresh flag');
   const purpose = params.purpose ?? 'copilot';
-  if (!['copilot', 'enhance-prompt'].includes(purpose)) {
+  if (!['copilot', 'enhance-prompt', 'json-job'].includes(purpose)) {
     throw new ServiceError('CLI chat purpose is invalid.', { code: 'INVALID_INPUT' });
   }
   if (params.visualRefs !== undefined && params.visualRefs !== null) {
@@ -469,16 +469,18 @@ function createNdjsonParser(onObject, maxLineBytes) {
 }
 
 function buildClaudeSpec(params, command, context) {
+  const jsonJob = params.purpose === 'json-job';
   const history = params.messages.filter((message) => message.content);
-  const prompt = params.injectProjectContext && history.length > 0
-    ? buildConversationPrompt(history)
-    : `${params.userMessage}\n\nAssistant:\n`;
+  const prompt = jsonJob
+    ? params.userMessage
+    : (params.injectProjectContext && history.length > 0
+      ? buildConversationPrompt(history)
+      : `${params.userMessage}\n\nAssistant:\n`);
   const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
   const args = [
     '-p', canResume ? params.userMessage : prompt,
     '--output-format', 'stream-json',
     '--verbose',
-    '--include-partial-messages',
     '--max-turns', '2',
     '--model', params.model,
     '--tools', '',
@@ -488,10 +490,18 @@ function buildClaudeSpec(params, command, context) {
     '--strict-mcp-config',
     '--permission-mode', 'dontAsk',
   ];
+  if (jsonJob) {
+    args.push('--safe-mode', '--effort', 'low', '--include-partial-messages');
+    if (!canResume && params.systemPrompt) args.push('--system-prompt', params.systemPrompt);
+  } else {
+    args.push('--include-partial-messages');
+  }
   if (canResume) {
     args.push('--resume', params.resumeSessionId);
-    args.push('--append-system-prompt', [params.systemPrompt, COPILOT_RESUME_REMINDER].filter(Boolean).join('\n\n'));
-  } else if (params.injectProjectContext && params.systemPrompt) {
+    if (!jsonJob) {
+      args.push('--append-system-prompt', [params.systemPrompt, COPILOT_RESUME_REMINDER].filter(Boolean).join('\n\n'));
+    }
+  } else if (!jsonJob && params.injectProjectContext && params.systemPrompt) {
     const refresh = params.contextRefresh
       ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
       : '';
@@ -502,37 +512,84 @@ function buildClaudeSpec(params, command, context) {
   return { command, args, cwd: context.cwd, env: context.env, shell: false, canResume };
 }
 
+function compactCodexCliError(stderr, exitCode) {
+  const text = stripAnsiCodes(String(stderr ?? '')).replace(/\r/g, '').trim();
+  const usage = text.match(/You've hit your usage limit\.[^\n]*/i);
+  if (usage) {
+    return `${usage[0].trim()} Luna and Codex share your ChatGPT Codex quota — pick fal.ai in the LLM picker, or wait for the reset.`;
+  }
+  const cleaned = text
+    .split('\n')
+    .filter((line) => {
+      const row = line.trim();
+      if (!row) return false;
+      if (/^Reading additional input from stdin/i.test(row)) return false;
+      if (/codex_models_manager::cache/i.test(row)) return false;
+      if (/rmcp::transport/i.test(row)) return false;
+      if (/AuthRequiredError|AuthRequired\(/i.test(row)) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+  return cleaned || `Codex exited with code ${exitCode ?? 'unknown'}`;
+}
+
 function buildCodexSpec(params, command, context) {
+  const jsonJob = params.purpose === 'json-job';
   const systemParts = [];
-  if (params.injectProjectContext && params.systemPrompt) {
-    const refresh = params.contextRefresh
-      ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
-      : '';
-    const suffix = params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
-    systemParts.push(`${refresh}${params.systemPrompt}\n\n${suffix}`);
+  if (params.systemPrompt) {
+    if (jsonJob) {
+      systemParts.push(params.systemPrompt);
+    } else if (params.injectProjectContext) {
+      const refresh = params.contextRefresh
+        ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
+        : '';
+      const suffix = params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
+      systemParts.push(`${refresh}${params.systemPrompt}\n\n${suffix}`);
+    } else {
+      systemParts.push(params.systemPrompt);
+    }
   }
   const history = params.messages.filter((message) => message.content);
-  const conversation = history.length > 0
-    ? buildConversationPrompt(history)
-    : `${params.userMessage}\n\nAssistant:\n`;
-  const prompt = systemParts.length > 0 ? `${systemParts.join('\n\n')}\n\n${conversation}` : params.userMessage;
+  const conversation = jsonJob
+    ? params.userMessage
+    : (history.length > 0
+      ? buildConversationPrompt(history)
+      : `${params.userMessage}\n\nAssistant:\n`);
+  const prompt = systemParts.length > 0 ? `${systemParts.join('\n\n')}\n\n${conversation}` : conversation;
   const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
-  const args = ['exec'];
-  if (canResume) args.push('resume', params.resumeSessionId, params.userMessage);
-  else args.push(prompt);
-  args.push('--json', '-s', 'read-only', '-m', params.model, '--skip-git-repo-check');
-  context.assertArgSize(args);
-  return { command, args, cwd: context.cwd, env: context.env, shell: false, canResume };
+  const args = ['exec', '--json', '-s', 'read-only', '-m', params.model, '--skip-git-repo-check'];
+  if (jsonJob) args.push('--ignore-user-config', '--ignore-rules');
+  if (canResume) {
+    args.push('resume', params.resumeSessionId);
+    if (!jsonJob) args.push(params.userMessage);
+  } else if (!jsonJob) {
+    args.push(prompt);
+  }
+  if (!jsonJob) context.assertArgSize(args);
+  return {
+    command,
+    args,
+    cwd: context.cwd,
+    env: context.env,
+    shell: false,
+    canResume,
+    ...(jsonJob ? { stdin: canResume ? params.userMessage : prompt } : {}),
+  };
 }
 
 function buildGeminiSpec(params, command, context) {
   const systemParts = [];
-  if (params.injectProjectContext && params.systemPrompt) {
-    const refresh = params.contextRefresh
-      ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
-      : '';
-    const suffix = params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
-    systemParts.push(`${refresh}${params.systemPrompt}\n\n${suffix}`);
+  if (params.systemPrompt) {
+    if (params.injectProjectContext) {
+      const refresh = params.contextRefresh
+        ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
+        : '';
+      const suffix = params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX;
+      systemParts.push(`${refresh}${params.systemPrompt}\n\n${suffix}`);
+    } else {
+      systemParts.push(params.systemPrompt);
+    }
   }
   const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
   let prompt;
@@ -724,6 +781,9 @@ function createCliAccumulator(provider, requestId, emit, limits) {
       }
       if (!message) {
         let failure = cleanStderr;
+        if (provider === 'codex') {
+          failure = compactCodexCliError(cleanStderr, exit?.code);
+        }
         if (provider === 'claude-code' && isPlainRecord(lastResult)) {
           const errors = Array.isArray(lastResult.errors)
             ? lastResult.errors.filter((entry) => typeof entry === 'string').join(' ')

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type MouseEvent, type ReactNode } from 'react';
 import { paginate } from '@/lib/director/paginate';
 import { useMeasuredHeights } from './use-measured-heights';
 
@@ -23,9 +23,11 @@ interface PaginatedPagesProps<T extends PaginatedItem> {
   trailing?: ReactNode;
   /** Optional content pinned at the top of the flow (e.g. a sticky accept/decline bar). */
   leading?: ReactNode;
+  /** Click anywhere on the page surface (used by the editor for click-to-type). */
+  onFlowClick?: (event: MouseEvent<HTMLDivElement>) => void;
 }
 
-export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, trailing, leading }: PaginatedPagesProps<T>) {
+export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, trailing, leading, onFlowClick }: PaginatedPagesProps<T>) {
   const flowRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef<HTMLDivElement>(null);
 
@@ -69,7 +71,7 @@ export function PaginatedPages<T extends PaginatedItem>({ items, renderItem, tra
       {leading && <div className="dxf-stickywrap">{leading}</div>}
       <div className="dse-pageflow">
         <div className="dse-pages" ref={pagesRef} aria-hidden="true" />
-        <div className="dse-flowcontent" ref={flowRef}>
+        <div className="dse-flowcontent" ref={flowRef} onClick={onFlowClick}>
           {items.map((item) => (
             <div key={item.id}>
               {breakSet.has(item.id) && (

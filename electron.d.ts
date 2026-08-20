@@ -1,6 +1,7 @@
 import type { ProjectSnapshot } from './src/types/project';
 import type { ExportJob } from './src/types/export';
 import type { TranscriptSegment } from './src/types/workflow';
+import type { ElementsLibrary } from './src/types/elements';
 import type {
   AssetVisualSummary,
   CutWorkflowResult,
@@ -71,6 +72,8 @@ export interface ElectronAPI {
     upload: (fileData: { buffer: ArrayBuffer; name: string; type: string }, apiKey?: string) => Promise<{ url: string }>;
     uploadTranscriptionSource: (sourceUrl: string, apiKey?: string) => Promise<{ url: string }>;
     uploadMediaSource: (sourceUrl: string, apiKey?: string) => Promise<{ url: string }>;
+    loadLibrary: (opts?: { projectId?: string; projectName?: string }) => Promise<ElementsLibrary>;
+    saveLibrary: (library: ElementsLibrary) => Promise<ElementsLibrary>;
   };
   music: {
     generatePrompt: (params: {
@@ -155,7 +158,7 @@ export interface ElectronAPI {
       resumeSessionId?: string;
       injectProjectContext?: boolean;
       contextRefresh?: boolean;
-      purpose?: 'copilot' | 'enhance-prompt';
+      purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
       systemPrompt?: string;
       userMessage: string;
       messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -171,7 +174,7 @@ export interface ElectronAPI {
       resumeSessionId?: string;
       injectProjectContext?: boolean;
       contextRefresh?: boolean;
-      purpose?: 'copilot' | 'enhance-prompt';
+      purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
       systemPrompt?: string;
       userMessage: string;
       messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -187,7 +190,7 @@ export interface ElectronAPI {
       resumeSessionId?: string;
       injectProjectContext?: boolean;
       contextRefresh?: boolean;
-      purpose?: 'copilot' | 'enhance-prompt';
+      purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
       systemPrompt?: string;
       userMessage: string;
       messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
@@ -205,6 +208,24 @@ export interface ElectronAPI {
       sessionId?: string;
       resumed?: boolean;
       usage?: { promptTokens: number; completionTokens: number; totalTokens: number; cost: number };
+    }>;
+    openaiChat: (params: {
+      apiKey: string;
+      model?: string;
+      systemPrompt?: string;
+      userMessage: string;
+      imageUrls?: string[];
+      maxCompletionTokens?: number;
+    }) => Promise<{
+      message: string;
+      usage?: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+        cachedTokens: number;
+        cacheWriteTokens: number;
+        cost: number;
+      };
     }>;
     claudeCodeCancel: (requestId: string) => Promise<void>;
     codexCancel: (requestId: string) => Promise<void>;
@@ -269,12 +290,12 @@ export interface ElectronAPI {
       aspectRatio?: string;
     }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
     generate: (params: {
-      prompt: string;
+      prompt?: string;
       model: string;
-      outputType: 'image' | 'video';
+      outputType: 'image' | 'video' | 'audio' | 'text' | '3d';
       referenceValue?: string;
       params?: Record<string, unknown>;
-    }) => Promise<{ url: string; mediaType: 'image' | 'video'; durationSec?: number; jobId?: string; model: string }>;
+    }) => Promise<{ url?: string; text?: string; mediaType: 'image' | 'video' | 'audio' | 'text' | '3d'; durationSec?: number; jobId?: string; model: string }>;
   };
   copilot: {
     analyzeVisualRefs: (params: {

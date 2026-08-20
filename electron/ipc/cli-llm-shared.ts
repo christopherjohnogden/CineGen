@@ -43,7 +43,7 @@ export interface CliCopilotChatParams {
   resumeSessionId?: string;
   injectProjectContext?: boolean;
   contextRefresh?: boolean;
-  purpose?: 'copilot' | 'enhance-prompt';
+  purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
   systemPrompt?: string;
   userMessage: string;
   messages?: CliCopilotMessage[];

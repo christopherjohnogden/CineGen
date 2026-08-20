@@ -31,6 +31,38 @@ describe('extractFromProse — the rule the user asked for', () => {
     const out = extractFromProse('dozens of soldiers clashing in the haze behind it.');
     expect(of(out, 'character')).toContain('Soldiers');
   });
+
+  // The user's real bug: "Action: Jacob drives green sofa." found no Jacob and
+  // one prop named "Drives Green Sofa".
+  it('treats a sentence-INITIAL capital followed by a verb as a character', () => {
+    const out = extractFromProse('Jacob drives green sofa.');
+    expect(of(out, 'character')).toContain('Jacob');
+  });
+
+  it('never walks a verb into a modifier phrase', () => {
+    const out = extractFromProse('Jacob drives green sofa.');
+    expect(of(out, 'prop')).toContain('Green Sofa');
+    expect(of(out, 'prop')).not.toContain('Drives Green Sofa');
+  });
+
+  it('treats a sentence-initial capital as a character when known from elsewhere', () => {
+    const known = new Set(['bryan']);
+    const out = extractFromProse('Bryan looks up at the sky.', known);
+    expect(of(out, 'character')).toContain('Bryan');
+  });
+
+  it('still ignores uncorroborated sentence-initial capitals and openers', () => {
+    expect(of(extractFromProse('Meanwhile the storm builds.'), 'character')).toEqual([]);
+    expect(of(extractFromProse('Dust swirls across the plain.'), 'character')).toEqual([]);
+    expect(of(extractFromProse('Suddenly everything goes dark.'), 'character')).toEqual([]);
+  });
+
+  it('strips possessives off names and keeps the owned prop separate', () => {
+    const out = extractFromProse("He lifts Jacob's spear high.");
+    expect(of(out, 'character')).toContain('Jacob');
+    expect(of(out, 'prop')).toContain('Spear');
+    expect(of(out, 'prop')).not.toContain("Jacob's Spear");
+  });
 });
 
 // The user's real beat sheet — this is the acceptance test.

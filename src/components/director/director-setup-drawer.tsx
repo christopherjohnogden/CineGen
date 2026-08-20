@@ -1,6 +1,9 @@
-import type { DirectorShow } from '@/types/director';
+import type { ClipLengthSec, DirectorShow } from '@/types/director';
 import { CLIP_LENGTHS } from '@/types/director';
 import { listDirectorAdapters } from '@/lib/director/video-adapter';
+
+const ASPECTS = ['16:9', '9:16', '1:1', '21:9', '4:3'];
+const RESOLUTIONS = ['480p', '720p', '1080p'];
 
 interface DirectorSetupDrawerProps {
   show: DirectorShow;
@@ -10,35 +13,80 @@ interface DirectorSetupDrawerProps {
 export function DirectorSetupDrawer({ show, onChange }: DirectorSetupDrawerProps) {
   const adapters = listDirectorAdapters();
   return (
-    <div className="director-tab__drawer-inner">
-      <div>
-        <label className="director-tab__label" htmlFor="director-length">Clip length</label>
-        <select id="director-length" value={show.clipLengthSec} onChange={(event) => onChange({ ...show, clipLengthSec: Number(event.target.value) as typeof show.clipLengthSec })}>
-          {CLIP_LENGTHS.map((value) => <option key={value} value={value}>{value}s</option>)}
-        </select>
-      </div>
-      <div>
+    <div className="dsetup">
+      <Seg
+        label="Clip length"
+        value={String(show.clipLengthSec)}
+        options={CLIP_LENGTHS.map((value) => ({ id: String(value), label: `${value}s` }))}
+        onChange={(next) => onChange({ ...show, clipLengthSec: Number(next) as ClipLengthSec })}
+        title="How long each shotlisted clip runs. Applies to the next shotlist run — existing clips keep their timing."
+      />
+      <div className="dsetup-field dsetup-field--adapter">
         <label className="director-tab__label" htmlFor="director-adapter">Adapter</label>
-        <select id="director-adapter" value={show.adapterId} onChange={(event) => onChange({ ...show, adapterId: event.target.value })}>
-          {adapters.map((adapter) => <option key={adapter.id} value={adapter.id}>{adapter.label}</option>)}
+        <select
+          id="director-adapter"
+          value={show.adapterId}
+          onChange={(event) => onChange({ ...show, adapterId: event.target.value })}
+        >
+          {adapters.map((adapter) => (
+            <option key={adapter.id} value={adapter.id}>{adapter.label}</option>
+          ))}
         </select>
       </div>
-      <div>
-        <label className="director-tab__label" htmlFor="director-aspect">Aspect</label>
-        <select id="director-aspect" value={show.aspectRatio} onChange={(event) => onChange({ ...show, aspectRatio: event.target.value })}>
-          {['16:9', '9:16', '1:1', '21:9', '4:3'].map((value) => <option key={value} value={value}>{value}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className="director-tab__label" htmlFor="director-res">Resolution</label>
-        <select id="director-res" value={show.resolution} onChange={(event) => onChange({ ...show, resolution: event.target.value })}>
-          {['480p', '720p', '1080p'].map((value) => <option key={value} value={value}>{value}</option>)}
-        </select>
-      </div>
-      <label className="director-tab__row" style={{ alignItems: 'center', fontSize: 12, color: 'var(--text-secondary)' }}>
-        <input type="checkbox" checked={show.generateAudio} onChange={(event) => onChange({ ...show, generateAudio: event.target.checked })} style={{ width: 'auto' }} />
-        Generate audio
+      <Seg
+        label="Aspect"
+        value={show.aspectRatio}
+        options={ASPECTS.map((value) => ({ id: value, label: value }))}
+        onChange={(aspectRatio) => onChange({ ...show, aspectRatio })}
+      />
+      <Seg
+        label="Resolution"
+        value={show.resolution}
+        options={RESOLUTIONS.map((value) => ({ id: value, label: value }))}
+        onChange={(resolution) => onChange({ ...show, resolution })}
+      />
+      <label className="dsetup-field--audio dtog" title="Include audio on generated clips">
+        <input
+          type="checkbox"
+          checked={show.generateAudio}
+          onChange={(event) => onChange({ ...show, generateAudio: event.target.checked })}
+        />
+        <span className="dtog-track" aria-hidden><span className="dtog-thumb" /></span>
+        <span className="dtog-label">Generate audio</span>
       </label>
+    </div>
+  );
+}
+
+function Seg({
+  label,
+  value,
+  options,
+  onChange,
+  title,
+}: {
+  label: string;
+  value: string;
+  options: { id: string; label: string }[];
+  onChange: (value: string) => void;
+  title?: string;
+}) {
+  return (
+    <div className="dsetup-field" title={title}>
+      <span className="director-tab__label">{label}</span>
+      <div className="dgen-seg" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={`dgen-seg-btn${option.id === value ? ' dgen-seg-btn--on' : ''}`}
+            aria-pressed={option.id === value}
+            onClick={() => onChange(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

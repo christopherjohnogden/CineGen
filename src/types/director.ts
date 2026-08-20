@@ -11,6 +11,15 @@ export type IsolateVariant =
   | { kind: 'full' }
   | { kind: 'isolated'; beatN: number; mode: IsolateMode };
 
+export interface DirectorLlmSpend {
+  cost: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  requestCount: number;
+  lastCost: number;
+}
+
 export interface DirectorBreakdownItem {
   id: string;
   kind: BreakdownKind;
@@ -29,6 +38,11 @@ export interface DirectorBreakdownItem {
   voice?: string;
   /** When the lazy per-character enrichment (actingProfile+voice) was written. */
   enrichedAt?: number;
+  /** True when the deterministic script extractor created this item. Auto items
+   *  live and die with the script text: they are reconciled away when an edit
+   *  removes what produced them, unless an element link or enrichment has since
+   *  invested in them. Manual and LLM items never carry this flag. */
+  auto?: boolean;
 }
 
 export interface DirectorBeat {
@@ -197,8 +211,13 @@ export interface DirectorShow {
     error?: boolean;
     requestId?: string;
   } | null;
-  /** Claude / Codex / Gemini CLI used for breakdown, shotlist, look bible, and rewrite. */
-  llmProvider: 'claude-code' | 'codex' | 'gemini';
+  /** Running OpenAI API spend for this show, summed from each Chat Completions
+   *  `usage` object (token counts × official Luna rates). */
+  llmSpend?: DirectorLlmSpend;
+  /** LLM used for breakdown, shotlist, look bible, and rewrite: a local CLI
+   *  (Claude / Codex / Gemini), ChatGPT Luna via Codex CLI, OpenAI Luna via
+   *  API key, fal.ai's any-llm endpoint, or Higgsfield's llm_text model. */
+  llmProvider: 'claude-code' | 'codex' | 'gemini' | 'luna' | 'openai' | 'fal' | 'higgsfield';
   /** Per-scene manual asset overrides (asset tags). sceneIndex -> added/removed. */
   sceneAssetOverrides?: Record<number, { added: string[]; removed: string[] }>;
   /** Background-LLM per-scene asset suggestions (asset tags). sceneIndex -> tags. */

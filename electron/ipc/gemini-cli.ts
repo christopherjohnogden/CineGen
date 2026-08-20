@@ -41,11 +41,15 @@ function getGeminiVisualWorkspaceDir(): string {
 function buildGeminiPrompt(params: CliCopilotChatParams): string {
   const systemParts: string[] = [];
 
-  if (params.injectProjectContext && params.systemPrompt?.trim()) {
-    const refreshPrefix = params.contextRefresh
-      ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
-      : '';
-    systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}\n\n${params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX}`);
+  if (params.systemPrompt?.trim()) {
+    if (params.injectProjectContext) {
+      const refreshPrefix = params.contextRefresh
+        ? 'The CineGen project has changed since the last context injection. Replace any stale project facts with this refreshed context.\n\n'
+        : '';
+      systemParts.push(`${refreshPrefix}${params.systemPrompt.trim()}\n\n${params.purpose === 'enhance-prompt' ? ENHANCE_PROMPT_SUFFIX : CHAT_ONLY_SUFFIX}`);
+    } else {
+      systemParts.push(params.systemPrompt.trim());
+    }
   }
 
   const history = (params.messages ?? []).filter((message) => message.content.trim());

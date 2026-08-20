@@ -14,15 +14,17 @@ const ELEMENT_TYPES: { id: ElementType; label: string; icon: string }[] = [
 
 interface ElementModalProps {
   element?: Element;
+  /** Prefill a new-element form (Create new from a breakdown suggestion). */
+  defaults?: { name?: string; type?: ElementType; description?: string };
   onSave: (data: { name: string; type: ElementType; description: string; images: ElementImage[] }) => void;
   onDelete?: () => void;
   onClose: () => void;
 }
 
-export function ElementModal({ element, onSave, onDelete, onClose }: ElementModalProps) {
-  const [name, setName] = useState(element?.name ?? '');
-  const [type, setType] = useState<ElementType>(element?.type ?? 'character');
-  const [description, setDescription] = useState(element?.description ?? '');
+export function ElementModal({ element, defaults, onSave, onDelete, onClose }: ElementModalProps) {
+  const [name, setName] = useState(element?.name ?? defaults?.name ?? '');
+  const [type, setType] = useState<ElementType>(element?.type ?? defaults?.type ?? 'character');
+  const [description, setDescription] = useState(element?.description ?? defaults?.description ?? '');
   const [images, setImages] = useState<ElementImage[]>(element?.images ?? []);
   const [activeImageTab, setActiveImageTab] = useState<'upload' | 'generate'>('upload');
 

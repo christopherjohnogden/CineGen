@@ -28,6 +28,11 @@ export function getKieApiKey(): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+export function getOpenAiApiKey(): string | undefined {
+  const value = getSettingsValue('openaiKey');
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
 export function getRunpodApiKey(): string | undefined {
   const value = getSettingsValue('runpodKey');
   return typeof value === 'string' && value.trim() ? value : undefined;

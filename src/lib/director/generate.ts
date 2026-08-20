@@ -51,8 +51,8 @@ export function clipsForGenerateScope(
   if (scope === 'scene') {
     return clips.filter((clip) => clip.sceneId === sceneId && !clip.altOf);
   }
-  const queued = clips.filter((clip) => clip.queued);
-  return queued.length > 0 ? queued : clips.filter((clip) => !clip.altOf);
+  // Queued means queued only — an empty queue does not fall back to the whole show.
+  return clips.filter((clip) => clip.queued);
 }
 
 export function generationPreflight(args: {

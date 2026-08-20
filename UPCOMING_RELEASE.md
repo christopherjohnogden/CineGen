@@ -1,7 +1,7 @@
 # Upcoming Release — Feature Changelog
 
 > **Status:** Draft — update this file as work continues, then copy into a GitHub Release when you ship.  
-> **Last updated:** August 18, 2026
+> **Last updated:** August 19, 2026
 
 Use this document to announce what’s new in the next CineGen update. Items marked **(committed)** are already on `main`; items marked **(in progress)** include local/uncommitted work from the current session.
 
@@ -10,6 +10,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 ## Highlights
 
 - **Director tab:** script-to-Seedance 2.5 shotlist with takes and nested Edit media-pool folders
+- **Global Elements library:** characters, locations, props, and vehicles are shared across projects and organized in folders
 - **New fal.ai video models:** Seedance 2.0 (text/image + reference-to-video)
 - **Multi-shot workflows:** “Shot Prompt” renamed to **Multi Prompt** (matches Kling 3 API)
 - **fal.ai model audit:** 39 cloud models reviewed; inputs, outputs, and routing aligned with official API schemas
@@ -25,10 +26,61 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - Breakdown reviews characters/locations/props/vehicles, matches existing Elements by `@Tag` / name, and creates only missing ones
 - Shotlist compiler uses Seedance heading grammar (`SHOT n (0:00–0:07)`); isolate the selected beat as full multishot, held to clip length, or native length without creating a second clip
 - Generate queues takes per variant into `Director / Scene / Clip / Full|Shot N` media-pool folders (`S09_2-9b_T01`, `S09_2-9b_S3x20_T01`)
-- Look bible builder: upload a script, pick a Seedance genre, type film references, drop mood-board stills — **Look notes** live-updates from those refs and stays editable; **Rewrite with LLM** expands the same field
+- Look bible builder: upload a script, pick a Seedance genre, type film references, drop mood-board stills — **Look notes** live-updates from those refs and stays editable; **Rewrite with LLM** attaches up to 6 stills so the model can see them and write palette/lighting into the prefix that every clip prompt uses
 - Breakdown / shotlist / look bible / rewrite run through a picked **Claude, Codex, or Gemini CLI** (same install detect as Copilot) — no fal key required
 - Director CLI jobs use headless Claude `--permission-mode dontAsk`, show errors instead of spinning **Writing…**, and time out / cancel if the CLI hangs
 - Look bible style prefix, director notes Keep/Discard rewrite, and a Seedance 2.5 video adapter (future model versions are extra adapters, not UI rewrites)
+
+### Director tab: instant script breakdown **(in progress)**
+
+- The breakdown no longer waits on an LLM: scenes, locations (with INT/EXT + time of day), speaking characters, props and vehicles are extracted **deterministically from the script itself** and appear instantly — while you type on the Script tab, the Breakdown tab stays in sync
+- The CLI LLM pass now runs as a background *refinement*: it is told what was already identified and only adds missed entities and fills descriptions/summaries, cutting its output (and wait) dramatically
+- Re-breakdowns preserve scene identity: scenes merge by heading instead of being replaced with fresh IDs, and a scoped re-breakdown no longer wipes the scenes it didn't touch
+- Merges never lose enrichment: LLM-written descriptions, blurbs, acting profiles and voices survive every re-extraction
+
+### Director tab: film-craft prompt system **(committed)**
+
+- Breakdown, shotlist, look bible and rewrite jobs now run on a shared **craft doctrine** (`src/lib/director/craft/`) covering spatial blocking, lens optics, physics/lighting, character performance and palette discipline
+- **Lens locks replace focal-length metadata:** clips carry a diagonal field of view (8° / 18° / 29° / 47° / 84° / 107°) that compiles into observable optical language plus the anti-drift lock for that lens — a stray value snaps to the nearest anchor
+- **Blocking block** per clip: screen positions, body facing, gaze targets, depth and landmark contact, with a warning when vague proximity words (`near`, `beside`, `around`) leave the geography free to flip
+- **Acting tasks** per character in frame — motive, goal, obstacle, tactic and dialogue-keyed moments — derived from a new scene-level **event** and **physical action**; characters carry an acting profile and a **locked voice** that is pasted verbatim only into clips where they actually speak
+- **Staging references** (blocking maps): generate a schematic outline diagram from a source frame, bind figures to characters by colour, and paste a positive-form `@staging_` connector that supplies position only — graphic vocabulary is kept out of the video prompt so the map's look can't bleed into the shot
+- Compiled clip bodies put spatial and optical locks ahead of action, camera and style; clips without the new fields compile exactly as before
+
+### Director tab: Generate page redesign **(in progress)**
+
+- Two-column workspace: the left column is the **production console** — clip identity with generate actions in the title row, 16:9 viewer, takes filmstrip (double-click = hero), and the rewrite notes card; the right column is the **prompt stack** — collapsible sections for the compiled Prompt (fixed 475px scroll box with Copy), manual body edits, Shots (durations + isolation), Setup, Craft (blocking/lens/acting/staging) and Style & constraints
+- Variant selection is a **segmented control**: Full multishot · S1 · S2 · S3, with a Held/Native length toggle appearing when a shot is isolated — replacing the old separate beat list + three buttons
+- Queue tick sits next to **Generate queued** (also still on Shotlist rows and the structure rail) so the prompt stack starts at the top of the column; Edit body textarea is taller (~320px) so more of the compiled prompt is visible without scrolling
+- Generate actions sit in the **title row, top right**: accent **Generate 1A** for this clip, a quiet divider, then the queue tick + **Queued · N** + **Scene N** — no boxed THIS CLIP / BATCH card under the viewer. Hover titles still spell out the scope. The Seedance / queued / scene / show line sits under that cluster.
+- Collapses to one column on narrow windows
+
+### Director tab: Setup + Look bible chrome **(in progress)**
+
+- **Setup** and **Look bible** are a paired control next to Auto-sync (same treatment as the stage tabs), with line icons instead of emoji and a quiet active state
+- Setup is a full-width production strip: segmented **Clip length / Aspect / Resolution**, a flattened Adapter select (no native 3D dropdown), and **Generate audio** on the same switch as Auto-sync. **Clip length** here is the source of truth for shotlisting (how long each new clip runs); the duplicate picker next to **Shotlist show** is gone
+- Look bible is a two-column sheet: genre chips, film-reference composer, and a drag-and-drop mood board (capped at 6 stills) on the left; **Look notes** as the document on the right with Rewrite / Update from refs in the header
+
+### Director tab: Shotlist page redesign **(in progress)**
+
+- The Shotlist tab is now a **planning document** (modeled on the Higgsfield HTML shotlist — nothing on this page generates video): an **asset registry** strip up top with element thumbnails, a collapsible **style prefix** section, and every clip as an independently collapsible row — queue checkbox, id/title, running timecode, shots pill and **Copy prompt** in the header; the open body shows element chips, the shotmap and the **full compiled prompt as readable text** (no scroll box). Queue marks feed the Generate tab's "Generate queued"
+- **Director's notes per scene**: a notes box under each scene's clips — write freeform notes referencing clips by label ("1A should be a medium close-up · 1B — Peter's tone more angry"), hit **Apply notes with LLM** (or ⌘↵), and the LLM patches exactly the clips the notes mention: framing notes move the lens lock and beat camera language, tone notes rewrite the acting task as behaviour (never emotion adjectives), everything unmentioned stays untouched. Updates land in the structured clip data so the shotmap and compiled prompt both refresh; label-as-id answers are remapped so a sloppy model can't duplicate clips
+- **Per-shot isolation on the shotmap** (matches the Higgsfield HTML shotlist interaction): every shot row carries two buttons — hold this shot as one unbroken take for the **full clip length**, or take it at its **own native length** — plus a **Full multishot** reset; isolating rewrites the displayed prompt live (single-take format, camera lock, isolated-prefix rewrite) and the same variant carries over to the Generate tab
+- **Clip length lives in Setup**: 10/15/20/30s in the Setup drawer sets shot density for the next shotlist run (existing clips keep their timing); a totals line tracks clips · shots · total runtime as the board fills
+- **Per-scene shotlisting**: every scene block has its own Shotlist / Re-shotlist button plus inline scene **event** and **physical action** fields, so a single scene can be (re)broken without touching the rest of the show
+- **Single-beat clips compile as held singles**: `ONE CONTINUOUS UNBROKEN TAKE — a cut is a failed take` instead of "one shot with hard cuts", per the CINEDANCE format-mode rule
+- **Dialogue discipline compiles automatically**: any clip carrying a quoted line now ships the CINEDANCE audio lock (only scripted lines spoken, lips still when silent, listeners say nothing, ambient ducks under dialogue) in both full and isolated variants
+- Shotlist segmentation now knows the **4-second shot floor** (below it the model whips/blends), that a beat needing six angles is two clips, that **held singles are often the strongest 30s material**, and that dialogue cuts land where the power shifts — not at every line
+- **ChatGPT Luna as a director LLM**: the picker offers **ChatGPT Luna** (`gpt-5.6-luna` via the Codex CLI). It uses your **ChatGPT Codex quota**, not the cheap API rate — if Codex is rate-limited, pick fal.ai or OpenAI Luna until it resets. Director JSON jobs now skip `~/.codex/config.toml` MCP servers, run in an empty workspace, and send the prompt on stdin so shotlist batches do not boot Linear/Cloudflare MCP or hang on “Reading additional input from stdin”. **(in progress)**
+- **OpenAI Luna as a director LLM**: a second picker option, **OpenAI Luna**, runs the same `gpt-5.6-luna` model through the **OpenAI API** (`$0.20 / $1.20` token rate). Add an OpenAI key in Settings; Director JSON jobs go through main-process Chat Completions (`json_object`, low reasoning) so the renderer never hits `api.openai.com` directly. Shotlisting can run up to 3 concurrent API jobs, like fal. A Structure-rail usage card (same Spend / Tokens / Requests layout as the LLM tab) tracks this show’s OpenAI cost from each response’s token counts (cached input at `$0.02/M`, long-context >272k input at 2×/1.5×). Hover for in/out tokens and the last request. **(in progress)**
+- **fal.ai as a director LLM**: the LLM picker now offers **fal.ai — Gemini 2.5 Flash** (via `fal-ai/any-llm`, latency priority) alongside the Claude/Codex/Gemini CLIs — typically much faster than a local CLI round-trip. Enabled whenever a fal key is set in Settings; it also becomes the automatic fallback when no CLI is installed. The Script Assistant chat stays on a CLI (fal has no streaming chat path)
+- **Higgsfield as a director LLM (plumbed, gated off)**: the picker shows **Higgsfield — GPT-5 mini** (their `llm_text` model) but disabled with the reason — Higgsfield's CLI cannot run LLM jobs end to end today: pre-1.x builds submit `llm_text` but never print the answer, and CLI 1.1.23's v2-alpha generate path refuses to submit it. Full plumbing (provider, transport via `higgsfield:generate`, `result_json` text extraction, error mapping) is in place behind `HIGGSFIELD_LLM_CLI_SUPPORTED` — one flag flip when Higgsfield ships CLI LLM support
+- **Start over is now a real reset**: it clears the script *and* the breakdown, scenes, clips, style prefix, and sync state (library Elements are kept), stops any running CLI job, and drops results from still-in-flight jobs so a late "Shotlisting show…" can't repopulate the cleared board — previously it cleared only the script and the breakdown badge kept its count
+- **Full-scene coverage, not highlights**: shotlisting now runs **one LLM call per scene** (each gets the full output budget; clips land on the board progressively), the job input carries only that scene's script slice plus a **coverage target** estimated from its word count (~1 page ≈ 1 min ≈ three 20s clips), and the system prompt mandates walking the scene first line to last — "a nine-page scene needs twenty or more clips, never two". Scenes are written in **small batches** that land on the board as each returns — 3 clips on the first request (fast first paint; measured cost is ~2k output tokens per clip) then 5 per continuation, up to 20 rounds with a 5-minute timeout per call — until the model reports the scene's final line is covered, so long scenes stream in progressively instead of arriving after one giant response. Running status is a short **Shotlisting…** plus **Stop** at the far right of the Shotlist action row — no scene name, part count, or clip estimate
+- **Per-scene element scoping + fast CLI model**: every shotlist request now carries only the breakdown elements the scene actually uses (detected by the same matcher that powers breakdown highlighting, plus per-scene AI suggestions and manual overrides; falls back to the full bible when a scene can't be matched) — on a 64-element show this cuts the prompt dramatically for every provider. Claude Code CLI shotlist batches also run on **Haiku** instead of Sonnet, closing most of the speed gap with fal
+- **fal.ai shotlist parallelism:** fal shotlisting now runs **up to 3 Gemini Flash jobs at once**. A ~12-clip scene is split into chronological script slices that generate in parallel (clips still land in scene order); **Shotlist show** shoots every scene concurrently instead of waiting for scene 1 to finish. CLI/Higgsfield stay sequential (one local process). Slice splits follow screenplay lines (not blank paragraphs) so a dialogue scene cannot collapse into one 60s 13-clip job. **(in progress)**
+- **New clips no longer orphan on arrival**: the shotlist LLM answers with invented scene ids ("scene-1") while the deterministic breakdown assigns real ones — the merge now remaps every incoming clip onto the existing scene (by id, then heading, then scene number, then the clip-id prefix), the job input hands the LLM the real `[sceneId: …]` values, and the system prompt forbids inventing ids. Previously every fresh shotlist run produced clips pointing at nonexistent scenes — invisible on the board and counted only by the totals
+- **Zero-click flow actually works now**: auto-sync's scoped shotlist runs used to shotlist only the FIRST changed scene — on a fresh script upload that meant one scene got clips and the rest silently stayed empty; every changed scene is now shotlisted. A failed breakdown *refinement* no longer kills the chain (the deterministic breakdown already landed, so the shotlist still runs), the run stays dirty for retry on the next edit, and the Shotlist page shows live status ("Shotlisting 3 scenes…") and surfaces auto-sync errors with a fix hint instead of failing silently. Shotlist buttons no longer wait for breakdown approval (approval only matters for element creation before Generate)
 
 ### LLM tab: Acoustic-emotional clip analysis **(in progress)**
 
@@ -158,6 +210,22 @@ Models with **fixed output tiers** and no API control (Kling 2.5, MiniMax Video,
 
 ---
 
+### Elements: multi-select and bulk delete **(in progress)**
+
+- **⌘/Ctrl-click** toggles cards into a selection; **Shift-click** selects a range; drag a marquee across the grid to grab several at once
+- Dragging across cards no longer highlights names with the native blue text selection
+- Right-click the selection for **Delete** (or Delete/Backspace); a confirmation names the elements before they are removed
+- Plain click still opens the editor; bulk delete is one undo step
+
+### Global Elements library **(in progress)**
+
+- Elements are shared across every project (stored in `Documents/CINEGEN/elements-library.json`) instead of locked to one show
+- Existing per-project elements migrate into **folders named after their project** on first load
+- The Elements page has **All** / **Unfiled** / per-project folders, plus **New folder**; right-click a card to move it, double-click a folder to rename
+- New elements created from **All** land in the current project's folder so the library stays organized as you work
+
+---
+
 ## Improvements
 
 ### fal.ai model registry audit **(committed + in progress)**
@@ -222,9 +290,10 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **KIE Runway:** Quality param no longer stripped before API call **(in progress fix)**
 - **Gemini CLI Copilot hang / resume:** Headless chat uses a stable app workspace (fixes `No previous sessions found for this project` on follow-ups); `/clip` and `/asset` refs attach local media for visual Q&A **(in progress)**
 - **Claude Code Copilot exit 1:** Use `--tools ""` (disable all tools) instead of a partial deny list — MCP/plugin tools were still callable, hitting `--max-turns 1` with no reply text; clearer errors from CLI `result.errors` **(in progress)**
+- **Claude Code Director shotlist hang:** JSON jobs (`shotlist`, breakdown, look bible) no longer inherit the CineGen repo as cwd. They spawn in an empty userData workspace with `--safe-mode` (OAuth still works) and `--effort low`, replace the default coding system prompt, and stop duplicating that prompt into the user message. Copilot chat is unchanged. The web CLI allowlist now accepts purpose `json-job` (it previously rejected shotlist as “CLI chat purpose is invalid”). Shotlist CLI runs now land **1 clip on the first round** (fal still does 3) and **resume the same Claude session** for later batches so Haiku isn't cold-starting 15k tokens of doctrine every round — the board staying at `0/~12` for 100s was that first 3-clip JSON blob, not a hang. **(in progress)**
 - **Claude Code max turns:** Raise Copilot to `--max-turns 2`, disable slash commands, auto-retry with fresh context on max-turn failures; `#skill-name` in a message loads that skill into the prompt **(in progress)**
 - **Copilot skill inventory:** Inject **CineGen SKILLS** catalog into system context; auto-retry when Claude deflects with “let me check / use Skill tool” instead of listing skills **(in progress)**
-- **Generated media persist spam:** Backfill no longer queues assets with bare filenames or missing remote/local sources; IPC returns `{ error }` instead of throwing so startup logs stay clean **(in progress)**
+- **Director breakdown remove:** ✕ on a side-panel card already hid it from that scene’s assets; the script highlight now uses the same per-scene list, so the mark in the script goes too **(in progress)**
 
 ---
 

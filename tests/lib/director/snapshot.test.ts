@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PROJECT_TABS } from '@/components/workspace/top-tabs';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
-import { directorJobIsRunning } from '@/lib/director/director-state';
+import { directorJobIsRunning, directorRunningLabel } from '@/lib/director/director-state';
 import { directorFromSnapshot, directorFromUnknown, directorFromWorkflow } from '@/lib/director/snapshot';
 import { prepareDirectorGeneration } from '@/lib/director/generate';
 import type { DirectorClip, DirectorScene } from '@/types/director';
@@ -34,12 +34,24 @@ describe('director snapshot', () => {
     }).llmProvider).toBe('gemini');
     expect(directorFromUnknown({
       ...createEmptyDirectorShow(),
+      llmSpend: { cost: 0.12, promptTokens: 10, completionTokens: 5, cachedTokens: 0, requestCount: 2, lastCost: 0.06 },
+    }).llmSpend?.requestCount).toBe(2);
+    expect(directorFromUnknown({
+      ...createEmptyDirectorShow(),
       jobStatus: { type: 'look-bible', message: 'Writing look bible…' },
     }).jobStatus).toBeNull();
   });
 });
 
 describe('director job spinner', () => {
+  it('names a running job in one word so the toolbar stays quiet', () => {
+    expect(directorRunningLabel('shotlist')).toBe('Shotlisting…');
+    expect(directorRunningLabel('breakdown')).toBe('Refining…');
+    expect(directorRunningLabel('rewrite')).toBe('Rewriting…');
+    expect(directorRunningLabel('look-bible')).toBe('Writing look…');
+    expect(directorRunningLabel('generate')).toBe('Generating…');
+  });
+
   it('treats look-bible errors as idle so Rewrite is clickable', () => {
     expect(directorJobIsRunning({
       ...createEmptyDirectorShow(),

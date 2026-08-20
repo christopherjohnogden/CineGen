@@ -328,6 +328,75 @@ class ProjectStore {
     await this.writeIndex(index);
   }
 
+  libraryPath() {
+    return pathInside(this.dataRoot, 'elements-library.json');
+  }
+
+  async saveElementsLibrary(library) {
+    const folders = Array.isArray(library?.folders) ? library.folders : [];
+    const elements = Array.isArray(library?.elements) ? library.elements : [];
+    const next = { version: 1, folders, elements };
+    await writeJsonAtomic(this.libraryPath(), next);
+    return next;
+  }
+
+  async loadElementsLibrary(opts = {}) {
+    const existing = await readJson(this.libraryPath(), null);
+    let library = existing && typeof existing === 'object'
+      ? { version: 1, folders: Array.isArray(existing.folders) ? existing.folders : [], elements: Array.isArray(existing.elements) ? existing.elements : [] }
+      : null;
+
+    if (!library) {
+      const index = await this.readIndex();
+      const folders = [];
+      const byId = new Map();
+      for (const project of index.projects) {
+        let incoming = [];
+        try {
+          const state = await this.load(project.id);
+          incoming = Array.isArray(state.elements) ? state.elements : [];
+        } catch { incoming = []; }
+        if (incoming.length === 0) continue;
+        const folder = {
+          id: crypto.randomUUID(),
+          name: project.name || 'Untitled project',
+          createdAt: timestamp(),
+          sourceProjectId: project.id,
+        };
+        folders.push(folder);
+        for (const el of incoming) {
+          if (!el?.id || byId.has(el.id)) continue;
+          byId.set(el.id, { ...el, folderId: el.folderId || folder.id });
+        }
+      }
+      library = { version: 1, folders, elements: [...byId.values()] };
+      await writeJsonAtomic(this.libraryPath(), library);
+    }
+
+    if (opts.projectId && opts.projectName) {
+      const folders = [...library.folders];
+      const existingFolder = folders.find((f) => f.sourceProjectId === opts.projectId);
+      const name = String(opts.projectName).trim() || 'Untitled project';
+      if (!existingFolder) {
+        folders.push({
+          id: crypto.randomUUID(),
+          name,
+          createdAt: timestamp(),
+          sourceProjectId: opts.projectId,
+        });
+        library = { ...library, folders };
+        await writeJsonAtomic(this.libraryPath(), library);
+      } else if (existingFolder.name !== name) {
+        library = {
+          ...library,
+          folders: folders.map((f) => (f.id === existingFolder.id ? { ...f, name } : f)),
+        };
+        await writeJsonAtomic(this.libraryPath(), library);
+      }
+    }
+    return library;
+  }
+
   async insertAsset(asset) {
     const projectId = assertId(asset?.project_id, 'asset project id');
     const state = await this.load(projectId);
@@ -592,6 +661,8 @@ function buildRpcHandlers(store) {
     ['db.saveProject', async (id, state) => { await store.save(id, state); }],
     ['db.deleteProject', (id) => store.delete(id)],
     ['db.closeProject', async () => {}],
+    ['elements.loadLibrary', (opts) => store.loadElementsLibrary(opts ?? {})],
+    ['elements.saveLibrary', (library) => store.saveElementsLibrary(library)],
     ['db.updateProject', async (id, data) => { await store.patchProject(id, data); }],
     ['db.insertAsset', (asset) => store.insertAsset(asset)],
     ['db.updateAsset', (projectId, id, data) => store.updateAsset(projectId, id, data)],

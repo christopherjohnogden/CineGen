@@ -11,7 +11,7 @@ import {
   persistRemoteMedia,
 } from "./media-store";
 import { createProjectStore } from "./project-store";
-import { hostedChat } from "./providers";
+import { hostedChat, hostedOpenAiChat } from "./providers";
 
 type RouteParams = { namespace: string; method: string };
 type RuntimeEnv = { DB: D1Database; MEDIA: R2Bucket };
@@ -121,6 +121,9 @@ export async function handleRpc(
         break;
       case "llm.chat":
         result = await hostedChat(args[0]);
+        break;
+      case "llm.openaiChat":
+        result = await hostedOpenAiChat(args[0]);
         break;
       case "llm.localModels":
         result = [];

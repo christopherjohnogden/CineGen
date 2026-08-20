@@ -7,7 +7,7 @@ import type { Asset, MediaFolder } from '@/types/project';
 import type { Clip, Timeline } from '@/types/timeline';
 import type { WorkflowNodeData, WorkflowRun } from '@/types/workflow';
 import type { ExportJob } from '@/types/export';
-import type { Element } from '@/types/elements';
+import type { Element, ElementFolder } from '@/types/elements';
 import type { DirectorShow } from '@/types/director';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import { directorFromSnapshot, directorFromWorkflow } from '@/lib/director/snapshot';
@@ -33,7 +33,6 @@ import {
   assetFromRow,
   folderFromRow,
   timelineFromRows,
-  elementFromRow,
   exportFromRow,
   assetToRow,
   trackToRow,
@@ -85,6 +84,11 @@ type WorkspaceAction =
   | { type: 'ADD_ELEMENT'; element: Element }
   | { type: 'UPDATE_ELEMENT'; elementId: string; updates: Partial<Element> }
   | { type: 'REMOVE_ELEMENT'; elementId: string }
+  | { type: 'REMOVE_ELEMENTS'; elementIds: string[] }
+  | { type: 'MOVE_ELEMENTS'; elementIds: string[]; folderId: string | undefined }
+  | { type: 'ADD_ELEMENT_FOLDER'; folder: ElementFolder }
+  | { type: 'UPDATE_ELEMENT_FOLDER'; folderId: string; updates: Partial<ElementFolder> }
+  | { type: 'REMOVE_ELEMENT_FOLDER'; folderId: string }
   | { type: 'SET_DIRECTOR'; director: DirectorShow }
   | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
   | { type: 'HYDRATE'; payload: HydratePayload }
@@ -103,6 +107,7 @@ interface HydratePayload {
   activeTimelineId: string;
   exports: ExportJob[];
   elements: Element[];
+  elementFolders: ElementFolder[];
   director: DirectorShow;
 }
 
@@ -345,6 +350,7 @@ const initialState: WorkspaceState = {
   runningNodeIds: new Set(),
   exports: [],
   elements: [],
+  elementFolders: [],
   director: createEmptyDirectorShow(),
 };
 
@@ -633,6 +639,42 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case 'REMOVE_ELEMENT':
       return { ...state, elements: state.elements.filter((el) => el.id !== action.elementId) };
 
+    case 'REMOVE_ELEMENTS': {
+      const removeSet = new Set(action.elementIds);
+      return { ...state, elements: state.elements.filter((el) => !removeSet.has(el.id)) };
+    }
+
+    case 'MOVE_ELEMENTS': {
+      const idSet = new Set(action.elementIds);
+      const now = new Date().toISOString();
+      return {
+        ...state,
+        elements: state.elements.map((el) => (
+          idSet.has(el.id) ? { ...el, folderId: action.folderId, updatedAt: now } : el
+        )),
+      };
+    }
+
+    case 'ADD_ELEMENT_FOLDER':
+      return { ...state, elementFolders: [...state.elementFolders, action.folder] };
+
+    case 'UPDATE_ELEMENT_FOLDER':
+      return {
+        ...state,
+        elementFolders: state.elementFolders.map((f) => (
+          f.id === action.folderId ? { ...f, ...action.updates } : f
+        )),
+      };
+
+    case 'REMOVE_ELEMENT_FOLDER':
+      return {
+        ...state,
+        elementFolders: state.elementFolders.filter((f) => f.id !== action.folderId),
+        elements: state.elements.map((el) => (
+          el.folderId === action.folderId ? { ...el, folderId: undefined } : el
+        )),
+      };
+
     case 'SET_DIRECTOR':
       return { ...state, director: action.director };
 
@@ -660,6 +702,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         openTimelineIds: new Set(hydratedTimelines.map((tl: { id: string }) => tl.id)),
         exports: action.payload.exports,
         elements: action.payload.elements,
+        elementFolders: action.payload.elementFolders ?? [],
         director: action.payload.director,
       };
     }
@@ -680,7 +723,8 @@ const UNDOABLE_ACTIONS: WorkspaceAction['type'][] = [
   'ADD_ASSET', 'UPDATE_ASSET', 'REMOVE_ASSET', 'REMOVE_ASSETS',
   'ADD_FOLDER', 'UPDATE_FOLDER', 'REMOVE_FOLDER',
   'SET_TIMELINE', 'ADD_TIMELINE', 'REMOVE_TIMELINE', 'CLOSE_TIMELINE', 'OPEN_TIMELINE',
-  'ADD_ELEMENT', 'UPDATE_ELEMENT', 'REMOVE_ELEMENT',
+  'ADD_ELEMENT', 'UPDATE_ELEMENT', 'REMOVE_ELEMENT', 'REMOVE_ELEMENTS',
+  'MOVE_ELEMENTS', 'ADD_ELEMENT_FOLDER', 'UPDATE_ELEMENT_FOLDER', 'REMOVE_ELEMENT_FOLDER',
   'SET_DIRECTOR',
 ];
 
@@ -787,7 +831,6 @@ const PERSIST_ACTIONS: WorkspaceAction['type'][] = [
   'ADD_FOLDER', 'UPDATE_FOLDER', 'REMOVE_FOLDER',
   'SET_TIMELINE', 'ADD_TIMELINE', 'REMOVE_TIMELINE', 'CLOSE_TIMELINE', 'OPEN_TIMELINE', 'SET_ACTIVE_TIMELINE',
   'SET_NODE_RESULT', 'ADD_GENERATION', 'ADD_EXPORT', 'UPDATE_EXPORT',
-  'ADD_ELEMENT', 'UPDATE_ELEMENT', 'REMOVE_ELEMENT',
   'SET_DIRECTOR',
   'UNDO', 'REDO',
 ];
@@ -822,6 +865,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const [llmJumpRequest, setLlmJumpRequest] = useState<LlmJumpRequest | null>(null);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [hydrationComplete, setHydrationComplete] = useState(false);
+  const elementsLibraryReadyRef = useRef(false);
   const [openSkillBuilderSignal, setOpenSkillBuilderSignal] = useState(0);
   const [llmHasActiveSkill, setLlmHasActiveSkill] = useState(false);
   const [llmCopilotStatus, setLlmCopilotStatus] = useState<LlmCopilotNavStatus>({
@@ -1509,7 +1553,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     if (useSqlite) {
       // ---------- SQLite hydration path ----------
       window.electronAPI.db.loadProject(projectId)
-        .then((raw) => {
+        .then(async (raw) => {
           const dbState = raw as Record<string, unknown>;
           // Capture project name for save path
           const projectRow = dbState.project as Record<string, unknown> | undefined;
@@ -1553,21 +1597,31 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             : [createDefaultTimeline('Timeline 1')];
 
           const activeTimelineId = (dbState.activeTimelineId as string) ?? timelines[0]?.id ?? '';
-          const elements = (dbState.elements as Record<string, unknown>[]).map(elementFromRow);
           const exports = (dbState.exports as Record<string, unknown>[]).map(exportFromRow);
           const director = directorFromWorkflow(workflowState);
+          const library = await window.electronAPI.elements.loadLibrary({
+            projectId,
+            projectName: projectNameRef.current,
+          });
 
           historyDispatch({
             type: 'HYDRATE',
-            payload: { nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports, elements, director },
+            payload: {
+              nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports,
+              elements: library.elements,
+              elementFolders: library.folders,
+              director,
+            },
           });
+          elementsLibraryReadyRef.current = true;
         })
         .catch(() => {})
         .finally(() => setHydrationComplete(true));
     } else {
       // ---------- JSON file hydration path ----------
       window.electronAPI.project.load(projectId)
-        .then((snapshot) => {
+        .then(async (snapshot) => {
+          if (snapshot.project?.name) projectNameRef.current = snapshot.project.name;
           const nodes = (snapshot.workflow?.nodes ?? []) as Node<WorkflowNodeData>[];
           const edges = (snapshot.workflow?.edges ?? []) as Edge[];
           const spaces = Array.isArray(snapshot.spaces)
@@ -1593,14 +1647,23 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const timelines = (migrated.timelines ?? [createDefaultTimeline('Timeline 1')]) as Timeline[];
           const activeTimelineId = migrated.activeTimelineId ?? timelines[0]?.id ?? '';
           const exports = (snapshot.exports ?? []) as ExportJob[];
-          const elements = (snapshot.elements ?? []) as Element[];
           const mediaFolders = (snapshot.mediaFolders ?? []) as MediaFolder[];
           const director = directorFromSnapshot(snapshot);
+          const library = await window.electronAPI.elements.loadLibrary({
+            projectId,
+            projectName: projectNameRef.current,
+          });
 
           historyDispatch({
             type: 'HYDRATE',
-            payload: { nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports, elements, director },
+            payload: {
+              nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports,
+              elements: library.elements,
+              elementFolders: library.folders,
+              director,
+            },
           });
+          elementsLibraryReadyRef.current = true;
         })
         .catch(() => {})
         .finally(() => setHydrationComplete(true));
@@ -1668,16 +1731,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             openSpaceIds: [...state.openSpaceIds],
             director: state.director,
           },
-          elements: state.elements.map((el) => ({
-            id: el.id,
-            project_id: projectId,
-            name: el.name,
-            type: el.type,
-            description: el.description ?? null,
-            images: JSON.stringify(el.images ?? []),
-            created_at: el.createdAt ?? '',
-            updated_at: el.updatedAt ?? '',
-          })),
+          elements: [],
           exports: state.exports.map((ex) => ({
             id: ex.id,
             project_id: projectId,
@@ -1708,7 +1762,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           timelines: state.timelines,
           activeTimelineId: state.activeTimelineId,
           exports: state.exports,
-          elements: state.elements,
+          elements: [],
           director: state.director,
         }).catch(() => {});
       }
@@ -1728,9 +1782,26 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     state.timelines,
     state.activeTimelineId,
     state.exports,
-    state.elements,
     state.director,
   ]);
+
+  const librarySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!hydrationComplete || !elementsLibraryReadyRef.current) return;
+    if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
+    librarySaveTimerRef.current = setTimeout(() => {
+      window.electronAPI.elements.saveLibrary({
+        version: 1,
+        folders: state.elementFolders,
+        elements: state.elements,
+      }).catch((err) => {
+        console.error('[workspace] Failed to save elements library:', err);
+      });
+    }, SAVE_DEBOUNCE_MS);
+    return () => {
+      if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
+    };
+  }, [hydrationComplete, state.elements, state.elementFolders]);
 
   return (
     <WorkspaceContext.Provider value={{ state, dispatch: wrappedDispatch, projectId }}>

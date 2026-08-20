@@ -6,6 +6,16 @@ export function emptyLookBible(): DirectorLookBible {
   return { filmRefs: [], moodBoards: [], notes: '', autoNotes: '' };
 }
 
+/** Cap so a look-bible rewrite stays cheap (vision tokens). */
+export const MAX_LOOK_BIBLE_STILLS = 6;
+
+export function lookBibleImageUrls(show: Pick<DirectorShow, 'lookBible'>): string[] {
+  return (show.lookBible?.moodBoards ?? [])
+    .map((still) => still.url.trim())
+    .filter(Boolean)
+    .slice(0, MAX_LOOK_BIBLE_STILLS);
+}
+
 export function lookBibleFrom(value: unknown): DirectorLookBible {
   const empty = emptyLookBible();
   if (!value || typeof value !== 'object' || Array.isArray(value)) return empty;

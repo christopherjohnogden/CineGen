@@ -80,6 +80,65 @@ test('hosted chat keeps fal credentials request-scoped and normalizes usage', as
   );
 });
 
+test('OpenAI chat posts Luna JSON jobs with Bearer auth', async () => {
+  const calls = [];
+  const fetchImpl = async (urlValue, init = {}) => {
+    calls.push({ url: String(urlValue), init });
+    return jsonResponse({
+      choices: [{ message: { content: ' {"ok":true} ' }, finish_reason: 'stop' }],
+      usage: {
+        prompt_tokens: 80,
+        completion_tokens: 20,
+        total_tokens: 100,
+        prompt_tokens_details: { cached_tokens: 0 },
+      },
+    });
+  };
+  const handlers = createLlmHandlers({ fetchImpl });
+  const result = await handlers.openaiChat({
+    apiKey: 'sk-test',
+    systemPrompt: 'Return JSON.',
+    userMessage: 'scene 1',
+  });
+  assert.equal(result.message, '{"ok":true}');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer sk-test');
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.model, 'gpt-5.6-luna');
+  assert.equal(body.reasoning_effort, 'low');
+  assert.equal(body.response_format.type, 'json_object');
+  assert.equal(body.max_completion_tokens, 60_000);
+  assert.deepEqual(result.usage, {
+    promptTokens: 80,
+    completionTokens: 20,
+    totalTokens: 100,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
+  });
+});
+
+test('OpenAI chat attaches mood-board stills as vision parts', async () => {
+  const calls = [];
+  const fetchImpl = async (urlValue, init = {}) => {
+    calls.push({ url: String(urlValue), init });
+    return jsonResponse({
+      choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }],
+    });
+  };
+  const handlers = createLlmHandlers({ fetchImpl });
+  await handlers.openaiChat({
+    apiKey: 'sk-test',
+    userMessage: 'look at this',
+    imageUrls: ['https://example.test/still.jpg', 'local-media://file/tmp/skip.jpg'],
+  });
+  const body = JSON.parse(calls[0].init.body);
+  assert.deepEqual(body.messages[0].content, [
+    { type: 'text', text: 'look at this' },
+    { type: 'image_url', image_url: { url: 'https://example.test/still.jpg', detail: 'low' } },
+  ]);
+});
+
 test('hosted chat rejects malformed conversations and models before fetch', async () => {
   const handlers = createLlmHandlers({
     fetchImpl: async () => { throw new Error('fetch should not run'); },

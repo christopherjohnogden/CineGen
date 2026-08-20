@@ -136,6 +136,15 @@ describe('extractTextOutput', () => {
   it('does not treat output URLs as text', () => {
     expect(extractTextOutput({ result: 'https://a/result.txt' })).toBeUndefined();
   });
+
+  it('reads CLI 1.x llm_text result_json — envelope or raw string', () => {
+    // result_json carrying a text envelope digs the answer out.
+    expect(extractTextOutput({ result_json: '{"text":"the answer"}' })).toBe('the answer');
+    // result_json carrying arbitrary JSON (e.g. a shotlist payload) returns the raw string.
+    expect(extractTextOutput({ result_json: '{"scenes":[],"clips":[]}' })).toBe('{"scenes":[],"clips":[]}');
+    // result_json carrying plain text returns it as-is.
+    expect(extractTextOutput({ result_json: 'plain answer' })).toBe('plain answer');
+  });
 });
 
 describe('parseGenerateJson', () => {

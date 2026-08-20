@@ -10,6 +10,18 @@ export function directorJobIsRunning(
   return type ? status.type === type : true;
 }
 
+export function directorRunningLabel(
+  type: NonNullable<DirectorShow['jobStatus']>['type'],
+): string {
+  switch (type) {
+    case 'shotlist': return 'Shotlisting…';
+    case 'breakdown': return 'Refining…';
+    case 'rewrite': return 'Rewriting…';
+    case 'look-bible': return 'Writing look…';
+    case 'generate': return 'Generating…';
+  }
+}
+
 export function patchDirectorShow(show: DirectorShow, patch: Partial<DirectorShow>): DirectorShow {
   return { ...show, ...patch };
 }

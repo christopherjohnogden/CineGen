@@ -4,7 +4,7 @@ import { extractScriptText, SCRIPT_ACCEPT } from '@/lib/director/look-bible';
 import { parseToScreenplay, serializeScreenplay, type Screenplay } from '@/lib/director/screenplay';
 import { parseFdx } from '@/lib/director/fdx-parser';
 import { applyAssistantEdits, applyBeatEdits, type AssistantEdit, type AssistantResponse, type BeatEdit } from '@/lib/director/script-assistant';
-import { parseDirectorLlmProvider } from '@/lib/director/cli-provider';
+import { cliProviderFor, parseDirectorLlmProvider } from '@/lib/director/cli-provider';
 import { CollapsiblePanel } from './collapsible-panel';
 import { PaginatedEditor, ELEMENT_TYPES } from './paginated-editor';
 import { DirectorScriptAssets } from './director-script-assets';
@@ -17,6 +17,8 @@ interface DirectorScriptTabProps {
   show: DirectorShow;
   onChange: (show: DirectorShow) => void;
   onBreakdown: () => void;
+  /** Full reset: clears script, breakdown, scenes and clips, and stops running jobs. */
+  onStartOver: () => void;
 }
 
 function docFromShow(show: DirectorShow): Screenplay {
@@ -24,7 +26,7 @@ function docFromShow(show: DirectorShow): Screenplay {
   return show.sourceElements ? { elements: show.sourceElements } : parseToScreenplay(show.sourceText);
 }
 
-export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScriptTabProps) {
+export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: DirectorScriptTabProps) {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string | undefined>();
@@ -134,16 +136,17 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
     setCreating(true);
     setCreateSeed({ idea, mode });
   };
-  // Discard the current script/beat sheet and return to the empty state so the user can
-  // start over (e.g. switch to a beat sheet). Leaves breakdown/shotlist/clips/elements intact.
+  // Full reset back to the empty state: script, breakdown, scenes and clips all
+  // go (Elements in the library are untouched). Running jobs are stopped so a
+  // late result can't repopulate the cleared board.
   const startOver = () => {
-    if (!window.confirm('Discard the current script and start over? This clears the script only — your breakdown, shots, and generated clips are kept.')) return;
+    if (!window.confirm('Start over? This clears the script, breakdown, and shotlist. Elements already in your library are kept.')) return;
     setCreating(false);
     setCreateSeed(undefined);
     setSelectedId(undefined);
     setPending(undefined);
     setPendingBeats(undefined);
-    onChange({ ...show, docKind: undefined, sourceText: '', sourceElements: undefined, beatSheet: undefined, sourceFileName: undefined, chatMessages: undefined });
+    onStartOver();
   };
 
   return (
@@ -199,7 +202,7 @@ export function DirectorScriptTab({ show, onChange, onBreakdown }: DirectorScrip
             <CollapsiblePanel side="right" open={rightOpen} onToggle={setRightOpen}>
               <DirectorScriptChat
                 doc={doc}
-                provider={parseDirectorLlmProvider(show.llmProvider)}
+                provider={cliProviderFor(parseDirectorLlmProvider(show.llmProvider))}
                 selectedId={selectedId}
                 selectedText={selectedText}
                 onProposeEdits={(res: AssistantResponse) => setPending(res.edits)}

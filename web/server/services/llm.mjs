@@ -2,14 +2,19 @@ import {
   CapabilityUnavailableError,
   ServiceError,
   createFalSubscriber,
+  fetchJson,
   isPlainRecord,
   requireRecord,
   requireSecret,
+  requireString,
   validateModelId,
 } from './_shared.mjs';
 
 const DEFAULT_TEXT_MODEL = 'anthropic/claude-sonnet-4.6';
 const OPENROUTER_ENDPOINT = 'openrouter/router';
+const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_DIRECTOR_MODEL = 'gpt-5.6-luna';
+const OPENAI_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 const MESSAGE_ROLES = new Set(['user', 'assistant', 'system']);
 
 function parseFiniteNumber(value) {
@@ -163,6 +168,85 @@ export function createLlmHandlers(options = {}) {
         message: message.trim(),
         ...(usage ? { usage } : {}),
       };
+    },
+
+    openaiChat: async (paramsValue) => {
+      const params = requireRecord(paramsValue, 'OpenAI chat parameters');
+      const apiKey = requireSecret(params.apiKey, 'OpenAI API key');
+      const userMessage = requireString(params.userMessage, 'OpenAI prompt', { maxLength: 1_000_000 });
+      const model = params.model === undefined || params.model === null || params.model === ''
+        ? OPENAI_DIRECTOR_MODEL
+        : requireString(params.model, 'OpenAI model', { maxLength: 200, pattern: OPENAI_MODEL_ID });
+      const systemPrompt = params.systemPrompt === undefined || params.systemPrompt === null || params.systemPrompt === ''
+        ? undefined
+        : requireString(params.systemPrompt, 'OpenAI system prompt', { maxLength: 250_000 });
+      const imageUrls = Array.isArray(params.imageUrls)
+        ? params.imageUrls.filter((url) => (
+          typeof url === 'string'
+          && (/^https?:\/\//i.test(url) || /^data:image\//i.test(url))
+        )).slice(0, 6)
+        : [];
+      const userContent = imageUrls.length === 0
+        ? userMessage
+        : [
+          { type: 'text', text: userMessage },
+          ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url, detail: 'low' } })),
+        ];
+      const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+      const payload = await fetchJson(fetchImpl, OPENAI_CHAT_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+            { role: 'user', content: userContent },
+          ],
+          response_format: { type: 'json_object' },
+          reasoning_effort: 'low',
+          max_completion_tokens: Number.isFinite(params.maxCompletionTokens)
+            ? Math.max(1, Math.floor(params.maxCompletionTokens))
+            : 60_000,
+        }),
+      }, { provider: 'OpenAI', timeoutMs: 120_000 });
+      if (!isPlainRecord(payload)) {
+        throw new ServiceError('OpenAI returned an invalid response.', {
+          code: 'PROVIDER_BAD_RESPONSE',
+          statusCode: 502,
+        });
+      }
+      const choices = Array.isArray(payload.choices) ? payload.choices : [];
+      const choice = isPlainRecord(choices[0]) ? choices[0] : null;
+      const message = choice && isPlainRecord(choice.message) ? choice.message : null;
+      if (typeof message?.refusal === 'string' && message.refusal.trim()) {
+        throw new ServiceError(message.refusal.trim(), { code: 'PROVIDER_ERROR', statusCode: 502 });
+      }
+      const content = typeof message?.content === 'string' ? message.content.trim() : '';
+      if (!content) {
+        throw new ServiceError('OpenAI returned no text output.', {
+          code: 'PROVIDER_BAD_RESPONSE',
+          statusCode: 502,
+        });
+      }
+      const usageRecord = isPlainRecord(payload.usage) ? payload.usage : null;
+      const details = usageRecord && isPlainRecord(usageRecord.prompt_tokens_details)
+        ? usageRecord.prompt_tokens_details
+        : {};
+      const promptTokens = Number(usageRecord?.prompt_tokens) || 0;
+      const completionTokens = Number(usageRecord?.completion_tokens) || 0;
+      const usage = promptTokens > 0 || completionTokens > 0
+        ? {
+          promptTokens,
+          completionTokens,
+          totalTokens: Number(usageRecord?.total_tokens) || promptTokens + completionTokens,
+          cachedTokens: Number(details.cached_tokens) || 0,
+          cacheWriteTokens: Number(details.cache_write_tokens) || 0,
+        }
+        : undefined;
+      return { message: content, ...(usage ? { usage } : {}) };
     },
 
     localChat: async () => unavailable('Local Ollama chat'),

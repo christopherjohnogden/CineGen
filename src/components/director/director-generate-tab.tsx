@@ -9,6 +9,7 @@ import {
   applyBeatDurations, compileClipBody, retimeClipToSeconds, validateClipTimings, voicesFromBreakdown,
 } from '@/lib/director/prompt-compiler';
 import { isolatedPrompt } from '@/lib/director/isolate-prompt';
+import { clipDisplayLabels } from '@/lib/director/shotlist';
 import { getDirectorAdapter } from '@/lib/director/video-adapter';
 import { DirectorClipCraft } from './director-clip-craft';
 
@@ -38,7 +39,7 @@ function activeBody(show: DirectorShow, clip: DirectorClip): string {
 }
 
 export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
-  const { show, assets, preflight, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onRewrite, onKeepRewrite, onDiscardRewrite } = props;
+  const { show, assets, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onRewrite, onKeepRewrite, onDiscardRewrite } = props;
   const clip = selectedClip(show);
   const adapter = getDirectorAdapter(show.adapterId);
 
@@ -51,156 +52,301 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
     return <div className="director-tab__stage"><p className="director-tab__empty">Select a clip in the rail to preview and generate takes.</p></div>;
   }
 
+  const scene = show.scenes.find((entry) => entry.id === clip.sceneId) ?? selectedScene(show);
+  const clipLabel = clipDisplayLabels(show.scenes, show.clips).get(clip.id);
   const key = variantKey(clip.activeVariant);
   const takes = takesForVariant(clip, key);
   const selectedTake = takes.find((take) => take.id === show.selectedTakeId) ?? takes[takes.length - 1];
   const asset = assets.find((entry) => entry.id === selectedTake?.assetId);
   const timingError = validateClipTimings(clip);
   const compiled = adapter.buildRequest({ show, clip, variant: clip.activeVariant }).prompt;
-  const beatN = clip.beats.some((beat) => beat.n === selectedBeatN) ? selectedBeatN : clip.beats[0]?.n ?? 1;
+  const variant = clip.activeVariant;
+  const isolated = variant.kind === 'isolated';
+  const beatN = isolated ? variant.beatN : (clip.beats.some((beat) => beat.n === selectedBeatN) ? selectedBeatN : clip.beats[0]?.n ?? 1);
+  const beat = clip.beats.find((entry) => entry.n === beatN);
+  const queuedCount = show.clips.filter((entry) => entry.queued).length;
+  const sceneClipCount = show.clips.filter((entry) => entry.sceneId === scene?.id && !entry.altOf).length;
+  const thisLabel = clipLabel ?? 'clip';
 
-  const setVariant = (variant: IsolateVariant) => onChange({ ...setClipVariant(show, clip.id, variant), selectedClipId: clip.id });
+  const setVariant = (next: IsolateVariant) => onChange({ ...setClipVariant(show, clip.id, next), selectedClipId: clip.id });
+  const pickShot = (n: number) => {
+    onSelectBeat(n);
+    setVariant({ kind: 'isolated', beatN: n, mode: isolated ? variant.mode : 'held' });
+  };
 
   return (
     <div className="director-tab__stage">
-      <span className="director-tab__label" style={{ margin: 0 }}>{clip.id} — {clip.title}</span>
-
-      <div className="director-tab__viewer">
-        {asset?.url ? <video src={asset.url} controls /> : (
-          <span className="director-tab__empty">
-            {selectedTake?.status === 'running' || selectedTake?.status === 'queued'
-              ? `T${String(selectedTake.number).padStart(2, '0')} generating…`
-              : 'No take yet for this variant'}
-          </span>
-        )}
-      </div>
-
-      <div className="director-tab__row">
-        <button type="button" className="director-tab__btn" onClick={() => setVariant({ kind: 'full' })}>Full</button>
-        <button type="button" className="director-tab__btn" onClick={() => setVariant({ kind: 'isolated', beatN, mode: 'held' })} disabled={!clip.beats.some((beat) => beat.n === beatN)}>Hold to {clip.seconds}s</button>
-        <button type="button" className="director-tab__btn" onClick={() => setVariant({ kind: 'isolated', beatN, mode: 'native' })} disabled={!clip.beats.some((beat) => beat.n === beatN)}>Native length</button>
-      </div>
-
-      <label className="director-tab__row" style={{ alignItems: 'center', fontSize: 12 }}>
-        <input type="checkbox" checked={Boolean(clip.queued)} style={{ width: 'auto' }}
-          onChange={(event) => onChange({ ...show, clips: show.clips.map((entry) => entry.id === clip.id ? { ...entry, queued: event.target.checked } : entry) })} />
-        Queue for Generate all
-      </label>
-
-      <div className="director-tab__fields">
-        <div>
-          <label className="director-tab__label" htmlFor="director-title">Title</label>
-          <input id="director-title" value={clip.title} onChange={(event) => patchClip((current) => ({ ...current, title: event.target.value }))} />
-        </div>
-        <div>
-          <label className="director-tab__label" htmlFor="director-seconds">Seconds</label>
-          <input id="director-seconds" type="number" min={1} value={clip.seconds} onChange={(event) => patchClip((current) => retimeClipToSeconds(current, Number(event.target.value) || current.seconds))} />
-        </div>
-        <div>
-          <label className="director-tab__label" htmlFor="director-subject">Subject</label>
-          <textarea id="director-subject" value={clip.subject} onChange={(event) => patchClip((current) => ({ ...current, subject: event.target.value }))} />
-        </div>
-        <div>
-          <label className="director-tab__label" htmlFor="director-location">Location</label>
-          <textarea id="director-location" value={clip.location} onChange={(event) => patchClip((current) => ({ ...current, location: event.target.value }))} />
-        </div>
-        <DirectorClipCraft clip={clip} sceneLabel={selectedScene(show)?.label ?? 'scene'} aspectRatio={show.aspectRatio} onPatch={patchClip} />
-        <div>
-          <label className="director-tab__label" htmlFor="director-style">Style</label>
-          <textarea id="director-style" value={clip.style} onChange={(event) => patchClip((current) => ({ ...current, style: event.target.value }))} />
-        </div>
-        <div>
-          <label className="director-tab__label" htmlFor="director-constraints">Constraints</label>
-          <textarea id="director-constraints" value={clip.constraints} onChange={(event) => patchClip((current) => ({ ...current, constraints: event.target.value }))} />
-        </div>
-        <label className="director-tab__row" style={{ alignItems: 'center', fontSize: 12 }}>
-          <input
-            type="checkbox"
-            checked={Boolean(clip.framingRefOn)}
-            onChange={(event) => patchClip((current) => ({ ...current, framingRefOn: event.target.checked }))}
-          />
-          Framing reference
-        </label>
-        {clip.framingRefOn && (
-          <input
-            value={clip.framingRefTag ?? ''}
-            placeholder="@Composition-Tag"
-            onChange={(event) => patchClip((current) => ({ ...current, framingRefTag: event.target.value }))}
-          />
-        )}
-        {timingError && <p className="director-tab__warn">{timingError}</p>}
-
-        <div>
-          <span className="director-tab__label">Shots</span>
-          <div className="director-tab__list">
-            {clip.beats.map((beat) => (
-              <button key={beat.n} type="button" className={`director-tab__beat${beat.n === beatN ? ' director-tab__beat--active' : ''}`} onClick={() => onSelectBeat(beat.n)}>
-                <span className="director-tab__item-title">SHOT {beat.n} ({beat.from}–{beat.to})</span>
-                <span className="director-tab__meta">{beat.cam || beat.text}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <span className="director-tab__label">Shot timings</span>
-          <div className="director-tab__list">
-            {clip.beats.map((beat) => (
-              <div key={beat.n} className="director-tab__row" style={{ alignItems: 'center' }}>
-                <span className="director-tab__meta" style={{ minWidth: 42 }}>S{beat.n}</span>
-                <input type="number" min={1} value={beat.dur} onChange={(event) => patchClip((current) => applyBeatDurations({ ...current, beats: current.beats.map((entry) => entry.n === beat.n ? { ...entry, dur: Math.max(1, Number(event.target.value) || entry.dur) } : entry) }))} />
-                <input value={beat.text} onChange={(event) => patchClip((current) => ({ ...current, beats: current.beats.map((entry) => entry.n === beat.n ? { ...entry, text: event.target.value } : entry) }))} />
+      <div className="dgen-cols">
+        {/* ── LEFT: the production console ── */}
+        <div className="dgen-left">
+          <div className="dgen-head">
+            <div className="dgen-head-id">
+              {clipLabel && <span className="dsl-cid dgen-cid">{clipLabel}</span>}
+              <div className="dgen-head-text">
+                <span className="dgen-title">{clip.title}</span>
+                <span className="director-tab__meta">
+                  {scene?.label ?? 'Scene'} · {clip.seconds}s · {clip.beats.length === 1 ? 'held single' : `${clip.beats.length} shots`}
+                  {typeof clip.fov === 'number' ? ` · ${clip.fov}° lens` : ''}
+                </span>
               </div>
-            ))}
+            </div>
+            <div className="dgen-actions-col">
+              <div className="dgen-actions">
+                <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={() => onGenerate('active')} disabled={Boolean(timingError)}>
+                  Generate {thisLabel}{isolated ? ` · S${beatN}` : ''}
+                </button>
+                <span className="dgen-actions-rule" aria-hidden />
+                <label className="dsl-queue dgen-queue" title="Queue this clip for batch generate">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(clip.queued)}
+                    onChange={(event) => patchClip((current) => ({ ...current, queued: event.target.checked }))}
+                  />
+                  <span className="dsl-queue-box" aria-hidden />
+                </label>
+                <button
+                  type="button"
+                  className="director-tab__btn"
+                  disabled={queuedCount === 0}
+                  title={queuedCount === 0 ? 'Tick Queue on clips first — an empty queue does not generate the show' : `Generate ${queuedCount} queued clip${queuedCount === 1 ? '' : 's'}`}
+                  onClick={() => onGenerate('queued')}
+                >
+                  Queued · {queuedCount}
+                </button>
+                <button
+                  type="button"
+                  className="director-tab__btn"
+                  disabled={sceneClipCount === 0}
+                  title={`Generate all ${sceneClipCount} clip${sceneClipCount === 1 ? '' : 's'} in ${scene?.label ?? 'this scene'}`}
+                  onClick={() => onGenerate('scene')}
+                >
+                  Scene {scene?.number ?? ''}
+                </button>
+              </div>
+              <span className="director-tab__meta dgen-actions-meta">
+                {adapter.label} · {queuedCount} queued · Scene {scene?.number ?? '—'} · {sceneClipCount} clips · show {runtimeSeconds(show.clips)}s
+              </span>
+            </div>
           </div>
-        </div>
-
-        <div>
-          <label className="director-tab__label" htmlFor="director-body">Active variant body</label>
-          <textarea id="director-body" className="director-tab__prompt" value={activeBody(show, clip)}
-            onChange={(event) => patchClip((current) => ({ ...current, bodyEdits: { ...current.bodyEdits, [variantKey(current.activeVariant)]: event.target.value } }))} />
-          <button type="button" className="director-tab__btn" onClick={() => patchClip((current) => { const next = { ...current.bodyEdits }; delete next[variantKey(current.activeVariant)]; return { ...current, bodyEdits: next }; })}>Reset compiled</button>
-        </div>
-
-        <div>
-          <span className="director-tab__label">Compiled prompt</span>
-          <textarea className="director-tab__prompt" readOnly value={compiled} />
-        </div>
-
-        <p className="director-tab__meta">{preflight} · runtime {runtimeSeconds(show.clips)}s</p>
-        {warnings.map((warning) => <p key={warning} className="director-tab__warn">{warning}</p>)}
-
-        <div className="director-tab__row">
-          <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={() => onGenerate('active')} disabled={Boolean(timingError)}>Generate variant</button>
-          <button type="button" className="director-tab__btn" onClick={() => onGenerate('queued')}>Generate queued</button>
-          <button type="button" className="director-tab__btn" onClick={() => onGenerate('scene')}>Generate scene</button>
-        </div>
-
-        <div>
-          <span className="director-tab__label">Takes</span>
-          <div className="director-tab__takes">
-            {takes.length === 0 && <span className="director-tab__empty">None yet</span>}
-            {takes.map((take) => (
-              <button key={take.id} type="button" title={take.status}
-                className={`director-tab__take${take.id === selectedTake?.id ? ' director-tab__take--active' : ''}${take.hero ? ' director-tab__take--hero' : ''}`}
-                onClick={() => onChange({ ...show, selectedTakeId: take.id })}
-                onDoubleClick={() => onChange(setHeroTake(show, clip.id, take.id))}>
-                T{String(take.number).padStart(2, '0')}{take.hero ? ' ★' : ''}
+          {(timingError || warnings.length > 0) && (
+            <div className="dgen-actions-msg">
+              {timingError && <p className="director-tab__warn">{timingError}</p>}
+              {warnings.map((warning) => <p key={warning} className="director-tab__warn">{warning}</p>)}
+            </div>
+          )}
+          <div className="dgen-seg" role="group" aria-label="Variant">
+            <button
+              type="button"
+              className={`dgen-seg-btn${!isolated ? ' dgen-seg-btn--on' : ''}`}
+              onClick={() => setVariant({ kind: 'full' })}
+            >
+              Full multishot
+            </button>
+            {clip.beats.map((entry) => (
+              <button
+                key={entry.n}
+                type="button"
+                className={`dgen-seg-btn${isolated && variant.beatN === entry.n ? ' dgen-seg-btn--on' : ''}`}
+                title={entry.text}
+                onClick={() => pickShot(entry.n)}
+              >
+                S{entry.n}
               </button>
             ))}
           </div>
+          {isolated && beat && (
+            <div className="dgen-seg" role="group" aria-label="Isolation length">
+              <button
+                type="button"
+                className={`dgen-seg-btn${variant.mode === 'held' ? ' dgen-seg-btn--on' : ''}`}
+                onClick={() => setVariant({ kind: 'isolated', beatN, mode: 'held' })}
+              >
+                Held · {clip.seconds}s
+              </button>
+              <button
+                type="button"
+                className={`dgen-seg-btn${variant.mode === 'native' ? ' dgen-seg-btn--on' : ''}`}
+                onClick={() => setVariant({ kind: 'isolated', beatN, mode: 'native' })}
+              >
+                Native · {beat.dur}s
+              </button>
+            </div>
+          )}
+
+          <div className="director-tab__viewer dgen-viewer">
+            {asset?.url ? <video src={asset.url} controls /> : (
+              <span className="director-tab__empty">
+                {selectedTake?.status === 'running' || selectedTake?.status === 'queued'
+                  ? `T${String(selectedTake.number).padStart(2, '0')} generating…`
+                  : 'No take yet for this variant'}
+              </span>
+            )}
+          </div>
+
+          <div className="dgen-takes">
+            <span className="dsl-scenefield-label">Takes · double-click to mark hero</span>
+            <div className="director-tab__takes">
+              {takes.length === 0 && <span className="director-tab__meta">None yet</span>}
+              {takes.map((take) => (
+                <button key={take.id} type="button" title={take.status}
+                  className={`director-tab__take${take.id === selectedTake?.id ? ' director-tab__take--active' : ''}${take.hero ? ' director-tab__take--hero' : ''}`}
+                  onClick={() => onChange({ ...show, selectedTakeId: take.id })}
+                  onDoubleClick={() => onChange(setHeroTake(show, clip.id, take.id))}>
+                  T{String(take.number).padStart(2, '0')}{take.hero ? ' ★' : ''}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="dgen-notes">
+            <span className="dsl-scenefield-label">Director&rsquo;s notes — rewrite this variant</span>
+            <textarea id="director-notes" placeholder="What to keep or change on the next rewrite of this take."
+              onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); onRewrite((event.currentTarget as HTMLTextAreaElement).value); } }} />
+            <div className="director-tab__row">
+              <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={() => { const field = document.getElementById('director-notes') as HTMLTextAreaElement | null; onRewrite(field?.value ?? ''); }}>Rewrite</button>
+              <button type="button" className="director-tab__btn" onClick={onKeepRewrite} disabled={!clip.pendingRewrite}>Keep</button>
+              <button type="button" className="director-tab__btn" onClick={onDiscardRewrite} disabled={!clip.pendingRewrite}>Discard</button>
+            </div>
+            {clip.pendingRewrite && <p className="director-tab__ok">Rewrite ready — Keep to store, Discard to revert.</p>}
+          </div>
         </div>
 
-        <div>
-          <label className="director-tab__label" htmlFor="director-notes">Director notes</label>
-          <textarea id="director-notes" placeholder="What to keep or change on the next rewrite of this variant."
-            onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); onRewrite((event.currentTarget as HTMLTextAreaElement).value); } }} />
-          <div className="director-tab__row">
-            <button type="button" className="director-tab__btn" onClick={() => { const field = document.getElementById('director-notes') as HTMLTextAreaElement | null; onRewrite(field?.value ?? ''); }}>Rewrite</button>
-            <button type="button" className="director-tab__btn" onClick={onKeepRewrite} disabled={!clip.pendingRewrite}>Keep</button>
-            <button type="button" className="director-tab__btn" onClick={onDiscardRewrite} disabled={!clip.pendingRewrite}>Discard</button>
-          </div>
-          {clip.pendingRewrite && <p className="director-tab__ok">Rewrite ready — Keep to store, Discard to revert.</p>}
+        {/* ── RIGHT: the prompt stack ── */}
+        <div className="dgen-right">
+          <details className="dsl-section" open>
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Prompt</span>
+              <span className="director-tab__meta">what this variant sends</span>
+              <button
+                type="button"
+                className="director-tab__btn"
+                style={{ marginLeft: 'auto' }}
+                onClick={(event) => { event.preventDefault(); void navigator.clipboard.writeText(compiled); }}
+              >
+                Copy
+              </button>
+            </summary>
+            <div className="dgen-section-body">
+              <pre className="dsl-prompt dgen-prompt">{compiled}</pre>
+            </div>
+          </details>
+
+          <details className="dsl-section">
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Edit body</span>
+              <span className="director-tab__meta">{clip.bodyEdits[key] ? 'manually edited' : 'compiled'}</span>
+            </summary>
+            <div className="dgen-section-body">
+              <textarea className="director-tab__prompt dgen-bodyedit" value={activeBody(show, clip)}
+                onChange={(event) => patchClip((current) => ({ ...current, bodyEdits: { ...current.bodyEdits, [variantKey(current.activeVariant)]: event.target.value } }))} />
+              <button type="button" className="director-tab__btn" onClick={() => patchClip((current) => { const next = { ...current.bodyEdits }; delete next[variantKey(current.activeVariant)]; return { ...current, bodyEdits: next }; })}>Reset to compiled</button>
+            </div>
+          </details>
+
+          <details className="dsl-section">
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Shots</span>
+              <span className="director-tab__meta">{clip.beats.length} · durations must sum to {clip.seconds}s</span>
+            </summary>
+            <div className="dgen-section-body">
+              {clip.beats.map((entry) => (
+                <div key={entry.n} className="dgen-shotedit">
+                  <button
+                    type="button"
+                    className={`director-tab__iso${entry.n === beatN ? ' director-tab__iso--active' : ''}`}
+                    title="Select this shot for isolation"
+                    onClick={() => pickShot(entry.n)}
+                  >
+                    S{entry.n}
+                  </button>
+                  <input
+                    type="number" min={1} value={entry.dur} className="dgen-shotedit-dur"
+                    onChange={(event) => patchClip((current) => applyBeatDurations({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, dur: Math.max(1, Number(event.target.value) || row.dur) } : row) }))}
+                  />
+                  <input
+                    value={entry.text}
+                    onChange={(event) => patchClip((current) => ({ ...current, beats: current.beats.map((row) => row.n === entry.n ? { ...row, text: event.target.value } : row) }))}
+                  />
+                </div>
+              ))}
+            </div>
+          </details>
+
+          <details className="dsl-section">
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Setup</span>
+              <span className="director-tab__meta">title · length · subject · location</span>
+            </summary>
+            <div className="dgen-section-body director-tab__fields">
+              <div className="dgen-two">
+                <label className="dsl-scenefield">
+                  <span className="dsl-scenefield-label">Title</span>
+                  <input value={clip.title} onChange={(event) => patchClip((current) => ({ ...current, title: event.target.value }))} />
+                </label>
+                <label className="dsl-scenefield" style={{ maxWidth: 120 }}>
+                  <span className="dsl-scenefield-label">Seconds</span>
+                  <input type="number" min={1} value={clip.seconds} onChange={(event) => patchClip((current) => retimeClipToSeconds(current, Number(event.target.value) || current.seconds))} />
+                </label>
+              </div>
+              <label className="dsl-scenefield">
+                <span className="dsl-scenefield-label">Subject</span>
+                <textarea value={clip.subject} onChange={(event) => patchClip((current) => ({ ...current, subject: event.target.value }))} />
+              </label>
+              <label className="dsl-scenefield">
+                <span className="dsl-scenefield-label">Location</span>
+                <textarea value={clip.location} onChange={(event) => patchClip((current) => ({ ...current, location: event.target.value }))} />
+              </label>
+            </div>
+          </details>
+
+          <details className="dsl-section">
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Craft</span>
+              <span className="director-tab__meta">blocking · lens · acting · staging</span>
+            </summary>
+            <div className="dgen-section-body director-tab__fields">
+              <DirectorClipCraft clip={clip} sceneLabel={scene?.label ?? 'scene'} aspectRatio={show.aspectRatio} onPatch={patchClip} />
+            </div>
+          </details>
+
+          <details className="dsl-section">
+            <summary className="dsl-section-head">
+              <span className="dsl-tw" aria-hidden />
+              <span className="dsl-section-title">Style &amp; constraints</span>
+              <span className="director-tab__meta">palette · failure locks · framing ref</span>
+            </summary>
+            <div className="dgen-section-body director-tab__fields">
+              <label className="dsl-scenefield">
+                <span className="dsl-scenefield-label">Style — 60/30/10</span>
+                <textarea value={clip.style} onChange={(event) => patchClip((current) => ({ ...current, style: event.target.value }))} />
+              </label>
+              <label className="dsl-scenefield">
+                <span className="dsl-scenefield-label">Constraints — the failures this shot invites</span>
+                <textarea value={clip.constraints} onChange={(event) => patchClip((current) => ({ ...current, constraints: event.target.value }))} />
+              </label>
+              <label className="director-tab__row" style={{ alignItems: 'center', fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(clip.framingRefOn)}
+                  style={{ width: 'auto' }}
+                  onChange={(event) => patchClip((current) => ({ ...current, framingRefOn: event.target.checked }))}
+                />
+                Framing reference
+              </label>
+              {clip.framingRefOn && (
+                <input
+                  value={clip.framingRefTag ?? ''}
+                  placeholder="@Composition-Tag"
+                  onChange={(event) => patchClip((current) => ({ ...current, framingRefTag: event.target.value }))}
+                />
+              )}
+            </div>
+          </details>
         </div>
       </div>
     </div>

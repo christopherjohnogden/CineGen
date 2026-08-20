@@ -245,6 +245,7 @@ export function elementFromRow(row: Record<string, unknown>): Element {
     type: (str(row['type']) || 'character') as Element['type'],
     description: str(row['description']),
     images,
+    folderId: optStr(row['folder_id']) ?? optStr(row['folderId']),
     createdAt: str(row['created_at']),
     updatedAt: str(row['updated_at']),
   };

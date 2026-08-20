@@ -311,6 +311,8 @@ export const browserElectronAPI: BrowserElectronAPI = {
     uploadMediaSource: (sourceUrl, apiKey) => (
       rpc('elements', 'uploadMediaSource', sourceUrl, apiKey)
     ),
+    loadLibrary: (opts) => rpc('elements', 'loadLibrary', opts),
+    saveLibrary: (library) => rpc('elements', 'saveLibrary', library),
   },
   music: {
     generatePrompt: (params) => rpc('music', 'generatePrompt', params),
@@ -326,6 +328,7 @@ export const browserElectronAPI: BrowserElectronAPI = {
     claudeCodeChat: (params) => rpc('llm', 'claudeCodeChat', params),
     codexChat: (params) => rpc('llm', 'codexChat', params),
     geminiChat: (params) => rpc('llm', 'geminiChat', params),
+    openaiChat: (params) => rpc('llm', 'openaiChat', params),
     claudeCodeCancel: (requestId) => rpc('llm', 'claudeCodeCancel', requestId),
     codexCancel: (requestId) => rpc('llm', 'codexCancel', requestId),
     geminiCancel: (requestId) => rpc('llm', 'geminiCancel', requestId),

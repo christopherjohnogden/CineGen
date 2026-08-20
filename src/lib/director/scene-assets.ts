@@ -21,7 +21,11 @@ export function applyManualTag(
   const tag = normalizeTag(name);
   const existing = breakdown.find((b) => b.tag === tag);
   if (existing) {
-    const next = existing.kind === kind ? breakdown : breakdown.map((b) => (b.tag === tag ? { ...b, kind } : b));
+    // Tagging by hand takes ownership: clear `auto` so the live script
+    // reconciliation never removes an item the user deliberately kept.
+    const next = existing.kind === kind && !existing.auto
+      ? breakdown
+      : breakdown.map((b) => (b.tag === tag ? { ...b, kind, auto: false } : b));
     return { breakdown: next, name, tag };
   }
   const item: DirectorBreakdownItem = { id: generateId(), kind, name, tag, description: '' };
@@ -62,6 +66,17 @@ export function highlightRuns(text: string, breakdown: DirectorBreakdownItem[]):
   }
   if (pos < text.length) runs.push({ text: text.slice(pos) });
   return runs;
+}
+
+/** Highlight using the same per-scene set as the assets panel — removed tags stay unmarked. */
+export function highlightRunsForScene(
+  text: string,
+  show: DirectorShow,
+  sceneIndex: number,
+  scene: ScriptScene,
+): HighlightRun[] {
+  const items = resolveSceneAssets(show, sceneIndex, show.breakdown, scene).map((row) => row.item);
+  return highlightRuns(text, items);
 }
 
 export function detectSceneAssets(scene: ScriptScene, breakdown: DirectorBreakdownItem[]): SceneAssetHit[] {

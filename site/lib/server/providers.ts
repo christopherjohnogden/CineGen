@@ -14,7 +14,10 @@ async function readProviderJson(response: Response): Promise<unknown> {
     const record = payload && typeof payload === "object" && !Array.isArray(payload)
       ? payload as Record<string, unknown>
       : {};
-    const message = [record.message, record.error, record.detail]
+    const nested = record.error && typeof record.error === "object" && !Array.isArray(record.error)
+      ? (record.error as Record<string, unknown>).message
+      : undefined;
+    const message = [record.message, nested, record.error, record.detail]
       .find((entry) => typeof entry === "string") as string | undefined;
     throw new SiteHttpError(
       502,
@@ -112,4 +115,57 @@ export async function hostedChat(value: unknown) {
       ? record.text
       : "";
   return { message: message.trim(), ...(record.usage ? { usage: record.usage } : {}) };
+}
+
+export async function hostedOpenAiChat(value: unknown) {
+  const params = requireRecord(value, "OpenAI chat parameters");
+  const apiKey = typeof params.apiKey === "string" ? params.apiKey.trim() : "";
+  if (!apiKey || apiKey.length > 1_000) {
+    throw new SiteHttpError(400, "An OpenAI API key is required.", "MISSING_API_KEY");
+  }
+  const userMessage = typeof params.userMessage === "string" ? params.userMessage.trim() : "";
+  if (!userMessage) {
+    throw new SiteHttpError(400, "No OpenAI prompt provided.", "INVALID_INPUT");
+  }
+  const systemPrompt = typeof params.systemPrompt === "string" ? params.systemPrompt.trim() : "";
+  const model = typeof params.model === "string" && params.model.trim()
+    ? params.model.trim()
+    : "gpt-5.6-luna";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(model)) {
+    throw new SiteHttpError(400, "Invalid OpenAI model.", "INVALID_INPUT");
+  }
+  const payload = await readProviderJson(await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+        { role: "user", content: userMessage },
+      ],
+      response_format: { type: "json_object" },
+      reasoning_effort: "low",
+      max_completion_tokens: typeof params.maxCompletionTokens === "number"
+        ? Math.max(1, Math.floor(params.maxCompletionTokens))
+        : 60_000,
+    }),
+  }));
+  const record = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : {};
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  const choice = choices[0] && typeof choices[0] === "object" && !Array.isArray(choices[0])
+    ? choices[0] as Record<string, unknown>
+    : null;
+  const message = choice?.message && typeof choice.message === "object" && !Array.isArray(choice.message)
+    ? choice.message as Record<string, unknown>
+    : null;
+  const refusal = typeof message?.refusal === "string" ? message.refusal.trim() : "";
+  if (refusal) throw new SiteHttpError(502, refusal.slice(0, 2_000), "PROVIDER_ERROR");
+  const content = typeof message?.content === "string" ? message.content.trim() : "";
+  if (!content) throw new SiteHttpError(502, "OpenAI returned no text output.", "PROVIDER_BAD_RESPONSE");
+  return { message: content };
 }

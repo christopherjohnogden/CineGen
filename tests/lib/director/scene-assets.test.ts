@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyManualTag, detectSceneAssets, highlightRuns, resolveSceneAssets } from '@/lib/director/scene-assets';
+import { applyManualTag, detectSceneAssets, highlightRuns, highlightRunsForScene, resolveSceneAssets } from '@/lib/director/scene-assets';
 import type { DirectorBreakdownItem, DirectorShow } from '@/types/director';
 import { parseToScreenplay } from '@/lib/director/screenplay';
 import { splitScenes } from '@/lib/director/scene-split';
@@ -75,5 +75,33 @@ describe('resolveSceneAssets merges auto + ai + manual', () => {
     expect(tags).toContain('@Chesterfield-Sofa'); // ai
     expect(tags).toContain('@Sofa');              // manual add
     expect(tags).not.toContain('@Dr-Jordan');     // manual remove wins
+  });
+});
+
+describe('highlightRunsForScene', () => {
+  it('does not highlight a tag removed from that scene', () => {
+    const doc = parseToScreenplay('INT. OFFICE - DAY\nDr. Jordan sits on the Sofa.');
+    const scene = splitScenes(doc)[0];
+    const show = {
+      breakdown: BREAKDOWN,
+      sceneAssetOverrides: { 0: { added: [], removed: ['@Dr-Jordan'] } },
+    } as unknown as DirectorShow;
+    const marked = highlightRunsForScene(scene.elements[1]?.text ?? 'Dr. Jordan sits on the Sofa.', show, 0, scene)
+      .filter((run) => run.kind);
+    expect(marked.map((run) => run.text.toLowerCase())).not.toContain('dr. jordan');
+    expect(marked.map((run) => run.text)).toContain('Sofa');
+  });
+
+  it('still highlights a removed tag in a different scene', () => {
+    const doc = parseToScreenplay('INT. OFFICE - DAY\nDr. Jordan waits.\n\nINT. HALL - NIGHT\nDr. Jordan leaves.');
+    const scenes = splitScenes(doc);
+    const show = {
+      breakdown: BREAKDOWN,
+      sceneAssetOverrides: { 0: { added: [], removed: ['@Dr-Jordan'] } },
+    } as unknown as DirectorShow;
+    const scene0 = highlightRunsForScene('Dr. Jordan waits.', show, 0, scenes[0]).filter((run) => run.kind);
+    const scene1 = highlightRunsForScene('Dr. Jordan leaves.', show, 1, scenes[1]).filter((run) => run.kind);
+    expect(scene0).toHaveLength(0);
+    expect(scene1.map((run) => run.text)).toEqual(['Dr. Jordan']);
   });
 });

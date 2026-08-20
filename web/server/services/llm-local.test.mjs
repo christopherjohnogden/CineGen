@@ -357,3 +357,77 @@ test('CLI output caps and unsupported capabilities fail without running arbitrar
   assert.equal(localLlmCapabilities.runCutWorkflow, false);
   assert.equal(localLlmCapabilities.shellInterpolation, false);
 });
+
+test('Director JSON jobs are an allowed CLI purpose and skip Claude project discovery', async () => {
+  const specs = [];
+  const handlers = createLocalLlmHandlers({
+    events: eventCollector().events,
+    fetchImpl: async () => { throw new Error('Ollama should not run'); },
+    detector: async (provider) => installedDetector(provider),
+    async processRunner(spec, io) {
+      specs.push(spec);
+      io.onStdout('{"type":"system","subtype":"init","session_id":"json_session"}\n');
+      io.onStdout('{"type":"result","result":"{\\"ok\\":true}"}\n');
+      return { code: 0, signal: null };
+    },
+  });
+
+  await assert.rejects(
+    handlers.claudeCodeChat({
+      requestId: 'bad-purpose',
+      userMessage: 'Hello',
+      purpose: 'pwn',
+    }),
+    (error) => error.code === 'INVALID_INPUT' && /purpose is invalid/i.test(error.message),
+  );
+
+  const result = await handlers.claudeCodeChat({
+    requestId: 'json-job-request',
+    model: 'haiku',
+    purpose: 'json-job',
+    injectProjectContext: false,
+    systemPrompt: 'Return ONLY JSON.',
+    userMessage: 'Cover this scene.',
+  });
+  assert.equal(result.message, '{"ok":true}');
+  assert.equal(specs.length, 1);
+  assert.equal(specs[0].args.includes('--safe-mode'), true);
+  assert.equal(specs[0].args.includes('--effort'), true);
+  assert.equal(specs[0].args.includes('--no-session-persistence'), false);
+  assert.equal(specs[0].args.includes('--include-partial-messages'), true);
+  const systemIdx = specs[0].args.indexOf('--system-prompt');
+  assert.ok(systemIdx >= 0);
+  assert.equal(specs[0].args[systemIdx + 1], 'Return ONLY JSON.');
+  assert.equal(specs[0].args.includes('Cover this scene.'), true);
+});
+
+test('Director JSON jobs skip Codex user config and send the prompt on stdin', async () => {
+  const specs = [];
+  const handlers = createLocalLlmHandlers({
+    events: eventCollector().events,
+    fetchImpl: async () => { throw new Error('Ollama should not run'); },
+    detector: async (provider) => installedDetector(provider),
+    async processRunner(spec, io) {
+      specs.push(spec);
+      io.onStdout('{"type":"thread.started","thread_id":"codex_json"}\n');
+      io.onStdout('{"type":"item.completed","item":{"type":"agent_message","text":"{\\"ok\\":true}"}}\n');
+      return { code: 0, signal: null };
+    },
+  });
+
+  const result = await handlers.codexChat({
+    requestId: 'codex-json-job',
+    model: 'gpt-5.6-luna',
+    purpose: 'json-job',
+    injectProjectContext: false,
+    systemPrompt: 'Return ONLY JSON.',
+    userMessage: 'Cover this scene.',
+  });
+  assert.equal(result.message, '{"ok":true}');
+  assert.equal(specs.length, 1);
+  assert.equal(specs[0].args.includes('--ignore-user-config'), true);
+  assert.equal(specs[0].args.includes('--ignore-rules'), true);
+  assert.equal(specs[0].args.includes('Cover this scene.'), false);
+  assert.match(specs[0].stdin, /Return ONLY JSON/);
+  assert.match(specs[0].stdin, /Cover this scene/);
+});

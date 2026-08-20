@@ -1,5 +1,3 @@
-
-
 import type { Element } from '@/types/elements';
 
 const TYPE_ICONS: Record<string, string> = {
@@ -11,18 +9,27 @@ const TYPE_ICONS: Record<string, string> = {
 
 interface ElementCardProps {
   element: Element;
-  onClick: () => void;
+  selected?: boolean;
+  onClick: (e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-export function ElementCard({ element, onClick }: ElementCardProps) {
+export function ElementCard({ element, selected = false, onClick, onContextMenu }: ElementCardProps) {
   const thumbnail = element.images[0]?.url;
 
   return (
-    <button className="element-card" onClick={onClick} type="button">
+    <button
+      className={`element-card${selected ? ' element-card--selected' : ''}`}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      type="button"
+      data-element-id={element.id}
+      aria-selected={selected}
+    >
       <div className="element-card__thumbnail">
         {thumbnail ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumbnail} alt={element.name} className="element-card__image" />
+          <img src={thumbnail} alt={element.name} className="element-card__image" draggable={false} />
         ) : (
           <span className="element-card__icon">{TYPE_ICONS[element.type] ?? '📦'}</span>
         )}

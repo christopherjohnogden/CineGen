@@ -197,6 +197,16 @@ export function extractTextOutput(value: unknown, depth = 0): string | undefined
       if (text && !/^https?:\/\//i.test(text)) return text;
     }
   }
+  // CLI ≥1.x llm_text jobs carry their answer in result_json — a JSON string
+  // that may itself be an envelope, so try to dig before falling back to raw.
+  const rawJson = value.result_json;
+  if (typeof rawJson === 'string' && rawJson.trim()) {
+    try {
+      const found = extractTextOutput(JSON.parse(rawJson) as unknown, depth + 1);
+      if (found) return found;
+    } catch { /* not JSON — the string is the answer */ }
+    return rawJson.trim();
+  }
   for (const key of ['output', 'result', 'data', 'job', 'results', 'outputs', 'items']) {
     const found = extractTextOutput(value[key], depth + 1);
     if (found) return found;

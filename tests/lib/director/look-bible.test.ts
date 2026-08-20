@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
-import { addFilmRef, applyWrittenLook, compileLookBible, extractScriptText, lookNotesAreStale, setLookNotes, syncLookNotes } from '@/lib/director/look-bible';
+import { addFilmRef, applyWrittenLook, compileLookBible, extractScriptText, lookBibleImageUrls, lookNotesAreStale, setLookNotes, syncLookNotes } from '@/lib/director/look-bible';
 import { directorFromUnknown } from '@/lib/director/snapshot';
 import { seedance25Adapter } from '@/lib/director/video-adapter';
 import type { DirectorClip } from '@/types/director';
@@ -48,6 +48,7 @@ describe('director look bible', () => {
     expect(show.lookBible.notes).toContain('No Country for Old Men');
     expect(show.lookBible.notes).toContain('kitchen-dusk');
     expect(compileLookBible(show)).toBe(show.lookBible.notes);
+    expect(lookBibleImageUrls(show)).toEqual(['https://example.test/still.jpg']);
 
     const request = seedance25Adapter.buildRequest({ show, clip, variant: { kind: 'full' } });
     expect(request.params.genre).toBe('noir');
@@ -100,5 +101,16 @@ describe('director look bible', () => {
     expect(loaded.lookBible.filmRefs).toEqual([]);
     expect(loaded.lookBible.moodBoards).toEqual([]);
     expect(loaded.genre).toBe('auto');
+  });
+
+  it('caps mood-board stills sent to the look-bible LLM', () => {
+    const urls = Array.from({ length: 8 }, (_, i) => `local-media://file/tmp/${i}.jpg`);
+    expect(lookBibleImageUrls({
+      lookBible: {
+        filmRefs: [],
+        notes: '',
+        moodBoards: urls.map((url, i) => ({ id: String(i), name: `${i}.jpg`, url })),
+      },
+    })).toEqual(urls.slice(0, 6));
   });
 });

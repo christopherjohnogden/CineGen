@@ -18,7 +18,7 @@ export function useDirectorCascade({
   runShotlist,
   commitSyncState,
   debounceMs = 2500,
-}: Args): { dirty: string[]; running: boolean } {
+}: Args): { dirty: string[]; running: boolean; cancel: () => void } {
   const [running, setRunning] = useState(false);
   const [dirty, setDirty] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,12 +48,23 @@ export function useDirectorCascade({
         d.changed.length && cur.docKind !== 'beatsheet'
           ? { sceneIds: scenesForKeys(cur, d.changed).map((s) => s.id) }
           : 'all';
-      await runBreakdown(scope, controller.signal);
+      // The deterministic breakdown phase commits scenes/items before the LLM
+      // refinement can fail, so a refinement failure must not cost the user
+      // their clips — the shotlist still runs on what the parse produced.
+      let breakdownFailed = false;
+      try {
+        await runBreakdown(scope, controller.signal);
+      } catch {
+        breakdownFailed = true;
+      }
       if (controller.signal.aborted) return;
       await runShotlist(scope, controller.signal);
       if (controller.signal.aborted) return;
       // Reached only when this controller was never aborted, so a superseded
       // (cancel-and-restart) run bails out above and never commits stale state.
+      // A half-failed run (breakdown refinement down) stays dirty so the next
+      // edit retries the whole chain.
+      if (breakdownFailed) return;
       commitSyncState({ hashes: Object.fromEntries(next), dirty: [], lastRunAt: Date.now() });
       setDirty([]);
     } finally {
@@ -90,5 +101,11 @@ export function useDirectorCascade({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show.sourceText, autoSync, debounceMs]);
 
-  return { dirty, running };
+  const cancel = () => {
+    if (timer.current) clearTimeout(timer.current);
+    abort.current?.abort();
+    setRunning(false);
+  };
+
+  return { dirty, running, cancel };
 }

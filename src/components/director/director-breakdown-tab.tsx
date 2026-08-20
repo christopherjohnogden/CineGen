@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import type { Element } from '@/types/elements';
-import type { BreakdownKind, DirectorShow } from '@/types/director';
+import type { BreakdownKind, DirectorBreakdownItem, DirectorShow } from '@/types/director';
 import { parseToScreenplay } from '@/lib/director/screenplay';
 import { splitScenes, type ScriptScene } from '@/lib/director/scene-split';
 import { sceneKeyMap } from '@/lib/director/cascade';
 import { applyManualTag } from '@/lib/director/scene-assets';
+import { assignBreakdownElement } from '@/lib/director/breakdown';
 import { SceneScriptView } from './scene-script-view';
 import { SceneAssetsPanel } from './scene-assets-panel';
+import { ElementModal } from '@/components/elements/element-modal';
 
 interface DirectorBreakdownTabProps {
   show: DirectorShow;
@@ -15,17 +17,25 @@ interface DirectorBreakdownTabProps {
   syncing: boolean;
   onChange: (show: DirectorShow) => void;
   onApprove: () => void;
-  onCreateMissing: () => void;
+  onCreateElement: (item: DirectorBreakdownItem, data: {
+    name: string;
+    type: Element['type'];
+    description: string;
+    images: Element['images'];
+  }) => void;
   onOpenElements: () => void;
 }
 
-export function DirectorBreakdownTab({ show, elements, dirtyKeys, syncing, onChange, onApprove, onCreateMissing, onOpenElements }: DirectorBreakdownTabProps) {
+export function DirectorBreakdownTab({
+  show, elements, dirtyKeys, syncing, onChange, onApprove, onCreateElement, onOpenElements,
+}: DirectorBreakdownTabProps) {
   const scenes = splitScenes(parseToScreenplay(show.sourceText));
   const sceneKeys = sceneKeyMap(scenes);
-  const keyOf = (s: ScriptScene) => sceneKeys.get(s) ?? (s.heading.trim().toUpperCase() || '(untitled)');
+  const keyOf = (entry: ScriptScene) => sceneKeys.get(entry) ?? (entry.heading.trim().toUpperCase() || '(untitled)');
   const [sceneIndex, setSceneIndex] = useState(0);
   const [activeKind, setActiveKind] = useState<'all' | BreakdownKind>('all');
   const [focusName, setFocusName] = useState<string | undefined>();
+  const [createFor, setCreateFor] = useState<DirectorBreakdownItem | null>(null);
   const scene = scenes[sceneIndex] ?? scenes[0];
 
   if (!scene) {
@@ -41,13 +51,9 @@ export function DirectorBreakdownTab({ show, elements, dirtyKeys, syncing, onCha
   const onAssetClick = (kind: BreakdownKind, name: string) => {
     if (activeKind !== 'all' && activeKind !== kind) setActiveKind(kind);
     setFocusName(undefined);
-    // set on next tick so the effect re-fires even if the name repeats
     requestAnimationFrame(() => setFocusName(name));
   };
 
-  // Manually tag a highlighted span as a breakdown element. Creates a real breakdown item
-  // (so it highlights everywhere and feeds the assets panel / refs / generation), or re-kinds
-  // an existing one with the same tag.
   const tagSelection = (kind: BreakdownKind, rawName: string) => {
     const res = applyManualTag(show.breakdown, kind, rawName);
     if (!res) return;
@@ -63,22 +69,18 @@ export function DirectorBreakdownTab({ show, elements, dirtyKeys, syncing, onCha
           <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onApprove} disabled={show.breakdown.length === 0 || show.breakdownApproved}>{show.breakdownApproved ? 'Approved' : 'Approve →'}</button>
         </div>
         <span className="director-tab__label">Scenes</span>
-        {scenes.map((s) => (
-          <div key={s.index} className={`dbk-navitem${s.index === sceneIndex ? ' dbk-navitem--on' : ''}`} onClick={() => { setSceneIndex(s.index); setActiveKind('all'); }}>
+        {scenes.map((entry) => (
+          <div key={entry.index} className={`dbk-navitem${entry.index === sceneIndex ? ' dbk-navitem--on' : ''}`} onClick={() => { setSceneIndex(entry.index); setActiveKind('all'); }}>
             <div className="dbk-navtxt">
-              <div className="dbk-navnum">SC{s.index + 1}</div>
-              <div className="dbk-navttl">{s.heading || '(untitled scene)'}</div>
+              <div className="dbk-navnum">SC{entry.index + 1}</div>
+              <div className="dbk-navttl">{entry.heading || '(untitled scene)'}</div>
             </div>
-            <span className={`dbk-syncdot dbk-syncdot--${syncing ? 'run' : dirtyKeys.includes(keyOf(s)) ? 'stale' : 'ok'}`} />
+            <span className={`dbk-syncdot dbk-syncdot--${syncing ? 'run' : dirtyKeys.includes(keyOf(entry)) ? 'stale' : 'ok'}`} />
           </div>
         ))}
-        <div className="director-tab__row" style={{ marginTop: 10 }}>
-          <button type="button" className="director-tab__btn" onClick={onCreateMissing}>Create missing</button>
-          <button type="button" className="director-tab__btn" onClick={onOpenElements}>Generate refs</button>
-        </div>
       </aside>
 
-      <SceneScriptView scene={scene} breakdown={show.breakdown} onAssetClick={onAssetClick} onTagSelection={tagSelection} />
+      <SceneScriptView scene={scene} sceneIndex={sceneIndex} show={show} onAssetClick={onAssetClick} onTagSelection={tagSelection} />
 
       <aside className="dbk-assets">
         <SceneAssetsPanel
@@ -91,10 +93,23 @@ export function DirectorBreakdownTab({ show, elements, dirtyKeys, syncing, onCha
           onSetKind={setActiveKind}
           onRemove={removeFromScene}
           onGenerateRef={() => onOpenElements()}
-          onEditDescription={(tag, description) => onChange({ ...show, breakdown: show.breakdown.map((b) => (b.tag === tag ? { ...b, description } : b)) })}
-          onRelink={() => onOpenElements()}
+          onEditDescription={(tag, description) => onChange({ ...show, breakdown: show.breakdown.map((item) => (item.tag === tag ? { ...item, description } : item)) })}
+          onAssign={(tag, elementId) => onChange({ ...show, breakdown: assignBreakdownElement(show.breakdown, tag, elementId) })}
+          onCreate={setCreateFor}
         />
       </aside>
+
+      {createFor && (
+        <ElementModal
+          key={createFor.tag}
+          defaults={{ name: createFor.name, type: createFor.kind, description: createFor.description }}
+          onSave={(data) => {
+            onCreateElement(createFor, data);
+            setCreateFor(null);
+          }}
+          onClose={() => setCreateFor(null)}
+        />
+      )}
     </div>
   );
 }

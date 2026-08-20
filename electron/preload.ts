@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     upload: (fileData: unknown, apiKey?: string) => ipcRenderer.invoke('elements:upload', fileData, apiKey),
     uploadTranscriptionSource: (sourceUrl: string, apiKey?: string) => ipcRenderer.invoke('elements:upload-transcription-source', sourceUrl, apiKey),
     uploadMediaSource: (sourceUrl: string, apiKey?: string) => ipcRenderer.invoke('elements:upload-media-source', sourceUrl, apiKey),
+    loadLibrary: (opts?: { projectId?: string; projectName?: string }) => ipcRenderer.invoke('elements-library:load', opts),
+    saveLibrary: (library: unknown) => ipcRenderer.invoke('elements-library:save', library),
   },
   music: {
     generatePrompt: (params: unknown) => ipcRenderer.invoke('music:generate-prompt', params),
@@ -50,6 +52,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     claudeCodeChat: (params: unknown) => ipcRenderer.invoke('llm:claude-code-chat', params),
     codexChat: (params: unknown) => ipcRenderer.invoke('llm:codex-chat', params),
     geminiChat: (params: unknown) => ipcRenderer.invoke('llm:gemini-chat', params),
+    openaiChat: (params: unknown) => ipcRenderer.invoke('llm:openai-chat', params),
     claudeCodeCancel: (requestId: string) => ipcRenderer.invoke('llm:claude-code-cancel', requestId),
     codexCancel: (requestId: string) => ipcRenderer.invoke('llm:codex-cancel', requestId),
     geminiCancel: (requestId: string) => ipcRenderer.invoke('llm:gemini-cancel', requestId),

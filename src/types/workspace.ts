@@ -3,7 +3,7 @@ import type { Asset, MediaFolder } from './project';
 import type { Timeline } from './timeline';
 import type { ExportJob } from './export';
 import type { WorkflowNodeData, WorkflowRun } from './workflow';
-import type { Element } from './elements';
+import type { Element, ElementFolder } from './elements';
 import type { DirectorShow } from './director';
 
 export type ProjectTab = 'elements' | 'create' | 'director' | 'edit' | 'llm' | 'export' | 'settings';
@@ -32,5 +32,6 @@ export interface WorkspaceState {
   runningNodeIds: Set<string>;
   exports: ExportJob[];
   elements: Element[];
+  elementFolders: ElementFolder[];
   director: DirectorShow;
 }

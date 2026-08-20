@@ -15,6 +15,7 @@ type Provider = 'fal' | 'kie';
 interface Settings {
   falKey: string;
   kieKey: string;
+  openaiKey: string;
   runpodKey: string;
   runpodEndpoints: Record<string, string>;
   podId: string;
@@ -32,6 +33,7 @@ interface Settings {
 const DEFAULT_SETTINGS: Settings = {
   falKey: '',
   kieKey: '',
+  openaiKey: '',
   runpodKey: '',
   runpodEndpoints: {},
   podId: '',
@@ -88,6 +90,7 @@ function saveSettings(s: Settings) {
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showFalKey, setShowFalKey] = useState(false);
+  const [showOpenAiKey, setShowOpenAiKey] = useState(false);
   const [showKieKey, setShowKieKey] = useState(false);
   const [showRunpodKey, setShowRunpodKey] = useState(false);
   const [podStatus, setPodStatus] = useState<'unknown' | 'starting' | 'stopping' | 'running' | 'stopped'>('unknown');
@@ -147,6 +150,23 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 onClick={() => setShowFalKey((v) => !v)}
               >
                 {showFalKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+
+            <label className="settings-modal__label" style={{ marginTop: 12 }}>OpenAI API Key</label>
+            <div className="settings-modal__key-row">
+              <input
+                type={showOpenAiKey ? 'text' : 'password'}
+                className="settings-modal__input"
+                placeholder="Enter your OpenAI key..."
+                value={settings.openaiKey}
+                onChange={(e) => update({ openaiKey: e.target.value })}
+              />
+              <button
+                className="settings-modal__toggle-btn"
+                onClick={() => setShowOpenAiKey((v) => !v)}
+              >
+                {showOpenAiKey ? 'Hide' : 'Show'}
               </button>
             </div>
 

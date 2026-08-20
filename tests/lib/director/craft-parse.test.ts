@@ -120,7 +120,7 @@ describe('job inputs', () => {
   };
 
   it('hands the shotlist job the acting profile, the locked voice and the scene event', () => {
-    const input = shotlistJobInput(show, show.scenes[0], false);
+    const input = shotlistJobInput(show, undefined);
     expect(input).toContain('ACTING PROFILE — Character acting as VIKTOR.');
     expect(input).toContain('VOICE (locked, never adapted) — "A 60-year-old ex-boxer."');
     expect(input).toContain('EVENT — The search for self-forgiveness');
@@ -128,13 +128,13 @@ describe('job inputs', () => {
   });
 
   it('sends only the selected scene when shotlisting one scene', () => {
-    const input = shotlistJobInput({ ...show, scenes: [...show.scenes, { ...show.scenes[0], id: 's2', number: 2, label: 'SCENE 2' }] }, show.scenes[0], true);
+    const input = shotlistJobInput({ ...show, scenes: [...show.scenes, { ...show.scenes[0], id: 's2', number: 2, label: 'SCENE 2' }] }, [show.scenes[0]]);
     expect(input).toContain('Only this scene:');
     expect(input).not.toContain('SCENE 2');
   });
 
   it('omits acting lines for characters that have none', () => {
-    const input = shotlistJobInput({ ...show, breakdown: [{ ...show.breakdown[0], actingProfile: undefined, voice: undefined }] }, undefined, false);
+    const input = shotlistJobInput({ ...show, breakdown: [{ ...show.breakdown[0], actingProfile: undefined, voice: undefined }] }, undefined);
     expect(input).not.toContain('ACTING PROFILE');
     expect(input).not.toContain('VOICE (locked');
   });

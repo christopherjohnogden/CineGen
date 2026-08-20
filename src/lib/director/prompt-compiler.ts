@@ -6,6 +6,7 @@ import type {
   IsolateVariant,
 } from '@/types/director';
 import { EYE_LIFE_SAFETY } from './craft/acting';
+import { DIALOGUE_DISCIPLINE } from './craft/blocking';
 import { isFovAnchor, nearestFovAnchor, opticsBlock } from './craft/optics';
 import { stagingConnectorBlock } from './staging-map';
 import { variantKey } from './slate';
@@ -42,14 +43,19 @@ export function compileClipBody(clip: DirectorClip, options: CompileClipOptions 
     ? clip.elementTags.map((tag) => tag.startsWith('@') ? tag : `@${tag}`).join(' + ')
     : 'none';
   const shotCount = clip.beats.length;
-  const shotWord = shotCount === 1 ? 'ONE SHOT' : `${numberWord(shotCount)} SHOTS`;
   const actionShots = clip.beats.map((beat, index) => (
     formatShotHeading(beat, index === clip.beats.length - 1)
   )).join('\n');
 
+  // CINEDANCE format mode: a single beat is a held single — one continuous
+  // take, never "one shot with hard cuts", which invites the model to add one.
+  const format = shotCount === 1
+    ? `FORMAT — ${clip.seconds} SECONDS, ONE CONTINUOUS UNBROKEN TAKE. No internal cuts — a cut is a failed take.`
+    : `FORMAT — ${clip.seconds} SECONDS, ${numberWord(shotCount)} SHOTS with hard cuts.`;
+
   const blocks = [
     `ELEMENTS — ${tags}`,
-    `FORMAT — ${clip.seconds} SECONDS, ${shotWord} with hard cuts.`,
+    format,
     `SUBJECT — ${clip.subject.trim()}`,
     `LOCATION — ${clip.location.trim()}`,
   ];
@@ -65,6 +71,8 @@ export function compileClipBody(clip: DirectorClip, options: CompileClipOptions 
   if (acting) blocks.push(acting);
   const voice = compileVoiceBlock(clip, options.voices);
   if (voice) blocks.push(voice);
+  const dialogue = compileDialogueBlock(clip);
+  if (dialogue) blocks.push(dialogue);
   if (clip.camera?.trim()) blocks.push(`CAMERA — ${clip.camera.trim()}`);
   if (clip.style.trim()) blocks.push(`STYLE — ${clip.style.trim()}`);
   if (clip.lock?.trim()) blocks.push(clip.lock.trim());
@@ -98,6 +106,11 @@ export function compileActingBlock(tasks: DirectorActingTask[] | undefined): str
     return lines.join('\n');
   });
   return `${blocks.join('\n\n')}\n\n${EYE_LIFE_SAFETY}`;
+}
+
+/** The dialogue discipline ships with any clip that carries a spoken line. */
+export function compileDialogueBlock(clip: Pick<DirectorClip, 'beats'>): string {
+  return clip.beats.some((beat) => beat.quote?.trim()) ? DIALOGUE_DISCIPLINE : '';
 }
 
 export function compileStagingBlock(clip: Pick<DirectorClip, 'staging'>): string {

@@ -32,6 +32,7 @@ const PROJECT_CATEGORIES: { id: ProjectCategory; label: string }[] = [
 interface Settings {
   falKey: string;
   kieKey: string;
+  openaiKey: string;
   runpodKey: string;
   runpodEndpoints: Record<string, string>;
   podId: string;
@@ -53,6 +54,7 @@ interface Settings {
 const DEFAULT_SETTINGS: Settings = {
   falKey: '',
   kieKey: '',
+  openaiKey: '',
   runpodKey: '',
   runpodEndpoints: {},
   podId: '',
@@ -406,6 +408,12 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                     value={settings.falKey}
                     onChange={(v) => update({ falKey: v })}
                     placeholder="Enter your fal.ai key..."
+                  />
+                  <ApiKeyField
+                    label="OpenAI"
+                    value={settings.openaiKey}
+                    onChange={(v) => update({ openaiKey: v })}
+                    placeholder="Enter your OpenAI key..."
                   />
                   <ApiKeyField
                     label="kie.ai"

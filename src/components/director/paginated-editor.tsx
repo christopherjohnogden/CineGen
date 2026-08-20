@@ -1,4 +1,4 @@
-import { useCallback, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import type { Screenplay, ScreenplayElement, ScreenplayElementType } from '@/lib/director/screenplay';
 import { nextElementType, typeAfterEnter } from '@/lib/director/screenplay';
 import { generateId } from '@/lib/utils/ids';
@@ -26,6 +26,20 @@ interface PaginatedEditorProps {
 
 export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSelect, onAcceptEdits, onDeclineEdits }: PaginatedEditorProps) {
   const patch = useCallback((elements: ScreenplayElement[]) => onChange({ elements }), [onChange]);
+  // Element to focus after the next render — used when an element was just
+  // created (Enter, or click-to-type on an empty page) and its node doesn't
+  // exist yet at the moment of the event.
+  const [focusId, setFocusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusId) return;
+    const node = document.querySelector<HTMLElement>(`.dse-el[data-el-id="${focusId}"]`);
+    if (node) {
+      node.focus();
+      placeCaretAtEnd(node);
+    }
+    setFocusId(null);
+  }, [focusId, doc.elements]);
 
   const setText = (id: string, text: string) => patch(doc.elements.map((e) => (e.id === id ? { ...e, text } : e)));
   const setType = (id: string, type: ScreenplayElementType) => patch(doc.elements.map((e) => (e.id === id ? { ...e, type } : e)));
@@ -38,13 +52,37 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
       const created: ScreenplayElement = { id: generateId(), type: typeAfterEnter(el.type), text: '' };
       patch([...doc.elements.slice(0, i + 1), created, ...doc.elements.slice(i + 1)]);
       onSelect(created.id);
+      setFocusId(created.id);
     }
+  };
+
+  // Click-to-type: a click on the page surface (not inside an element) focuses
+  // the nearest line — or, on a brand-new empty script, creates the first one.
+  const onFlowClick = (e: MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('.dse-el')) return; // native caret handling
+    if (pendingEdits && pendingEdits.length > 0) return;      // read-only while a diff is pending
+    if (doc.elements.length === 0) {
+      const created: ScreenplayElement = { id: generateId(), type: 'scene', text: '' };
+      patch([created]);
+      onSelect(created.id);
+      setFocusId(created.id);
+      return;
+    }
+    const nodes = [...e.currentTarget.querySelectorAll<HTMLElement>('.dse-el[contenteditable="true"]')];
+    if (nodes.length === 0) return;
+    let best = nodes[0];
+    for (const node of nodes) {
+      if (node.getBoundingClientRect().top <= e.clientY) best = node;
+    }
+    best.focus();
+    placeCaretAtEnd(best);
   };
 
   const diffTargets = new Set(
     (pendingEdits ?? []).filter((ed) => ed.op === 'replace' || ed.op === 'delete').map((ed) => ed.targetElementId).filter(Boolean) as string[],
   );
-  const hasPendingEdits = !!pendingEdits && pendingEdits.length > 0;
+  const pendingCount = pendingEdits?.length ?? 0;
+  const hasPendingEdits = pendingCount > 0;
   // Added elements with no existing anchor (no target, or a target not in the doc — e.g.
   // drafting into an empty script) render at the top; otherwise they'd be invisible.
   const elementIds = new Set(doc.elements.map((e) => e.id));
@@ -59,7 +97,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
     <div className="dse-diffbar">
       <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept</button>
       <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline</button>
-      <span className="director-tab__meta">assistant edit · {pendingEdits!.length} change{pendingEdits!.length === 1 ? '' : 's'}</span>
+      <span className="director-tab__meta">assistant edit · {pendingCount} change{pendingCount === 1 ? '' : 's'}</span>
     </div>
   );
   // Which existing element is the LAST one carrying a diff (so the bottom-of-diff bar lands there).
@@ -74,6 +112,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
   return (
     <PaginatedPages
       items={items}
+      onFlowClick={onFlowClick}
       renderItem={(el) => {
         if (el.__add) {
           return (
@@ -109,7 +148,7 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
       }}
       leading={hasPendingEdits ? (
         <div className="dxf-stickybar">
-          <span className="lbl">assistant edit · {pendingEdits!.length} change{pendingEdits!.length === 1 ? '' : 's'}</span>
+          <span className="lbl">assistant edit · {pendingCount} change{pendingCount === 1 ? '' : 's'}</span>
           <div className="dxf-stickybar__btns">
             <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={onAcceptEdits}>✓ Accept all</button>
             <button type="button" className="director-tab__btn" onClick={onDeclineEdits}>✕ Decline all</button>
@@ -119,6 +158,15 @@ export function PaginatedEditor({ doc, selectedId, pendingEdits, onChange, onSel
       trailing={hasPendingEdits && !bottomBarAfterId ? inlineBar : null}
     />
   );
+}
+
+function placeCaretAtEnd(node: HTMLElement) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
 }
 
 function renderDiffAdds(edits: AssistantEdit[], targetId: string) {
