@@ -11,7 +11,7 @@ import { parseVariantKey, variantKey, variantTakeLabel } from '@/lib/director/sl
 import { DirectorTakesBoard } from './director-takes-board';
 import { DirectorGenerateViewer } from './director-generate-viewer';
 import {
-  applyBeatDurations, compileClipBody, retimeClipToSeconds, validateClipTimings, voicesFromBreakdown,
+  applyBeatDurations, compileClipBody, compileOptionsForShow, retimeClipToSeconds, validateClipTimings,
 } from '@/lib/director/prompt-compiler';
 import { isolatedPrompt } from '@/lib/director/isolate-prompt';
 import { clipDisplayLabels } from '@/lib/director/shotlist';
@@ -35,11 +35,14 @@ interface DirectorGenerateTabProps {
 }
 
 function activeBody(show: DirectorShow, clip: DirectorClip): string {
-  const options = { voices: voicesFromBreakdown(show.breakdown) };
+  const options = compileOptionsForShow(show, clip);
   const variant = clip.activeVariant;
   if (variant.kind === 'isolated') {
     return clip.bodyEdits[variantKey(variant)]
-      || isolatedPrompt(clip, variant.beatN, variant.mode, { aspectRatio: show.aspectRatio, voices: options.voices })
+      || isolatedPrompt(clip, variant.beatN, variant.mode, {
+        aspectRatio: show.aspectRatio,
+        ...options,
+      })
       || compileClipBody(clip, options);
   }
   return clip.bodyEdits.full || compileClipBody(clip, options);

@@ -100,10 +100,10 @@ describe('acting and voice compilation', () => {
   it('writes the task as verbs at the partner plus the eye-life safety line', () => {
     const block = compileActingBlock(clip.acting);
     expect(block).toContain('ACTING TASK — @Viktor');
-    expect(block).toContain('MOTIVE —');
-    expect(block).toContain('OBSTACLE —');
-    expect(block).toContain('MOMENT TO MOMENT —');
-    expect(block).toContain('never a frozen, glassy or unfocused stare');
+    expect(block).toContain('MOTIVE (his fuel):');
+    expect(block).toContain('OBSTACLE:');
+    expect(block).toContain('Moment to moment:');
+    expect(block).toContain('never a frozen, glassy, unfocused stare');
   });
 
   it('omits the block entirely when no character has a task', () => {
@@ -111,10 +111,15 @@ describe('acting and voice compilation', () => {
     expect(compileActingBlock([])).toBe('');
   });
 
+  it('compiles tig SCENE DIRECTION from the scene event', () => {
+    const block = compileActingBlock(clip.acting, { event: 'keep the lie from landing' });
+    expect(block).toContain('SCENE DIRECTION (shared, unspoken): keep the lie from landing');
+  });
+
   it('pastes a locked voice only for characters who actually speak', () => {
     const voices = { '@Viktor': '"A 60-year-old ex-boxer."', '@Passenger': '"A frightened 19-year-old."' };
     const block = compileVoiceBlock(clip, voices);
-    expect(block).toContain('@Passenger');
+    expect(block).toContain("Passenger's voice:");
     expect(block).not.toContain('@Viktor');
   });
 
@@ -133,21 +138,64 @@ describe('acting and voice compilation', () => {
 });
 
 describe('clip body ordering', () => {
-  it('puts spatial and optical locks ahead of action, camera and style', () => {
+  it('follows the Oneiric heading order', () => {
     const body = compileClipBody(clip, { voices: { '@Passenger': '"A frightened 19-year-old."' } });
-    const order = ['ELEMENTS —', 'SUBJECT —', 'LOCATION —', 'BLOCKING —', 'OPTICS —', 'ACTION —', 'ACTING TASK —', 'VOICE —', 'STYLE —', 'CONSTRAINTS —'];
+    const order = [
+      'SCENE CONTEXT', 'ACTIVE REFERENCES', 'LOCATION MAP (exact positions)', 'FORMAT MODE',
+      'SEGMENT 1', 'SEGMENT 2', 'DIALOGUE (spoken exactly as written',
+      'AUDIO (voice identity only', 'STYLE', 'POSITIVE LOCKS',
+    ];
     const positions = order.map((heading) => body.indexOf(heading));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
+  it('writes Oneiric ACTIVE REFERENCES from breakdown copy', () => {
+    const body = compileClipBody(
+      { ...clip, elementTags: ['@Viktor', '@loc_cab'] },
+      {
+        breakdown: [
+          { id: '1', kind: 'character', name: 'Viktor', tag: '@Viktor', description: 'late-40s, grey stubble, navy coat' },
+          { id: '2', kind: 'location', name: 'Night cab', tag: '@loc_cab', description: 'parked cab, sodium amber through the windscreen' },
+        ],
+      },
+    );
+    expect(body).toContain('@Viktor: late-40s, grey stubble, navy coat. 100% matches the reference.');
+    expect(body).toContain('@loc_cab: parked cab, sodium amber through the windscreen. Controls architecture, materials, clutter, and light only. 100% matches the reference.');
+  });
+
+  it('puts beat camera language on the SEGMENT heading and LENS line', () => {
+    const body = compileClipBody(clip);
+    expect(body).toContain('SEGMENT 1 — locked on the mirror (~0:00–0:07)');
+    expect(body).toContain('LENS: locked on the mirror');
+    expect(body).not.toContain('CAMERA — SHOT 1:');
+  });
+
+  it('puts a clip-level CAMERA note under FORMAT MODE', () => {
+    const body = compileClipBody({ ...clip, camera: 'ONE continuous shot on a BREATHING HANDHELD' });
+    expect(body).toContain('ONE continuous shot on a BREATHING HANDHELD');
+    expect(body.indexOf('FORMAT MODE')).toBeLessThan(body.indexOf('SEGMENT 1'));
+    expect(body.indexOf('FORMAT MODE')).toBeLessThan(body.indexOf('ONE continuous shot on a BREATHING HANDHELD'));
+  });
+
   it('leaves a clip without craft fields exactly as it was', () => {
     const plain = { ...clip, blocking: undefined, fov: undefined, acting: undefined, staging: undefined };
     const body = compileClipBody(plain);
-    expect(body).not.toContain('BLOCKING —');
+    expect(body).not.toContain('FIRST FRAME AND BLOCKING —');
     expect(body).not.toContain('OPTICS —');
+    expect(body).not.toContain('ACTION TASK:');
     expect(body).not.toContain('ACTING TASK —');
-    expect(body).not.toContain('VOICE —');
+    expect(body).not.toContain('AUDIO (voice identity only');
+  });
+
+  it('puts physical action on SCENE CONTEXT and scene direction on the acting task', () => {
+    const body = compileClipBody(clip, {
+      event: 'keep the lie from landing',
+      physicalAction: 'waiting in a parked cab',
+    });
+    expect(body).toContain('Physical action: waiting in a parked cab');
+    expect(body).toContain('SCENE DIRECTION (shared, unspoken): keep the lie from landing');
+    expect(body).toContain('ACTING TASK — @Viktor');
   });
 });
 

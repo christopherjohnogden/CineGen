@@ -128,27 +128,43 @@ function elementForTag(
   ));
 }
 
-/** First still for each tagged clip element (and framing ref), in tag order. */
+/** First still for each tagged clip element, then framing ref, then the staging map LAST. */
 export function collectClipElementRefs(
   clip: DirectorClip,
   breakdown: DirectorBreakdownItem[],
   elements: Element[],
 ): string[] {
-  const tags: string[] = [];
-  const push = (raw?: string) => {
+  const primary: string[] = [];
+  const staging: string[] = [];
+  const push = (bucket: string[], raw?: string) => {
     if (!raw?.trim()) return;
     const tag = raw.startsWith('@') ? raw : `@${raw}`;
-    if (!tags.includes(tag)) tags.push(tag);
+    if (!primary.includes(tag) && !staging.includes(tag)) bucket.push(tag);
   };
-  for (const tag of clip.elementTags) push(tag);
-  if (clip.framingRefOn) push(clip.framingRefTag);
+
+  for (const tag of clip.elementTags) {
+    const normalized = tag.startsWith('@') ? tag : `@${tag}`;
+    push(/^@staging[_-]/i.test(normalized) ? staging : primary, tag);
+  }
+  if (clip.framingRefOn) push(primary, clip.framingRefTag);
+  if (clip.staging?.enabled) push(staging, clip.staging.stagingTag);
+
+  const stillFor = (tag: string) => {
+    const item = breakdown.find((entry) => entry.tag === tag);
+    return elementForTag(tag, item, elements)?.images.find((image) => image.url.trim())?.url.trim();
+  };
 
   const urls: string[] = [];
-  for (const tag of tags) {
-    if (urls.length >= MAX_ELEMENT_REFS) break;
-    const item = breakdown.find((entry) => entry.tag === tag);
-    const url = elementForTag(tag, item, elements)?.images.find((image) => image.url.trim())?.url.trim();
+  const stagingUrls = staging.map(stillFor).filter((url): url is string => Boolean(url));
+  const maxPrimary = Math.max(0, MAX_ELEMENT_REFS - (stagingUrls.length > 0 ? 1 : 0));
+  for (const tag of primary) {
+    if (urls.length >= maxPrimary) break;
+    const url = stillFor(tag);
     if (url && !urls.includes(url)) urls.push(url);
+  }
+  for (const url of stagingUrls) {
+    if (urls.length >= MAX_ELEMENT_REFS) break;
+    if (!urls.includes(url)) urls.push(url);
   }
   return urls;
 }

@@ -10,6 +10,8 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 ## Highlights
 
 - **Director tab:** script-to-Seedance 2.5 shotlist with takes and nested Edit media-pool folders
+- **CINEDANCE / Oneiric clip prompts:** compiled bodies use the Higgsfield Oneiric block order (ACTIVE REFERENCES, FORMAT MODE, SEGMENT n, DIALOGUE, AUDIO, STYLE, POSITIVE LOCKS) instead of ELEMENTS / SHOT n
+- **Oneiric Tig skills in-repo:** `skills/tig-acting-task` and `skills/tig-diagram` (blocking map) — scene direction compiles into `ACTING TASK`, staging stills attach last on Generate
 - **Global Elements library:** characters, locations, props, and vehicles are shared across projects and organized in folders
 - **New fal.ai video models:** Seedance 2.0 (text/image + reference-to-video)
 - **Multi-shot workflows:** “Shot Prompt” renamed to **Multi Prompt** (matches Kling 3 API)
@@ -24,7 +26,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 ### Director tab **(in progress)**
 - New workspace tab between **Spaces** and **Edit** that turns a script or idea into timed Seedance 2.5 clips
 - Breakdown reviews characters/locations/props/vehicles and matches existing Elements by `@Tag` / name. Unmatched items stay as **suggestions** on the Breakdown rail (big ref image left, info right) — **Assign to existing** or **Create new element** (opens the New Element modal). Approving no longer auto-creates library entries, so you don't have to delete extras on the Elements page
-- Shotlist compiler uses Seedance heading grammar (`SHOT n (0:00–0:07)`); isolate the selected beat as full multishot, held to clip length, or native length without creating a second clip
+- Shotlist compiler uses CINEDANCE / Oneiric prompt blocks (ACTIVE REFERENCES, FORMAT MODE, `SEGMENT n` with LENS / ACTION TASK, DIALOGUE, AUDIO, STYLE, POSITIVE LOCKS); isolate the selected beat as full multishot, held to clip length, or native length without creating a second clip **(in progress)**
 - Generate queues takes per variant into `Director / Scene / Clip / Full|Shot N` media-pool folders (`S09_2-9b_T01`, `S09_2-9b_S3x20_T01`)
 - Look bible builder: upload a script, pick a Seedance genre, type film references, drop mood-board stills — **Look notes** live-updates from those refs and stays editable; **Rewrite with LLM** attaches up to 6 stills so the model can see them and write palette/lighting into the prefix that every clip prompt uses
 - Breakdown / shotlist / look bible / rewrite run through a picked **Claude, Codex, or Gemini CLI** (same install detect as Copilot) — no fal key required
@@ -46,9 +48,9 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - Breakdown, shotlist, look bible and rewrite jobs now run on a shared **craft doctrine** (`src/lib/director/craft/`) covering spatial blocking, lens optics, physics/lighting, character performance and palette discipline
 - **Lens locks replace focal-length metadata:** clips carry a diagonal field of view (8° / 18° / 29° / 47° / 84° / 107°) that compiles into observable optical language plus the anti-drift lock for that lens — a stray value snaps to the nearest anchor
 - **Blocking block** per clip: screen positions, body facing, gaze targets, depth and landmark contact, with a warning when vague proximity words (`near`, `beside`, `around`) leave the geography free to flip
-- **Acting tasks** per character in frame — motive, goal, obstacle, tactic and dialogue-keyed moments — derived from a new scene-level **event** and **physical action**; characters carry an acting profile and a **locked voice** that is pasted verbatim only into clips where they actually speak
-- **Staging references** (blocking maps): generate a schematic outline diagram from a source frame, bind figures to characters by colour, and paste a positive-form `@staging_` connector that supplies position only — graphic vocabulary is kept out of the video prompt so the map's look can't bleed into the shot
-- Compiled clip bodies put spatial and optical locks ahead of action, camera and style; clips without the new fields compile exactly as before
+- **Acting tasks** per character in frame follow `skills/tig-acting-task`: compiled `ACTING TASK — @tag` with **SCENE DIRECTION** (scene event), motive / goal / obstacle / tactic, dialogue-keyed moments, and the eye-life safety line. Scene **physical action** is a line under SCENE CONTEXT. Characters still carry an acting profile and a **locked voice** pasted only where they speak
+- **Staging references** (blocking maps) follow `skills/tig-diagram`: schematic outline diagram prompt, `@staging_` connector in LOCATION MAP, and the staging still attached **last** on Generate so photo refs dominate the style vote
+- Compiled clip bodies follow the **CINEDANCE / Oneiric** skeleton: **SCENE CONTEXT → ACTIVE REFERENCES → LOCATION MAP (exact positions) → FORMAT MODE → SEGMENT n (LENS + ACTING TASK) → DIALOGUE → AUDIO → STYLE → POSITIVE LOCKS**. Empty blocks (PHYSICS, LIGHTING) are omitted. Beat `cam` becomes the segment label and `LENS:` line; clip-level CAMERA sits under FORMAT MODE. Breakdown copy fills ACTIVE REFERENCES as `@tag: … 100% matches the reference` (locations: architecture/materials/clutter/light only)
 
 ### Director tab: Generate page redesign **(in progress)**
 
@@ -75,6 +77,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - **Per-shot isolation on the shotmap** (matches the Higgsfield HTML shotlist interaction): every shot row carries two buttons — hold this shot as one unbroken take for the **full clip length**, or take it at its **own native length** — plus a **Full multishot** reset; isolating rewrites the displayed prompt live (single-take format, camera lock, isolated-prefix rewrite) and the same variant carries over to the Generate tab
 - **Clip length lives in Setup**: 10/15/20/30s in the Setup drawer sets shot density for the next shotlist run (existing clips keep their timing); a totals line tracks clips · shots · total runtime as the board fills
 - **Per-scene shotlisting**: every scene block has its own Shotlist / Re-shotlist button plus inline scene **event** and **physical action** fields, so a single scene can be (re)broken without touching the rest of the show
+- **Compiled prompts match CINEDANCE / Oneiric**: same blocks in the same order (SCENE CONTEXT, ACTIVE REFERENCES, LOCATION MAP, FORMAT MODE, SEGMENT n, DIALOGUE, AUDIO, STYLE, POSITIVE LOCKS). Multi-shot clips are a controlled HARD-CUT sequence; a single beat is a continuous take. Acting compiles as `ACTING TASK —` on the matching segment, with scene direction from the scene event **(in progress)**
 - **Single-beat clips compile as held singles**: `ONE CONTINUOUS UNBROKEN TAKE — a cut is a failed take` instead of "one shot with hard cuts", per the CINEDANCE format-mode rule
 - **Dialogue discipline compiles automatically**: any clip carrying a quoted line now ships the CINEDANCE audio lock (only scripted lines spoken, lips still when silent, listeners say nothing, ambient ducks under dialogue) in both full and isolated variants
 - Shotlist segmentation now knows the **4-second shot floor** (below it the model whips/blends), that a beat needing six angles is two clips, that **held singles are often the strongest 30s material**, and that dialogue cuts land where the power shifts — not at every line
@@ -315,7 +318,7 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 - **Seedance 2.5 unknown params:** Generate no longer sends `genre` or `multi_shots` — the live Higgsfield CLI dropped those flags. Genre and shot list stay in the prompt; CLI args are filtered to the current `seedance_2_5` schema **(in progress)**
 - **Higgsfield 503 during Generate:** a 503 while polling no longer kills a job that already landed. CineGen submits, then `generate wait` / `get` the job id and retries transient errors; the Generating spinner clears if the job really failed **(in progress)**
 - **Generate stuck on Rendering:** a take no longer stays “rendering” after Higgsfield has the mp4. CineGen stores the job id, fetches completed jobs (web `higgsfield.generateList` + `generate get`), and attaches the video; recovery retries instead of giving up after the first miss, and the overlay can **Load from Higgsfield** **(in progress)**
-- **Director element stills on Generate:** isolated prompts include `ELEMENTS`, and tagged library stills are sent to Seedance 2.5 as `omni_reference` `--image` refs so identity is locked to Peter / Jordan / locations, not invented from text **(in progress)**
+- **Director element stills on Generate:** isolated prompts include `ACTIVE REFERENCES`, and tagged library stills are sent to Seedance 2.5 as `omni_reference` `--image` refs so identity is locked to Peter / Jordan / locations, not invented from text **(in progress)**
 - **Generate take player:** the video fills the 16:9 viewer instead of sitting in a 240px-tall postage stamp with black padding **(in progress)**
 
 ---

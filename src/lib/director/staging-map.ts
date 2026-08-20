@@ -1,8 +1,8 @@
 import type { DirectorStagingFigure, DirectorStagingMap } from '@/types/director';
 
 /**
- * Staging references from tig-diagram: a schematic outline drawing that tells the
- * video model who is where and nothing else.
+ * Staging references from skills/tig-diagram.skill (tig-blocking-map v2): a
+ * schematic outline drawing that tells the video model who is where and nothing else.
  *
  * Style bleed from the map into the shot is the method's known enemy and has three
  * feeds, all closed here: the image stays thin muted outlines, the connector text

@@ -1,5 +1,5 @@
 import type { DirectorClip, DirectorShow, IsolateVariant } from '@/types/director';
-import { bodyForVariant, compileClipBody, prependPrefix, voicesFromBreakdown } from './prompt-compiler';
+import { bodyForVariant, compileClipBody, compileOptionsForShow, prependPrefix } from './prompt-compiler';
 import { isolatedPrompt, rewritePrefixForIsolate, withFramingReference } from './isolate-prompt';
 import { compileLookBible } from './look-bible';
 
@@ -44,7 +44,7 @@ function compiledPrompt(show: DirectorShow, clip: DirectorClip, variant: Isolate
   isolated: boolean;
 } {
   const prefix = compileLookBible(show);
-  const options = { voices: voicesFromBreakdown(show.breakdown) };
+  const options = compileOptionsForShow(show, clip);
   if (variant.kind === 'full') {
     const body = withFramingReference(clip, bodyForVariant(clip, variant, compileClipBody(clip, options), options), false);
     return {
@@ -55,7 +55,7 @@ function compiledPrompt(show: DirectorShow, clip: DirectorClip, variant: Isolate
   }
   const isolated = isolatedPrompt(clip, variant.beatN, variant.mode, {
     aspectRatio: show.aspectRatio,
-    voices: options.voices,
+    ...options,
   });
   if (!isolated) {
     const body = withFramingReference(clip, compileClipBody(clip, options), false);
@@ -105,7 +105,7 @@ export const seedance25Adapter: DirectorVideoAdapter = {
     if (medias.length > 0) {
       // t2v rejects reference media; omni_reference is how Seedance 2.5 locks to stills.
       params.mode = 'omni_reference';
-      prompt = `${prompt}\n\nREFERENCE STILLS — the attached images are LOCKED identity for the ELEMENTS tagged above. Faces, bodies, wardrobe and locations must match those stills.`;
+      prompt = `${prompt}\n\nREFERENCE STILLS — the attached images are LOCKED identity for the ACTIVE REFERENCES tagged above. Faces, bodies, wardrobe and locations must match those stills.`;
     }
     return {
       adapterId: this.id,

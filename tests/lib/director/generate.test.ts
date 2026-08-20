@@ -85,6 +85,25 @@ describe('collectClipElementRefs', () => {
       { id: 'el-peter', name: 'Peter', type: 'character', description: '', images: [], createdAt: '', updatedAt: '' },
     ])).toEqual([]);
   });
+
+  it('attaches the staging map still last', () => {
+    const target = clip('a', 's1');
+    target.elementTags = ['@staging_ward_v1', '@Peter'];
+    target.staging = {
+      enabled: true,
+      stagingTag: '@staging_ward_v1',
+      locationTag: '@loc_ward',
+      figures: [],
+    };
+    const urls = collectClipElementRefs(target, [
+      { id: '1', kind: 'character', name: 'Peter', tag: '@Peter', description: '', elementId: 'el-peter' },
+      { id: '2', kind: 'prop', name: 'Map', tag: '@staging_ward_v1', description: '', elementId: 'el-map' },
+    ], [
+      { id: 'el-peter', name: 'Peter', type: 'character', description: '', images: [{ id: 'i1', url: 'https://cdn/peter.png', createdAt: '', source: 'upload' }], createdAt: '', updatedAt: '' },
+      { id: 'el-map', name: 'Map', type: 'prop', description: '', images: [{ id: 'i2', url: 'https://cdn/staging.png', createdAt: '', source: 'generated' }], createdAt: '', updatedAt: '' },
+    ]);
+    expect(urls).toEqual(['https://cdn/peter.png', 'https://cdn/staging.png']);
+  });
 });
 
 describe('takesGroupedForClip', () => {

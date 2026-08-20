@@ -1,6 +1,6 @@
 /**
- * Performance doctrine distilled from the ACTING SYSTEM document and Tigran's
- * acting-task method (tig-acting-task).
+ * Performance doctrine distilled from skills/tig-acting-task/SKILL.md
+ * (Tigran's acting-task method) and the ACTING SYSTEM document.
  *
  * Two layers, deliberately separate:
  *  - the master profile, written once per character and adapted per scene;
@@ -43,7 +43,7 @@ A two-character clip is richer built on mirrored contrast: each character carrie
  * The one externally-described line the method allows, because the video model
  * needs it: without it the gaze freezes even when the task is written well.
  */
-export const EYE_LIFE_SAFETY = 'Gaze stays engaged in the task at every moment — never a frozen, glassy or unfocused stare; natural blink cadence, with the eyes reaching a target a beat before the head turns.';
+export const EYE_LIFE_SAFETY = 'Gaze stays engaged in the task at every moment — never a frozen, glassy, unfocused stare; natural blink cadence, actors blink now and then to moisturize their eyes; the eyes reach a target a beat before the head turns.';
 
 export const STATES_NOT_TRANSITIONS = 'STATES, NOT TRANSITIONS — video models fail transitions and land states. Write characters already in the action state (mid-throw, mid-pace, mid-argument), never the process of getting there. Chain states beat by beat instead of narrating a continuous process.';
 

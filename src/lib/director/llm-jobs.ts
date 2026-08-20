@@ -236,7 +236,7 @@ ${CONSTRAINT_DOCTRINE}
 Return ONLY JSON: { "clips": [ ...changed clips only... ] }`;
 
 export const NOTES_REWRITE_SYSTEM_PROMPT = `You rewrite a Seedance clip prompt using the director's notes about the last take.
-Keep the same heading structure (ELEMENTS, FORMAT, SUBJECT, LOCATION, BLOCKING, OPTICS, ACTION, ACTING TASK, CAMERA, STYLE, CONSTRAINTS) and keep every heading the prompt already has.
+Keep the same heading structure (SCENE CONTEXT, ACTIVE REFERENCES, LOCATION MAP, FORMAT MODE, SEGMENT, DIALOGUE, PHYSICS, LIGHTING, AUDIO, STYLE, POSITIVE LOCKS) and keep every heading the prompt already has.
 Change only what the notes ask for. When the notes say a take drifted or you overdid it, you changed too much: lock more and change less.
 
 ${CONSTRAINT_DOCTRINE}

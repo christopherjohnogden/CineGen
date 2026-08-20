@@ -28,19 +28,29 @@ const clip: DirectorClip = {
 };
 
 describe('director prompt compiler', () => {
-  it('emits parser-owned headings and timed shots', () => {
+  it('emits Oneiric headings and timed segments', () => {
     const body = compileClipBody(clip);
-    expect(body).toContain('ELEMENTS — @Peter-Boy + @Dr-Jordan');
-    expect(body).toContain('FORMAT — 20 SECONDS, THREE SHOTS');
-    expect(body).toContain('SHOT 1 (0:00–0:07)');
-    expect(body).toContain('SHOT 3 (0:14–0:20)');
+    expect(body).toContain('ACTIVE REFERENCES\n@Peter-Boy. 100% matches the reference.');
+    expect(body).toContain('@Dr-Jordan. 100% matches the reference.');
+    expect(body).toContain('Controlled three-segment sequence with HARD CUTS');
+    expect(body).toContain('SEGMENT 1 — MEDIUM, 50mm, locked (~0:00–0:07)');
+    expect(body).toContain('SEGMENT 3 — CLOSE, 85mm, locked (~0:14–0:20)');
+    expect(body).toContain('LENS: MEDIUM, 50mm, locked');
+    expect(body).not.toContain('SHOT 1 (0:00–0:07)');
+    expect(body).not.toContain('CAMERA — SHOT 1:');
+    expect(body).not.toContain('——— THE SHOT ———');
+    expect(body.indexOf('SCENE CONTEXT')).toBeLessThan(body.indexOf('ACTIVE REFERENCES'));
+    expect(body.indexOf('FORMAT MODE')).toBeLessThan(body.indexOf('SEGMENT 1'));
+    expect(body.indexOf('SEGMENT 3')).toBeLessThan(body.indexOf('\nSTYLE\n'));
+    expect(body.indexOf('\nSTYLE\n')).toBeLessThan(body.indexOf('POSITIVE LOCKS'));
   });
 
   it('ships the dialogue discipline with any clip that carries a quoted line', () => {
     const body = compileClipBody(clip);
-    expect(body).toContain('DIALOGUE — Only the quoted scripted lines are spoken');
+    expect(body).toContain('DIALOGUE (spoken exactly as written, verbatim, word for word)');
+    expect(body).toContain('Only the quoted scripted lines are spoken');
     const silent = { ...clip, beats: clip.beats.map((beat) => ({ ...beat, quote: undefined })) };
-    expect(compileClipBody(silent)).not.toContain('DIALOGUE —');
+    expect(compileClipBody(silent)).not.toContain('DIALOGUE (spoken');
   });
 
   it('formats a single-beat clip as one continuous take, never one shot with cuts', () => {
@@ -49,8 +59,8 @@ describe('director prompt compiler', () => {
       beats: [{ n: 1, from: '0:00', to: '0:20', dur: 20, text: 'He holds the look.', cam: 'CLOSE, locked' }],
     };
     const body = compileClipBody(single);
-    expect(body).toContain('ONE CONTINUOUS UNBROKEN TAKE');
-    expect(body).not.toContain('with hard cuts');
+    expect(body).toContain('Single continuous take, 20 seconds');
+    expect(body).not.toContain('with HARD CUTS');
   });
 
   it('rejects mistimed clips', () => {
@@ -78,7 +88,8 @@ describe('director isolate prompt', () => {
   it('rewrites native isolate to the beat duration', () => {
     const body = isolatedPrompt(clip, 3, 'native', { aspectRatio: '16:9' });
     expect(body).toContain('SINGLE UNBROKEN TAKE, 6 SECONDS');
-    expect(body).toContain('ELEMENTS — @Peter-Boy + @Dr-Jordan');
+    expect(body).toContain('ACTIVE REFERENCES\n@Peter-Boy. 100% matches the reference.');
+    expect(body.indexOf('ACTIVE REFERENCES')).toBeLessThan(body.indexOf('\nSTYLE\n'));
     expect(body).toContain('one beat lifted out');
     expect(body).toContain('TOTAL RUNTIME IS 6 SECONDS');
     expect(body).not.toContain('BEAT 1 of the same take');
@@ -106,7 +117,8 @@ describe('seedance 2.5 adapter', () => {
     expect(full.params).not.toHaveProperty('multi_shots');
     expect(full.params).not.toHaveProperty('multi_prompt');
     expect(full.durationSec).toBe(20);
-    expect(full.prompt).toMatch(/SHOT 1|THREE SHOTS|hard cuts/i);
+    expect(full.prompt).toMatch(/three-segment sequence with HARD CUTS/i);
+    expect(full.prompt).toContain('SEGMENT 1 —');
 
     const native = seedance25Adapter.buildRequest({
       show, clip, variant: { kind: 'isolated', beatN: 3, mode: 'native' },
@@ -129,7 +141,7 @@ describe('seedance 2.5 adapter', () => {
       { value: 'https://cdn.example/jordan.png', role: 'image' },
     ]);
     expect(withRefs.prompt).toContain('REFERENCE STILLS');
-    expect(withRefs.prompt).toContain('ELEMENTS — @Peter-Boy + @Dr-Jordan');
+    expect(withRefs.prompt).toContain('ACTIVE REFERENCES\n@Peter-Boy. 100% matches the reference.');
   });
 
   it('uses stored body edits for the active variant', () => {
