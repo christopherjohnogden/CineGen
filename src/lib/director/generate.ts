@@ -4,6 +4,7 @@ import type { Element } from '@/types/elements';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { nextTakeNumber, parseVariantKey, takeDisplayName, variantKey, variantTakeLabel } from './slate';
 import { planDirectorFolders } from './folders';
+import { clipDisplayLabels } from './shotlist';
 import { getDirectorAdapter } from './video-adapter';
 import { findMatchingElement, normalizeElementName, normalizeTag } from './breakdown';
 
@@ -173,15 +174,31 @@ export function isDirectorTakeLive(take?: DirectorTake): boolean {
   return take?.status === 'running' || take?.status === 'queued';
 }
 
+export function takeChipLabel(take: Pick<DirectorTake, 'number'>): string {
+  return `T${String(take.number).padStart(2, '0')}`;
+}
+
 export function generateViewerMessage(take: DirectorTake | undefined, hasUrl: boolean): string {
   if (hasUrl) return '';
   if (take?.status === 'running' || take?.status === 'queued') {
-    return `T${String(take.number).padStart(2, '0')} generating…`;
+    return `${takeChipLabel(take)} generating…`;
   }
   if (take?.status === 'failed') {
     return take.error?.trim() || 'Generation failed. Check Higgsfield CLI is installed and connected in Settings.';
   }
   return 'No take yet for this variant';
+}
+
+export function deleteTakeConfirmCopy(take: DirectorTake): { title: string; description: string } {
+  const label = takeChipLabel(take);
+  const title = `Delete ${label}`;
+  if (isDirectorTakeLive(take)) {
+    return { title, description: 'It is still generating. This cannot be undone.' };
+  }
+  if (take.hero) {
+    return { title, description: 'This is the marked hero. This cannot be undone.' };
+  }
+  return { title, description: 'This cannot be undone.' };
 }
 
 export function generationPreflight(args: {
@@ -209,6 +226,7 @@ export function prepareDirectorGeneration(args: {
   elements?: Element[];
 }): {
   foldersToAdd: MediaFolder[];
+  foldersToRename: Array<{ id: string; name: string }>;
   take: DirectorTake;
   asset: Asset;
   request: ReturnType<ReturnType<typeof getDirectorAdapter>['buildRequest']>;
@@ -219,11 +237,19 @@ export function prepareDirectorGeneration(args: {
   const referenceImages = collectClipElementRefs(args.clip, args.show.breakdown, args.elements ?? []);
   const request = adapter.buildRequest({ show: args.show, clip: args.clip, variant, referenceImages });
   const key = variantKey(variant);
+  const scenes = args.show.scenes.some((entry) => entry.id === args.scene.id)
+    ? args.show.scenes
+    : [...args.show.scenes, args.scene];
+  const clips = args.show.clips.some((entry) => entry.id === args.clip.id)
+    ? args.show.clips
+    : [...args.show.clips, args.clip];
+  const clipLabel = clipDisplayLabels(scenes, clips).get(args.clip.id);
   const planned = planDirectorFolders({
     folders: args.folders,
     scene: args.scene,
     clip: args.clip,
     variantKey: key,
+    clipLabel,
   });
   const take = createPendingTake({
     clip: args.clip,
@@ -237,7 +263,7 @@ export function prepareDirectorGeneration(args: {
   take.assetId = assetId;
   const asset: Asset = {
     id: assetId,
-    name: takeDisplayName(args.scene, args.clip, key, take.number),
+    name: takeDisplayName(args.scene, args.clip, key, take.number, clipLabel),
     type: 'video',
     url: '',
     duration: request.durationSec,
@@ -254,6 +280,7 @@ export function prepareDirectorGeneration(args: {
   };
   return {
     foldersToAdd: planned.foldersToAdd,
+    foldersToRename: planned.foldersToRename,
     take,
     asset,
     request,

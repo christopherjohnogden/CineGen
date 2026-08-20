@@ -1,7 +1,8 @@
 import type { Asset } from '@/types/project';
 import type { DirectorClip, DirectorShow, DirectorTake, IsolateVariant } from '@/types/director';
 import {
-  directorJobIsRunning, selectedClip, selectedScene, setClipVariant, setHeroTake, updateDirectorClip,
+  directorJobIsRunning, removeDirectorTake, selectedClip, selectedScene, setClipVariant, setHeroTake,
+  updateDirectorClip,
 } from '@/lib/director/director-state';
 import {
   isDirectorTakeLive, preferredIsolateMode, runtimeSeconds, takeCountForShot,
@@ -32,6 +33,7 @@ interface DirectorGenerateTabProps {
   onRewrite: (notes: string) => void;
   onKeepRewrite: () => void;
   onDiscardRewrite: () => void;
+  onRemoveAsset?: (assetId: string) => void;
 }
 
 function activeBody(show: DirectorShow, clip: DirectorClip): string {
@@ -49,7 +51,7 @@ function activeBody(show: DirectorShow, clip: DirectorClip): string {
 }
 
 export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
-  const { show, assets, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onRewrite, onKeepRewrite, onDiscardRewrite } = props;
+  const { show, assets, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onRewrite, onKeepRewrite, onDiscardRewrite, onRemoveAsset } = props;
   const clip = selectedClip(show);
   const adapter = getDirectorAdapter(show.adapterId);
 
@@ -108,6 +110,10 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
       selectedClipId: clip.id,
       selectedTakeId: take.id,
     });
+  };
+  const deleteTake = (take: DirectorTake) => {
+    onChange(removeDirectorTake(show, clip.id, take.id));
+    if (take.assetId) onRemoveAsset?.(take.assetId);
   };
 
   return (
@@ -249,6 +255,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             }}
             onSelectTake={pickTake}
             onHeroTake={(takeId) => onChange(setHeroTake(show, clip.id, takeId))}
+            onDeleteTake={deleteTake}
           />
 
           <div className="dgen-notes">

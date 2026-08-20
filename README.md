@@ -113,7 +113,7 @@ A production page between Spaces and Edit. Paste or **upload a script**, set cli
 - **LLM** — pick Claude, Codex, or Gemini CLI in the Director toolbar for breakdown, shotlist, look bible, and rewrite
 - **Breakdown** — scenes plus characters, locations, props, and vehicles with `@Tags`; match existing Elements or create missing ones
 - **Shotlist** — timed beats in Seedance heading grammar; isolate one shot as a 20s hold or its native 5–8s length without making a second clip
-- **Generate** — Seedance 2.5 takes (full or isolated) queued into nested Edit media-pool folders named like `S09_2-9b_T03`
+- **Generate** — Seedance 2.5 takes (full or isolated) queued into nested Edit media-pool folders named like `1A · T03`
 - **Notes** — rewrite the active variant from director notes with Keep / Discard
 
 ### Edit — Non-Linear Editor

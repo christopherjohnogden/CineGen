@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Element } from '@/types/elements';
 import { applyLlmBreakdownItems, assignBreakdownElement, findMatchingElement, itemsMissingElements, mergeBreakdownItems, parseBreakdownPayload } from '@/lib/director/breakdown';
 import { clipDisplayLabels, mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
-import { planDirectorFolders } from '@/lib/director/folders';
+import { directorPoolRelabel, planDirectorFolders } from '@/lib/director/folders';
 import { createPendingTake } from '@/lib/director/generate';
+import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import type { DirectorBreakdownItem, DirectorClip, DirectorScene } from '@/types/director';
 
 const elements: Element[] = [{
@@ -283,11 +284,11 @@ describe('director folders and takes', () => {
       subject: '', location: '', style: '', constraints: '', elementTags: [],
       activeVariant: { kind: 'full' }, bodyEdits: {}, takes: [],
     };
-    const planned = planDirectorFolders({ folders: [], scene, clip, variantKey: '3:native' });
+    const planned = planDirectorFolders({ folders: [], scene, clip, variantKey: '3:native', clipLabel: '9A' });
     expect(planned.foldersToAdd.map((folder) => folder.name)).toEqual([
       'Director',
       'Scene 09 — THE BOY',
-      '2-9b — He turns',
+      '9A — He turns',
       'Shot 3 · 6s',
     ]);
     expect(planned.foldersToAdd[3].parentId).toBe(planned.clipId);
@@ -307,5 +308,53 @@ describe('director folders and takes', () => {
       clip, variant: { kind: 'full' }, adapterId: 'seedance-2.5', modelId: 'seedance_2_5', promptSnapshot: 'p',
     });
     expect(next.number).toBe(2);
+  });
+
+  it('renames a leftover clip-id folder when planning with a slate label', () => {
+    const scene: DirectorScene = {
+      id: 's9', number: 9, label: 'SCENE 9 — THE BOY', summary: '', elementIds: [], clipIds: [],
+    };
+    const clip: DirectorClip = {
+      id: '2-9b', title: 'He turns', seconds: 20, sceneId: 's9', beats: [{ n: 3, from: '0:14', to: '0:20', dur: 6, text: 'turn' }],
+      subject: '', location: '', style: '', constraints: '', elementTags: [],
+      activeVariant: { kind: 'full' }, bodyEdits: {}, takes: [],
+    };
+    const first = planDirectorFolders({ folders: [], scene, clip, variantKey: 'full' });
+    const clipFolder = first.foldersToAdd.find((folder) => folder.name === '2-9b — He turns');
+    expect(clipFolder).toBeTruthy();
+    const next = planDirectorFolders({
+      folders: first.foldersToAdd,
+      scene,
+      clip,
+      variantKey: 'full',
+      clipLabel: '9A',
+    });
+    expect(next.foldersToAdd).toEqual([]);
+    expect(next.foldersToRename).toEqual([{ id: clipFolder!.id, name: '9A — He turns' }]);
+  });
+
+  it('rewrites leaked media-pool take names onto 1A slate labels', () => {
+    const scene: DirectorScene = {
+      id: 's1', number: 1, label: 'SCENE 1 — OFFICE', summary: '', elementIds: [], clipIds: ['1-p0a'],
+    };
+    const clip: DirectorClip = {
+      id: '1-p0a', title: 'Peter sits', seconds: 7, sceneId: 's1', beats: [{ n: 1, from: '0:00', to: '0:07', dur: 7, text: 'sit' }],
+      subject: '', location: '', style: '', constraints: '', elementTags: [],
+      activeVariant: { kind: 'isolated', beatN: 1, mode: 'native' }, bodyEdits: {},
+      takes: [{
+        id: 'take-1', number: 1, variantKey: '1:native', status: 'done',
+        adapterId: 'seedance-2.5', modelId: 'seedance_2_5', promptSnapshot: '', createdAt: '',
+      }],
+    };
+    const patches = directorPoolRelabel(
+      { ...createEmptyDirectorShow(), clips: [clip], scenes: [scene] },
+      [{
+        id: 'asset-1', name: 'S01_1-p0a_S1_T01', type: 'video', url: '', createdAt: '',
+        metadata: { generatedVia: 'director', directorClipId: '1-p0a', directorTakeId: 'take-1' },
+      }],
+      [{ id: 'fold-1', name: '1-p0a — Peter sits', createdAt: '' }],
+    );
+    expect(patches.assets).toEqual([{ id: 'asset-1', name: '1A · S1 · T01' }]);
+    expect(patches.folders).toEqual([{ id: 'fold-1', name: '1A — Peter sits' }]);
   });
 });

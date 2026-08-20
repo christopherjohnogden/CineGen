@@ -503,6 +503,12 @@ export function DirectorTab() {
     for (const folder of prepared.foldersToAdd) {
       dispatch({ type: 'ADD_FOLDER', folder });
     }
+    for (const folder of prepared.foldersToRename) {
+      foldersRef.current = foldersRef.current.map((entry) => (
+        entry.id === folder.id ? { ...entry, ...folder } : entry
+      ));
+      dispatch({ type: 'UPDATE_FOLDER', folder });
+    }
     dispatch({ type: 'ADD_ASSET', asset: prepared.asset });
     setShow(appendDirectorTake({
       ...showRef.current,
@@ -914,6 +920,7 @@ export function DirectorTab() {
             onRewrite={(notes) => void runRewrite(notes)}
             onKeepRewrite={() => { const current = selectedClip(show); if (current) setShow(keepPendingRewrite(show, current.id)); }}
             onDiscardRewrite={() => { const current = selectedClip(show); if (current) setShow(discardPendingRewrite(show, current.id)); }}
+            onRemoveAsset={(assetId) => dispatch({ type: 'REMOVE_ASSET', assetId })}
           />
         )}
       </div>

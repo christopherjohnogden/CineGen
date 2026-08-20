@@ -28,6 +28,7 @@ import { generateId } from '@/lib/utils/ids';
 import { toFileUrl } from '@/lib/utils/file-url';
 import { isMediaDebugEnabled, mediaDebug, mediaDebugError } from '@/lib/debug/media-debug';
 import type { Asset } from '@/types/project';
+import { directorPoolRelabel } from '@/lib/director/folders';
 import type { Clip, ToolType, TrackKind, Keyframe, TimelineMarker } from '@/types/timeline';
 
 const PROXY_MODE_STORAGE_KEY = 'cinegen_proxy_mode';
@@ -95,6 +96,13 @@ function persistEditView(projectId: string, view: PersistedEditView): void {
 export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpRequest | null }) {
   const { state, dispatch, projectId } = useWorkspace();
   const { layout, setLayout } = useEditorLayout();
+
+  useEffect(() => {
+    const patches = directorPoolRelabel(state.director, state.assets, state.mediaFolders);
+    if (patches.assets.length === 0 && patches.folders.length === 0) return;
+    for (const asset of patches.assets) dispatch({ type: 'UPDATE_ASSET', asset });
+    for (const folder of patches.folders) dispatch({ type: 'UPDATE_FOLDER', folder });
+  }, [state.director, state.assets, state.mediaFolders, dispatch]);
 
   const timeline = getActiveTimeline(state);
   const [initialPersistedView] = useState<PersistedEditView>(() => loadPersistedEditView(projectId));

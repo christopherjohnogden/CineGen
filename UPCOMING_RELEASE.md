@@ -27,7 +27,7 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - New workspace tab between **Spaces** and **Edit** that turns a script or idea into timed Seedance 2.5 clips
 - Breakdown reviews characters/locations/props/vehicles and matches existing Elements by `@Tag` / name. Unmatched items stay as **suggestions** on the Breakdown rail (big ref image left, info right) — **Assign to existing** or **Create new element** (opens the New Element modal). Approving no longer auto-creates library entries, so you don't have to delete extras on the Elements page
 - Shotlist compiler uses CINEDANCE / Oneiric prompt blocks (ACTIVE REFERENCES, FORMAT MODE, `SEGMENT n` with LENS / ACTION TASK, DIALOGUE, AUDIO, STYLE, POSITIVE LOCKS); isolate the selected beat as full multishot, held to clip length, or native length without creating a second clip **(in progress)**
-- Generate queues takes per variant into `Director / Scene / Clip / Full|Shot N` media-pool folders (`S09_2-9b_T01`, `S09_2-9b_S3x20_T01`)
+- Generate queues takes per variant into `Director / Scene / Clip / Full|Shot N` media-pool folders (`1A · T01`, `1A · S3 · T01`)
 - Look bible builder: upload a script, pick a Seedance genre, type film references, drop mood-board stills — **Look notes** live-updates from those refs and stays editable; **Rewrite with LLM** attaches up to 6 stills so the model can see them and write palette/lighting into the prefix that every clip prompt uses
 - Breakdown / shotlist / look bible / rewrite run through a picked **Claude, Codex, or Gemini CLI** (same install detect as Copilot) — no fal key required
 - Director CLI jobs use headless Claude `--permission-mode dontAsk`, show errors instead of spinning **Writing…**, and time out / cancel if the CLI hangs
@@ -59,6 +59,8 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 - Queue tick sits next to **Generate queued** (also still on Shotlist rows and the structure rail) so the prompt stack starts at the top of the column; Edit body textarea is taller (~320px) so more of the compiled prompt is visible without scrolling
 - Generate actions sit in the **title row, top right**: accent **Generate 1A** for this clip, a quiet divider, then the queue tick + **Queued · N** + **Scene N** — no boxed THIS CLIP / BATCH card under the viewer. Hover titles still spell out the scope. The Seedance / queued / scene / show line sits under that cluster.
 - Collapses to one column on narrow windows
+- **Delete any take** from the takes board: in-chip delete control (always visible on failed/red takes), right-click, or Delete/Backspace. A dark in-app confirm (Cancel / Delete) replaces the browser dialog; live takes warn that they are still generating. Linked media-pool assets are removed with the take **(in progress)**
+- Media-pool take names use the paper slate (`1A · T01`, `1A · S1 · T01`) instead of leaking the stored clip id (`S01_1-p0a_S1_T01`). Opening Edit rewrites leftover names and clip folders **(in progress)**
 
 ### Director tab: Setup + Look bible chrome **(in progress)**
 

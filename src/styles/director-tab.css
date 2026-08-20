@@ -247,36 +247,92 @@
   gap: 6px;
 }
 
-.director-tab__take {
-  min-width: 44px;
-  padding: 6px 8px;
+.director-tab__take-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-medium);
   background: var(--bg-elevated);
   color: var(--text-secondary);
+}
+
+.director-tab__take-wrap--active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.director-tab__take-wrap--hero {
+  background: var(--accent-dim);
+}
+
+.director-tab__take-wrap--failed {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.director-tab__take-wrap--live {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: dgen-take-live 1.6s ease-in-out infinite;
+}
+
+.director-tab__take {
+  min-width: 44px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
   font-family: 'Space Mono', monospace;
   font-size: 11px;
   cursor: pointer;
 }
 
-.director-tab__take--active {
-  border-color: var(--accent);
-  color: var(--accent);
+.director-tab__take-wrap:hover .director-tab__take,
+.director-tab__take-wrap:focus-within .director-tab__take,
+.director-tab__take-wrap--failed .director-tab__take {
+  padding-right: 26px;
 }
 
-.director-tab__take--hero {
-  background: var(--accent-dim);
+.director-tab__take-x {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.director-tab__take--failed {
-  border-color: var(--error);
+.director-tab__take-wrap:hover .director-tab__take-x,
+.director-tab__take-wrap:focus-within .director-tab__take-x,
+.director-tab__take-wrap--failed .director-tab__take-x {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.director-tab__take-x:hover {
+  background: color-mix(in srgb, var(--error) 22%, transparent);
   color: var(--error);
 }
 
-.director-tab__take--live {
-  border-color: var(--accent);
-  color: var(--accent);
-  animation: dgen-take-live 1.6s ease-in-out infinite;
+.director-tab__take-x:active {
+  transform: scale(0.96);
+}
+
+.director-tab__take-x svg {
+  display: block;
 }
 
 .director-tab__viewer {
@@ -762,7 +818,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .dgen-live-scan, .dgen-live-bar::after, .dgen-live-rec-dot, .dgen-busy-dot,
-  .director-tab__take--live, .director-tab__btn--busy::after { animation: none; }
+  .director-tab__take-wrap--live, .director-tab__btn--busy::after { animation: none; }
   .dgen-live-rec-dot, .dgen-busy-dot { opacity: 1; }
 }
 .dgen-takes { display:flex; flex-direction:column; gap:8px; }

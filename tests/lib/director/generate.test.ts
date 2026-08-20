@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectorClip } from '@/types/director';
-import { clipsForGenerateScope, collectClipElementRefs, generateViewerMessage, isDirectorTakeLive, preferredIsolateMode, takeCountForShot, takesGroupedForClip } from '@/lib/director/generate';
+import { clipsForGenerateScope, collectClipElementRefs, deleteTakeConfirmCopy, generateViewerMessage, isDirectorTakeLive, preferredIsolateMode, takeCountForShot, takesGroupedForClip } from '@/lib/director/generate';
 
 const clip = (id: string, sceneId: string, queued?: boolean, altOf?: string): DirectorClip => ({
   id, title: id, seconds: 30, sceneId, altOf, queued, beats: [], subject: '', location: '',
@@ -55,6 +55,38 @@ describe('generateViewerMessage', () => {
 
   it('is empty when the take already has a video', () => {
     expect(generateViewerMessage(take('done'), true)).toBe('');
+  });
+});
+
+describe('deleteTakeConfirmCopy', () => {
+  const take = (status: 'queued' | 'running' | 'done' | 'failed', extra?: { hero?: boolean }) => ({
+    id: 't1', number: 3, variantKey: 'full', status, adapterId: 'seedance-2.5',
+    modelId: 'seedance_2_5', promptSnapshot: '', createdAt: '', hero: extra?.hero,
+  });
+
+  it('warns when the take is still generating', () => {
+    expect(deleteTakeConfirmCopy(take('running'))).toEqual({
+      title: 'Delete T03',
+      description: 'It is still generating. This cannot be undone.',
+    });
+  });
+
+  it('warns when the take is the marked hero', () => {
+    expect(deleteTakeConfirmCopy(take('done', { hero: true }))).toEqual({
+      title: 'Delete T03',
+      description: 'This is the marked hero. This cannot be undone.',
+    });
+  });
+
+  it('asks a plain confirm for failed and finished takes', () => {
+    expect(deleteTakeConfirmCopy(take('failed'))).toEqual({
+      title: 'Delete T03',
+      description: 'This cannot be undone.',
+    });
+    expect(deleteTakeConfirmCopy(take('done'))).toEqual({
+      title: 'Delete T03',
+      description: 'This cannot be undone.',
+    });
   });
 });
 

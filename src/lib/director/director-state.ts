@@ -88,6 +88,22 @@ export function setHeroTake(show: DirectorShow, clipId: string, takeId: string):
   };
 }
 
+export function removeDirectorTake(show: DirectorShow, clipId: string, takeId: string): DirectorShow {
+  const clip = show.clips.find((entry) => entry.id === clipId);
+  const target = clip?.takes.find((take) => take.id === takeId);
+  if (!clip || !target) return show;
+  const remaining = clip.takes.filter((take) => take.id !== takeId);
+  const nextSelected = show.selectedTakeId === takeId
+    ? remaining.filter((take) => take.variantKey === target.variantKey).at(-1)?.id
+      ?? remaining.at(-1)?.id
+      ?? undefined
+    : show.selectedTakeId;
+  return {
+    ...updateDirectorClip(show, clipId, (current) => ({ ...current, takes: remaining })),
+    selectedTakeId: nextSelected,
+  };
+}
+
 export function keepPendingRewrite(show: DirectorShow, clipId: string): DirectorShow {
   return updateDirectorClip(show, clipId, (clip) => {
     if (!clip.pendingRewrite) return clip;

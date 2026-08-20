@@ -24,8 +24,9 @@ export function sceneFolderName(scene: DirectorScene): string {
   return `Scene ${padSceneNumber(scene.number)} — ${label}`;
 }
 
-export function clipFolderName(clip: DirectorClip): string {
-  return `${clip.id} — ${clip.title}`.trim();
+export function clipFolderName(clip: DirectorClip, clipLabel?: string): string {
+  const slate = clipLabel?.trim() || clip.id;
+  return `${slate} — ${clip.title}`.trim();
 }
 
 export function variantFolderName(clip: DirectorClip, key: string): string {
@@ -50,13 +51,21 @@ export function takeDisplayName(
   clip: DirectorClip,
   key: string,
   takeNumber: number,
+  clipLabel?: string,
 ): string {
-  const sceneCode = `S${padSceneNumber(scene.number)}`;
+  const slate = clipLabel?.trim() || clip.id;
   const take = `T${String(takeNumber).padStart(2, '0')}`;
   const variant = parseVariantKey(key);
-  if (variant.kind === 'full') return `${sceneCode}_${clip.id}_${take}`;
-  if (variant.mode === 'held') return `${sceneCode}_${clip.id}_S${variant.beatN}x${clip.seconds}_${take}`;
-  return `${sceneCode}_${clip.id}_S${variant.beatN}_${take}`;
+  if (variant.kind === 'full') return `${slate} · ${take}`;
+  if (variant.mode === 'held') return `${slate} · S${variant.beatN} held · ${take}`;
+  return `${slate} · S${variant.beatN} · ${take}`;
+}
+
+/** Old media-pool names leaked the stored clip id (`S01_1-p0a_S1_T01`). */
+export function isLegacyTakeDisplayName(name: string, clipId: string): boolean {
+  const base = name.replace(/\s+failed$/i, '').trim();
+  const parts = base.split('_');
+  return parts.length >= 3 && /^S\d+$/i.test(parts[0]) && parts[1] === clipId;
 }
 
 export function nextTakeNumber(clip: DirectorClip, key: string): number {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectorClip, DirectorScene } from '@/types/director';
-import { nextTakeNumber, takeDisplayName, variantFolderName, variantKey, variantTakeLabel } from '@/lib/director/slate';
+import { nextTakeNumber, takeDisplayName, variantFolderName, variantKey, variantTakeLabel, isLegacyTakeDisplayName } from '@/lib/director/slate';
 
 const scene: DirectorScene = {
   id: 's9',
@@ -37,10 +37,10 @@ const clip: DirectorClip = {
 };
 
 describe('director slate', () => {
-  it('names full and isolated takes', () => {
-    expect(takeDisplayName(scene, clip, 'full', 3)).toBe('S09_2-9b_T03');
-    expect(takeDisplayName(scene, clip, '3:held', 1)).toBe('S09_2-9b_S3x20_T01');
-    expect(takeDisplayName(scene, clip, '3:native', 1)).toBe('S09_2-9b_S3_T01');
+  it('names full and isolated takes with the paper slate, not the stored clip id', () => {
+    expect(takeDisplayName(scene, clip, 'full', 3, '9A')).toBe('9A · T03');
+    expect(takeDisplayName(scene, clip, '3:held', 1, '9A')).toBe('9A · S3 held · T01');
+    expect(takeDisplayName(scene, clip, '3:native', 1, '9A')).toBe('9A · S3 · T01');
   });
 
   it('increments take numbers per variant', () => {
@@ -58,5 +58,11 @@ describe('director slate', () => {
     expect(variantTakeLabel(clip, 'full')).toBe('Full');
     expect(variantTakeLabel(clip, '3:native')).toBe('S3 · 6s');
     expect(variantTakeLabel(clip, '3:held')).toBe('S3 · 20s held');
+  });
+
+  it('recognizes leaked clip-id take names from the media pool', () => {
+    expect(isLegacyTakeDisplayName('S01_1-p0a_S1_T01', '1-p0a')).toBe(true);
+    expect(isLegacyTakeDisplayName('S01_1-p0a_S1_T01 failed', '1-p0a')).toBe(true);
+    expect(isLegacyTakeDisplayName('1A · S1 · T01', '1-p0a')).toBe(false);
   });
 });
