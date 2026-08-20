@@ -3,7 +3,7 @@ import type { DirectorClip, DirectorScene, DirectorStagingMap } from '@/types/di
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import { bindStagingDiagram } from '@/lib/director/staging-diagram';
 import {
-  adoptClipFramings, applyFraming, applyFramingToBeat, beatAtPlayhead, beatFramingId, bindKeyForFrameGrab, boundFramingId, clearFramingBind, framingPickerLabel, framingShotTypeLabel, framingThumb, resolveClipStaging, revertFramingOnBeat, uniqueFramingName, uniqueFramingPickerLabels,
+  adoptClipFramings, applyFraming, applyFramingToBeat, beatAtPlayhead, beatFramingId, bindKeyForFrameGrab, boundFramingId, clearFramingBind, clipTimeForVideoTime, framingPickerLabel, framingShotTypeLabel, framingThumb, resolveClipStaging, revertFramingOnBeat, uniqueFramingName, uniqueFramingPickerLabels, videoTimeForBeat, resolveMediaLength,
   upsertFramingReserve,
 } from '@/lib/director/framing-reserve';
 
@@ -50,6 +50,39 @@ describe('framing reserve', () => {
     expect(beatAtPlayhead(multi, 19)?.n).toBe(4);
     expect(bindKeyForFrameGrab(multi, { variant: { kind: 'full' }, timeSec: 12 })).toBe('3');
     expect(bindKeyForFrameGrab(multi, { variant: { kind: 'isolated', beatN: 1, mode: 'held' }, timeSec: 12 })).toBe('1');
+    expect(videoTimeForBeat(multi, 3, 20)).toBe(10);
+    expect(videoTimeForBeat(multi, 1, 20)).toBe(0);
+    expect(videoTimeForBeat(multi, 3, 10)).toBe(5);
+    expect(clipTimeForVideoTime(multi, 5, 10)).toBe(10);
+    expect(resolveMediaLength(20, 20.4)).toBe(20);
+    expect(videoTimeForBeat(multi, 3, 20.4)).toBe(10);
+    expect(clipTimeForVideoTime(multi, 10, 20.4)).toBe(10);
+    expect(bindKeyForFrameGrab(multi, { variant: { kind: 'full' }, timeSec: 10, durationSec: 20.4 })).toBe('3');
+    const two = clip('a', {
+      seconds: 14,
+      beats: [
+        { n: 1, from: '0:00', to: '0:07', dur: 7, text: 'ws' },
+        { n: 2, from: '0:07', to: '0:14', dur: 7, text: 'ws' },
+      ],
+    });
+    expect(clipTimeForVideoTime(two, 7, 14.5)).toBe(7);
+    expect(bindKeyForFrameGrab(two, { variant: { kind: 'full' }, timeSec: 7, durationSec: 14.5 })).toBe('2');
+  });
+
+  it('clips overlapping from/to so the next shot starts when it says it starts', () => {
+    const overlap = clip('a', {
+      seconds: 20,
+      beats: [
+        { n: 1, from: '0:00', to: '0:07', dur: 7, text: 'ws' },
+        { n: 2, from: '0:07', to: '0:13', dur: 6, text: 'ws' },
+        { n: 3, from: '0:12', to: '0:15', dur: 3, text: 'cu' },
+        { n: 4, from: '0:15', to: '0:20', dur: 5, text: 'ms' },
+      ],
+    });
+    expect(beatAtPlayhead(overlap, 11)?.n).toBe(2);
+    expect(beatAtPlayhead(overlap, 12)?.n).toBe(3);
+    expect(beatAtPlayhead(overlap, 14)?.n).toBe(3);
+    expect(videoTimeForBeat(overlap, 3, 20)).toBe(12);
   });
 
   it('shows the liked frame on storyboard cards and keeps the diagram for generate', () => {

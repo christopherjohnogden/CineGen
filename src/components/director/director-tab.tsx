@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DirectorBreakdownItem, DirectorMode, DirectorShow } from '@/types/director';
+import type { DirectorBeatTime, DirectorBreakdownItem, DirectorMode, DirectorShow } from '@/types/director';
 import type { Element } from '@/types/elements';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import { DirectorStructureRail } from './director-structure-rail';
@@ -67,6 +67,7 @@ import {
   matchListedStagingJob, patchClipStaging,
 } from '@/lib/director/staging-diagram';
 import { captureFramingLook, bindKeyForFrameGrab, stagingBindKey } from '@/lib/director/framing-reserve';
+import { takeTimelineClip } from '@/lib/director/take-timeline';
 import { grammarSizeLabel } from '@/lib/director/craft/coverage';
 import type { Asset } from '@/types/project';
 import '@/styles/director-tab.css';
@@ -325,6 +326,8 @@ export function DirectorTab() {
     timeSec?: number;
     durationSec?: number;
     variantKey?: string;
+    beatTimes?: DirectorBeatTime[];
+    promptSnapshot?: string;
   }) => {
     const current = showRef.current;
     const clip = selectedClip(current);
@@ -370,7 +373,11 @@ export function DirectorTab() {
       ));
       dispatch({ type: 'UPDATE_FOLDER', folder });
     }
-    const bindKey = bindKeyForFrameGrab(clip, {
+    const timeline = takeTimelineClip(clip, {
+      beatTimes: source.beatTimes,
+      promptSnapshot: source.promptSnapshot ?? '',
+    });
+    const bindKey = bindKeyForFrameGrab(timeline, {
       variant: source.variantKey ? parseVariantKey(source.variantKey) : clip.activeVariant,
       timeSec: source.timeSec,
       durationSec: source.durationSec,

@@ -12,6 +12,8 @@ import {
 import { parseVariantKey, variantKey, variantTakeLabel } from '@/lib/director/slate';
 import { DirectorTakesBoard } from './director-takes-board';
 import { DirectorGenerateViewer } from './director-generate-viewer';
+import { DirectorShotTimeline } from './director-shot-timeline';
+import { takeTimelineClip } from '@/lib/director/take-timeline';
 import {
   applyBeatDurations, compileClipBody, compileOptionsForShow, retimeClipToSeconds, validateClipTimings,
 } from '@/lib/director/prompt-compiler';
@@ -49,6 +51,8 @@ interface DirectorGenerateTabProps {
     timeSec?: number;
     durationSec?: number;
     variantKey?: string;
+    beatTimes?: DirectorTake['beatTimes'];
+    promptSnapshot?: string;
   }) => void;
   onMakeStagingDiagram?: () => void;
   onFetchStagingDiagram?: () => void;
@@ -136,6 +140,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const selectedTake = takes.find((take) => take.id === show.selectedTakeId) ?? takes[takes.length - 1];
   const fullTakeCount = takesForVariant(clip, 'full').length;
   const asset = assets.find((entry) => entry.id === selectedTake?.assetId);
+  const timelineClip = takeTimelineClip(clip, selectedTake);
   const timingError = validateClipTimings(clip);
   const compiled = adapter.buildRequest({ show, clip, variant: clip.activeVariant }).prompt;
   const variant = clip.activeVariant;
@@ -346,6 +351,17 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             onFetchTake={props.onFetchTake}
             fetchingTake={props.fetchingTake}
           />
+          {!isolated && asset?.url && timelineClip.beats.length > 1 && (
+            <DirectorShotTimeline
+              clip={timelineClip}
+              videoRef={videoRef}
+              src={asset.url}
+              onSeekShot={(n) => {
+                onSelectBeat(n);
+                revealShot(n);
+              }}
+            />
+          )}
           <DirectorStagingFrame
             staging={staging}
             framings={framings}
@@ -366,6 +382,8 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
               timeSec: videoRef.current?.currentTime,
               durationSec: videoRef.current?.duration,
               variantKey: selectedTake?.variantKey ?? key,
+              beatTimes: selectedTake?.beatTimes,
+              promptSnapshot: selectedTake?.promptSnapshot,
             })}
             onMakeDiagram={() => props.onMakeStagingDiagram?.()}
             onFetchDiagram={props.onFetchStagingDiagram}

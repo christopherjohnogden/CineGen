@@ -19,20 +19,93 @@ function timecodeToSeconds(value: string | undefined): number | undefined {
   return Number.isFinite(plain) ? Math.max(0, plain) : undefined;
 }
 
-/** Map a playhead on the Full take onto S1 / S2 / S3… using beat from–to (or stacked durs). */
-export function beatAtPlayhead(clip: DirectorClip, timeSec: number): DirectorClip['beats'][number] | undefined {
-  if (clip.beats.length === 0) return undefined;
+export interface BeatTimeRange {
+  n: number;
+  from: number;
+  to: number;
+}
+
+export function beatTimeRanges(clip: Pick<DirectorClip, 'beats'>): BeatTimeRange[] {
   let cursor = 0;
-  const ranges = clip.beats.map((beat, index) => {
+  const raw = clip.beats.map((beat) => {
     const from = timecodeToSeconds(beat.from) ?? cursor;
     const explicitTo = timecodeToSeconds(beat.to);
     const to = explicitTo ?? from + Math.max(0, beat.dur);
     cursor = to;
-    return { beat, from, to, last: index === clip.beats.length - 1 };
+    return { n: beat.n, from, to };
   });
+  return resolveBeatWindows(raw);
+}
+
+/** Next shot's start clips the previous, so overlapping from/to still cut in order. */
+export function resolveBeatWindows(ranges: BeatTimeRange[]): BeatTimeRange[] {
+  if (ranges.length <= 1) return ranges;
+  const ordered = [...ranges].sort((a, b) => a.from - b.from || a.n - b.n);
+  return ordered.map((row, index) => {
+    const next = ordered[index + 1];
+    const to = next ? next.from : row.to;
+    return { ...row, to: Math.max(row.from, to) };
+  });
+}
+
+export function clipTimelineLength(clip: Pick<DirectorClip, 'beats' | 'seconds'>): number {
+  const ranges = beatTimeRanges(clip);
+  const last = ranges[ranges.length - 1]?.to ?? 0;
+  return clip.seconds > 0 ? clip.seconds : last;
+}
+
+/** Beat-bar length — last `to`, so the gold tick lines up with S1 | S2 widths. */
+export function clipTrackLength(clip: Pick<DirectorClip, 'beats' | 'seconds'>): number {
+  const ranges = beatTimeRanges(clip);
+  const last = ranges[ranges.length - 1]?.to ?? 0;
+  return last > 0 ? last : clipTimelineLength(clip);
+}
+
+/**
+ * Map playhead ↔ beats in authored seconds.
+ * A longer MP4 is almost always container slack, not a time-remap — stretching
+ * S1/S2 over that tail makes the cut switch late. Only scale when the file is
+ * meaningfully shorter than the clip.
+ */
+export function resolveMediaLength(clipLen: number, durationSec: number): number {
+  const mediaLen = durationSec > 0 && Number.isFinite(durationSec) ? durationSec : clipLen;
+  if (clipLen <= 0) return mediaLen;
+  if (mediaLen >= clipLen) return clipLen;
+  const slack = Math.max(0.5, clipLen * 0.04);
+  return clipLen - mediaLen <= slack ? clipLen : mediaLen;
+}
+
+/** Map a playhead on the Full take onto S1 / S2 / S3… using beat from–to (or stacked durs). */
+export function beatAtPlayhead(clip: DirectorClip, timeSec: number): DirectorClip['beats'][number] | undefined {
+  if (clip.beats.length === 0) return undefined;
+  const ranges = beatTimeRanges(clip);
   const t = Math.max(0, timeSec);
   const hit = ranges.find((row) => t >= row.from && t < row.to);
-  return hit?.beat ?? ranges[ranges.length - 1]?.beat;
+  const n = hit?.n ?? ranges[ranges.length - 1]?.n;
+  return n == null ? undefined : clip.beats.find((beat) => beat.n === n);
+}
+
+export function videoTimeForBeat(
+  clip: Pick<DirectorClip, 'beats' | 'seconds'>,
+  beatN: number,
+  durationSec: number,
+): number {
+  const clipLen = clipTimelineLength(clip);
+  const from = beatTimeRanges(clip).find((row) => row.n === beatN)?.from ?? 0;
+  const mediaLen = resolveMediaLength(clipLen, durationSec);
+  if (clipLen <= 0) return 0;
+  return from * (mediaLen / clipLen);
+}
+
+export function clipTimeForVideoTime(
+  clip: Pick<DirectorClip, 'beats' | 'seconds'>,
+  timeSec: number,
+  durationSec: number,
+): number {
+  const clipLen = clipTimelineLength(clip);
+  const mediaLen = resolveMediaLength(clipLen, durationSec);
+  if (mediaLen <= 0) return Math.max(0, timeSec);
+  return Math.max(0, timeSec) * (clipLen / mediaLen);
 }
 
 /** Isolated take → that shot. Full take → the beat under the playhead. */
@@ -45,11 +118,11 @@ export function bindKeyForFrameGrab(clip: DirectorClip, args: {
   if (variant.kind === 'isolated') return String(variant.beatN);
   if (clip.beats.length <= 1) return 'full';
   if (typeof args.timeSec !== 'number' || !Number.isFinite(args.timeSec)) return 'full';
-  const clipLen = clip.seconds > 0 ? clip.seconds : clip.beats.reduce((sum, beat) => sum + beat.dur, 0);
+  const clipLen = clipTimelineLength(clip);
   const mediaLen = typeof args.durationSec === 'number' && Number.isFinite(args.durationSec) && args.durationSec > 0
     ? args.durationSec
     : clipLen;
-  const t = mediaLen > 0 ? args.timeSec * (clipLen / mediaLen) : args.timeSec;
+  const t = clipTimeForVideoTime(clip, args.timeSec, mediaLen);
   const beat = beatAtPlayhead(clip, t);
   return beat ? String(beat.n) : 'full';
 }

@@ -109,6 +109,14 @@ export interface DirectorBeatOrigin {
   grammar?: DirectorShotGrammar;
 }
 
+/** Frozen SEGMENT times for one take — `from`/`to` as authored in that generate. */
+export interface DirectorBeatTime {
+  n: number;
+  from: string;
+  to: string;
+  dur: number;
+}
+
 export interface DirectorTake {
   id: string;
   number: number;
@@ -122,6 +130,8 @@ export interface DirectorTake {
   notes?: string;
   error?: string;
   createdAt: string;
+  /** Shot times frozen for this take's video. Later shotlist edits do not move them. */
+  beatTimes?: DirectorBeatTime[];
   /** Higgsfield job id so a reload can rejoin a take that already finished on their side. */
   jobId?: string;
 }

@@ -8,6 +8,7 @@ import { clipDisplayLabels } from './shotlist';
 import { getDirectorAdapter } from './video-adapter';
 import { findMatchingElement, normalizeElementName, normalizeTag } from './breakdown';
 import { clipWithResolvedStaging } from './framing-reserve';
+import { snapshotTakeBeatTimes } from './take-timeline';
 
 export function createPendingTake(args: {
   clip: DirectorClip;
@@ -28,6 +29,7 @@ export function createPendingTake(args: {
     promptSnapshot: args.promptSnapshot,
     notes: args.notes,
     createdAt: timestamp(),
+    beatTimes: snapshotTakeBeatTimes(args.clip, args.promptSnapshot),
   };
 }
 
