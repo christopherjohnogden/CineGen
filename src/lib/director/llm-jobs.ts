@@ -235,6 +235,22 @@ ${CONSTRAINT_DOCTRINE}
 
 Return ONLY JSON: { "clips": [ ...changed clips only... ] }`;
 
+export const RESHOT_BEAT_SYSTEM_PROMPT = `You rewrite ONE shot's camera for CineGen Director. The director did not like this setup and wants a different one.
+
+RULES
+- Return ONLY the replacement beat. Do not return other shots or the whole clip.
+- Keep "n", "from", "to", "dur", "quote", and "speaker" EXACTLY as given.
+- Rewrite "cam" as a NEW setup — different size and/or angle than the current cam. HARD CUT / REVERSE CUT language is fine. Do not repeat a neighbour's framing.
+- "text" may be restated so the action matches the new camera, but the same physical action and the same spoken line must still happen in this window.
+- "fov" is one of 8, 18, 29, 47, 84, 107 and must match the new framing (portrait → 29 or 18, two-shot / medium → 47, wide geography → 84).
+- Obey the 180° line already implied by the neighbours. Do not invent a new location or a new character.
+
+${OPTICS_DOCTRINE}
+
+${BLOCKING_DOCTRINE}
+
+Return ONLY JSON: { "beat": { "n": 1, "from": "0:00", "to": "0:07", "dur": 7, "text": "...", "cam": "...", "quote": "...", "speaker": "@Peter", "fov": 29 } }`;
+
 export const NOTES_REWRITE_SYSTEM_PROMPT = `You rewrite a Seedance clip prompt using the director's notes about the last take.
 Keep the same heading structure (SCENE CONTEXT, ACTIVE REFERENCES, LOCATION MAP, FORMAT MODE, SEGMENT, DIALOGUE, PHYSICS, LIGHTING, AUDIO, STYLE, POSITIVE LOCKS) and keep every heading the prompt already has.
 Change only what the notes ask for. When the notes say a take drifted or you overdid it, you changed too much: lock more and change less.

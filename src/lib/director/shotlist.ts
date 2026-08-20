@@ -65,8 +65,40 @@ function parseBeat(raw: unknown, index: number): DirectorBeat | null {
     speaker: speaker
       ? (speaker.startsWith('@') ? speaker : `@${speaker}`)
       : undefined,
+    ...(typeof row.fov === 'number' && Number.isFinite(row.fov) ? { fov: nearestFovAnchor(row.fov) } : {}),
   };
   return ensureBeatOrigin(beat);
+}
+
+/** Replace one beat's camera. Duration, timecode, and dialogue stay. */
+export function applyReshotBeat(clip: DirectorClip, beatN: number, incoming: DirectorBeat): DirectorClip {
+  if (!clip.beats.some((beat) => beat.n === beatN)) return clip;
+  const beats = clip.beats.map((beat) => {
+    if (beat.n !== beatN) return beat;
+    return ensureBeatOrigin({
+      ...beat,
+      n: beat.n,
+      from: beat.from,
+      to: beat.to,
+      dur: beat.dur,
+      quote: beat.quote,
+      speaker: beat.speaker,
+      text: incoming.text.trim() || beat.text,
+      cam: incoming.cam,
+      framing: incoming.framing,
+      gist: incoming.gist,
+      grammar: undefined,
+      fov: incoming.fov ?? beat.fov,
+      origin: undefined,
+    });
+  });
+  return { ...clip, beats, bodyEdits: {} };
+}
+
+export function parseReshotBeatPayload(raw: unknown, beatN: number): DirectorBeat | null {
+  const record = asRecord(raw);
+  const parsed = parseBeat(record?.beat ?? record, Math.max(0, beatN - 1));
+  return parsed ? { ...parsed, n: beatN } : null;
 }
 
 function parseActingTasks(raw: unknown): DirectorActingTask[] | undefined {

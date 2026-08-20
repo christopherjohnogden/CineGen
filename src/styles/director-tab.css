@@ -864,6 +864,7 @@
 .dgen-section-body { display:flex; flex-direction:column; gap:10px; padding:12px; }
 .dgen-section-body .dsl-prompt { border:none; border-radius:0; margin:-12px; }
 .dgen-prompt { height:475px; overflow:auto; }
+.dgen-shots { height:400px; overflow-y:auto; }
 .dgen-two { display:flex; gap:10px; }
 .dgen-two .dsl-scenefield { flex:1; }
 .dgen-shotedit { display:flex; gap:8px; align-items:center; }

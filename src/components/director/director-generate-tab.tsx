@@ -64,6 +64,8 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const clip = selectedClip(show);
   const adapter = getDirectorAdapter(show.adapterId);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const shotsSectionRef = useRef<HTMLDetailsElement>(null);
+  const shotsBodyRef = useRef<HTMLDivElement>(null);
 
   const patchClip = (updater: (current: DirectorClip) => DirectorClip) => {
     if (!clip) return;
@@ -110,9 +112,22 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
       selectedTakeId: keep?.id,
     });
   };
+  const revealShot = (n: number) => {
+    const section = shotsSectionRef.current;
+    if (section) section.open = true;
+    const jump = () => {
+      const scroller = shotsBodyRef.current;
+      const target = scroller?.querySelector<HTMLElement>(`[data-shot="${n}"]`);
+      if (!scroller || !target) return;
+      const next = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      scroller.scrollTo({ top: Math.max(0, next), behavior: 'smooth' });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(jump));
+  };
   const pickShot = (n: number) => {
     onSelectBeat(n);
     setVariant({ kind: 'isolated', beatN: n, mode: preferredIsolateMode(clip, n, isolated ? variant : undefined) });
+    revealShot(n);
   };
   const pickTake = (take: DirectorTake) => {
     const next = parseVariantKey(take.variantKey);
@@ -381,18 +396,18 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             </div>
           </details>
 
-          <details className="dsl-section">
+          <details className="dsl-section" ref={shotsSectionRef}>
             <summary className="dsl-section-head">
               <span className="dsl-tw" aria-hidden />
               <span className="dsl-section-title">Shots</span>
               <span className="director-tab__meta">{clip.beats.length} · durations must sum to {clip.seconds}s</span>
             </summary>
-            <div className="dgen-section-body">
+            <div className="dgen-section-body dgen-shots" ref={shotsBodyRef}>
               {clip.beats.map((entry, index) => {
                 const size = grammarSizeLabel(beatGrammars[index]);
                 const setup = setupColors[index];
                 return (
-                  <div key={entry.n} className="dcov-shot">
+                  <div key={entry.n} className="dcov-shot" data-shot={entry.n}>
                     <div className="dgen-shotedit">
                       <button
                         type="button"

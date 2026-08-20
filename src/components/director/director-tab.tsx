@@ -14,12 +14,13 @@ import { pruneRemovedScenes, remapSceneIndexMaps } from '@/lib/director/cascade'
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import { applyLlmBreakdownItems, mergeScenes, parseBreakdownPayload } from '@/lib/director/breakdown';
 import { localBreakdownForShow } from '@/lib/director/local-breakdown';
-import { clipDisplayLabels, mergeShotlist, parseShotlistPayload } from '@/lib/director/shotlist';
-import { BREAKDOWN_AUDIT_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, SCENE_NOTES_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
+import { applyReshotBeat, clipDisplayLabels, mergeShotlist, parseReshotBeatPayload, parseShotlistPayload } from '@/lib/director/shotlist';
+import { BREAKDOWN_AUDIT_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, LOOK_BIBLE_SYSTEM_PROMPT, NOTES_REWRITE_SYSTEM_PROMPT, RESHOT_BEAT_SYSTEM_PROMPT, SCENE_NOTES_SYSTEM_PROMPT } from '@/lib/director/llm-jobs';
 import {
   breakdownAuditInput,
   breakdownJobInput,
   lookBibleJobInput,
+  reshotBeatJobInput,
   sceneNotesJobInput,
 } from '@/lib/director/job-inputs';
 import { applyWrittenLook, lookBibleImageUrls } from '@/lib/director/look-bible';
@@ -658,6 +659,38 @@ export function DirectorTab() {
     }
   }, [failJob, setJob, setShow]);
 
+  const runReshotBeat = useCallback(async (clipId: string, beatN: number) => {
+    const current = showRef.current;
+    const clip = current.clips.find((entry) => entry.id === clipId);
+    const scene = clip ? current.scenes.find((entry) => entry.id === clip.sceneId) : undefined;
+    const beat = clip?.beats.find((entry) => entry.n === beatN);
+    if (!clip || !scene || !beat) return;
+    const labels = clipDisplayLabels(current.scenes, current.clips);
+    const clipLabel = labels.get(clip.id) ?? clip.id;
+    const requestId = setJob('rewrite', `Redoing S${beatN} of ${clipLabel}…`);
+    try {
+      const payload = await runDirectorJsonJob(
+        RESHOT_BEAT_SYSTEM_PROMPT,
+        reshotBeatJobInput(scene, clip, clipLabel, beatN),
+        parseDirectorLlmProvider(current.llmProvider),
+        requestId,
+        undefined,
+        { onUsage: recordSpend },
+      );
+      if (showRef.current.sourceText !== current.sourceText) return;
+      const incoming = parseReshotBeatPayload(payload, beatN);
+      if (!incoming?.cam?.trim()) throw new Error('The rewrite returned no camera line.');
+      setShow(updateDirectorClip(
+        { ...showRef.current, jobStatus: null },
+        clipId,
+        (entry) => applyReshotBeat(entry, beatN, incoming),
+      ));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      failJob('rewrite', error, 'Redo shot failed');
+    }
+  }, [failJob, setJob, setShow]);
+
   const commitSyncState = useCallback((syncState: NonNullable<DirectorShow['syncState']>) => {
     const cur = showRef.current;
     const prevKeys = Object.keys(cur.syncState?.hashes ?? {});
@@ -1188,7 +1221,7 @@ export function DirectorTab() {
           <DirectorBreakdownTab show={show} elements={state.elements} dirtyKeys={cascade.dirty} syncing={cascade.running} onChange={setShow} onCreateElement={createElementFromBreakdown} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
         )}
         {show.mode === 'shotlist' && (
-          <DirectorShotlistTab show={show} elements={state.elements} sceneFilter={sceneFilter} expandRequest={expandRequest} syncing={cascade.running} onChange={setShow} onShotlist={startManualShotlist} onStopShotlist={stopShotlist} onSceneNotes={(sceneId, notes) => void runSceneNotes(sceneId, notes)} onSelectClip={selectClip} />
+          <DirectorShotlistTab show={show} elements={state.elements} sceneFilter={sceneFilter} expandRequest={expandRequest} syncing={cascade.running} onChange={setShow} onShotlist={startManualShotlist} onStopShotlist={stopShotlist} onSceneNotes={(sceneId, notes) => void runSceneNotes(sceneId, notes)} onReshotBeat={(clipId, beatN) => void runReshotBeat(clipId, beatN)} onSelectClip={selectClip} />
         )}
         {show.mode === 'generate' && (
           <DirectorGenerateTab

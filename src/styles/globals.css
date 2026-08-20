@@ -11364,6 +11364,14 @@ input[type='range']::-moz-range-track {
   box-shadow: 0 0 16px rgba(199, 84, 80, 0.3);
 }
 
+.mp-confirm__btn--go {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+.mp-confirm__btn--go:hover {
+  filter: brightness(1.08);
+}
+
 /* ── Sync Audio Dialog ── */
 .sync-dialog__overlay {
   position: fixed;

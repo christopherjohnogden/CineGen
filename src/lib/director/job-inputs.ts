@@ -266,6 +266,37 @@ export function sceneNotesJobInput(
   ].join('\n\n');
 }
 
+export function reshotBeatJobInput(
+  scene: DirectorScene,
+  clip: DirectorClip,
+  clipLabel: string,
+  beatN: number,
+): string {
+  const beat = clip.beats.find((entry) => entry.n === beatN);
+  const neighbours = clip.beats
+    .filter((entry) => entry.n !== beatN)
+    .map((entry) => `S${entry.n} ${entry.from}–${entry.to} · ${entry.cam || entry.text}`);
+  return [
+    `Scene:\n${sceneLine(scene)}`,
+    `Clip ${clipLabel} (${clip.seconds}s) — ${clip.title}`,
+    `THIS SHOT (replace the camera):\n${JSON.stringify({
+      n: beat?.n,
+      from: beat?.from,
+      to: beat?.to,
+      dur: beat?.dur,
+      text: beat?.text,
+      cam: beat?.cam,
+      quote: beat?.quote,
+      speaker: beat?.speaker,
+      fov: beat?.fov ?? clip.fov,
+    }, null, 1)}`,
+    neighbours.length > 0
+      ? `NEIGHBOUR SHOTS (do not copy these setups):\n${neighbours.join('\n')}`
+      : 'This is the only shot in the clip.',
+    `LOCATION:\n${clip.location || clip.blocking || '(none)'}`,
+  ].join('\n\n');
+}
+
 export function lookBibleJobInput(show: DirectorShow): string {
   const compiled = compiledLookFromRefs(show);
   const notes = show.lookBible.notes.trim();
