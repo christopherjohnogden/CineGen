@@ -216,6 +216,7 @@ export interface ElectronAPI {
       userMessage: string;
       imageUrls?: string[];
       maxCompletionTokens?: number;
+      jsonObject?: boolean;
     }) => Promise<{
       message: string;
       usage?: {

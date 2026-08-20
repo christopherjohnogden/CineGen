@@ -6,6 +6,7 @@ import { ALL_MODELS } from '@/lib/fal/models';
 import { planVideoClips } from '@/lib/llm/shot-list-planner';
 import { parseShotListFromMarkdown } from '@/lib/llm/shot-list-parse';
 import { generateId, timestamp } from '@/lib/utils/ids';
+import { resolveElementsForPrompt } from '@/lib/llm/prompt-elements';
 import { NODE_REGISTRY } from '@/lib/workflows/node-registry';
 
 export type SpaceTemplateId =
@@ -244,10 +245,8 @@ function collectElementIds(
   const ids = new Set<string>(extraElementIds);
   for (const entry of prompts) {
     if (entry.elementId) ids.add(entry.elementId);
-    for (const match of entry.prompt.matchAll(/@([^\s@]+(?:\s+[^\s@]+)*)/g)) {
-      const name = match[1].trim();
-      const element = elements.find((candidate) => candidate.name === name);
-      if (element) ids.add(element.id);
+    for (const element of resolveElementsForPrompt(entry.prompt, elements, [], { requireStill: false })) {
+      ids.add(element.id);
     }
   }
   return [...ids];

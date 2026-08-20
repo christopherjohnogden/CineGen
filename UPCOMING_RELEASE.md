@@ -23,6 +23,9 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 
 ## New Features
 
+### Header Assistant **(in progress)**
+- Chat bubble to the **right of Settings** opens a right drawer. Ask questions or give tasks about the current project (Director shots, timelines, assets). The model picker is the same **Director LLM** custom dropdown (Claude Code, Codex, Gemini CLI, ChatGPT Luna, OpenAI Luna, fal.ai, Higgsfield). Replies render as markdown; `cinegen-skill-action` JSON is hidden and shown as an **Add / Apply** button (same as Copilot). Prompts use Director **@Tags** (`@Peter`, `@Sofa`) from the breakdown, including ACTIVE REFERENCES. **Add to Spaces** also drops matching Element stills onto the model’s Medias / Image ports — `@tags` in the prompt text alone do not send reference images. Thread is saved per project. Esc or the dimmed area closes it.
+
 ### Director tab **(in progress)**
 - New workspace tab between **Spaces** and **Edit** that turns a script or idea into timed Seedance 2.5 clips
 - Breakdown reviews characters/locations/props/vehicles and matches existing Elements by `@Tag` / name. Unmatched items stay as **suggestions** on the Breakdown rail (big ref image left, info right) — **Assign to existing** or **Create new element** (opens the New Element modal). Approving no longer auto-creates library entries, so you don't have to delete extras on the Elements page

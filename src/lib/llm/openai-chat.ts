@@ -17,6 +17,7 @@ export interface OpenAiChatParams {
   imageUrls?: string[];
   maxCompletionTokens?: number;
   reasoningEffort?: OpenAiReasoningEffort;
+  jsonObject?: boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -40,20 +41,23 @@ export function buildOpenAiChatBody(params: {
   imageUrls?: string[];
   maxCompletionTokens?: number;
   reasoningEffort?: OpenAiReasoningEffort;
+  /** Director JSON jobs keep this on. Assistant chat turns it off. */
+  jsonObject?: boolean;
 }): Record<string, unknown> {
   const messages: Array<{ role: 'system' | 'user'; content: ReturnType<typeof buildOpenAiUserContent> }> = [];
   const system = params.systemPrompt?.trim() ?? '';
   if (system) messages.push({ role: 'system', content: system });
   messages.push({ role: 'user', content: buildOpenAiUserContent(params.userMessage, params.imageUrls) });
-  return {
+  const body: Record<string, unknown> = {
     model: params.model?.trim() || DEFAULT_OPENAI_DIRECTOR_MODEL,
     messages,
-    response_format: { type: 'json_object' },
     reasoning_effort: params.reasoningEffort ?? 'low',
     max_completion_tokens: Number.isFinite(params.maxCompletionTokens)
       ? Math.max(1, Math.floor(params.maxCompletionTokens as number))
       : DEFAULT_OPENAI_MAX_COMPLETION_TOKENS,
   };
+  if (params.jsonObject !== false) body.response_format = { type: 'json_object' };
+  return body;
 }
 
 export function openaiErrorMessage(payload: unknown, fallback: string): string {
@@ -118,6 +122,7 @@ export async function completeOpenAiChat(params: OpenAiChatParams): Promise<{
       imageUrls: params.imageUrls,
       maxCompletionTokens: params.maxCompletionTokens,
       reasoningEffort: params.reasoningEffort,
+      jsonObject: params.jsonObject,
     })),
   });
 

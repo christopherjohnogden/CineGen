@@ -29,6 +29,7 @@ import {
 import { ExportTab } from '@/components/export/export-tab';
 import { SettingsPage } from '@/components/settings/settings-page';
 import { AppToastHost, type AppToast } from '@/components/ui/app-toast';
+import { AssistantDrawer } from '@/components/assistant/assistant-drawer';
 import {
   assetFromRow,
   folderFromRow,
@@ -873,6 +874,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     hasUnreadResponse: false,
   });
   const [copilotReadyToast, setCopilotReadyToast] = useState<AppToast | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const wrappedDispatch = useCallback((action: WorkspaceAction) => {
     lastActionRef.current = action.type;
@@ -1813,6 +1815,8 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         onOpenSkills={() => setOpenSkillBuilderSignal((value) => value + 1)}
         hasActiveSkill={llmHasActiveSkill}
         llmCopilotStatus={llmCopilotStatus}
+        assistantOpen={assistantOpen}
+        onToggleAssistant={() => setAssistantOpen((open) => !open)}
       />
       <main className="workspace-content">
         {state.activeTab === 'elements' && <ElementsTab />}
@@ -1848,6 +1852,13 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         toast={copilotReadyToast}
         onDismiss={dismissCopilotToast}
         onAction={handleCopilotToastAction}
+      />
+      <AssistantDrawer
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        projectId={projectId}
+        state={state}
+        dispatch={wrappedDispatch}
       />
     </WorkspaceContext.Provider>
   );

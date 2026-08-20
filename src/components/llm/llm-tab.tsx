@@ -1603,6 +1603,7 @@ export function LLMTab({
       timelines,
       activeTimelineId,
       assets,
+      director: workspaceState.director,
     });
 
     // Async generate_media steps (Higgsfield generation + placement).

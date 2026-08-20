@@ -258,3 +258,49 @@ export async function runDirectorJsonJob(
     if (onAbort) signal?.removeEventListener('abort', onAbort);
   }
 }
+
+/** Freeform chat for the header Assistant — same providers as Director LLM, no JSON contract. */
+export async function runDirectorTextJob(
+  systemPrompt: string,
+  userMessage: string,
+  provider: DirectorLlmProvider,
+  messages?: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Promise<string> {
+  const prompt = { systemPrompt: systemPrompt.trim(), userMessage: userMessage.trim() };
+  const cli = cliTransportFor(provider);
+  if (cli) {
+    const result = await invokeCliCopilotChat(cli, {
+      purpose: 'copilot',
+      injectProjectContext: true,
+      model: cliJobModel(provider, cli),
+      systemPrompt: prompt.systemPrompt,
+      userMessage: prompt.userMessage,
+      messages,
+    });
+    const text = result.message?.trim() ?? '';
+    if (!text) throw new Error('The model returned no output.');
+    return text;
+  }
+  if (provider === 'openai') {
+    const apiKey = getOpenAiApiKey();
+    if (!apiKey) throw new Error('No OpenAI API key. Add one in Settings, or pick ChatGPT Luna / a CLI.');
+    const history = (messages ?? []).map((row) => `${row.role === 'user' ? 'User' : 'Assistant'}:\n${row.content}`).join('\n\n');
+    const result = await window.electronAPI.llm.openaiChat({
+      apiKey,
+      model: LUNA_DIRECTOR_LLM_MODEL,
+      systemPrompt: prompt.systemPrompt,
+      userMessage: history || prompt.userMessage,
+      jsonObject: false,
+    });
+    const text = result.message?.trim() ?? '';
+    if (!text) throw new Error('OpenAI returned no text output.');
+    return text;
+  }
+  const hosted = await invokeHostedLlm(provider, {
+    systemPrompt: prompt.systemPrompt,
+    userMessage: (messages ?? []).length > 1
+      ? (messages ?? []).map((row) => `${row.role === 'user' ? 'User' : 'Assistant'}:\n${row.content}`).join('\n\n')
+      : prompt.userMessage,
+  });
+  return hosted.message;
+}

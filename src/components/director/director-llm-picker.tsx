@@ -21,6 +21,8 @@ interface DirectorLlmPickerProps {
   /** True when the Higgsfield account is connected. */
   higgsfieldReady: boolean;
   onChange: (provider: DirectorLlmProvider) => void;
+  title?: string;
+  menuLabel?: string;
 }
 
 interface LlmOption {
@@ -30,7 +32,11 @@ interface LlmOption {
   disabled: boolean;
 }
 
-export function DirectorLlmPicker({ provider, providers, falReady, openaiReady, higgsfieldReady, onChange }: DirectorLlmPickerProps) {
+export function DirectorLlmPicker({
+  provider, providers, falReady, openaiReady, higgsfieldReady, onChange,
+  title = 'LLM used for breakdown, shotlist, look bible and rewrites',
+  menuLabel = 'Director LLM',
+}: DirectorLlmPickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -94,7 +100,7 @@ export function DirectorLlmPicker({ provider, providers, falReady, openaiReady, 
         className={`dllm-trigger${open ? ' dllm-trigger--open' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title="LLM used for breakdown, shotlist, look bible and rewrites"
+        title={title}
         onClick={() => setOpen((value) => !value)}
       >
         <span className={`dllm-dot${current.disabled ? ' dllm-dot--off' : ''}`} aria-hidden />
@@ -104,8 +110,8 @@ export function DirectorLlmPicker({ provider, providers, falReady, openaiReady, 
         </svg>
       </button>
       {open && (
-        <div className="dllm-menu" role="listbox" aria-label="Director LLM">
-          <div className="dllm-menu-head">Director LLM</div>
+        <div className="dllm-menu" role="listbox" aria-label={menuLabel}>
+          <div className="dllm-menu-head">{menuLabel}</div>
           {options.map((option) => (
             <button
               key={option.id}

@@ -50,6 +50,7 @@ export function registerOpenAiLlmHandlers(): void {
       maxCompletionTokens: typeof record.maxCompletionTokens === 'number'
         ? record.maxCompletionTokens
         : undefined,
+      jsonObject: record.jsonObject === false ? false : undefined,
     });
   });
 }

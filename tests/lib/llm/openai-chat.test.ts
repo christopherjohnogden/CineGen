@@ -27,6 +27,13 @@ describe('OpenAI chat completions helper', () => {
     });
   });
 
+  it('omits json_object when jsonObject is false', () => {
+    expect(buildOpenAiChatBody({
+      userMessage: 'hello',
+      jsonObject: false,
+    })).not.toHaveProperty('response_format');
+  });
+
   it('attaches stills as low-detail image_url parts', () => {
     expect(buildOpenAiUserContent('Look at these.', [
       'https://example.test/a.jpg',

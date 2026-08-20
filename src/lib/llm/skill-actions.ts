@@ -1,4 +1,5 @@
 import type { Edge, Node } from '@xyflow/react';
+import type { DirectorShow } from '@/types/director';
 import type { Element, ElementType } from '@/types/elements';
 import type { Asset } from '@/types/project';
 import type { Timeline } from '@/types/timeline';
@@ -24,6 +25,7 @@ import {
   type SpaceTemplateId,
   type VideoClipGroupSpec,
 } from '@/lib/llm/space-templates';
+import { bindPromptMentionsToGraph } from '@/lib/llm/prompt-elements';
 import { generateId, timestamp } from '@/lib/utils/ids';
 
 export { COPILOT_ACTIONS_GUIDE } from '@/lib/llm/copilot-actions-guide';
@@ -102,6 +104,7 @@ export interface CopilotActionContext {
   timelines: Timeline[];
   activeTimelineId: string;
   assets: Asset[];
+  director?: DirectorShow;
 }
 
 export type CopilotActionDispatch = (action: WorkspaceCopilotAction) => void;
@@ -700,24 +703,28 @@ export function executeSkillAction(
         : target.space.edges;
 
       const createdNodes = buildNodesFromSpecs(step.nodes, baseNodes);
-      const mergedNodes = [...baseNodes, ...createdNodes];
-      const newEdges = step.wire?.map((wire) => ({
+      const wiredEdges = step.wire?.map((wire) => ({
         id: generateId(),
         source: createdNodes[wire.from]?.id ?? '',
         sourceHandle: wire.sourceHandle,
         target: createdNodes[wire.to]?.id ?? '',
         targetHandle: wire.targetHandle,
       })).filter((edge) => edge.source && edge.target) ?? [];
+      const bound = bindPromptMentionsToGraph({
+        nodes: [...baseNodes, ...createdNodes],
+        edges: [...baseEdges, ...wiredEdges],
+        promptNodeIds: createdNodes.filter((node) => node.type === 'prompt').map((node) => node.id),
+        elements: context.elements,
+        breakdown: context.director?.breakdown,
+      });
 
       if (target.spaceId !== context.activeSpaceId) {
         dispatch({ type: 'OPEN_SPACE', spaceId: target.spaceId });
         dispatch({ type: 'SET_ACTIVE_SPACE', spaceId: target.spaceId });
       }
 
-      dispatch({ type: 'SET_NODES', nodes: mergedNodes });
-      if (newEdges.length > 0) {
-        dispatch({ type: 'SET_EDGES', edges: [...baseEdges, ...newEdges] });
-      }
+      dispatch({ type: 'SET_NODES', nodes: bound.nodes });
+      dispatch({ type: 'SET_EDGES', edges: bound.edges });
       if (step.navigate !== false) {
         dispatch({ type: 'SET_TAB', tab: 'create' });
       }
