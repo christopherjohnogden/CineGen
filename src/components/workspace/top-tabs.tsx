@@ -26,6 +26,8 @@ interface TopTabsProps {
   llmCopilotStatus?: LlmCopilotNavStatus;
   assistantOpen?: boolean;
   onToggleAssistant?: () => void;
+  voiceDirectorOpen?: boolean;
+  onToggleVoiceDirector?: () => void;
 }
 
 export function TopTabs({
@@ -38,6 +40,8 @@ export function TopTabs({
   llmCopilotStatus,
   assistantOpen = false,
   onToggleAssistant,
+  voiceDirectorOpen = false,
+  onToggleVoiceDirector,
 }: TopTabsProps) {
   const isSettingsActive = activeTab === 'settings';
 
@@ -85,6 +89,17 @@ export function TopTabs({
       </div>
 
       <div className="top-nav__actions">
+        <button
+          className={`top-nav__settings${isSettingsActive ? ' top-nav__settings--active' : ''}`}
+          onClick={() => onTabChange(isSettingsActive ? 'create' : 'settings')}
+          title="Settings"
+          aria-label="Open app settings"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
         {showSkillsButton && onOpenSkills && (
           <button
             className={`top-nav__skills${hasActiveSkill ? ' top-nav__skills--active' : ''}`}
@@ -99,17 +114,20 @@ export function TopTabs({
             <span className="top-nav__skills-label">Skills</span>
           </button>
         )}
-        <button
-          className={`top-nav__settings${isSettingsActive ? ' top-nav__settings--active' : ''}`}
-          onClick={() => onTabChange(isSettingsActive ? 'create' : 'settings')}
-          title="Settings"
-          aria-label="Open app settings"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
+        {onToggleVoiceDirector && (
+          <button
+            className={`top-nav__assistant top-nav__voice${voiceDirectorOpen ? ' top-nav__assistant--active' : ''}`}
+            onClick={onToggleVoiceDirector}
+            title="Voice Director (⌘⇧Space)"
+            aria-label="Open Voice Director"
+            aria-pressed={voiceDirectorOpen}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="9" y="2" width="6" height="12" rx="3" />
+              <path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" />
+            </svg>
+          </button>
+        )}
         {onToggleAssistant && (
           <button
             className={`top-nav__assistant${assistantOpen ? ' top-nav__assistant--active' : ''}`}

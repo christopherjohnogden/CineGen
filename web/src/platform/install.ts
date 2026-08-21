@@ -329,6 +329,7 @@ export const browserElectronAPI: BrowserElectronAPI = {
     codexChat: (params) => rpc('llm', 'codexChat', params),
     geminiChat: (params) => rpc('llm', 'geminiChat', params),
     openaiChat: (params) => rpc('llm', 'openaiChat', params),
+    openaiRealtimeSession: (params) => rpc('llm', 'openaiRealtimeSession', params),
     claudeCodeCancel: (requestId) => rpc('llm', 'claudeCodeCancel', requestId),
     codexCancel: (requestId) => rpc('llm', 'codexCancel', requestId),
     geminiCancel: (requestId) => rpc('llm', 'geminiCancel', requestId),

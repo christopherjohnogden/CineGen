@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractShotPromptsFromMarkdown,
   extractStandalonePrompts,
+  executeSkillAction,
   parseSkillActionFromContent,
   resolveSkillActionForMessage,
   stripSkillActionBlock,
@@ -132,6 +133,46 @@ describe('skill-actions', () => {
 
     const action = parseSkillActionFromContent(content);
     expect(action?.steps[0]).toMatchObject({ type: 'add_nodes' });
+  });
+
+  it('parses and applies a selected-node config update', () => {
+    const content = [
+      'I’ll update the referenced prompt node.',
+      '```cinegen-skill-action',
+      '{"label":"Update prompt","steps":[{"type":"update_node","nodeId":"prompt-node-7","config":{"prompt":"Close-up on @Peter, nervous and alert"}}]}',
+      '```',
+    ].join('\n');
+    const action = parseSkillActionFromContent(content);
+    expect(action?.steps[0]).toEqual({
+      type: 'update_node',
+      nodeId: 'prompt-node-7',
+      config: { prompt: 'Close-up on @Peter, nervous and alert' },
+    });
+
+    const dispatched: unknown[] = [];
+    const node = {
+      id: 'prompt-node-7',
+      type: 'prompt',
+      selected: true,
+      position: { x: 0, y: 0 },
+      data: { type: 'prompt', label: 'Prompt', config: { prompt: 'Old prompt' } },
+    };
+    if (!action) throw new Error('Expected update action');
+    executeSkillAction(action, (next) => dispatched.push(next), {
+      elements: [],
+      spaces: [{ id: 'space-1', name: 'Coverage', createdAt: '', nodes: [node], edges: [] }],
+      activeSpaceId: 'space-1',
+      nodes: [node],
+      edges: [],
+      timelines: [],
+      activeTimelineId: '',
+      assets: [],
+    });
+    expect(dispatched).toEqual([{
+      type: 'UPDATE_NODE_CONFIG',
+      nodeId: 'prompt-node-7',
+      config: { prompt: 'Close-up on @Peter, nervous and alert' },
+    }]);
   });
 
   it('builds prompt nodes from specs', () => {

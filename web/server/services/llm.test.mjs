@@ -118,6 +118,34 @@ test('OpenAI chat posts Luna JSON jobs with Bearer auth', async () => {
   });
 });
 
+test('OpenAI Realtime exchanges the browser SDP offer through the web server', async () => {
+  const calls = [];
+  const handlers = createLlmHandlers({
+    fetchImpl: async (urlValue, init = {}) => {
+      calls.push({ url: String(urlValue), init });
+      return new Response('v=0\r\no=OpenAI 123 2 IN IP4 127.0.0.1\r\n', {
+        status: 201,
+        headers: { 'Content-Type': 'application/sdp' },
+      });
+    },
+  });
+
+  const result = await handlers.openaiRealtimeSession({
+    apiKey: 'sk-realtime-test',
+    sdp: 'v=0\r\no=CineGen 456 2 IN IP4 127.0.0.1\r\n',
+    voice: 'coral',
+  });
+
+  assert.match(result.sdp, /^v=0/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.openai.com/v1/realtime/calls');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer sk-realtime-test');
+  assert.equal(calls[0].init.body.get('sdp'), 'v=0\r\no=CineGen 456 2 IN IP4 127.0.0.1\r\n');
+  const session = JSON.parse(calls[0].init.body.get('session'));
+  assert.equal(session.model, 'gpt-realtime-2.1');
+  assert.equal(session.audio.output.voice, 'coral');
+});
+
 test('OpenAI chat attaches mood-board stills as vision parts', async () => {
   const calls = [];
   const fetchImpl = async (urlValue, init = {}) => {

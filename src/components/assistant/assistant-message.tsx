@@ -80,6 +80,7 @@ export function AssistantMessageView({
               activeSpaceId: state.activeSpaceId,
               timelines: state.timelines,
               activeTimelineId: state.activeTimelineId,
+              nodes: state.nodes,
             })}</div>
           </div>
           <button

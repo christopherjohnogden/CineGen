@@ -5,4 +5,4 @@ import "node:path";
 import "node:os";
 import "node:crypto";
 import "node:stream";
-import "./main-B3gV1ZV1.js";
+import "./main-c0o6e-rx.js";

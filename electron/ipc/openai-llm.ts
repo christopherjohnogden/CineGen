@@ -53,4 +53,55 @@ export function registerOpenAiLlmHandlers(): void {
       jsonObject: record.jsonObject === false ? false : undefined,
     });
   });
+
+  ipcMain.handle('llm:openai-realtime-session', async (_event, params: unknown) => {
+    const record = params && typeof params === 'object' && !Array.isArray(params)
+      ? params as Record<string, unknown>
+      : {};
+    const apiKey = typeof record.apiKey === 'string' ? record.apiKey.trim() : '';
+    const sdp = typeof record.sdp === 'string' ? record.sdp : '';
+    const voices = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar']);
+    const voice = typeof record.voice === 'string' && voices.has(record.voice) ? record.voice : 'cedar';
+    if (!apiKey) throw new Error('Add an OpenAI API key in Settings to use Voice Director.');
+    if (!sdp || sdp.length > 1_000_000) throw new Error('Voice Director received an invalid audio session offer.');
+
+    const session = JSON.stringify({
+      type: 'realtime',
+      model: 'gpt-realtime-2.1',
+      audio: {
+        input: {
+          transcription: { model: 'gpt-4o-mini-transcribe' },
+          turn_detection: {
+            type: 'semantic_vad',
+            eagerness: 'auto',
+            create_response: true,
+            interrupt_response: true,
+          },
+        },
+        output: { voice },
+      },
+    });
+    const body = new FormData();
+    body.set('sdp', sdp);
+    body.set('session', session);
+
+    const response = await fetch('https://api.openai.com/v1/realtime/calls', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'OpenAI-Safety-Identifier': 'cinegen-desktop-user',
+      },
+      body,
+    });
+    const answer = await response.text();
+    if (!response.ok) {
+      let message = `OpenAI Realtime failed (${response.status}).`;
+      try {
+        const parsed = JSON.parse(answer) as { error?: { message?: string } };
+        if (parsed.error?.message) message = parsed.error.message;
+      } catch {}
+      throw new Error(message);
+    }
+    return { sdp: answer };
+  });
 }

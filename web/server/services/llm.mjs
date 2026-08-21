@@ -13,9 +13,14 @@ import {
 const DEFAULT_TEXT_MODEL = 'anthropic/claude-sonnet-4.6';
 const OPENROUTER_ENDPOINT = 'openrouter/router';
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_REALTIME_URL = 'https://api.openai.com/v1/realtime/calls';
 const OPENAI_DIRECTOR_MODEL = 'gpt-5.6-luna';
 const OPENAI_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 const MESSAGE_ROLES = new Set(['user', 'assistant', 'system']);
+const REALTIME_VOICES = new Set([
+  'alloy', 'ash', 'ballad', 'coral', 'echo',
+  'sage', 'shimmer', 'verse', 'marin', 'cedar',
+]);
 
 function parseFiniteNumber(value) {
   const parsed = Number(value);
@@ -247,6 +252,80 @@ export function createLlmHandlers(options = {}) {
         }
         : undefined;
       return { message: content, ...(usage ? { usage } : {}) };
+    },
+
+    openaiRealtimeSession: async (paramsValue) => {
+      const params = requireRecord(paramsValue, 'OpenAI Realtime parameters');
+      const apiKey = requireSecret(params.apiKey, 'OpenAI API key');
+      // SDP is line-oriented and must keep its terminating CRLF. The shared
+      // string validator trims input, so validate this protocol payload without
+      // normalizing it.
+      if (typeof params.sdp !== 'string' || !params.sdp || params.sdp.length > 1_000_000) {
+        throw new ServiceError('Voice Director audio session offer is invalid.', {
+          code: 'INVALID_INPUT',
+        });
+      }
+      const sdp = params.sdp;
+      const voice = typeof params.voice === 'string' && REALTIME_VOICES.has(params.voice)
+        ? params.voice
+        : 'cedar';
+      const session = JSON.stringify({
+        type: 'realtime',
+        model: 'gpt-realtime-2.1',
+        audio: {
+          input: {
+            transcription: { model: 'gpt-4o-mini-transcribe' },
+            turn_detection: {
+              type: 'semantic_vad',
+              eagerness: 'auto',
+              create_response: true,
+              interrupt_response: true,
+            },
+          },
+          output: { voice },
+        },
+      });
+      const body = new FormData();
+      body.set('sdp', sdp);
+      body.set('session', session);
+      const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+
+      let response;
+      try {
+        response = await fetchImpl(OPENAI_REALTIME_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'OpenAI-Safety-Identifier': 'cinegen-web-user',
+          },
+          body,
+        });
+      } catch (cause) {
+        throw new ServiceError('Could not reach OpenAI Realtime.', {
+          code: 'PROVIDER_UNAVAILABLE',
+          statusCode: 502,
+          cause,
+        });
+      }
+
+      const answer = await response.text();
+      if (!response.ok) {
+        let message = `OpenAI Realtime failed (${response.status}).`;
+        try {
+          const payload = JSON.parse(answer);
+          if (typeof payload?.error?.message === 'string' && payload.error.message.trim()) {
+            message = payload.error.message.trim();
+          }
+        } catch {}
+        throw new ServiceError(message, { code: 'PROVIDER_ERROR', statusCode: 502 });
+      }
+      if (!answer.trim()) {
+        throw new ServiceError('OpenAI Realtime returned an empty audio session answer.', {
+          code: 'PROVIDER_BAD_RESPONSE',
+          statusCode: 502,
+        });
+      }
+      return { sdp: answer };
     },
 
     localChat: async () => unavailable('Local Ollama chat'),

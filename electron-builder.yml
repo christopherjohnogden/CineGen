@@ -14,6 +14,8 @@ mac:
     - zip
   icon: build/CineGen.icns
   category: public.app-category.video
+  extendInfo:
+    NSMicrophoneUsageDescription: CineGen uses the microphone when you start Voice Director.
 extraResources:
   - from: electron/splash.html
     to: splash.html

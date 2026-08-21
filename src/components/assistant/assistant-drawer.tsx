@@ -7,6 +7,7 @@ import {
   loadAssistantThread,
   pickAssistantProvider,
   saveAssistantThread,
+  selectedNodeAssistantContext,
   stampDirectorTags,
   type AssistantMessage,
 } from '@/lib/assistant/assistant';
@@ -57,6 +58,11 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
     gemini: cliProviders.gemini.installed,
   };
   const canSend = assistantProviderReady(provider, installed, { falReady, openaiReady, higgsfieldReady });
+  const selectedNode = state.activeTab === 'create'
+    ? state.nodes.find((node) => node.selected && node.type !== 'group') ?? null
+    : null;
+  const activeSpace = state.spaces.find((space) => space.id === state.activeSpaceId) ?? null;
+  const nodeReferenceContext = selectedNodeAssistantContext(selectedNode, activeSpace);
 
   useEffect(() => {
     if (!open) {
@@ -146,7 +152,8 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
         buildModeSystemPrompt('ask'),
         directorBrief(state.director),
         projectContext,
-      ].join('\n\n');
+        nodeReferenceContext || null,
+      ].filter((section): section is string => Boolean(section)).join('\n\n');
       const reply = stampDirectorTags(
         (await runDirectorTextJob(systemPrompt, text, provider, next)).trim() || 'No reply.',
         state.director,
@@ -168,7 +175,6 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
 
   return (
     <div className="asst" role="dialog" aria-label="CineGen Assistant">
-      <button type="button" className="asst-scrim" onClick={onClose} aria-label="Close assistant" />
       <aside className="asst-panel">
         <header className="asst-head">
           <span className="asst-title">Assistant</span>
@@ -214,6 +220,16 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
           <div ref={bottomRef} />
         </div>
         <div className="asst-composer">
+          {selectedNode && (
+            <div className="asst-node-ref" aria-live="polite">
+              <span className="asst-node-ref__icon" aria-hidden="true">◇</span>
+              <span className="asst-node-ref__body">
+                <span className="asst-node-ref__eyebrow">Referenced node</span>
+                <span className="asst-node-ref__name">{selectedNode.data.label}</span>
+              </span>
+              <span className="asst-node-ref__type">{selectedNode.data.type}</span>
+            </div>
+          )}
           {!canSend && (
             <p className="asst-hint">Pick an installed CLI, or add a fal.ai / OpenAI key in Settings.</p>
           )}
@@ -221,7 +237,9 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
             <textarea
               ref={inputRef}
               value={draft}
-              placeholder="Ask a question or tell me what to do…"
+              placeholder={selectedNode
+                ? `Ask me to change ${selectedNode.data.label}…`
+                : 'Ask a question or tell me what to do…'}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {

@@ -1,4 +1,6 @@
+import type { Node } from '@xyflow/react';
 import type { DirectorShow } from '@/types/director';
+import type { WorkflowNodeData } from '@/types/workflow';
 import {
   HIGGSFIELD_LLM_CLI_SUPPORTED,
   isDirectorLlmProvider,
@@ -32,6 +34,7 @@ export const ASSISTANT_SYSTEM = [
   'Never paste JSON, cinegen-skill-action fences, or cut-plan XML into the readable reply — those blocks are hidden and become a button.',
   'Do not ask "want me to add this" if you already emit the action block.',
   'If the user asks you to change the project, summarize what you will do; the app applies it from the action button.',
+  'When SELECTED SPACE NODE is present and the user asks to change that node, emit an update_node action for its exact nodeId. Patch only the requested config fields; do not create a replacement node.',
 ].join(' ');
 
 export function assistantStorageKey(projectId: string): string {
@@ -71,8 +74,44 @@ export function pickAssistantProvider(
 }
 
 const APPLYABLE_STEPS = new Set([
-  'navigate', 'create_space', 'add_nodes', 'save_elements', 'edit_timeline',
+  'navigate', 'create_space', 'add_nodes', 'update_node', 'save_elements', 'edit_timeline',
 ]);
+
+function compactNodeConfig(value: unknown, depth = 0): unknown {
+  if (depth > 4) return '[nested value omitted]';
+  if (typeof value === 'string') {
+    if (/^data:/i.test(value)) return `[data URL omitted · ${value.length} chars]`;
+    return value.length > 2_000 ? `${value.slice(0, 2_000)}…` : value;
+  }
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (Array.isArray(value)) return value.slice(0, 24).map((entry) => compactNodeConfig(entry, depth + 1));
+  if (typeof value === 'object' && value) {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value).slice(0, 64)) {
+      result[key] = compactNodeConfig(entry, depth + 1);
+    }
+    return result;
+  }
+  return String(value);
+}
+
+export function selectedNodeAssistantContext(
+  node: Node<WorkflowNodeData> | null | undefined,
+  space?: { id: string; name: string } | null,
+): string {
+  if (!node) return '';
+  const config = JSON.stringify(compactNodeConfig(node.data.config), null, 2);
+  return [
+    'SELECTED SPACE NODE (explicit user reference)',
+    space ? `Space: ${space.name} (${space.id})` : null,
+    `nodeId: ${node.id}`,
+    `type: ${node.data.type}`,
+    `label: ${node.data.label}`,
+    node.data.modelId ? `modelId: ${node.data.modelId}` : null,
+    `editable config:\n${config}`,
+    'For requested edits, use update_node with this exact nodeId and a config patch containing only changed fields.',
+  ].filter((line): line is string => Boolean(line)).join('\n');
+}
 
 const OFFER_TAIL = /\n+(?:want me to add|should i add)[^\n]*\??\s*$/i;
 

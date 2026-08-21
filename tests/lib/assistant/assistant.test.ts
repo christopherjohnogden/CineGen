@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
-import { assistantActionRunnable, assistantProviderReady, directorBrief, pickAssistantProvider, stampDirectorTags, visibleAssistantContent } from '@/lib/assistant/assistant';
+import {
+  assistantActionRunnable,
+  assistantProviderReady,
+  directorBrief,
+  pickAssistantProvider,
+  selectedNodeAssistantContext,
+  stampDirectorTags,
+  visibleAssistantContent,
+} from '@/lib/assistant/assistant';
 
 describe('assistant', () => {
   it('picks an installed CLI, preferring the saved one', () => {
@@ -88,5 +96,33 @@ describe('assistant', () => {
       label: 'Generate',
       steps: [{ type: 'generate_media', prompt: 'x', outputType: 'image', target: 'bin' }],
     })).toBe(false);
+  });
+
+  it('describes the selected node as an editable assistant reference', () => {
+    const context = selectedNodeAssistantContext({
+      id: 'prompt-node-7',
+      type: 'prompt',
+      selected: true,
+      position: { x: 10, y: 20 },
+      data: {
+        type: 'prompt',
+        label: 'Peter close-up',
+        config: {
+          prompt: 'give me a close up shot on this guy',
+          referenceImage: `data:image/png;base64,${'x'.repeat(50)}`,
+        },
+      },
+    }, { id: 'space-1', name: 'Coverage' });
+
+    expect(context).toContain('SELECTED SPACE NODE');
+    expect(context).toContain('nodeId: prompt-node-7');
+    expect(context).toContain('Peter close-up');
+    expect(context).toContain('give me a close up shot on this guy');
+    expect(context).toContain('[data URL omitted');
+    expect(context).toContain('use update_node');
+    expect(assistantActionRunnable({
+      label: 'Update prompt',
+      steps: [{ type: 'update_node', nodeId: 'prompt-node-7', config: { prompt: 'Close-up on @Peter' } }],
+    })).toBe(true);
   });
 });

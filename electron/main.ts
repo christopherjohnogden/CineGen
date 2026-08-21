@@ -73,6 +73,15 @@ const USER_DATA_MIGRATION_MARKER = '.cinegen-user-data-migrated.json';
 const APP_DISPLAY_NAME = 'CineGen';
 const WAKE_RECOVERY_DELAY_MS = 700;
 
+// vite-plugin-electron sends this message after rebuilding the preload bundle.
+// Reloading the BrowserWindow is what installs newly-added contextBridge methods.
+process.on('message', (message) => {
+  if (message !== 'electron-vite&type=hot-reload') return;
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.reload();
+  }
+});
+
 function broadcastPowerEvent(type: 'suspend' | 'resume' | 'unlock-screen'): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;

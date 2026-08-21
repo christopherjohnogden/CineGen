@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     codexChat: (params: unknown) => ipcRenderer.invoke('llm:codex-chat', params),
     geminiChat: (params: unknown) => ipcRenderer.invoke('llm:gemini-chat', params),
     openaiChat: (params: unknown) => ipcRenderer.invoke('llm:openai-chat', params),
+    openaiRealtimeSession: (params: { apiKey: string; sdp: string; voice?: string }) =>
+      ipcRenderer.invoke('llm:openai-realtime-session', params),
     claudeCodeCancel: (requestId: string) => ipcRenderer.invoke('llm:claude-code-cancel', requestId),
     codexCancel: (requestId: string) => ipcRenderer.invoke('llm:codex-cancel', requestId),
     geminiCancel: (requestId: string) => ipcRenderer.invoke('llm:gemini-cancel', requestId),

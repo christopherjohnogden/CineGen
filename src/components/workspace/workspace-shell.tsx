@@ -30,6 +30,7 @@ import { ExportTab } from '@/components/export/export-tab';
 import { SettingsPage } from '@/components/settings/settings-page';
 import { AppToastHost, type AppToast } from '@/components/ui/app-toast';
 import { AssistantDrawer } from '@/components/assistant/assistant-drawer';
+import { VoiceDirectorOverlay } from '@/components/assistant/voice-director-overlay';
 import {
   assetFromRow,
   folderFromRow,
@@ -875,10 +876,24 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   });
   const [copilotReadyToast, setCopilotReadyToast] = useState<AppToast | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [voiceDirectorOpen, setVoiceDirectorOpen] = useState(false);
 
   const wrappedDispatch = useCallback((action: WorkspaceAction) => {
     lastActionRef.current = action.type;
     historyDispatch(action);
+  }, []);
+
+  const toggleVoiceDirector = useCallback(() => {
+    setAssistantOpen(false);
+    setVoiceDirectorOpen((open) => !open);
+  }, []);
+
+  const applyVoiceDirector = useCallback((director: DirectorShow) => {
+    wrappedDispatch({ type: 'SET_DIRECTOR', director });
+  }, [wrappedDispatch]);
+
+  const undoVoiceDirector = useCallback(() => {
+    historyDispatch({ type: 'UNDO' });
   }, []);
 
   const handleTabChange = useCallback((tab: ProjectTab) => {
@@ -1030,6 +1045,17 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Voice Director — available from every project tab while CineGen is focused.
+  useEffect(() => {
+    function handleVoiceShortcut(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.code !== 'Space') return;
+      event.preventDefault();
+      toggleVoiceDirector();
+    }
+    window.addEventListener('keydown', handleVoiceShortcut);
+    return () => window.removeEventListener('keydown', handleVoiceShortcut);
+  }, [toggleVoiceDirector]);
 
   const applyMediaJobResult = useCallback((assetId: string, jobType: string | undefined, result: unknown) => {
     if (jobType) {
@@ -1816,7 +1842,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         hasActiveSkill={llmHasActiveSkill}
         llmCopilotStatus={llmCopilotStatus}
         assistantOpen={assistantOpen}
-        onToggleAssistant={() => setAssistantOpen((open) => !open)}
+        onToggleAssistant={() => {
+          setVoiceDirectorOpen(false);
+          setAssistantOpen((open) => !open);
+        }}
+        voiceDirectorOpen={voiceDirectorOpen}
+        onToggleVoiceDirector={toggleVoiceDirector}
       />
       <main className="workspace-content">
         {state.activeTab === 'elements' && <ElementsTab />}
@@ -1859,6 +1890,13 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         projectId={projectId}
         state={state}
         dispatch={wrappedDispatch}
+      />
+      <VoiceDirectorOverlay
+        open={voiceDirectorOpen}
+        state={state}
+        onClose={() => setVoiceDirectorOpen(false)}
+        onApplyDirector={applyVoiceDirector}
+        onUndo={undoVoiceDirector}
       />
     </WorkspaceContext.Provider>
   );

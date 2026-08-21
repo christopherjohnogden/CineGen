@@ -75,6 +75,29 @@ describe('browser Electron adapter installation', () => {
     });
   });
 
+  it('routes OpenAI Realtime session creation through the web server', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ ok: true, result: { sdp: 'answer-sdp' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { browserElectronAPI } = await import('../src/platform/install');
+    await expect(browserElectronAPI.llm.openaiRealtimeSession({
+      apiKey: 'sk-test',
+      sdp: 'offer-sdp',
+      voice: 'cedar',
+    })).resolves.toEqual({ sdp: 'answer-sdp' });
+
+    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/rpc/llm/openaiRealtimeSession');
+    expect(JSON.parse(String(request.body))).toEqual({
+      args: [{ apiKey: 'sk-test', sdp: 'offer-sdp', voice: 'cedar' }],
+    });
+  });
+
   it('keeps an adapter that was already installed', async () => {
     const existingAdapter = { marker: 'desktop-or-test-bridge' } as unknown as Window['electronAPI'];
     Object.defineProperty(window, 'electronAPI', {

@@ -52,6 +52,14 @@ export interface SkillAddNodesStep {
   navigate?: boolean;
 }
 
+export interface SkillUpdateNodeStep {
+  type: 'update_node';
+  /** Exact node id from SELECTED SPACE NODE context; "selected" is accepted as a fallback. */
+  nodeId: string;
+  /** Shallow patch merged into node.data.config. */
+  config: Record<string, unknown>;
+}
+
 export interface SkillSaveElementsStep {
   type: 'save_elements';
   items: Array<{
@@ -86,6 +94,7 @@ export type SkillActionStep =
   | SkillNavigateStep
   | SkillCreateSpaceStep
   | SkillAddNodesStep
+  | SkillUpdateNodeStep
   | SkillSaveElementsStep
   | SkillEditTimelineStep
   | SkillGenerateMediaStep;
@@ -115,6 +124,7 @@ export type WorkspaceCopilotAction =
   | { type: 'OPEN_SPACE'; spaceId: string }
   | { type: 'SET_ACTIVE_SPACE'; spaceId: string }
   | { type: 'SET_NODES'; nodes: Node<WorkflowNodeData>[] }
+  | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
   | { type: 'SET_EDGES'; edges: Edge[] }
   | { type: 'ADD_ELEMENT'; element: Element }
   | { type: 'SET_TIMELINE'; timelineId: string; timeline: Timeline };
@@ -217,6 +227,33 @@ function normalizeWireSpecs(raw: unknown): CopilotWireSpec[] {
     });
   }
   return wires;
+}
+
+function containsForbiddenConfigKey(value: unknown, seen = new WeakSet<object>()): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (seen.has(value)) return true;
+  seen.add(value);
+  if (Array.isArray(value)) return value.some((entry) => containsForbiddenConfigKey(entry, seen));
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') return true;
+    if (containsForbiddenConfigKey(entry, seen)) return true;
+  }
+  return false;
+}
+
+function normalizeNodeConfigPatch(raw: unknown): Record<string, unknown> | null {
+  if (!isRecord(raw)) return null;
+  const entries = Object.entries(raw);
+  if (entries.length === 0 || entries.length > 64 || containsForbiddenConfigKey(raw)) return null;
+  if (entries.some(([key]) => !key || key.length > 128 || /[\0\r\n]/.test(key))) return null;
+  try {
+    const serialized = JSON.stringify(raw);
+    if (!serialized || serialized.length > 100_000) return null;
+    const parsed = JSON.parse(serialized) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeTimelineOps(raw: unknown): TimelineEditOp[] {
@@ -370,6 +407,13 @@ function normalizeSkillActionPayload(raw: unknown): SkillActionPayload | null {
         wire: normalizeWireSpecs(step.wire),
         navigate: step.navigate !== false,
       });
+      continue;
+    }
+    if (step.type === 'update_node') {
+      const nodeId = typeof step.nodeId === 'string' ? step.nodeId.trim() : '';
+      const config = normalizeNodeConfigPatch(step.config);
+      if (!nodeId || nodeId.length > 256 || !config) continue;
+      steps.push({ type: 'update_node', nodeId, config });
       continue;
     }
     if (step.type === 'save_elements') {
@@ -625,8 +669,20 @@ export function resolveSkillActionForMessage(
 
 export function describeSkillAction(
   action: SkillActionPayload,
-  context?: Pick<CopilotActionContext, 'spaces' | 'activeSpaceId' | 'timelines' | 'activeTimelineId'>,
+  context?: Pick<CopilotActionContext, 'spaces' | 'activeSpaceId' | 'timelines' | 'activeTimelineId'> & {
+    nodes?: Node<WorkflowNodeData>[];
+  },
 ): string {
+  const updateStep = action.steps.find((step): step is SkillUpdateNodeStep => step.type === 'update_node');
+  if (updateStep) {
+    const node = updateStep.nodeId === 'selected'
+      ? context?.nodes?.find((entry) => entry.selected && entry.type !== 'group')
+      : context?.nodes?.find((entry) => entry.id === updateStep.nodeId);
+    const fields = Object.keys(updateStep.config);
+    const fieldLabel = fields.length === 1 ? fields[0] : `${fields.length} fields`;
+    return `${node?.data.label ?? 'Selected node'} · update ${fieldLabel}`;
+  }
+
   const addStep = action.steps.find((step): step is SkillAddNodesStep => step.type === 'add_nodes');
   if (addStep) {
     const target = resolveSpaceTarget(addStep.spaceId, context?.spaces ?? [], context?.activeSpaceId ?? '');
@@ -728,6 +784,15 @@ export function executeSkillAction(
       if (step.navigate !== false) {
         dispatch({ type: 'SET_TAB', tab: 'create' });
       }
+      continue;
+    }
+
+    if (step.type === 'update_node') {
+      const node = step.nodeId === 'selected'
+        ? context.nodes.find((entry) => entry.selected && entry.type !== 'group')
+        : context.nodes.find((entry) => entry.id === step.nodeId);
+      if (!node || node.type === 'group') continue;
+      dispatch({ type: 'UPDATE_NODE_CONFIG', nodeId: node.id, config: step.config });
       continue;
     }
 

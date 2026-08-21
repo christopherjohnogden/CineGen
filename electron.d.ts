@@ -228,6 +228,11 @@ export interface ElectronAPI {
         cost: number;
       };
     }>;
+    openaiRealtimeSession: (params: {
+      apiKey: string;
+      sdp: string;
+      voice?: 'alloy' | 'ash' | 'ballad' | 'coral' | 'echo' | 'sage' | 'shimmer' | 'verse' | 'marin' | 'cedar';
+    }) => Promise<{ sdp: string }>;
     claudeCodeCancel: (requestId: string) => Promise<void>;
     codexCancel: (requestId: string) => Promise<void>;
     geminiCancel: (requestId: string) => Promise<void>;
