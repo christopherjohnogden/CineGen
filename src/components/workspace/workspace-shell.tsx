@@ -3,7 +3,7 @@ import { createContext, useContext, useReducer, useEffect, useRef, useCallback, 
 import type { Node, Edge } from '@xyflow/react';
 import type { WorkflowSpace, WorkspaceState } from '@/types/workspace';
 import type { ProjectTab } from '@/types/workspace';
-import type { Asset, MediaFolder } from '@/types/project';
+import type { Asset, MediaFolder, ProjectSnapshot } from '@/types/project';
 import type { Clip, Timeline } from '@/types/timeline';
 import type { WorkflowNodeData, WorkflowRun } from '@/types/workflow';
 import type { ExportJob } from '@/types/export';
@@ -15,6 +15,7 @@ import { DirectorTab } from '@/components/director/director-tab';
 import { createDefaultTimeline } from '@/lib/editor/timeline-operations';
 import { migrateSequenceToTimelines } from '@/lib/editor/timeline-migration';
 import { TopTabs, type LlmCopilotNavStatus } from './top-tabs';
+import { WorkspaceLoadingState } from './workspace-loading-state';
 import { ElementsTab } from '@/components/elements/elements-tab';
 import { CreateTab } from '@/components/create/create-tab';
 import { EditTab } from '@/components/edit/edit-tab';
@@ -43,6 +44,9 @@ import {
 } from '@/lib/db-converters';
 import { mediaDebug, mediaDebugError } from '@/lib/debug/media-debug';
 import { generateId, timestamp } from '@/lib/utils/ids';
+import { loadAvailableProject, saveAvailableProject } from '@/lib/cloud/projects';
+import { setActiveFundingProject } from '@/lib/cloud/funding';
+import { startOwnerFundingRelay } from '@/lib/cloud/funding-relay';
 import {
   getApiKey,
   getAutoVisualIndexingEnabled,
@@ -867,6 +871,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const [llmJumpRequest, setLlmJumpRequest] = useState<LlmJumpRequest | null>(null);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [hydrationComplete, setHydrationComplete] = useState(false);
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
   const elementsLibraryReadyRef = useRef(false);
   const [openSkillBuilderSignal, setOpenSkillBuilderSignal] = useState(0);
   const [llmHasActiveSkill, setLlmHasActiveSkill] = useState(false);
@@ -874,9 +879,39 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     isThinking: false,
     hasUnreadResponse: false,
   });
-  const [copilotReadyToast, setCopilotReadyToast] = useState<AppToast | null>(null);
+  const [appToast, setAppToast] = useState<AppToast | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [voiceDirectorOpen, setVoiceDirectorOpen] = useState(false);
+
+  useEffect(() => {
+    if (!hydrationComplete) return;
+    setActiveFundingProject(projectId);
+    let disposed = false;
+    let stopRelay = () => {};
+    const restartRelay = async () => {
+      stopRelay();
+      stopRelay = () => {};
+      try {
+        const nextStop = await startOwnerFundingRelay(projectId);
+        if (disposed) nextStop();
+        else stopRelay = nextStop;
+      } catch (error) {
+        console.warn('[cloud] Owner funding relay is unavailable:', error);
+      }
+    };
+    const onFundingChanged = (event: Event) => {
+      const changedProjectId = (event as CustomEvent<{ projectId?: string }>).detail?.projectId;
+      if (!changedProjectId || changedProjectId === projectId) void restartRelay();
+    };
+    void restartRelay();
+    window.addEventListener('cinegen:funding-changed', onFundingChanged);
+    return () => {
+      disposed = true;
+      stopRelay();
+      setActiveFundingProject(null);
+      window.removeEventListener('cinegen:funding-changed', onFundingChanged);
+    };
+  }, [hydrationComplete, projectId]);
 
   const wrappedDispatch = useCallback((action: WorkspaceAction) => {
     lastActionRef.current = action.type;
@@ -909,7 +944,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
 
   const handleCopilotResponseReady = useCallback(() => {
     setLlmCopilotStatus((current) => ({ ...current, hasUnreadResponse: true }));
-    setCopilotReadyToast({
+    setAppToast({
       id: crypto.randomUUID(),
       title: 'Copilot',
       message: 'Your response is ready in the LLM tab.',
@@ -919,12 +954,26 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   }, []);
 
   const handleCopilotToastAction = useCallback(() => {
-    setCopilotReadyToast(null);
+    setAppToast(null);
     handleTabChange('llm');
   }, [handleTabChange]);
 
   const dismissCopilotToast = useCallback(() => {
-    setCopilotReadyToast(null);
+    setAppToast(null);
+  }, []);
+
+  useEffect(() => {
+    const handleCloudSyncError = (event: Event) => {
+      const cause = (event as CustomEvent<unknown>).detail;
+      const message = cause instanceof Error ? cause.message : 'This project could not be saved to the cloud.';
+      setAppToast({
+        id: crypto.randomUUID(),
+        title: message.includes('changed on another device') ? 'Newer cloud version found' : 'Cloud save paused',
+        message,
+      });
+    };
+    window.addEventListener('cinegen:cloud-sync-error', handleCloudSyncError);
+    return () => window.removeEventListener('cinegen:cloud-sync-error', handleCloudSyncError);
   }, []);
 
   useEffect(() => {
@@ -1577,10 +1626,16 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
+    setHydrationError(null);
+
+    const handleHydrationError = (error: unknown) => {
+      console.error('[workspace] Failed to load project:', error);
+      setHydrationError(error instanceof Error ? error.message : 'The project data could not be restored.');
+    };
 
     if (useSqlite) {
       // ---------- SQLite hydration path ----------
-      window.electronAPI.db.loadProject(projectId)
+      loadAvailableProject(projectId, true)
         .then(async (raw) => {
           const dbState = raw as Record<string, unknown>;
           // Capture project name for save path
@@ -1643,11 +1698,11 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           });
           elementsLibraryReadyRef.current = true;
         })
-        .catch(() => {})
+        .catch(handleHydrationError)
         .finally(() => setHydrationComplete(true));
     } else {
       // ---------- JSON file hydration path ----------
-      window.electronAPI.project.load(projectId)
+      loadAvailableProject<ProjectSnapshot>(projectId, false)
         .then(async (snapshot) => {
           if (snapshot.project?.name) projectNameRef.current = snapshot.project.name;
           const nodes = (snapshot.workflow?.nodes ?? []) as Node<WorkflowNodeData>[];
@@ -1693,7 +1748,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           });
           elementsLibraryReadyRef.current = true;
         })
-        .catch(() => {})
+        .catch(handleHydrationError)
         .finally(() => setHydrationComplete(true));
     }
   }, []);
@@ -1775,12 +1830,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           })),
         };
 
-        window.electronAPI.db.saveProject(projectId, dbState).catch((err) => {
+        saveAvailableProject(projectId, dbState, true).catch((err) => {
           console.error('[workspace] Failed to save project to SQLite:', err);
         });
       } else {
         // ---------- JSON file save path ----------
-        window.electronAPI.project.save(projectId, {
+        saveAvailableProject(projectId, {
           workflow: { nodes: serializableNodes, edges: state.edges },
           spaces: serializableSpaces,
           activeSpaceId: state.activeSpaceId,
@@ -1792,7 +1847,9 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           exports: state.exports,
           elements: [],
           director: state.director,
-        }).catch(() => {});
+        }, false).catch((err) => {
+          console.error('[workspace] Failed to save project:', err);
+        });
       }
     }, SAVE_DEBOUNCE_MS);
 
@@ -1849,38 +1906,50 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         voiceDirectorOpen={voiceDirectorOpen}
         onToggleVoiceDirector={toggleVoiceDirector}
       />
-      <main className="workspace-content">
-        {state.activeTab === 'elements' && <ElementsTab />}
-        {state.activeTab === 'create' && <CreateTab />}
-        {state.activeTab === 'director' && <DirectorTab />}
-        {state.activeTab === 'edit' && <EditTab llmJumpRequest={llmJumpRequest} />}
-        <div className={`workspace-tab-panel${state.activeTab === 'llm' ? ' workspace-tab-panel--active' : ''}`}>
-          <LLMTab
-            projectId={projectId}
-            assets={state.assets}
-            mediaFolders={state.mediaFolders}
-            timelines={state.timelines}
-            activeTimelineId={state.activeTimelineId}
-            elements={state.elements}
-            onCreateTimelineFromCut={handleCreateTimelineFromLlm}
-            onOpenTimeline={handleOpenTimelineFromLlm}
-            onNavigateToAssetCitation={handleNavigateToAssetCitation}
-            onNavigateToTimelineCitation={handleNavigateToTimelineCitation}
-            onUpdateAssetAnalysis={handleUpdateAssetAnalysis}
-            openSkillBuilderSignal={openSkillBuilderSignal}
-            onActiveSkillPresenceChange={setLlmHasActiveSkill}
-            isTabActive={state.activeTab === 'llm'}
-            onCopilotThinkingChange={handleCopilotThinkingChange}
-            onCopilotResponseReadyWhileBackgrounded={handleCopilotResponseReady}
-          />
-        </div>
-        {state.activeTab === 'export' && <ExportTab />}
-        {state.activeTab === 'settings' && (
-          <SettingsPage onBack={() => wrappedDispatch({ type: 'SET_TAB', tab: 'create' })} />
+      <main className="workspace-content" aria-busy={!hydrationComplete}>
+        {hydrationError ? (
+          <WorkspaceLoadingState error={hydrationError} onRetry={() => window.location.reload()} />
+        ) : !hydrationComplete ? (
+          <WorkspaceLoadingState />
+        ) : (
+          <>
+            {state.activeTab === 'elements' && <ElementsTab />}
+            {state.activeTab === 'create' && <CreateTab />}
+            {state.activeTab === 'director' && <DirectorTab />}
+            {state.activeTab === 'edit' && <EditTab llmJumpRequest={llmJumpRequest} />}
+            <div className={`workspace-tab-panel${state.activeTab === 'llm' ? ' workspace-tab-panel--active' : ''}`}>
+              <LLMTab
+                projectId={projectId}
+                assets={state.assets}
+                mediaFolders={state.mediaFolders}
+                timelines={state.timelines}
+                activeTimelineId={state.activeTimelineId}
+                elements={state.elements}
+                onCreateTimelineFromCut={handleCreateTimelineFromLlm}
+                onOpenTimeline={handleOpenTimelineFromLlm}
+                onNavigateToAssetCitation={handleNavigateToAssetCitation}
+                onNavigateToTimelineCitation={handleNavigateToTimelineCitation}
+                onUpdateAssetAnalysis={handleUpdateAssetAnalysis}
+                openSkillBuilderSignal={openSkillBuilderSignal}
+                onActiveSkillPresenceChange={setLlmHasActiveSkill}
+                isTabActive={state.activeTab === 'llm'}
+                onCopilotThinkingChange={handleCopilotThinkingChange}
+                onCopilotResponseReadyWhileBackgrounded={handleCopilotResponseReady}
+              />
+            </div>
+            {state.activeTab === 'export' && <ExportTab />}
+            {state.activeTab === 'settings' && (
+              <SettingsPage
+                projectId={projectId}
+                useSqlite={useSqlite}
+                onBack={() => wrappedDispatch({ type: 'SET_TAB', tab: 'create' })}
+              />
+            )}
+          </>
         )}
       </main>
       <AppToastHost
-        toast={copilotReadyToast}
+        toast={appToast}
         onDismiss={dismissCopilotToast}
         onAction={handleCopilotToastAction}
       />

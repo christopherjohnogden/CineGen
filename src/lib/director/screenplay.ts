@@ -73,11 +73,35 @@ export function parseToScreenplay(source: string): Screenplay {
   return { elements };
 }
 
+/** Prefer the screenplay's typed blocks when they are available. Re-parsing the
+ * flattened text can otherwise turn action immediately after dialogue into more
+ * dialogue, because plain text has no Final Draft paragraph metadata. */
+export function screenplayFromSource(source: {
+  sourceText: string;
+  sourceElements?: ScreenplayElement[];
+}): Screenplay {
+  if (source.sourceElements) {
+    return { elements: scrubFdxChrome(source.sourceElements) };
+  }
+  return parseToScreenplay(source.sourceText);
+}
+
 export function serializeScreenplay(doc: Screenplay): string {
-  // blank line before scene headings and character cues for readability; text is source of truth
+  // Preserve screenplay block boundaries in the plain-text mirror. In
+  // particular, action after a dialogue block needs a blank line or a later
+  // plain-text parse will incorrectly keep it in the dialogue column.
   const out: string[] = [];
   doc.elements.forEach((el, i) => {
-    if (i > 0 && (el.type === 'scene' || el.type === 'character' || el.type === 'transition')) out.push('');
+    const previous = doc.elements[i - 1];
+    const startsNewBlock = el.type === 'scene'
+      || el.type === 'character'
+      || el.type === 'transition'
+      || (el.type === 'action' && previous != null && (
+        previous.type === 'character'
+        || previous.type === 'parenthetical'
+        || previous.type === 'dialogue'
+      ));
+    if (i > 0 && startsNewBlock && out[out.length - 1] !== '') out.push('');
     out.push(el.text);
   });
   return out.join('\n');

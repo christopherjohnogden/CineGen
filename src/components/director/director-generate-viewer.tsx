@@ -1,9 +1,11 @@
-import type { Ref } from 'react';
+import { useEffect, useMemo, useState, type Ref } from 'react';
+import type { Asset } from '@/types/project';
 import type { DirectorTake } from '@/types/director';
 import { generateViewerMessage, isDirectorTakeLive } from '@/lib/director/generate';
+import { toFileUrl } from '@/lib/utils/file-url';
 
 interface DirectorGenerateViewerProps {
-  assetUrl?: string;
+  asset?: Asset;
   take?: DirectorTake;
   variantLabel: string;
   adapterLabel: string;
@@ -14,7 +16,7 @@ interface DirectorGenerateViewerProps {
 }
 
 export function DirectorGenerateViewer({
-  assetUrl,
+  asset,
   take,
   variantLabel,
   adapterLabel,
@@ -23,10 +25,42 @@ export function DirectorGenerateViewer({
   onFetchTake,
   fetchingTake,
 }: DirectorGenerateViewerProps) {
-  if (assetUrl) {
+  const sources = useMemo(() => Array.from(new Set(
+    [asset?.fileRef, asset?.url, asset?.sourceUrl]
+      .map((source) => toFileUrl(source))
+      .filter(Boolean),
+  )), [asset?.fileRef, asset?.sourceUrl, asset?.url]);
+  const [sourceIndex, setSourceIndex] = useState(0);
+
+  useEffect(() => {
+    setSourceIndex(0);
+  }, [asset?.id, sources]);
+
+  const assetSource = sources[sourceIndex];
+
+  if (assetSource) {
     return (
       <div className="director-tab__viewer dgen-viewer">
-        <video ref={videoRef} src={assetUrl} controls crossOrigin="anonymous" />
+        <video
+          key={assetSource}
+          ref={videoRef}
+          src={assetSource}
+          controls
+          playsInline
+          preload="metadata"
+          onError={() => setSourceIndex((current) => current + 1)}
+        />
+      </div>
+    );
+  }
+
+  if (sources.length > 0) {
+    return (
+      <div className="director-tab__viewer dgen-viewer">
+        <span className="director-tab__empty director-tab__empty--err dgen-viewer-error">
+          This take could not be played.
+          <button type="button" onClick={() => setSourceIndex(0)}>Try again</button>
+        </span>
       </div>
     );
   }

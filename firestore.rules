@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function projectMember(projectId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/projectAccess/$(projectId))
+        && get(/databases/$(database)/documents/projectAccess/$(projectId)).data.members[request.auth.uid] in ['owner', 'editor'];
+    }
+
+    match /users/{userId} {
+      allow read, create, update, delete: if signedIn() && request.auth.uid == userId;
+
+      match /projects/{projectId} {
+        allow read, create, update, delete: if signedIn()
+          && (request.auth.uid == userId || projectMember(projectId));
+
+        match /{document=**} {
+          allow read, create, update, delete: if signedIn()
+            && (request.auth.uid == userId || projectMember(projectId));
+        }
+      }
+
+      match /{document=**} {
+        allow read, create, update, delete: if signedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /projectAccess/{projectId} {
+      allow get: if signedIn()
+        && (request.auth.uid in resource.data.memberIds
+          || exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(projectId)));
+      allow list: if signedIn()
+        && request.auth.uid in resource.data.memberIds;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.members[request.auth.uid] == 'owner'
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(projectId));
+      allow update, delete: if signedIn()
+        && resource.data.members[request.auth.uid] == 'owner';
+    }
+
+    match /emailIndex/{emailHash} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.auth.token.email != null
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == resource.data.email;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Owner-funded provider credentials, limits, and usage are server-managed.
+    // Clients can never read an encrypted credential or alter the audit trail.
+    match /projectFundingSecrets/{projectId} {
+      allow read, write: if false;
+    }
+
+    match /projectFundingUsage/{usageId} {
+      allow read, write: if false;
+    }
+
+    match /projectFundingJobs/{jobId} {
+      allow read: if projectMember(resource.data.projectId);
+      allow create, update, delete: if false;
+    }
+  }
+}

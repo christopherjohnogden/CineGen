@@ -1,5 +1,5 @@
 import type { DirectorScene, DirectorShow } from '@/types/director';
-import { parseToScreenplay } from '@/lib/director/screenplay';
+import { screenplayFromSource } from '@/lib/director/screenplay';
 import { splitScenes, type ScriptScene } from '@/lib/director/scene-split';
 import { detectSceneAssets } from '@/lib/director/scene-assets';
 
@@ -55,7 +55,7 @@ export function sceneHashes(show: DirectorShow): Map<string, string> {
     }
     return out;
   }
-  const scenes = splitScenes(parseToScreenplay(show.sourceText));
+  const scenes = splitScenes(screenplayFromSource(show));
   // Group by base heading first so duplicate-heading scenes can be assigned
   // their #n suffix by content (body hash) rather than by document position.
   // This keeps (key -> hash) pairs stable when two same-heading scenes with
@@ -118,7 +118,7 @@ export function pruneRemovedScenes(show: DirectorShow, next: DirectorShow): Dire
   const clips = show.clips.filter((c) => surviving.has(c.sceneId));
 
   const referenced = new Set<string>();
-  const scenes = splitScenes(parseToScreenplay(next.sourceText));
+  const scenes = splitScenes(screenplayFromSource(next));
   for (const sc of scenes) {
     for (const hit of detectSceneAssets(sc, show.breakdown)) {
       if (hit.item) referenced.add(hit.item.tag);

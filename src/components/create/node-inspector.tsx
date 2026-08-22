@@ -36,6 +36,17 @@ function modelOutputBadge(outputType: string): string {
   return 'IMG';
 }
 
+const SEEDANCE_REFERENCE_FIELDS = new Set([
+  'audio_references',
+  'end_image',
+  'image_references',
+  'start_image',
+  'video_references',
+]);
+
+const SEEDANCE_PRIMARY_FIELD_ORDER = ['aspect_ratio', 'duration', 'resolution', 'generate_audio'];
+const SEEDANCE_ADVANCED_FIELDS = new Set(['bitrate_mode', 'mode', 'extension_mode']);
+
 function formatJsonValue(value: unknown): string {
   const resolved = value === undefined ? null : value;
   if (typeof resolved === 'string') {
@@ -110,6 +121,8 @@ function InspectorField({ field, value, onChange }: {
   }
 
   if (field.fieldType === 'range') {
+    const rangeValue = Number(value ?? field.default ?? field.min ?? 0);
+    const isDuration = field.id === 'duration';
     return (
       <div className="inspector__field">
         <InspectorFieldLabel field={field} />
@@ -117,13 +130,19 @@ function InspectorField({ field, value, onChange }: {
           <input
             type="range"
             min={field.min} max={field.max} step={field.step}
-            value={Number(value ?? field.default ?? 0)}
+            value={rangeValue}
             onChange={(e) => onChange(Number(e.target.value))}
           />
           <span className="inspector__range-value">
-            {Number(value ?? field.default ?? 0)}
+            <strong>{rangeValue}</strong>{isDuration && <small> sec</small>}
           </span>
         </div>
+        {field.min !== undefined && field.max !== undefined && (
+          <div className="inspector__range-bounds" aria-hidden="true">
+            <span>{field.min}{isDuration ? 's' : ''}</span>
+            <span>{field.max}{isDuration ? 's' : ''}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -250,9 +269,21 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
   if (!modelDef) return null;
 
   const accentColor = CATEGORY_COLORS[modelDef.category];
+  const isSeedance25 = modelDef.id === 'seedance_2_5';
   const inspectorFields = modelDef.inputs.filter(
     (f) => f.fieldType !== 'port' && f.fieldType !== 'element-list',
-  );
+  ).filter((field) => !isSeedance25 || !SEEDANCE_REFERENCE_FIELDS.has(field.id));
+  const primaryFields = isSeedance25
+    ? inspectorFields
+        .filter((field) => SEEDANCE_PRIMARY_FIELD_ORDER.includes(field.id))
+        .sort((a, b) => SEEDANCE_PRIMARY_FIELD_ORDER.indexOf(a.id) - SEEDANCE_PRIMARY_FIELD_ORDER.indexOf(b.id))
+    : inspectorFields;
+  const advancedFields = isSeedance25
+    ? inspectorFields.filter((field) => (
+        SEEDANCE_ADVANCED_FIELDS.has(field.id)
+        && (field.id !== 'extension_mode' || data.config.mode === 'video_extension')
+      ))
+    : [];
 
   const handleChange = useCallback(
     (fieldId: string, val: unknown) => {
@@ -278,7 +309,20 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
 
       {inspectorFields.length > 0 && (
         <div className="node-inspector__body">
-          {inspectorFields.map((field) => (
+          {isSeedance25 && (
+            <div className="inspector__reference-note">
+              <span className="inspector__reference-note-icon" aria-hidden="true">
+                <span />
+                <span />
+              </span>
+              <span>
+                <strong>References connect on the canvas</strong>
+                <small>Attach images, video, audio, or Elements to the References input.</small>
+              </span>
+            </div>
+          )}
+
+          {primaryFields.map((field) => (
             <InspectorField
               key={field.id}
               field={field}
@@ -286,6 +330,28 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
               onChange={(val) => handleChange(field.id, val)}
             />
           ))}
+
+          {advancedFields.length > 0 && (
+            <details className="inspector__advanced">
+              <summary>
+                <span>Advanced</span>
+                <small>{advancedFields.length} options</small>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </summary>
+              <div className="inspector__advanced-fields">
+                {advancedFields.map((field) => (
+                  <InspectorField
+                    key={field.id}
+                    field={field}
+                    value={data.config[field.id]}
+                    onChange={(val) => handleChange(field.id, val)}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       )}
 

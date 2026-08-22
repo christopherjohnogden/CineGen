@@ -1,6 +1,6 @@
 import type { DirectorBreakdownItem, DirectorClip, DirectorScene, DirectorShow } from '@/types/director';
 import { compiledLookFromRefs, compileLookBible, lookBibleImageUrls } from './look-bible';
-import { parseToScreenplay } from './screenplay';
+import { parseToScreenplay, screenplayFromSource, type Screenplay } from './screenplay';
 import { resolveSceneAssets } from './scene-assets';
 import { splitScenes } from './scene-split';
 import { shotDensityHint } from './shotlist';
@@ -22,13 +22,12 @@ function sceneLine(scene: DirectorScene): string {
   return lines.join('\n');
 }
 
-/** Numbered action-line script so the model must walk every slug, not skim. */
-export function formatBreakdownScript(sourceText: string, headings?: Set<string>): string {
-  const scenes = splitScenes(parseToScreenplay(sourceText));
+function formatBreakdownDocument(doc: Screenplay, fallbackText: string, headings?: Set<string>): string {
+  const scenes = splitScenes(doc);
   const picked = headings
     ? scenes.filter((scene) => headings.has(scene.heading.trim().toUpperCase()))
     : scenes;
-  if (picked.length === 0) return sourceText;
+  if (picked.length === 0) return fallbackText;
   return picked.map((scene, index) => {
     const lines = [`=== SCENE ${index + 1}/${picked.length}  ${scene.heading || '(untitled)'} ===`];
     let action = 0;
@@ -51,12 +50,21 @@ export function formatBreakdownScript(sourceText: string, headings?: Set<string>
   }).join('\n\n');
 }
 
+/** Numbered action-line script so the model must walk every slug, not skim. */
+export function formatBreakdownScript(sourceText: string, headings?: Set<string>): string {
+  return formatBreakdownDocument(parseToScreenplay(sourceText), sourceText, headings);
+}
+
+function formatShowBreakdownScript(show: DirectorShow, headings?: Set<string>): string {
+  return formatBreakdownDocument(screenplayFromSource(show), show.sourceText, headings);
+}
+
 function breakdownScriptSection(show: DirectorShow, scope?: { sceneIds: string[] }): string {
-  if (!scope) return `SCRIPT:\n${formatBreakdownScript(show.sourceText)}`;
+  if (!scope) return `SCRIPT:\n${formatShowBreakdownScript(show)}`;
   const labels = new Set(
     show.scenes.filter((s) => scope.sceneIds.includes(s.id)).map((s) => s.label.trim().toUpperCase()),
   );
-  return `SCRIPT (changed scenes only — return a complete element list for this excerpt):\n${formatBreakdownScript(show.sourceText, labels)}`;
+  return `SCRIPT (changed scenes only — return a complete element list for this excerpt):\n${formatShowBreakdownScript(show, labels)}`;
 }
 
 export function breakdownJobInput(
@@ -92,7 +100,7 @@ export function breakdownAuditInput(
 /** The scene's own script text, matched by heading. Empty when no heading matches. */
 export function sceneScriptText(show: DirectorShow, scene: DirectorScene): string {
   const label = scene.label.trim().toUpperCase();
-  const parsed = splitScenes(parseToScreenplay(show.sourceText));
+  const parsed = splitScenes(screenplayFromSource(show));
   const match = parsed.find((entry) => entry.heading.trim().toUpperCase() === label);
   return match ? match.elements.map((element) => element.text).join('\n') : '';
 }
@@ -102,7 +110,7 @@ export function sceneScriptText(show: DirectorShow, scene: DirectorScene): strin
  *  shows. Falls back to everything when a scene can't be matched or nothing
  *  is detected. */
 export function sceneScopedElements(show: DirectorShow, scopeScenes: DirectorScene[]): DirectorBreakdownItem[] {
-  const parsed = splitScenes(parseToScreenplay(show.sourceText));
+  const parsed = splitScenes(screenplayFromSource(show));
   const picked = new Map<string, DirectorBreakdownItem>();
   for (const scene of scopeScenes) {
     const label = scene.label.trim().toUpperCase();

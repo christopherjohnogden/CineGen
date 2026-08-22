@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { Asset } from '@/types/project';
 import type { Clip } from '@/types/timeline';
 import { getApiKey } from '@/lib/utils/api-key';
+import { runWorkflow } from '@/lib/cloud/funding';
 import { toFileUrl } from '@/lib/utils/file-url';
 import { resolveSam3ApiUrl, toSam3MediaReference } from '@/lib/media/sam3-api';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
@@ -1206,7 +1207,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
       throw new Error('Could not extract the current frame for cloud preview.');
     }
 
-    const result = await window.electronAPI.workflow.run({
+    const result = await runWorkflow({
       apiKey,
       nodeId: 'edit-sam3-mask-frame',
       nodeType: 'sam3-segment-cloud',
@@ -1356,7 +1357,7 @@ export function SourceViewerMaskTool({ asset, clip, onAcceptMaskedVideo }: Sourc
     try {
       const trackingSource = await ensureCloudTrackingSource();
       if (!trackingSource) return false;
-      const result = await window.electronAPI.workflow.run({
+      const result = await runWorkflow({
         apiKey, nodeId: 'edit-sam3-mask', nodeType: 'sam3-track-cloud', modelId: 'fal-ai/sam-3/video',
         inputs: {
           video_url: trackingSource.url,

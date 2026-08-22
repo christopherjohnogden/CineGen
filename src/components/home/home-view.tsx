@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectCard } from './project-card';
 import type { ProjectMeta } from '../../../electron.d';
+import { CloudAccountButton } from '@/components/cloud/cloud-account';
+import {
+  createAvailableProject,
+  deleteAvailableProject,
+  listAvailableProjects,
+} from '@/lib/cloud/projects';
 
 interface HomeViewProps {
   onOpenProject: (id: string, useSqlite: boolean) => void;
@@ -17,7 +23,7 @@ export function HomeView({ onOpenProject }: HomeViewProps) {
   const loadProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await window.electronAPI.project.list();
+      const list = await listAvailableProjects();
       setProjects(list);
     } catch (err) {
       console.error('Failed to list projects:', err);
@@ -40,7 +46,7 @@ export function HomeView({ onOpenProject }: HomeViewProps) {
     const trimmed = newName.trim();
     if (!trimmed) return;
     try {
-      const result = await window.electronAPI.db.createProject(trimmed) as { project: { id: string } };
+      const result = await createAvailableProject(trimmed);
       setNewName('');
       setShowCreate(false);
       onOpenProject(result.project.id, true);
@@ -53,11 +59,8 @@ export function HomeView({ onOpenProject }: HomeViewProps) {
     const project = projects.find((p) => p.id === id);
     if (!confirm(`Delete "${project?.name ?? 'project'}"? This cannot be undone.`)) return;
     try {
-      if (project?.useSqlite) {
-        await window.electronAPI.db.deleteProject(id);
-      } else {
-        await window.electronAPI.project.delete(id);
-      }
+      if (!project) return;
+      await deleteAvailableProject(project);
       if (selected === id) setSelected(null);
       await loadProjects();
     } catch (err) {
@@ -104,6 +107,7 @@ export function HomeView({ onOpenProject }: HomeViewProps) {
         <div className="pm-toolbar">
           <span className="pm-toolbar__label">Projects</span>
           <div className="pm-toolbar__spacer" />
+          <CloudAccountButton onAccountChange={loadProjects} />
           <div className="pm-toolbar__actions">
             <button
               className="pm-toolbar__btn"

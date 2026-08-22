@@ -50,6 +50,20 @@ describe('director snapshot', () => {
     expect(loaded.sourceText).toContain('CUT TO:');
     expect(loaded.sourceText).not.toMatch(/ElementSettings|Courier Final Draft/);
   });
+
+  it('repairs old flattened text from its stored screenplay block types', () => {
+    const loaded = directorFromUnknown({
+      ...createEmptyDirectorShow(),
+      sourceText: 'PETER\nHey.\nJordan lays the jacket over the chair.',
+      sourceElements: [
+        { id: 'c1', type: 'character', text: 'PETER' },
+        { id: 'd1', type: 'dialogue', text: 'Hey.' },
+        { id: 'a1', type: 'action', text: 'Jordan lays the jacket over the chair.' },
+      ],
+    });
+
+    expect(loaded.sourceText).toBe('PETER\nHey.\n\nJordan lays the jacket over the chair.');
+  });
 });
 
 describe('director job spinner', () => {

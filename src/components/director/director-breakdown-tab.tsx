@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Element } from '@/types/elements';
 import type { BreakdownKind, DirectorBreakdownItem, DirectorShow } from '@/types/director';
-import { parseToScreenplay } from '@/lib/director/screenplay';
+import { screenplayFromSource } from '@/lib/director/screenplay';
 import { splitScenes, type ScriptScene } from '@/lib/director/scene-split';
 import { sceneKeyMap } from '@/lib/director/cascade';
 import { applyManualTag, firstScriptHit, resolveSceneAssets } from '@/lib/director/scene-assets';
@@ -29,7 +29,7 @@ interface DirectorBreakdownTabProps {
 export function DirectorBreakdownTab({
   show, elements, dirtyKeys, syncing, onChange, onCreateElement, onOpenElements,
 }: DirectorBreakdownTabProps) {
-  const scenes = splitScenes(parseToScreenplay(show.sourceText));
+  const scenes = splitScenes(screenplayFromSource(show));
   const sceneKeys = sceneKeyMap(scenes);
   const keyOf = (entry: ScriptScene) => sceneKeys.get(entry) ?? (entry.heading.trim().toUpperCase() || '(untitled)');
   const [navKey, setNavKey] = useState<'all' | number>('all');

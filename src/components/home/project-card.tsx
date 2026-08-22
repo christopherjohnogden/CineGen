@@ -43,6 +43,7 @@ export function ProjectCard({ project, onOpen, onDelete, selected = false, onSel
 
         {/* Selection accent corner */}
         {selected && <div className="pm-card__sel-corner" />}
+        {project.cloud && <span className="pm-card__cloud-badge">Cloud{project.cloudRole ? ` · ${project.cloudRole}` : ''}</span>}
 
         {/* Hover overlay with name */}
         <div className="pm-card__hover-overlay">
@@ -57,17 +58,19 @@ export function ProjectCard({ project, onOpen, onDelete, selected = false, onSel
       </div>
 
       {/* Delete */}
-      <button
-        className="pm-card__delete"
-        onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
-        title="Delete project"
-        aria-label="Delete project"
-      >
-        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
+      {project.cloudRole !== 'editor' && (
+        <button
+          className="pm-card__delete"
+          onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
+          title="Delete project"
+          aria-label="Delete project"
+        >
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

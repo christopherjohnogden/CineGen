@@ -1,7 +1,7 @@
 
 
 import { memo, useCallback, useRef, useState, useEffect } from 'react';
-import { type NodeProps, useReactFlow } from '@xyflow/react';
+import { Handle, NodeResizer, Position, type NodeProps, useReactFlow } from '@xyflow/react';
 import { BaseNode } from './base-node';
 import {
   detectMediaType,
@@ -10,12 +10,13 @@ import {
   type FileMediaType,
 } from '@/lib/utils/media-file';
 import type { WorkflowNodeData } from '@/types/workflow';
+import { PORT_COLORS } from '@/lib/workflows/node-registry';
 
 type FilePickerNodeProps = NodeProps & { data: WorkflowNodeData };
 
 const ACCEPT = 'image/*,video/*,audio/*';
 
-function FilePickerNodeInner({ id, data, selected }: FilePickerNodeProps) {
+function FilePickerNodeInner({ id, data, selected, width, height }: FilePickerNodeProps) {
   const { updateNodeData } = useReactFlow();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -25,40 +26,13 @@ function FilePickerNodeInner({ id, data, selected }: FilePickerNodeProps) {
   const fileUrl = (data.config?.fileUrl as string) ?? '';
   const fileType = (data.config?.fileType as FileMediaType) ?? '';
   const fileName = (data.config?.fileName as string) ?? '';
-  const configThumb = (data.config?.thumbnailUrl as string) ?? '';
+  const [mediaReady, setMediaReady] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
 
-  // For videos, extract a thumbnail frame from the video itself
-  const [videoThumb, setVideoThumb] = useState<string>('');
   useEffect(() => {
-    if (fileType !== 'video' || !fileUrl || configThumb) { setVideoThumb(''); return; }
-    const video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
-    video.muted = true;
-    video.preload = 'auto';
-    video.src = fileUrl;
-    const timeout = setTimeout(() => { video.src = ''; }, 10000);
-    video.addEventListener('loadeddata', () => {
-      video.currentTime = 0.1;
-    }, { once: true });
-    video.addEventListener('seeked', () => {
-      clearTimeout(timeout);
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0);
-          setVideoThumb(canvas.toDataURL('image/jpeg', 0.8));
-        }
-      } catch { /* tainted canvas */ }
-    }, { once: true });
-    video.addEventListener('error', () => clearTimeout(timeout), { once: true });
-    video.load();
-    return () => { clearTimeout(timeout); video.src = ''; };
-  }, [fileUrl, fileType, configThumb]);
-
-  const thumbSrc = configThumb || videoThumb;
+    setMediaReady(false);
+    setMediaError(false);
+  }, [fileUrl, fileType]);
 
   const openNativeFilePicker = useCallback(async () => {
     if (uploading) return;
@@ -143,6 +117,96 @@ function FilePickerNodeInner({ id, data, selected }: FilePickerNodeProps) {
     setError('');
   }, [id, data.config, updateNodeData]);
 
+  const isVisualMedia = Boolean(fileUrl && (fileType === 'image' || fileType === 'video'));
+
+  if (isVisualMedia) {
+    return (
+      <div
+        className={`file-picker-node file-picker-node--visual${selected ? ' file-picker-node--selected' : ''}`}
+        data-media-type={fileType}
+        aria-label={`${fileType} node: ${fileName || 'Untitled media'}`}
+        style={{ width: width ?? 280, height: height ?? 157.5 }}
+      >
+        <NodeResizer
+          isVisible={!!selected}
+          minWidth={180}
+          minHeight={101.25}
+          maxWidth={960}
+          maxHeight={540}
+          keepAspectRatio
+          lineClassName="media-node-resizer__line"
+          handleClassName="media-node-resizer__handle"
+        />
+
+        <div className="file-picker-node__media-frame" onDoubleClick={() => void openNativeFilePicker()}>
+          {fileType === 'video' ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <video
+              key={fileUrl}
+              src={fileUrl}
+              className={`file-picker-node__media nodrag nowheel${mediaReady ? ' file-picker-node__media--ready' : ''}`}
+              controls
+              playsInline
+              preload="metadata"
+              onLoadedData={() => setMediaReady(true)}
+              onError={() => setMediaError(true)}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={fileUrl}
+              alt={fileName}
+              className={`file-picker-node__media${mediaReady ? ' file-picker-node__media--ready' : ''}`}
+              draggable={false}
+              onLoad={() => setMediaReady(true)}
+              onError={() => setMediaError(true)}
+            />
+          )}
+
+          {!mediaReady && !mediaError && (
+            <div className="file-picker-node__media-loading" aria-label={`Loading ${fileType}`}>
+              <span />
+            </div>
+          )}
+
+          {mediaError && (
+            <div className="file-picker-node__media-error nodrag">
+              <span>Media unavailable</span>
+              <button type="button" onClick={() => void openNativeFilePicker()}>Replace</button>
+            </div>
+          )}
+
+          <div className="file-picker-node__media-overlay">
+            <div className="file-picker-node__media-meta">
+              <span className="file-picker-node__media-kind">{fileType}</span>
+              <span className="file-picker-node__media-name">{fileName || 'Untitled'}</span>
+            </div>
+            <button
+              type="button"
+              className="file-picker-node__media-remove nodrag"
+              onClick={handleClear}
+              title="Remove media"
+              aria-label="Remove media"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="media"
+          className="file-picker-node__media-handle"
+          style={{ background: PORT_COLORS.media, top: '50%' }}
+        />
+        <span className="file-picker-node__media-port-label" aria-hidden>output</span>
+      </div>
+    );
+  }
+
   return (
     <BaseNode nodeType="filePicker" selected={!!selected}>
       <div className="file-picker-node__body">
@@ -152,11 +216,7 @@ function FilePickerNodeInner({ id, data, selected }: FilePickerNodeProps) {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={fileUrl} alt={fileName} className="file-picker-node__preview-img" />
             )}
-            {fileType === 'video' && thumbSrc && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={thumbSrc} alt={fileName} className="file-picker-node__preview-img" />
-            )}
-            {fileType === 'video' && !thumbSrc && (
+            {fileType === 'video' && (
               <div className="file-picker-node__video-placeholder">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <polygon points="5 3 19 12 5 21 5 3" />

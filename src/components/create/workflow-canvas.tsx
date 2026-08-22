@@ -133,7 +133,9 @@ function WorkflowCanvasInner() {
       if (sourcePort && targetPort && sourcePort.type !== targetPort.type) {
         // Allow media port to connect to image/video/audio, but warn on mismatch
         const MEDIA_TYPES = ['image', 'video', 'audio'];
-        if (sourcePort.type === 'media' && MEDIA_TYPES.includes(targetPort.type)) {
+        if (targetPort.type === 'media' && [...MEDIA_TYPES, 'element'].includes(sourcePort.type)) {
+          // A general media/reference input accepts generated media and Element nodes.
+        } else if (sourcePort.type === 'media' && MEDIA_TYPES.includes(targetPort.type)) {
           const fileType = sourceNode.data.config?.fileType as string;
           if (fileType && fileType !== targetPort.type) {
             setTypeWarning(

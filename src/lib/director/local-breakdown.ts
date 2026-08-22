@@ -9,7 +9,7 @@
 import type { DirectorBreakdownItem, DirectorScene, DirectorShow } from '@/types/director';
 import { generateId } from '@/lib/utils/ids';
 import { normalizeTag, type ParsedBreakdown } from './breakdown';
-import { parseToScreenplay } from './screenplay';
+import { screenplayFromSource } from './screenplay';
 import { splitScenes, type ScriptScene } from './scene-split';
 import { extractFromBeatSheet, extractFromScreenplay, type ExtractedItem } from './local-extract';
 
@@ -60,7 +60,7 @@ export function localBreakdownForShow(show: DirectorShow): ParsedBreakdown {
     return { items: extractFromBeatSheet(beats).map(toBreakdownItem), scenes: [] };
   }
   if (!show.sourceText.trim()) return { items: [], scenes: [] };
-  const scenes = splitScenes(parseToScreenplay(show.sourceText));
+  const scenes = splitScenes(screenplayFromSource(show));
   return {
     items: extractFromScreenplay(scenes).map(toBreakdownItem),
     scenes: scenesFromScript(scenes),

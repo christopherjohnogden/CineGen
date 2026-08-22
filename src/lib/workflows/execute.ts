@@ -20,6 +20,7 @@ import {
 import type { TranscriptSegment, TranscriptWord, WorkflowNodeData } from '@/types/workflow';
 import type { Element } from '@/types/elements';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
+import { runWorkflow } from '@/lib/cloud/funding';
 
 interface WorkflowDispatch {
   setNodeRunning: (nodeId: string, running: boolean) => void;
@@ -114,7 +115,7 @@ async function generateLayerDecomposeVisionPrompts(
 
   try {
     const result = await Promise.race([
-      window.electronAPI.workflow.run({
+      runWorkflow({
         apiKey,
         kieKey: getKieApiKey(),
         runpodKey: getRunpodApiKey(),
@@ -1100,7 +1101,7 @@ async function executeModelNode(
         (falInputs as any)._promptList = promptList;
         result = {}; // placeholder — all SAM 3 calls happen in the handler below
       } else {
-        result = await window.electronAPI.workflow.run({
+        result = await runWorkflow({
           apiKey: getApiKey(),
           kieKey: getKieApiKey(),
           runpodKey: getRunpodApiKey(),
@@ -1159,7 +1160,7 @@ async function executeModelNode(
           // Small delay between API calls to avoid rate limiting
           await new Promise(r => setTimeout(r, 500));
           console.log('[layer-decompose-cloud] Calling SAM 3 for prompt:', prompt);
-          const promptResult = await window.electronAPI.workflow.run({
+          const promptResult = await runWorkflow({
             apiKey: getApiKey(),
             kieKey: getKieApiKey(),
             runpodKey: getRunpodApiKey(),
@@ -1251,7 +1252,7 @@ async function executeModelNode(
         if (reconstructBg) {
           try {
             const inpaintPrompt = 'reconstruct the background behind the removed elements, maintain the style and context of the surrounding image';
-            const qwenResult = await window.electronAPI.workflow.run({
+            const qwenResult = await runWorkflow({
               apiKey: getApiKey(),
               kieKey: getKieApiKey(),
               runpodKey: getRunpodApiKey(),
@@ -1329,7 +1330,7 @@ async function executeModelNode(
           const modelId = inpainterSetting === 'qwen-edit-cloud'
             ? 'fal-ai/qwen-image-edit-2511'
             : 'runpod-qwen-image-edit';
-          const qwenResult = await window.electronAPI.workflow.run({
+          const qwenResult = await runWorkflow({
             apiKey: getApiKey(),
             kieKey: getKieApiKey(),
             runpodKey: getRunpodApiKey(),

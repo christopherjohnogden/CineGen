@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Project roles live in Firestore so the same membership protects every media file.
+    function projectMember(projectId) {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/projectAccess/$(projectId))
+        && firestore.get(/databases/(default)/documents/projectAccess/$(projectId)).data.members[request.auth.uid] in ['owner', 'editor'];
+    }
+
+    match /users/{userId}/projects/{projectId}/{allPaths=**} {
+      allow read, write: if request.auth != null
+        && (request.auth.uid == userId || projectMember(projectId));
+    }
+  }
+}

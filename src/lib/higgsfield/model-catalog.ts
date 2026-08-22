@@ -159,6 +159,100 @@ function inputFieldFor(model: HiggsfieldModelSchema, param: HiggsfieldParamSchem
   };
 }
 
+function customizeWorkflowField(
+  model: HiggsfieldModelSchema,
+  field: ModelInputField,
+): ModelInputField {
+  if (model.job_set_type !== 'seedance_2_5') return field;
+
+  if (field.id === 'aspect_ratio') {
+    const labels: Record<string, string> = {
+      auto: 'Match reference',
+      '21:9': 'Cinematic (21:9)',
+      '16:9': 'Widescreen (16:9)',
+      '4:3': 'Classic (4:3)',
+      '1:1': 'Square (1:1)',
+      '3:4': 'Portrait (3:4)',
+      '9:16': 'Vertical (9:16)',
+    };
+    return {
+      ...field,
+      description: 'Shape of the generated video.',
+      options: field.options?.map((option) => ({ ...option, label: labels[option.value] ?? option.label })),
+    };
+  }
+
+  if (field.id === 'duration') {
+    return {
+      ...field,
+      fieldType: 'range',
+      min: 5,
+      max: 30,
+      step: 1,
+      description: 'Length of the generated clip.',
+    };
+  }
+
+  if (field.id === 'resolution') {
+    const labels: Record<string, string> = {
+      '480p': '480p · Draft',
+      '720p': '720p · HD',
+      '1080p': '1080p · Full HD',
+    };
+    return {
+      ...field,
+      description: 'Higher resolution takes longer and may cost more.',
+      options: field.options?.map((option) => ({ ...option, label: labels[option.value] ?? option.label })),
+    };
+  }
+
+  if (field.id === 'generate_audio') {
+    return { ...field, label: 'Generate audio', description: 'Create synchronized sound with the video.' };
+  }
+
+  if (field.id === 'bitrate_mode') {
+    const labels: Record<string, string> = {
+      standard: 'Standard · Smaller file',
+      high: 'High · Best quality',
+    };
+    return {
+      ...field,
+      label: 'Quality',
+      description: 'High quality uses more processing and creates a larger file.',
+      options: field.options?.map((option) => ({ ...option, label: labels[option.value] ?? option.label })),
+    };
+  }
+
+  if (field.id === 'mode') {
+    const labels: Record<string, string> = {
+      t2v: 'Auto (recommended)',
+      omni_reference: 'Reference images',
+      video_edit: 'Edit a video',
+      video_extension: 'Extend a video',
+    };
+    return {
+      ...field,
+      label: 'Generation mode',
+      description: 'Auto switches modes when something is connected to References.',
+      options: field.options?.map((option) => ({ ...option, label: labels[option.value] ?? option.label })),
+    };
+  }
+
+  if (field.id === 'extension_mode') {
+    return {
+      ...field,
+      label: 'Extension direction',
+      description: 'Choose which side of the connected video to extend.',
+      options: field.options?.map((option) => ({
+        ...option,
+        label: option.value === 'forward' ? 'Continue forward' : 'Build backward',
+      })),
+    };
+  }
+
+  return field;
+}
+
 function compatibilityMediaFieldsFor(
   model: HiggsfieldModelSchema,
   param: HiggsfieldParamSchema,
@@ -223,6 +317,21 @@ function promotePromptFirst(inputs: ModelInputField[]): ModelInputField[] {
   return inputs;
 }
 
+function workflowCompatibilityFieldsFor(model: HiggsfieldModelSchema): ModelInputField[] {
+  if (model.job_set_type !== 'seedance_2_5') return [];
+
+  return [{
+    id: 'medias',
+    portType: 'media',
+    label: 'References',
+    required: false,
+    falParam: 'medias',
+    fieldType: 'port',
+    schemaType: 'array',
+    multiple: true,
+  }];
+}
+
 export function buildHiggsfieldModelRegistry(
   schemas: readonly HiggsfieldModelSchema[] = HIGGSFIELD_MODEL_SCHEMAS,
 ): Record<string, ModelDefinition> {
@@ -231,16 +340,19 @@ export function buildHiggsfieldModelRegistry(
     const nodeType = nodeTypeFor(model.job_set_type);
     const outputType = outputTypeFor(model.type);
     if (registry[nodeType]) throw new Error(`Duplicate Higgsfield node type: ${nodeType}`);
+    const schemaInputs = promotePromptFirst(model.params.flatMap((param) => [
+      customizeWorkflowField(model, inputFieldFor(model, param)),
+      ...compatibilityMediaFieldsFor(model, param),
+    ]));
+    const promptEnd = schemaInputs.findIndex((field) => field.id === 'prompt') + 1;
+    schemaInputs.splice(promptEnd, 0, ...workflowCompatibilityFieldsFor(model));
     registry[nodeType] = {
       id: model.job_set_type,
       nodeType,
       name: model.display_name,
       category: outputType,
       description: `Higgsfield ${model.type.toUpperCase()} model`,
-      inputs: promotePromptFirst(model.params.flatMap((param) => [
-        inputFieldFor(model, param),
-        ...compatibilityMediaFieldsFor(model, param),
-      ])),
+      inputs: schemaInputs,
       outputType,
       outputs: [{ id: outputType, portType: outputType, label: outputType === 'model3d' ? '3D Model' : humanize(outputType) }],
       provider: 'higgsfield',

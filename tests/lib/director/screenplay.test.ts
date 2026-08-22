@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseToScreenplay, serializeScreenplay, nextElementType, typeAfterEnter, ELEMENT_CYCLE,
-  scrubFdxChrome, trimFdxTrailer,
+  screenplayFromSource, scrubFdxChrome, trimFdxTrailer,
 } from '@/lib/director/screenplay';
 
 describe('parseToScreenplay', () => {
@@ -55,6 +55,34 @@ describe('serializeScreenplay round-trips', () => {
     // same visible lines, trimmed
     expect(round.split('\n').map((l) => l.trim()).filter(Boolean))
       .toEqual(src.split('\n').map((l) => l.trim()).filter(Boolean));
+  });
+
+  it('preserves the boundary between dialogue and following action', () => {
+    const structured = {
+      elements: [
+        { id: 'c1', type: 'character' as const, text: 'PETER' },
+        { id: 'd1', type: 'dialogue' as const, text: 'Hey.' },
+        { id: 'a1', type: 'action' as const, text: 'Jordan lays the jacket over the chair.' },
+      ],
+    };
+
+    const serialized = serializeScreenplay(structured);
+    expect(serialized).toBe('PETER\nHey.\n\nJordan lays the jacket over the chair.');
+    expect(parseToScreenplay(serialized).elements.map((element) => element.type))
+      .toEqual(['character', 'dialogue', 'action']);
+  });
+
+  it('prefers stored Final Draft block types over ambiguous flattened text', () => {
+    const doc = screenplayFromSource({
+      sourceText: 'PETER\nHey.\nJordan lays the jacket over the chair.',
+      sourceElements: [
+        { id: 'c1', type: 'character', text: 'PETER' },
+        { id: 'd1', type: 'dialogue', text: 'Hey.' },
+        { id: 'a1', type: 'action', text: 'Jordan lays the jacket over the chair.' },
+      ],
+    });
+
+    expect(doc.elements.map((element) => element.type)).toEqual(['character', 'dialogue', 'action']);
   });
 });
 

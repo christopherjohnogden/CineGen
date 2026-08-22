@@ -13,13 +13,7 @@ import { scrubFdxChrome, serializeScreenplay, trimFdxTrailer } from './screenpla
 function scrubLoadedScript(show: DirectorShow): Pick<DirectorShow, 'sourceText' | 'sourceElements'> {
   if (show.sourceElements) {
     const cleaned = scrubFdxChrome(show.sourceElements);
-    const dirty = cleaned.length !== show.sourceElements.length
-      || cleaned.some((el, i) => el.text !== show.sourceElements![i].text);
-    if (dirty) {
-      return { sourceElements: cleaned, sourceText: serializeScreenplay({ elements: cleaned }) };
-    }
-    const trimmed = trimFdxTrailer(show.sourceText);
-    return { sourceElements: show.sourceElements, sourceText: trimmed };
+    return { sourceElements: cleaned, sourceText: serializeScreenplay({ elements: cleaned }) };
   }
   if (looksLikeFdx(show.sourceText)) {
     const parsed = parseFdx(show.sourceText);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DirectorShow } from '@/types/director';
 import { extractScriptText, SCRIPT_ACCEPT } from '@/lib/director/look-bible';
-import { parseToScreenplay, serializeScreenplay, scrubFdxChrome, trimFdxTrailer, type Screenplay } from '@/lib/director/screenplay';
+import { screenplayFromSource, serializeScreenplay, scrubFdxChrome, trimFdxTrailer, type Screenplay } from '@/lib/director/screenplay';
 import { looksLikeFdx, parseFdx } from '@/lib/director/fdx-parser';
 import { applyAssistantEdits, applyBeatEdits, type AssistantEdit, type AssistantResponse, type BeatEdit } from '@/lib/director/script-assistant';
 import type { ScriptQuote } from '@/lib/director/script-selection';
@@ -23,9 +23,7 @@ interface DirectorScriptTabProps {
 }
 
 function docFromShow(show: DirectorShow): Screenplay {
-  // Prefer structured elements (exact types, stable ids) when present; else parse the text.
-  if (show.sourceElements) return { elements: scrubFdxChrome(show.sourceElements) };
-  return parseToScreenplay(show.sourceText);
+  return screenplayFromSource(show);
 }
 
 export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: DirectorScriptTabProps) {

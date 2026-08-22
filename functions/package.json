@@ -1,0 +1,17 @@
+{
+  "name": "cinegen-firebase-functions",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "check": "node --check src/index.js"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.9.4",
+    "firebase-admin": "^14.3.0",
+    "firebase-functions": "^7.0.0"
+  }
+}

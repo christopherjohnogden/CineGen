@@ -239,6 +239,9 @@ export function buildHiggsfieldWorkflowRequest(
 ): HiggsfieldGenerateParams {
   const medias: HiggsfieldMedia[] = [];
   const genericParams: Record<string, unknown> = {};
+  const fallbackMediaRole = model === 'seedance_2_5'
+    ? 'image'
+    : fallbackMediaRoleForOutput(outputKind);
 
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined || value === null) continue;
@@ -246,7 +249,7 @@ export function buildHiggsfieldWorkflowRequest(
     if (key === 'medias' || key === 'higgsfield_media_inputs') {
       medias.push(...mediaReferencesFromValue(
         value,
-        fallbackMediaRoleForOutput(outputKind),
+        fallbackMediaRole,
         true,
       ));
       continue;
@@ -264,6 +267,11 @@ export function buildHiggsfieldWorkflowRequest(
     // Every non-null schema parameter is forwarded verbatim. The CLI transport owns JSON
     // serialization for arrays/objects and preserves false/zero scalar values.
     genericParams[key] = value;
+  }
+
+  if (model === 'seedance_2_5' && medias.length > 0 && (!genericParams.mode || genericParams.mode === 't2v')) {
+    const hasVisualStill = medias.some((media) => media.role === 'image' || media.role === 'start_image' || media.role === 'end_image');
+    genericParams.mode = hasVisualStill ? 'omni_reference' : 'video_edit';
   }
 
   return {

@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps, useReactFlow, type Node } from '@xyfl
 import { ALL_MODELS, getModelDefinition } from '@/lib/fal/models';
 import { CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
+import { runWorkflow } from '@/lib/cloud/funding';
 import { useWorkspace, getActiveTimeline } from '@/components/workspace/workspace-shell';
 import { addClipToTrack } from '@/lib/editor/timeline-operations';
 import { clipEffectiveDuration } from '@/types/timeline';
@@ -176,7 +177,7 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
         effectiveModelId = modelDef.id;
       }
 
-      const result = await window.electronAPI.workflow.run({
+      const result = await runWorkflow({
         apiKey: getApiKey(), kieKey: getKieApiKey(), runpodKey: getRunpodApiKey(),
         runpodEndpointId: getRunpodEndpointId(selectedModel), podUrl: getPodUrl(),
         nodeId: id, nodeType: selectedModel, modelId: effectiveModelId, inputs,
@@ -233,7 +234,7 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
 
       const effectiveModelId = videoModelDef.id;
 
-      const result = await window.electronAPI.workflow.run({
+      const result = await runWorkflow({
         apiKey: getApiKey(), kieKey: getKieApiKey(), runpodKey: getRunpodApiKey(),
         runpodEndpointId: getRunpodEndpointId(selectedVideoModel), podUrl: getPodUrl(),
         nodeId: id, nodeType: selectedVideoModel, modelId: effectiveModelId, inputs,
@@ -285,7 +286,7 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
     setPlanningStatus('planning');
     try {
       const planPrompt = `Scene description: "${scenePrompt}"\n\nGenerate exactly ${shotCount} sequential cinematic shot descriptions for this scene. Each shot should progress the story.`;
-      const llmResult = await window.electronAPI.workflow.run({
+      const llmResult = await runWorkflow({
         apiKey, kieKey: getKieApiKey(), runpodKey: getRunpodApiKey(),
         runpodEndpointId: undefined, podUrl: getPodUrl(),
         nodeId: id, nodeType: 'openrouter-llm', modelId: 'openrouter/router',

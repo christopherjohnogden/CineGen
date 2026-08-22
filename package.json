@@ -16,6 +16,7 @@
     "package": "npm run build && electron-builder",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:funding": "node scripts/cloud/owner-funding-smoke.mjs",
     "screenshots": "npm run build && node scripts/take-screenshots.mjs"
   },
   "build": {
@@ -43,6 +44,7 @@
     "better-sqlite3": "^12.6.2",
     "ffmpeg-static": "^5.3.0",
     "ffprobe-static": "^3.1.0",
+    "firebase": "^12.18.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",

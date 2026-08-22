@@ -140,6 +140,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const selectedTake = takes.find((take) => take.id === show.selectedTakeId) ?? takes[takes.length - 1];
   const fullTakeCount = takesForVariant(clip, 'full').length;
   const asset = assets.find((entry) => entry.id === selectedTake?.assetId);
+  const assetSource = asset?.fileRef || asset?.url || asset?.sourceUrl;
   const timelineClip = takeTimelineClip(clip, selectedTake);
   const timingError = validateClipTimings(clip);
   const compiled = adapter.buildRequest({ show, clip, variant: clip.activeVariant }).prompt;
@@ -342,7 +343,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
           )}
 
           <DirectorGenerateViewer
-            assetUrl={asset?.url}
+            asset={asset}
             take={selectedTake}
             variantLabel={variantLabel}
             adapterLabel={adapter.label}
@@ -351,11 +352,11 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             onFetchTake={props.onFetchTake}
             fetchingTake={props.fetchingTake}
           />
-          {!isolated && asset?.url && timelineClip.beats.length > 1 && (
+          {!isolated && assetSource && timelineClip.beats.length > 1 && (
             <DirectorShotTimeline
               clip={timelineClip}
               videoRef={videoRef}
-              src={asset.url}
+              src={assetSource}
               onSeekShot={(n) => {
                 onSelectBeat(n);
                 revealShot(n);
@@ -375,10 +376,10 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             onCancel={props.onCancelStagingDiagram}
             searchRef={framingSearchRef}
             detailsRef={stageRef}
-            canCapture={Boolean(asset?.url)}
+            canCapture={Boolean(assetSource)}
             onSetFrame={() => props.onSetStagingFrame?.({
               dataUrl: captureVideoFrame(videoRef.current) ?? undefined,
-              fileRef: asset?.fileRef || asset?.url,
+              fileRef: assetSource,
               timeSec: videoRef.current?.currentTime,
               durationSec: videoRef.current?.duration,
               variantKey: selectedTake?.variantKey ?? key,

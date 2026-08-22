@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { DefaultTranscriptionEngine } from '@/lib/utils/api-key';
+import { CloudAccountCard } from '@/components/cloud/cloud-account';
 
 /* -----------------------------------------------------------------------
    Types & constants
@@ -11,11 +12,12 @@ type Provider = 'fal' | 'kie';
 type SettingsTab = 'app' | 'project';
 
 /* Sidebar category IDs — these double as scroll-anchor IDs */
-type AppCategory = 'api-keys' | 'endpoints' | 'pod' | 'provider' | 'preferences';
+type AppCategory = 'cloud' | 'api-keys' | 'endpoints' | 'pod' | 'provider' | 'preferences';
 type ProjectCategory = 'resolution' | 'frame-rate' | 'aspect-ratio';
 type Category = AppCategory | ProjectCategory;
 
 const APP_CATEGORIES: { id: AppCategory; label: string }[] = [
+  { id: 'cloud', label: 'Cloud Account' },
   { id: 'api-keys', label: 'API Keys' },
   { id: 'endpoints', label: 'RunPod Endpoints' },
   { id: 'pod', label: 'CineGen Pod' },
@@ -284,12 +286,14 @@ function HiggsfieldConnect() {
 
 interface SettingsPageProps {
   onBack: () => void;
+  projectId?: string;
+  useSqlite?: boolean;
 }
 
-export function SettingsPage({ onBack }: SettingsPageProps) {
+export function SettingsPage({ onBack, projectId, useSqlite }: SettingsPageProps) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [tab, setTab] = useState<SettingsTab>('app');
-  const [activeCategory, setActiveCategory] = useState<Category>('api-keys');
+  const [activeCategory, setActiveCategory] = useState<Category>('cloud');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [podStatus, setPodStatus] = useState<'unknown' | 'starting' | 'stopping' | 'running' | 'stopped'>('unknown');
   const [podError, setPodError] = useState('');
@@ -319,7 +323,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
 
   const handleTabChange = useCallback((t: SettingsTab) => {
     setTab(t);
-    setActiveCategory(t === 'app' ? 'api-keys' : 'resolution');
+    setActiveCategory(t === 'app' ? 'cloud' : 'resolution');
     // scroll content to top
     contentRef.current?.scrollTo({ top: 0 });
   }, []);
@@ -398,6 +402,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         <div className="sp-content" ref={contentRef}>
           {tab === 'app' && (
             <div className="sp-content__inner">
+              <CloudAccountCard projectId={projectId} useSqlite={useSqlite} />
               {/* --- API Keys --- */}
               <section className="sp-card" id="sp-section-api-keys">
                 <h3 className="sp-card__title">API Keys</h3>

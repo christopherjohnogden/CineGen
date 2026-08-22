@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { getApiKey, getKieApiKey } from '@/lib/utils/api-key';
+import { runWorkflow } from '@/lib/cloud/funding';
 import { toFileUrl } from '@/lib/utils/file-url';
 import type { Clip } from '@/types/timeline';
 import { clipEffectiveDuration } from '@/types/timeline';
@@ -250,7 +251,7 @@ export function FillGapModal({
       }
 
       const generationPromise = (async (): Promise<{ url: string; durationSec: number }> => {
-        const data = await window.electronAPI.workflow.run({
+        const data = await runWorkflow({
           apiKey: getApiKey(),
           kieKey: getKieApiKey(),
           nodeId: 'timeline-fill-gap',

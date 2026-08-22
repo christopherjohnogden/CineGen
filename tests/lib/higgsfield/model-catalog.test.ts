@@ -50,8 +50,11 @@ describe('generated Higgsfield model catalog', () => {
       expect(nodeType, schema.job_set_type).toBeDefined();
       const definition = HIGGSFIELD_MODEL_REGISTRY[nodeType!];
       const projectedParams = new Set(definition.inputs.map((field) => field.falParam));
-      expect([...projectedParams], schema.job_set_type)
-        .toEqual(schema.params.map((param) => param.name));
+      const schemaParams = schema.params.map((param) => param.name);
+      expect([...projectedParams].filter((name) => schemaParams.includes(name)).sort(), schema.job_set_type)
+        .toEqual([...schemaParams].sort());
+      expect([...projectedParams].filter((name) => !schemaParams.includes(name)), schema.job_set_type)
+        .toEqual(schema.job_set_type === 'seedance_2_5' ? ['medias'] : []);
       for (const param of schema.params) {
         const field = definition.inputs.find((candidate) => candidate.falParam === param.name);
         expect(field?.required, `${schema.job_set_type}.${param.name}`).toBe(param.required);
@@ -80,5 +83,31 @@ describe('generated Higgsfield model catalog', () => {
       generate_audio: true,
     })).toEqual({ duration: 6, generate_audio: true });
     expect(pickKnownHiggsfieldParams('unknown_model', { genre: 'noir' })).toEqual({ genre: 'noir' });
+  });
+
+  it('adds a visible combined reference port to Seedance 2.5 workflow nodes', () => {
+    const inputs = HIGGSFIELD_MODEL_REGISTRY['hf-seedance-2-5'].inputs;
+    expect(inputs.slice(0, 2).map((input) => input.id)).toEqual(['prompt', 'medias']);
+    expect(inputs[1]).toMatchObject({
+      label: 'References',
+      portType: 'media',
+      fieldType: 'port',
+      multiple: true,
+    });
+
+    expect(inputs.find((input) => input.id === 'duration')).toMatchObject({
+      fieldType: 'range',
+      min: 5,
+      max: 30,
+      step: 1,
+      description: 'Length of the generated clip.',
+    });
+    expect(inputs.find((input) => input.id === 'mode')?.options).toContainEqual({
+      value: 't2v',
+      label: 'Auto (recommended)',
+    });
+    expect(inputs.find((input) => input.id === 'bitrate_mode')).toMatchObject({
+      label: 'Quality',
+    });
   });
 });

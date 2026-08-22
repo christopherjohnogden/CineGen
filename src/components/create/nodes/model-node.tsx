@@ -1,7 +1,7 @@
 
 
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { Handle, Position, type NodeProps, useReactFlow, useUpdateNodeInternals, type Node } from '@xyflow/react';
+import { Handle, NodeResizer, Position, type NodeProps, useReactFlow, useUpdateNodeInternals, type Node } from '@xyflow/react';
 import { ALL_MODELS } from '@/lib/fal/models';
 import { CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 import { useRunNode } from '@/components/create/workflow-canvas';
@@ -53,7 +53,7 @@ function modelOutputLabel(outputType: string): string {
   return 'Result';
 }
 
-function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
+function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
   const { updateNodeData, getEdges, getNode } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
   const { state, dispatch } = useWorkspace();
@@ -113,11 +113,13 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
   const isAudio = modelDef.outputType === 'audio';
   const isText = modelDef.outputType === 'text';
   const isModel3d = modelDef.outputType === 'model3d';
+  const isVisualOutput = modelDef.outputType === 'image' || modelDef.outputType === 'video';
   const isRunning = status === 'running';
   const reportedProgress = typeof data.result?.progress === 'number' ? data.result.progress : undefined;
   const [progress, setProgress] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [comparing, setComparing] = useState(false);
+  const [visualMediaError, setVisualMediaError] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [sam3ModalOpen, setSam3ModalOpen] = useState(false);
   const [sam3CloudModalOpen, setSam3CloudModalOpen] = useState(false);
@@ -171,6 +173,11 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
   const progressMessage = data.result?.progressMessage
     ?? getLayerDecomposeStageLabel(data.result?.progressStage)
     ?? (isRunning ? 'Running…' : undefined);
+  const isFullBleedVisual = Boolean(isVisualOutput && !data.result?.layers?.length);
+
+  useEffect(() => {
+    setVisualMediaError(false);
+  }, [activeUrl]);
 
   useEffect(() => {
     if (!hasWordTimestamps && whisperTranscriptMode === 'words') {
@@ -366,15 +373,214 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
 
   const cls = [
     'cinegen-node model-node',
+    isFullBleedVisual && 'model-node--media',
     selected && 'cinegen-node--selected',
     status === 'running' && 'cinegen-node--running',
   ].filter(Boolean).join(' ');
+  const portTop = (index: number, count: number) => (
+    isFullBleedVisual ? `${((index + 1) / (count + 1)) * 100}%` : HEADER_HEIGHT + PORT_SPACING * index + PORT_SPACING / 2
+  );
+  const inputPortTop = (port: PortEntry, index: number) => {
+    const distributedTop = portTop(index, portInputs.length);
+    if (!isFullBleedVisual || port.handleId !== 'medias') return distributedTop;
+
+    const promptIndex = portInputs.findIndex((input) => input.handleId === 'prompt');
+    if (promptIndex < 0 || promptIndex >= index) return distributedTop;
+
+    const promptTop = ((promptIndex + 1) / (portInputs.length + 1)) * 100;
+    return `min(${distributedTop}, calc(${promptTop}% + 64px))`;
+  };
+  const visualSourceUrl = !activeUrl
+    ? (isSam3VideoNode ? inputVideoUrl : (isSam3ImageNode ? inputImageUrl : undefined))
+    : undefined;
+  const visualActionLabel = modelDef.nodeType === 'sam3-segment' || modelDef.nodeType === 'sam3-segment-cloud'
+    ? 'Segment'
+    : modelDef.nodeType === 'sam3-track-cloud'
+      ? 'Track'
+      : 'Run Model';
+  const visualActionDisabled = (modelDef.nodeType === 'sam3-segment' || modelDef.nodeType === 'sam3-segment-cloud')
+    ? !inputImageUrl
+    : modelDef.nodeType === 'sam3-track-cloud'
+      ? !inputVideoUrl
+      : false;
+  const runVisualAction = () => {
+    if (modelDef.nodeType === 'sam3-segment') {
+      setSam3ModalOpen(true);
+    } else if (modelDef.nodeType === 'sam3-segment-cloud' || modelDef.nodeType === 'sam3-track-cloud') {
+      setSam3CloudModalOpen(true);
+    } else {
+      void runNode(id);
+    }
+  };
 
   return (
-    <div className={cls} style={{ width: 300, minWidth: 300, maxWidth: 300 }}>
-      <div className="cinegen-node__accent" style={{ background: accentColor }} />
-      <div className="cinegen-node__content">
-        <div className="model-node__header">
+    <div
+      className={cls}
+      style={isFullBleedVisual
+        ? { width: width ?? 300, height: height ?? 168.75, minWidth: 0, maxWidth: 'none' }
+        : { width: 300, minWidth: 300, maxWidth: 300 }}
+    >
+      {isFullBleedVisual && (
+        <NodeResizer
+          isVisible={!!selected}
+          minWidth={180}
+          minHeight={101.25}
+          maxWidth={960}
+          maxHeight={540}
+          keepAspectRatio
+          lineClassName="media-node-resizer__line"
+          handleClassName="media-node-resizer__handle"
+        />
+      )}
+
+      {isFullBleedVisual ? (
+        <div className="model-node__media-surface" data-output-type={modelDef.outputType}>
+          {activeUrl && modelDef.outputType === 'video' ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <video
+              key={activeUrl}
+              src={activeUrl}
+              className="model-node__media-output nodrag nowheel"
+              controls
+              playsInline
+              preload="metadata"
+              onError={() => setVisualMediaError(true)}
+            />
+          ) : activeUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={activeUrl}
+              alt={`${modelDef.name} result`}
+              className="model-node__media-output"
+              draggable={false}
+              onError={() => setVisualMediaError(true)}
+            />
+          ) : visualSourceUrl && isSam3VideoNode ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <video
+              src={visualSourceUrl}
+              className="model-node__media-output model-node__media-output--source nodrag nowheel"
+              controls
+              playsInline
+              preload="metadata"
+            />
+          ) : visualSourceUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={visualSourceUrl}
+              alt="Connected input"
+              className="model-node__media-output model-node__media-output--source"
+              draggable={false}
+            />
+          ) : (
+            <div className="model-node__media-empty" aria-label={`${modelDef.outputType} result will appear here`}>
+              {modelDef.outputType === 'video' ? (
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="5" width="13" height="14" rx="2" />
+                  <path d="m16 10 5-3v10l-5-3" />
+                </svg>
+              ) : (
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="m21 15-5-5L5 21" />
+                </svg>
+              )}
+            </div>
+          )}
+
+          {activeUrl && comparing && inputImageUrl && (
+            <ImageCompare beforeUrl={inputImageUrl} afterUrl={activeUrl!} className="model-node__compare" />
+          )}
+
+          {visualMediaError && (
+            <div className="model-node__media-error" role="alert">Result media is unavailable</div>
+          )}
+
+          <div className={`model-node__media-bar${!activeUrl || isRunning ? ' model-node__media-bar--persistent' : ''}`}>
+            <div className="model-node__media-identity">
+              <span className="model-node__category-badge" style={{ background: accentColor }}>
+                {modelOutputBadge(modelDef.outputType)}
+              </span>
+              <span className="model-node__media-name">{modelDef.name}</span>
+            </div>
+            <div className="model-node__media-actions nodrag">
+              {elementField && elementCount < elementMax && (
+                <button
+                  type="button"
+                  className="model-node__media-action"
+                  onClick={addElement}
+                  title={elementField.id === 'elements' || elementField.id === 'kling_elements' ? 'Add element' : 'Add image input'}
+                  aria-label={elementField.id === 'elements' || elementField.id === 'kling_elements' ? 'Add element' : 'Add image input'}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                </button>
+              )}
+              {activeUrl && canCompare && (
+                <button
+                  type="button"
+                  className={`model-node__media-action${comparing ? ' model-node__media-action--active' : ''}`}
+                  onClick={() => setComparing((value) => !value)}
+                  title="Compare input and result"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="12" y1="3" x2="12" y2="21" /></svg>
+                </button>
+              )}
+              {activeUrl && (
+                <>
+                  <button type="button" className="model-node__media-action" onClick={handleAddToTimeline} title="Add to Timeline">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <line x1="3" y1="7" x2="15" y2="7" /><line x1="3" y1="12" x2="12" y2="12" /><line x1="3" y1="17" x2="10" y2="17" /><path d="M18 13v8M14 17h8" />
+                    </svg>
+                  </button>
+                  <button type="button" className="model-node__media-action" onClick={() => setFullscreen(true)} title="Fullscreen">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {hasMultiple && (
+            <div className="model-node__media-generations nodrag">
+              <button type="button" onClick={() => navigateGen(-1)} disabled={activeIdx <= 0} aria-label="Previous result">&lsaquo;</button>
+              <span>{activeIdx + 1} / {generations.length}</span>
+              <button type="button" onClick={() => navigateGen(1)} disabled={activeIdx >= generations.length - 1} aria-label="Next result">&rsaquo;</button>
+            </div>
+          )}
+
+          {isRunning ? (
+            <div className="model-node__media-progress nodrag" aria-label={`${Math.round(progress)} percent complete`}>
+              <div className="model-node__media-progress-copy">
+                <span>{progressMessage || 'Generating…'}</span>
+                <strong>{Math.round(progress)}%</strong>
+              </div>
+              <div className="model-node__media-progress-track">
+                <span style={{ width: `${progress}%`, background: accentColor }} />
+              </div>
+            </div>
+          ) : !activeUrl ? (
+            <div className={`model-node__media-state nodrag${status === 'error' ? ' model-node__media-state--error' : ''}`}>
+              {status === 'error' && data.result?.error && (
+                <span className="model-node__media-state-message">{data.result.error}</span>
+              )}
+              <button
+                type="button"
+                className="model-node__media-run"
+                onClick={runVisualAction}
+                disabled={visualActionDisabled}
+              >
+                <span aria-hidden="true">{modelDef.nodeType.startsWith('sam3-') ? '✂' : '→'}</span>
+                {visualActionLabel}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <div className="cinegen-node__accent" style={{ background: accentColor }} />
+          <div className="cinegen-node__content">
+            <div className="model-node__header">
           <span className="model-node__category-badge" style={{ background: accentColor }}>
             {modelOutputBadge(modelDef.outputType)}
           </span>
@@ -756,8 +962,10 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
               </button>
             )}
           </div>
-        </div>
-      </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {portInputs.map((port, i) => (
         <Handle
@@ -771,7 +979,7 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
             height: 12,
             borderRadius: '50%',
             border: '2px solid var(--bg-raised)',
-            top: HEADER_HEIGHT + PORT_SPACING * i + PORT_SPACING / 2,
+            top: inputPortTop(port, i),
           }}
         />
       ))}
@@ -788,7 +996,7 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
             height: 12,
             borderRadius: '50%',
             border: '2px solid var(--bg-raised)',
-            top: HEADER_HEIGHT + PORT_SPACING * i + PORT_SPACING / 2,
+            top: portTop(i, outputPorts.length),
           }}
         />
       ))}
@@ -797,7 +1005,7 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
         <span
           key={`label-in-${port.handleId}`}
           className="model-node__port-label model-node__port-label--left"
-          style={{ top: HEADER_HEIGHT + PORT_SPACING * i + PORT_SPACING / 2 }}
+          style={{ top: inputPortTop(port, i) }}
         >
           {port.label}{port.required ? '*' : ''}
         </span>
@@ -807,7 +1015,7 @@ function ModelNodeInner({ id, data, selected }: ModelNodeProps) {
         <span
           key={`label-out-${port.handleId}`}
           className="model-node__port-label model-node__port-label--right"
-          style={{ top: HEADER_HEIGHT + PORT_SPACING * i + PORT_SPACING / 2 }}
+          style={{ top: portTop(i, outputPorts.length) }}
         >
           {port.label}
         </span>

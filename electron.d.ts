@@ -18,6 +18,8 @@ export interface ProjectMeta {
   elementCount: number;
   thumbnail: string | null;
   useSqlite?: boolean;
+  cloud?: boolean;
+  cloudRole?: 'owner' | 'editor';
 }
 
 export interface ElectronAPI {

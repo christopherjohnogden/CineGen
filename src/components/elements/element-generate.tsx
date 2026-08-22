@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { ElementType, ElementImage } from '@/types/elements';
 import { getApiKey } from '@/lib/utils/api-key';
+import { runWorkflow } from '@/lib/cloud/funding';
 
 interface ElementGenerateProps {
   elementType: ElementType;
@@ -94,7 +95,7 @@ async function generateSingleImage(prompt: string, referenceUrls?: string[]): Pr
   }
 
   try {
-    const data = await window.electronAPI.workflow.run({
+    const data = await runWorkflow({
       apiKey,
       nodeId: 'element-gen',
       nodeType: 'nano-banana-pro',

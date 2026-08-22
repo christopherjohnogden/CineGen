@@ -71,7 +71,7 @@ describe('prompt element mentions', () => {
       elements: [peter, sofa],
     });
     const elementNode = bound.nodes.find((node) => node.type === 'element');
-    expect(elementNode?.data.config.elementId).toBe('el-peter');
+    expect(elementNode?.data.config.elementIds).toEqual(['el-peter']);
     expect(bound.edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: 'prompt-1', sourceHandle: 'text', target: 'nb-1', targetHandle: 'prompt' }),
       expect.objectContaining({

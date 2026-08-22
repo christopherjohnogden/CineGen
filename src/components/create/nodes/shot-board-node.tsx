@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps, useReactFlow, type Node } from '@xyfl
 import { ALL_MODELS, getModelDefinition } from '@/lib/fal/models';
 import { CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
+import { runWorkflow } from '@/lib/cloud/funding';
 import type { WorkflowNodeData } from '@/types/workflow';
 
 type ShotBoardNodeProps = NodeProps & { data: WorkflowNodeData };
@@ -103,7 +104,7 @@ function ShotBoardNodeInner({ id, data, selected }: ShotBoardNodeProps) {
       // Use altId (edit endpoint) when available since we always have a reference image
       const effectiveModelId = modelDef.altId ?? modelDef.id;
 
-      const result = await window.electronAPI.workflow.run({
+      const result = await runWorkflow({
         apiKey: getApiKey(),
         kieKey: getKieApiKey(),
         runpodKey: getRunpodApiKey(),

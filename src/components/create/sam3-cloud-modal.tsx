@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ImageCompare } from './image-compare';
 import { getApiKey } from '@/lib/utils/api-key';
+import { runWorkflow } from '@/lib/cloud/funding';
 import {
   detectAutoSegmentObjects,
   getAutoSegmentFrameSource,
@@ -622,7 +623,7 @@ function ImageSegmentationPane({
     setRunning(true);
     setError(null);
     try {
-      const result = await window.electronAPI.workflow.run({
+      const result = await runWorkflow({
         apiKey,
         nodeId: 'sam3-cloud-image',
         nodeType: 'sam3-segment-cloud',
@@ -1278,7 +1279,7 @@ function VideoSegmentationPane({
     setRunning(true);
     setError(null);
     try {
-      const result = await window.electronAPI.workflow.run({
+      const result = await runWorkflow({
         apiKey,
         nodeId: 'sam3-cloud-video',
         nodeType: 'sam3-track-cloud',

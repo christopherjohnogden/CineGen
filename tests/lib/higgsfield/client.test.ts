@@ -365,6 +365,29 @@ describe('Higgsfield 503 / job rejoin', () => {
 });
 
 describe('schema-driven workflow adapter', () => {
+  it('switches Seedance 2.5 into reference mode for connected media and elements', () => {
+    const request = buildHiggsfieldWorkflowRequest('seedance_2_5', {
+      prompt: 'Keep the character consistent',
+      mode: 't2v',
+      medias: [
+        { allUrls: ['hero-front.png', 'hero-profile.png'] },
+        'camera-move.mp4',
+        'dialogue.wav',
+      ],
+    }, 'video');
+
+    expect(request.params).toMatchObject({
+      prompt: 'Keep the character consistent',
+      mode: 'omni_reference',
+    });
+    expect(request.medias).toEqual([
+      { value: 'hero-front.png', role: 'image' },
+      { value: 'hero-profile.png', role: 'image' },
+      { value: 'camera-move.mp4', role: 'video' },
+      { value: 'dialogue.wav', role: 'audio' },
+    ]);
+  });
+
   it('turns model media params into typed CLI refs and forwards every other value', () => {
     const request = buildHiggsfieldWorkflowRequest('all_inputs', {
       medias: [
