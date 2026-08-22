@@ -29,6 +29,7 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
     .map((elementId) => byId.get(elementId))
     .filter((el): el is NonNullable<typeof el> => Boolean(el));
   const imageCount = stacked.reduce((sum, el) => sum + el.images.length, 0);
+  const singleElement = elementIds.length === 1 && stacked.length === 1;
 
   const commit = useCallback(
     (next: string[]) => {
@@ -61,8 +62,14 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
   );
 
   return (
-    <BaseNode nodeType="element" selected={!!selected}>
-      <div className="element-node__stack">
+    <BaseNode
+      nodeType="element"
+      selected={!!selected}
+      title="Element References"
+      meta={stacked.length ? `${stacked.length} element${stacked.length === 1 ? '' : 's'} · ${imageCount} image${imageCount === 1 ? '' : 's'}` : 'Empty'}
+      className={singleElement ? 'cinegen-node--element-hero' : undefined}
+    >
+      <div className={`element-node__stack${singleElement ? ' element-node__stack--single' : ''}`}>
         {elementIds.length === 0 && (
           <div className="element-node__empty">
             {state.elements.length === 0
@@ -77,7 +84,11 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
           return (
             <div
               key={elementId}
-              className={el ? 'element-node__row' : 'element-node__row element-node__row--missing'}
+              className={[
+                'element-node__row',
+                !el && 'element-node__row--missing',
+                singleElement && 'element-node__row--hero',
+              ].filter(Boolean).join(' ')}
             >
               {/* Invisible full-row select: click anywhere on the row to swap this element */}
               <select
@@ -127,7 +138,7 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
                   </span>
                 </span>
               </div>
-              <span className="element-node__swap-hint" aria-hidden="true">&#8644;</span>
+              <span className="element-node__swap-hint" aria-hidden="true">Swap</span>
               <button
                 type="button"
                 className="element-node__remove nodrag"
@@ -171,7 +182,7 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
 
         {stacked.length > 1 && (
           <span className="element-node__summary">
-            {stacked.length} elements &middot; {imageCount} images
+            References are combined at generation time
           </span>
         )}
       </div>

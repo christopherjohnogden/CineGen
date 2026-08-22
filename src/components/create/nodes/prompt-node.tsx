@@ -12,6 +12,8 @@ type PromptNodeProps = NodeProps & { data: WorkflowNodeData };
 function PromptNodeInner({ id, data, selected }: PromptNodeProps) {
   const { updateNodeData } = useReactFlow();
   const { state } = useWorkspace();
+  const prompt = (data.config?.prompt as string) ?? '';
+  const wordCount = prompt.trim() ? prompt.trim().split(/\s+/).length : 0;
 
   const handleChange = useCallback(
     (value: string) => {
@@ -21,11 +23,17 @@ function PromptNodeInner({ id, data, selected }: PromptNodeProps) {
   );
 
   return (
-    <BaseNode nodeType="prompt" selected={!!selected} isRunning={data.result?.status === 'running'}>
+    <BaseNode
+      nodeType="prompt"
+      selected={!!selected}
+      isRunning={data.result?.status === 'running'}
+      meta={prompt ? `${wordCount} word${wordCount === 1 ? '' : 's'}` : 'Ready'}
+      footer={<><span>@ mentions supported</span><span>{prompt.length} chars</span></>}
+    >
       <MentionTextarea
-        value={(data.config?.prompt as string) ?? ''}
+        value={prompt}
         onChange={handleChange}
-        placeholder="Describe what to generate..."
+        placeholder="Describe the shot, movement, light, and feeling..."
         rows={5}
         elements={state.elements}
       />

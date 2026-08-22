@@ -29,6 +29,7 @@ function CompositionPlanNodeInner({ id, data, selected }: CompositionPlanNodePro
   const positiveGlobal: string = (data.config?.positiveGlobalStyles as string) ?? '';
   const negativeGlobal: string = (data.config?.negativeGlobalStyles as string) ?? '';
   const sections: Section[] = (data.config?.sections as Section[]) ?? [{ ...DEFAULT_SECTION }];
+  const totalDuration = sections.reduce((total, section) => total + section.durationMs, 0);
 
   const updateConfig = useCallback(
     (partial: Record<string, unknown>) => {
@@ -62,7 +63,13 @@ function CompositionPlanNodeInner({ id, data, selected }: CompositionPlanNodePro
   );
 
   return (
-    <BaseNode nodeType="compositionPlan" selected={!!selected}>
+    <BaseNode
+      nodeType="compositionPlan"
+      selected={!!selected}
+      title="Composition Plan"
+      meta={`${sections.length} section${sections.length === 1 ? '' : 's'} · ${Math.round(totalDuration / 1000)}s`}
+    >
+      <div className="comp-plan-node__eyebrow">Sound palette</div>
       <div className="comp-plan-node__globals">
         <div className="comp-plan-node__field">
           <label className="comp-plan-node__label">Global Styles</label>
@@ -90,6 +97,7 @@ function CompositionPlanNodeInner({ id, data, selected }: CompositionPlanNodePro
         {sections.map((section, i) => (
           <div key={i} className="comp-plan-node__section">
             <div className="comp-plan-node__section-header">
+              <span className="comp-plan-node__section-index">{String(i + 1).padStart(2, '0')}</span>
               <input
                 type="text"
                 className="comp-plan-node__name-input nodrag"
@@ -140,7 +148,7 @@ function CompositionPlanNodeInner({ id, data, selected }: CompositionPlanNodePro
         className="comp-plan-node__add-btn nodrag"
         onClick={addSection}
       >
-        + Add Section
+        <span>+</span> Add section
       </button>
     </BaseNode>
   );

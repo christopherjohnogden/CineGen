@@ -150,20 +150,26 @@ function MusicPromptNodeInner({ id, data, selected }: MusicPromptNodeProps) {
   }, [videoUrl, extractAndUploadFrames, style, genre, mood, tempo, notes, updateConfig]);
 
   return (
-    <BaseNode nodeType="musicPrompt" selected={!!selected}>
+    <BaseNode
+      nodeType="musicPrompt"
+      selected={!!selected}
+      title="Music Direction"
+      meta={hasVideo ? 'Video aware' : 'Text only'}
+    >
       <div className="music-prompt-node__fields">
+        <div className="music-prompt-node__eyebrow">Creative brief</div>
         <div className="music-prompt-node__row">
           <input
             type="text"
             className="music-prompt-node__input nodrag"
-            placeholder="Genre (e.g., cinematic, electronic)"
+            placeholder="Genre · cinematic"
             value={genre}
             onChange={(e) => updateConfig({ genre: e.target.value })}
           />
           <input
             type="text"
             className="music-prompt-node__input nodrag"
-            placeholder="Mood (e.g., tense, uplifting)"
+            placeholder="Mood · tense"
             value={mood}
             onChange={(e) => updateConfig({ mood: e.target.value })}
           />
@@ -172,14 +178,14 @@ function MusicPromptNodeInner({ id, data, selected }: MusicPromptNodeProps) {
           <input
             type="text"
             className="music-prompt-node__input nodrag"
-            placeholder="Style (e.g., orchestral, lo-fi)"
+            placeholder="Style · orchestral"
             value={style}
             onChange={(e) => updateConfig({ style: e.target.value })}
           />
           <input
             type="text"
             className="music-prompt-node__input nodrag"
-            placeholder="Tempo (e.g., slow, 120bpm)"
+            placeholder="Tempo · 92 bpm"
             value={tempo}
             onChange={(e) => updateConfig({ tempo: e.target.value })}
           />
@@ -187,7 +193,7 @@ function MusicPromptNodeInner({ id, data, selected }: MusicPromptNodeProps) {
         <textarea
           className="music-prompt-node__textarea nodrag nowheel"
           rows={2}
-          placeholder="Additional notes..."
+          placeholder="Arc, instrumentation, transitions, and moments to emphasize..."
           value={notes}
           onChange={(e) => updateConfig({ additionalNotes: e.target.value })}
         />
@@ -195,7 +201,7 @@ function MusicPromptNodeInner({ id, data, selected }: MusicPromptNodeProps) {
 
       <div className="music-prompt-node__status">
         <span className={`music-prompt-node__indicator${hasVideo ? ' music-prompt-node__indicator--active' : ''}`} />
-        {hasVideo ? 'Video connected' : 'No video — text only'}
+        {hasVideo ? 'Video context connected' : 'Connect video for picture-aware scoring'}
       </div>
 
       {generatedPrompt && (
@@ -218,7 +224,7 @@ function MusicPromptNodeInner({ id, data, selected }: MusicPromptNodeProps) {
         onClick={handleGenerate}
         disabled={generating}
       >
-        {generating ? 'Generating...' : 'Generate Music Prompt'}
+        {generating ? 'Writing direction...' : 'Write music direction'}
       </button>
     </BaseNode>
   );

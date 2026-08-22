@@ -20,6 +20,7 @@ function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
   const { updateNodeData } = useReactFlow();
   const { state } = useWorkspace();
   const shots: MultiPromptShot[] = (data.config?.shots as MultiPromptShot[]) ?? [{ prompt: '', duration: 5 }];
+  const totalDuration = shots.reduce((total, shot) => total + shot.duration, 0);
 
   const updateShots = useCallback(
     (newShots: MultiPromptShot[]) => {
@@ -57,12 +58,20 @@ function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
   );
 
   return (
-    <BaseNode nodeType="multiPrompt" selected={!!selected}>
+    <BaseNode
+      nodeType="multiPrompt"
+      selected={!!selected}
+      title="Shot Sequence"
+      meta={`${shots.length} shot${shots.length === 1 ? '' : 's'} · ${totalDuration}s`}
+    >
       <div className="multi-prompt-node__shots">
         {shots.map((shot, i) => (
           <div key={i} className="multi-prompt-node__shot">
             <div className="multi-prompt-node__shot-header">
-              <span className="multi-prompt-node__shot-label">Shot {i + 1}</span>
+              <span className="multi-prompt-node__shot-index">{String(i + 1).padStart(2, '0')}</span>
+              <span className="multi-prompt-node__shot-label">
+                {shot.prompt.trim().split(/[.!?\n]/)[0]?.slice(0, 34) || `Untitled shot ${i + 1}`}
+              </span>
               <div className="multi-prompt-node__shot-controls">
                 <select
                   className="multi-prompt-node__duration nodrag nowheel"
@@ -99,7 +108,7 @@ function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
         className="multi-prompt-node__add-btn nodrag"
         onClick={addShot}
       >
-        + Add Shot
+        <span>+</span> Add shot
       </button>
     </BaseNode>
   );

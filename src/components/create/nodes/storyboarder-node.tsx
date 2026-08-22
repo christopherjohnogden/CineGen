@@ -41,7 +41,7 @@ const LLM_OPTIONS = [
   { value: 'meta-llama/llama-4-maverick', label: 'Llama 4 Maverick' },
 ];
 
-const HEADER_HEIGHT = 36;
+const HEADER_HEIGHT = 52;
 const PORT_SPACING = 24;
 
 const STORYBOARD_SYSTEM_PROMPT = `You are a cinematic storyboard director. Given a reference image and a scene description, break the scene into a sequence of cinematic shots that tell the story visually.
@@ -426,12 +426,13 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
   const hasAnyImages = shots.some((s) => s.url);
 
   return (
-    <div className={`cinegen-node storyboarder-node${selected ? ' cinegen-node--selected' : ''}`}>
-      <div className="cinegen-node__accent" style={{ background: accentColor }} />
+    <div className={`cinegen-node cinegen-node--semantic storyboarder-node${selected ? ' cinegen-node--selected' : ''}`}>
       <div className="cinegen-node__content">
         <div className="cinegen-node__header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Storyboarder</span>
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <span className="cinegen-node__badge" style={{ background: accentColor }}>BRD</span>
+          <span className="cinegen-node__title">Storyboard</span>
+          <span className="cinegen-node__meta">{shots.length ? `${shots.length} shots` : 'Ready'}</span>
+          <div className="cinegen-node__actions nodrag" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             {/* Mode toggle */}
             <div className="storyboarder-node__mode-toggle nodrag">
               <button

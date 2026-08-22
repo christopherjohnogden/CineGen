@@ -14594,6 +14594,596 @@ input[type='range']::-moz-range-track {
   pointer-events: none;
 }
 
+/* ============================================================
+   Create Canvas — Semantic Node System
+   ============================================================ */
+
+.cinegen-node--semantic {
+  position: relative;
+  display: block;
+  min-width: 280px;
+  overflow: visible;
+  background: linear-gradient(180deg, #151820 0%, #11141a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.cinegen-node--semantic:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.cinegen-node--semantic.cinegen-node--selected {
+  border-color: var(--node-accent, var(--accent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-accent, var(--accent)) 28%, transparent), 0 18px 42px rgba(0, 0, 0, 0.32);
+}
+
+.cinegen-node--semantic .cinegen-node__accent {
+  display: none;
+}
+
+.cinegen-node--semantic .cinegen-node__content {
+  width: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.cinegen-node--semantic .cinegen-node__header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.018);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  color: var(--text-primary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.cinegen-node__badge {
+  min-width: 36px;
+  height: 24px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: #0d0f13;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.cinegen-node__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinegen-node__meta {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+}
+
+.cinegen-node__actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 2px;
+}
+
+.cinegen-node--semantic .cinegen-node__body {
+  gap: 10px;
+  padding: 14px;
+}
+
+.cinegen-node__footer {
+  min-height: 34px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.cinegen-node--semantic .base-node__port-label {
+  color: rgba(220, 218, 210, 0.5);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+
+.cinegen-node--semantic .react-flow__handle {
+  box-shadow: 0 0 0 2px #11141a, 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+/* Prompt — a compact writing surface */
+.cinegen-node--prompt {
+  width: 380px;
+}
+
+.cinegen-node--prompt .cinegen-node__body {
+  padding: 0;
+}
+
+.cinegen-node--prompt .mention-textarea,
+.cinegen-node--prompt .cinegen-node__textarea {
+  width: 100%;
+}
+
+.cinegen-node--prompt .cinegen-node__textarea {
+  min-height: 156px;
+  padding: 18px;
+  resize: vertical;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+.cinegen-node--prompt .cinegen-node__textarea:focus {
+  border: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--node-accent) 34%, transparent);
+}
+
+.cinegen-node--prompt .mention-textarea__backdrop {
+  padding: 18px;
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+/* Element references — imagery is the surface */
+.cinegen-node--element {
+  width: 312px;
+}
+
+.cinegen-node--element .cinegen-node__body {
+  padding: 10px;
+}
+
+.element-node__stack {
+  gap: 8px;
+}
+
+.element-node__row {
+  min-height: 58px;
+  padding: 6px;
+  gap: 10px;
+  border-color: rgba(255, 255, 255, 0.075);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.element-node__thumb {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 6px;
+}
+
+.element-node__row--hero {
+  height: 224px;
+  padding: 0;
+  overflow: hidden;
+  background: #0a0c10;
+  border: 0;
+}
+
+.element-node__row--hero .element-node__thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 9px;
+  object-fit: cover;
+}
+
+.element-node__row--hero::after {
+  content: '';
+  position: absolute;
+  inset: 38% 0 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgba(4, 5, 8, 0.92) 100%);
+}
+
+.element-node__row--hero .element-node__meta {
+  position: absolute;
+  left: 14px;
+  right: 48px;
+  bottom: 14px;
+  z-index: 1;
+}
+
+.element-node__row--hero .element-node__name {
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.element-node__row--hero .element-node__sub {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.element-node__row--hero .element-node__swap-hint {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(7, 9, 12, 0.68);
+  backdrop-filter: blur(10px);
+  color: white;
+  font-size: 9px;
+}
+
+.element-node__row--hero .element-node__remove {
+  right: 10px;
+  bottom: 12px;
+  position: absolute;
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(7, 9, 12, 0.72);
+  opacity: 1;
+}
+
+.element-node__add,
+.multi-prompt-node__add-btn,
+.comp-plan-node__add-btn {
+  min-height: 34px;
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.element-node__summary {
+  padding: 1px 3px 0;
+  text-align: left;
+  font-size: 9px;
+}
+
+/* Shot sequence — structured, scannable rows */
+.cinegen-node--multiPrompt {
+  width: 410px;
+}
+
+.multi-prompt-node__shots {
+  gap: 9px;
+}
+
+.multi-prompt-node__shot {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.multi-prompt-node__shot-header {
+  height: 35px;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.multi-prompt-node__shot-index,
+.comp-plan-node__section-index {
+  color: var(--node-accent, var(--accent));
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.multi-prompt-node__shot-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.multi-prompt-node__duration,
+.comp-plan-node__duration {
+  height: 25px;
+  padding: 0 22px 0 8px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.035);
+  background-image: url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L4 4L7 1' stroke='%238B8B85' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.multi-prompt-node__shot .cinegen-node__textarea {
+  min-height: 70px;
+  padding: 10px 12px;
+  resize: vertical;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.multi-prompt-node__shot .mention-textarea__backdrop {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.multi-prompt-node__add-btn,
+.comp-plan-node__add-btn {
+  width: 100%;
+  margin-top: 1px;
+}
+
+.multi-prompt-node__add-btn span,
+.comp-plan-node__add-btn span {
+  margin-right: 5px;
+  color: var(--node-accent, var(--accent));
+}
+
+/* Music direction and composition */
+.cinegen-node--musicPrompt,
+.cinegen-node--compositionPlan {
+  width: 410px;
+}
+
+.music-prompt-node__eyebrow,
+.comp-plan-node__eyebrow {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.music-prompt-node__fields {
+  gap: 7px;
+  margin: 0;
+}
+
+.music-prompt-node__row {
+  gap: 7px;
+}
+
+.music-prompt-node__input,
+.music-prompt-node__textarea,
+.music-prompt-node__result,
+.comp-plan-node__input,
+.comp-plan-node__textarea {
+  min-height: 36px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 7px;
+  background: rgba(7, 9, 13, 0.5);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.music-prompt-node__textarea,
+.music-prompt-node__result,
+.comp-plan-node__textarea {
+  line-height: 1.5;
+}
+
+.music-prompt-node__status {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.music-prompt-node__result {
+  margin: 0;
+  border-color: color-mix(in srgb, var(--port-audio) 34%, transparent);
+}
+
+.music-prompt-node__generate-btn,
+.cinegen-node__send-btn {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--node-accent, var(--accent));
+  color: #0b0d10;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.comp-plan-node__globals {
+  gap: 8px;
+  margin: 0;
+}
+
+.comp-plan-node__field {
+  gap: 5px;
+}
+
+.comp-plan-node__label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 550;
+  letter-spacing: 0.05em;
+}
+
+.comp-plan-node__sections {
+  gap: 9px;
+}
+
+.comp-plan-node__section {
+  padding: 10px;
+  border-color: rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.comp-plan-node__section-header {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.comp-plan-node__name-input {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: none;
+}
+
+/* Final output — status first, action last */
+.cinegen-node--assetOutput {
+  width: 320px;
+}
+
+.asset-output-node__status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.asset-output-node__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.035);
+}
+
+.asset-output-node__dot--ready {
+  background: var(--success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 13%, transparent);
+}
+
+.asset-output-node__name {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(7, 9, 13, 0.5);
+  color: var(--text-primary);
+}
+
+.asset-output-node__preview {
+  width: 100%;
+  max-height: 190px;
+  border: 0;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.cinegen-node__send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+/* Boards — same language at workspace scale */
+.shot-board-node,
+.storyboarder-node {
+  background: #11141a;
+}
+
+.shot-board-node .cinegen-node__body,
+.storyboarder-node .cinegen-node__body {
+  padding: 12px;
+}
+
+.shot-board-node__model-select {
+  height: 36px;
+  padding: 0 34px 0 11px;
+  border-color: rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background-color: rgba(255, 255, 255, 0.025);
+}
+
+.shot-board-node__grid,
+.storyboarder-node__grid {
+  gap: 5px;
+}
+
+.shot-board-node__cell,
+.storyboarder-node__cell {
+  border-color: transparent;
+  border-radius: 5px;
+  background: #0b0d11;
+}
+
+.shot-board-node__cell:hover,
+.storyboarder-node__cell:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.shot-board-node__cell--selected,
+.storyboarder-node__cell--selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.shot-board-node__cell-label,
+.storyboarder-node__cell-label {
+  padding: 7px 8px 6px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.84));
+  color: rgba(255, 255, 255, 0.78);
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+
+.shot-board-node__actions button,
+.storyboarder-node__actions button {
+  min-height: 34px;
+  border-radius: 7px;
+}
+
+.storyboarder-node__mode-toggle {
+  border-color: rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+}
+
+.storyboarder-node__mode-toggle button.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
 .app-toast {
   display: flex;
   align-items: center;

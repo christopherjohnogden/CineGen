@@ -1,6 +1,6 @@
 
 
-import { memo, type ReactNode } from 'react';
+import { memo, type CSSProperties, type ReactNode } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { NODE_REGISTRY, CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 
@@ -9,12 +9,55 @@ interface BaseNodeProps {
   selected: boolean;
   isRunning?: boolean;
   children: ReactNode;
+  title?: string;
+  meta?: ReactNode;
+  actions?: ReactNode;
+  footer?: ReactNode;
+  className?: string;
 }
 
-const HEADER_HEIGHT = 36;
+const HEADER_HEIGHT = 52;
 const PORT_SPACING = 24;
 
-function BaseNodeInner({ nodeType, selected, isRunning, children }: BaseNodeProps) {
+const NODE_BADGES: Record<string, string> = {
+  prompt: 'TXT',
+  multiPrompt: 'SHT',
+  shotPrompt: 'SHT',
+  element: 'ELM',
+  compositionPlan: 'PLN',
+  musicPrompt: 'MUS',
+  assetOutput: 'OUT',
+  shotBoard: 'BRD',
+  storyboarder: 'BRD',
+  filePicker: 'REF',
+};
+
+interface NodeHeaderProps {
+  nodeType: string;
+  title?: string;
+  meta?: ReactNode;
+  actions?: ReactNode;
+}
+
+export function NodeHeader({ nodeType, title, meta, actions }: NodeHeaderProps) {
+  const def = NODE_REGISTRY[nodeType];
+  if (!def) return null;
+
+  const accentColor = CATEGORY_COLORS[def.category];
+
+  return (
+    <div className="cinegen-node__header">
+      <span className="cinegen-node__badge" style={{ background: accentColor }}>
+        {NODE_BADGES[nodeType] ?? 'NOD'}
+      </span>
+      <span className="cinegen-node__title">{title ?? def.label}</span>
+      {meta && <span className="cinegen-node__meta">{meta}</span>}
+      {actions && <div className="cinegen-node__actions nodrag">{actions}</div>}
+    </div>
+  );
+}
+
+function BaseNodeInner({ nodeType, selected, isRunning, children, title, meta, actions, footer, className }: BaseNodeProps) {
   const def = NODE_REGISTRY[nodeType];
   if (!def) return null;
 
@@ -22,6 +65,9 @@ function BaseNodeInner({ nodeType, selected, isRunning, children }: BaseNodeProp
 
   const cls = [
     'cinegen-node',
+    'cinegen-node--semantic',
+    `cinegen-node--${nodeType}`,
+    className,
     selected && 'cinegen-node--selected',
     isRunning && 'cinegen-node--running',
   ]
@@ -29,11 +75,11 @@ function BaseNodeInner({ nodeType, selected, isRunning, children }: BaseNodeProp
     .join(' ');
 
   return (
-    <div className={cls}>
-      <div className="cinegen-node__accent" style={{ background: accentColor }} />
+    <div className={cls} style={{ '--node-accent': accentColor } as CSSProperties}>
       <div className="cinegen-node__content">
-        <div className="cinegen-node__header">{def.label}</div>
+        <NodeHeader nodeType={nodeType} title={title} meta={meta} actions={actions} />
         <div className="cinegen-node__body">{children}</div>
+        {footer && <div className="cinegen-node__footer">{footer}</div>}
       </div>
 
       {def.inputs.map((port, i) => (

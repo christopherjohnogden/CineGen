@@ -11,6 +11,7 @@ function AssetOutputNodeInner({ id, data, selected }: AssetOutputNodeProps) {
   const { updateNodeData } = useReactFlow();
   const name = (data.config?.name as string) ?? 'Untitled';
   const url = data.result?.url;
+  const status = data.result?.status;
 
   const handleNameChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -20,11 +21,21 @@ function AssetOutputNodeInner({ id, data, selected }: AssetOutputNodeProps) {
   );
 
   return (
-    <BaseNode nodeType="assetOutput" selected={!!selected} isRunning={data.result?.status === 'running'}>
-      <label className="cinegen-node__label">Asset Name</label>
+    <BaseNode
+      nodeType="assetOutput"
+      selected={!!selected}
+      isRunning={status === 'running'}
+      title="Final Output"
+      meta={status === 'running' ? 'Receiving' : url ? 'Ready' : 'Waiting'}
+    >
+      <div className="asset-output-node__status">
+        <span className={`asset-output-node__dot${url ? ' asset-output-node__dot--ready' : ''}`} />
+        {url ? 'Asset received' : 'Connect an image or video'}
+      </div>
+      <label className="cinegen-node__label">Output name</label>
       <input
         type="text"
-        className="nodrag"
+        className="asset-output-node__name nodrag"
         value={name}
         onChange={handleNameChange}
         style={{ width: '100%' }}
@@ -32,11 +43,11 @@ function AssetOutputNodeInner({ id, data, selected }: AssetOutputNodeProps) {
 
       {url && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={name} className="cinegen-node__thumbnail" />
+        <img src={url} alt={name} className="cinegen-node__thumbnail asset-output-node__preview" />
       )}
 
       <button type="button" className="cinegen-node__send-btn nodrag">
-        Send to Edit
+        <span>→</span> Send to Edit
       </button>
     </BaseNode>
   );

@@ -23,7 +23,7 @@ const SHOT_LABELS = [
 
 const PROMPT_PREFIX = 'Recreate the exact same person from the reference image — same face, hair, skin tone, body type, clothing, and accessories. Keep the same environment, lighting, color palette, and atmosphere. Do not change or replace the character. Only change the camera angle and framing as described: ';
 
-const HEADER_HEIGHT = 36;
+const HEADER_HEIGHT = 52;
 const PORT_SPACING = 24;
 
 function ShotBoardNodeInner({ id, data, selected }: ShotBoardNodeProps) {
@@ -176,10 +176,13 @@ function ShotBoardNodeInner({ id, data, selected }: ShotBoardNodeProps) {
   const accentColor = CATEGORY_COLORS['utility'];
 
   return (
-    <div className={`cinegen-node shot-board-node${selected ? ' cinegen-node--selected' : ''}`}>
-      <div className="cinegen-node__accent" style={{ background: accentColor }} />
+    <div className={`cinegen-node cinegen-node--semantic shot-board-node${selected ? ' cinegen-node--selected' : ''}`}>
       <div className="cinegen-node__content">
-        <div className="cinegen-node__header">Shot Ideas</div>
+        <div className="cinegen-node__header">
+          <span className="cinegen-node__badge" style={{ background: accentColor }}>BRD</span>
+          <span className="cinegen-node__title">Shot Ideas</span>
+          <span className="cinegen-node__meta">{shots.filter((shot) => shot.url).length}/{shots.length} ready</span>
+        </div>
         <div className="cinegen-node__body">
           {/* Model selector */}
           <select
