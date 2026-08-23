@@ -11,6 +11,7 @@ import {
 import type { CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { CUT_PLAN_CLOSE, CUT_PLAN_OPEN } from '@/lib/llm/cut-plan';
 import { stripSkillActionBlock, type SkillActionPayload } from '@/lib/llm/skill-actions';
+import { ASSISTANT_RESPONSE_STYLE } from '@/lib/llm/response-style';
 
 export interface AssistantMessage {
   role: 'user' | 'assistant';
@@ -27,7 +28,7 @@ export const ASSISTANT_SYSTEM = [
   'You are CineGen Assistant, the always-on chat from the header drawer.',
   'Help with questions and tasks across Elements, Spaces, Director, Edit, and Export.',
   'Answer from ACTIVE PROJECT CONTEXT and DIRECTOR. Be concise and specific.',
-  'Write the visible reply in markdown: a short intro, a **title**, then the prompt in a blockquote.',
+  ASSISTANT_RESPONSE_STYLE,
   'When writing image, video, or storyboard prompts, use the exact @Tags from DIRECTOR Tags in the prose (@Peter not Peter, @Sofa not sofa).',
   'Open the prompt with ACTIVE REFERENCES, one line per tag used: "@Tag. 100% matches the reference."',
   'Do not invent face, age, wardrobe, or set dressing for tagged elements — those come from the tagged stills. Untagged extras can be described normally.',

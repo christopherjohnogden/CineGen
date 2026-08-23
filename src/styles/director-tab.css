@@ -620,7 +620,14 @@
    nowrap content sets a min-content floor wider than the rail and the right
    edge (count pill, durations) clips off. */
 .director-tab__scene { border:1px solid var(--border-subtle); border-radius:var(--radius-sm); background:var(--bg-base); overflow:hidden; flex-shrink:0; min-width:0; }
-.director-tab__scene-head { width:100%; text-align:left; padding:9px 10px; display:flex; flex-direction:column; align-items:stretch; gap:3px; background:transparent; border:none; color:inherit; cursor:pointer; }
+.director-tab__scene-head { width:100%; display:grid; grid-template-columns:minmax(0,1fr) 30px; align-items:stretch; background:transparent; color:inherit; }
+.director-tab__scene-select { min-width:0; text-align:left; padding:9px 4px 9px 10px; display:flex; flex-direction:column; align-items:stretch; gap:3px; background:transparent; border:none; color:inherit; cursor:pointer; }
+.director-tab__scene-toggle { display:grid; place-items:center; width:30px; min-height:100%; padding:0; border:0; background:transparent; color:var(--text-tertiary); cursor:pointer; }
+.director-tab__scene-toggle:hover { color:var(--accent); }
+.director-tab__scene-toggle:focus-visible, .director-tab__scene-select:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.director-tab__scene-chevron { width:7px; height:7px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg) translate(-1px,-1px); transition:transform .18s cubic-bezier(.16,1,.3,1); }
+.director-tab__scene--collapsed .director-tab__scene-chevron { transform:rotate(-45deg) translate(-1px,1px); }
+.director-tab__scene-clips { min-width:0; }
 .director-tab__scene-head:hover { background:var(--bg-elevated); }
 .director-tab__scene--active > .director-tab__scene-head { background:var(--accent-dim); }
 .director-tab__rail-all { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); background:var(--bg-base); color:var(--text-primary); font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; cursor:pointer; flex-shrink:0; min-width:0; }

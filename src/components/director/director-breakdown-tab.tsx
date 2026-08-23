@@ -48,6 +48,13 @@ export function DirectorBreakdownTab({
     setNavKey(index);
     setScriptSceneIndex(index);
     setActiveKind('all');
+    setFocusTag(undefined);
+  };
+
+  const selectAllScenes = () => {
+    setNavKey('all');
+    setActiveKind('all');
+    setFocusTag(undefined);
   };
 
   const removeFromScene = (tag: string) => {
@@ -97,7 +104,7 @@ export function DirectorBreakdownTab({
           <span className="director-tab__label">Scenes</span>
           <div
             className={`dbk-navitem${navKey === 'all' ? ' dbk-navitem--on' : ''}`}
-            onClick={() => { setNavKey('all'); setActiveKind('all'); }}
+            onClick={selectAllScenes}
           >
             <div className="dbk-navtxt">
               <div className="dbk-navnum">ALL</div>
@@ -122,8 +129,9 @@ export function DirectorBreakdownTab({
       </aside>
 
       <SceneScriptView
-        scene={scriptScene}
-        sceneIndex={scriptSceneIndex}
+        scenes={scenes}
+        filter={navKey}
+        focusSceneIndex={scriptSceneIndex}
         show={show}
         onAssetClick={onAssetClick}
         onTagSelection={tagSelection}

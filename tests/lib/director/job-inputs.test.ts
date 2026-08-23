@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { breakdownAuditInput, breakdownJobInput, clipNotesJobInput, estimateSceneSeconds, lookBibleJobInput, shotlistContinuationInput, shotlistJobInput } from '@/lib/director/job-inputs';
+import { breakdownAuditInput, breakdownJobInput, clipNotesJobInput, estimateSceneSeconds, lookBibleJobInput, sceneScriptText, shotlistContinuationInput, shotlistJobInput } from '@/lib/director/job-inputs';
 import type { DirectorClip, DirectorShow, DirectorScene } from '@/types/director';
 
 const show = (over: Partial<DirectorShow>): DirectorShow => ({
@@ -73,6 +73,26 @@ describe('shotlistJobInput', () => {
     expect(body).toMatch(/screen time/);
     expect(body).toMatch(/Dr Jordan enters/);      // scene 1 text kept
     expect(body).not.toMatch(/He walks fast/);     // scene 2 text excluded
+  });
+
+  it('scopes legacy descriptive scene labels by scene number instead of sending the full script', () => {
+    const legacyScenes = [
+      { ...SCENES[0], label: 'SCENE 1 — THE APPOINTMENT' },
+      { ...SCENES[1], label: 'SCENE 2 — THE ESCAPE' },
+    ];
+    const current = show({ sourceText: SRC, scenes: legacyScenes, lookBible: LOOK });
+    const body = shotlistJobInput(current, [legacyScenes[0]]);
+
+    expect(sceneScriptText(current, legacyScenes[0])).toContain('Dr Jordan enters.');
+    expect(body).toContain('Dr Jordan enters.');
+    expect(body).not.toContain('He walks fast.');
+  });
+
+  it('fails safely when a requested scene cannot be isolated', () => {
+    const missing = { ...SCENES[0], id: 'missing', number: 99, label: 'SCENE 99' };
+    const current = show({ sourceText: SRC, scenes: SCENES, lookBible: LOOK });
+
+    expect(() => shotlistJobInput(current, [missing])).toThrow(/Could not isolate Scene 99/);
   });
 });
 

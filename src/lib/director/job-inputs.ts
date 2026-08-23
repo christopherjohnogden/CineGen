@@ -99,10 +99,23 @@ export function breakdownAuditInput(
 
 /** The scene's own script text, matched by heading. Empty when no heading matches. */
 export function sceneScriptText(show: DirectorShow, scene: DirectorScene): string {
-  const label = scene.label.trim().toUpperCase();
   const parsed = splitScenes(screenplayFromSource(show));
-  const match = parsed.find((entry) => entry.heading.trim().toUpperCase() === label);
+  // Scene labels from older LLM breakdowns were descriptive (for example,
+  // "SCENE 1 — THE ARRIVAL") rather than the screenplay slug. Script order
+  // and scene number are therefore safer than a label-only lookup.
+  const showIndex = show.scenes.findIndex((entry) => entry.id === scene.id);
+  const ordered = showIndex >= 0 ? parsed[showIndex] : undefined;
+  const numbered = scene.number > 0 ? parsed[scene.number - 1] : undefined;
+  const label = scene.label.trim().toUpperCase();
+  const labelled = parsed.find((entry) => entry.heading.trim().toUpperCase() === label);
+  const match = labelled ?? numbered ?? ordered;
   return match ? match.elements.map((element) => element.text).join('\n') : '';
+}
+
+function requiredSceneScriptText(show: DirectorShow, scene: DirectorScene): string {
+  const script = sceneScriptText(show, scene).trim();
+  if (script) return script;
+  throw new Error(`Could not isolate Scene ${scene.number} from the screenplay. Re-run Breakdown before shotlisting this scene.`);
 }
 
 /** Only the breakdown items the scoped scenes actually use — sending the full
@@ -142,10 +155,8 @@ export function shotlistJobInput(show: DirectorShow, scopeScenes: DirectorScene[
   let scriptSection = `SCRIPT:\n${show.sourceText}`;
   let coverage = '';
   if (scopeScenes && scopeScenes.length > 0) {
-    const slices = scopeScenes.map((scene) => sceneScriptText(show, scene));
-    if (slices.every((slice) => slice.trim().length > 0)) {
-      scriptSection = `SCRIPT (the scoped scene${scopeScenes.length === 1 ? '' : 's'} only — cover ALL of it):\n${slices.join('\n\n')}`;
-    }
+    const slices = scopeScenes.map((scene) => requiredSceneScriptText(show, scene));
+    scriptSection = `SCRIPT (the scoped scene${scopeScenes.length === 1 ? '' : 's'} only — cover ALL of it):\n${slices.join('\n\n')}`;
     coverage = scopeScenes.map((scene) => {
       const seconds = estimateSceneSeconds(show, scene);
       const clips = Math.max(1, Math.round(seconds / show.clipLengthSec));
@@ -186,7 +197,7 @@ export function shotlistContinuationInput(
     `Scene:\n${sceneLine(scene)}`,
     `The scene runs ~${expected}s of screen time but the EXISTING clips below cover only ~${covered}s:\n${existing}`,
     `NEW CLIP IDS — never reuse an id from the list above. Give the first new clip the id "${nextId}" and continue that sequence.`,
-    `SCRIPT (the whole scene — find where the existing clips stop and continue from there to the END):\n${sceneScriptText(show, scene) || show.sourceText}`,
+    `SCRIPT (the whole scene — find where the existing clips stop and continue from there to the END):\n${requiredSceneScriptText(show, scene)}`,
   ].join('\n\n');
 }
 
@@ -204,7 +215,7 @@ export function shotlistSliceInput(
     `Scene:\n${sceneLine(scene)}`,
     `SLICE ${slice.index + 1} of ${slice.of} — cover ONLY the excerpt below, first line to last. Do not shotlist material from earlier or later in the scene; sibling jobs cover those in parallel. coveredToEnd is true when the last clip lands on THIS excerpt's final line (not the whole scene).`,
     `CLIP IDS — every id MUST start with "${prefix}" (e.g. ${prefix}a, ${prefix}b) so parallel slices cannot collide.`,
-    `SCRIPT (this slice only):\n${slice.text.trim() || show.sourceText}`,
+    `SCRIPT (this slice only):\n${slice.text.trim() || requiredSceneScriptText(show, scene)}`,
   ].join('\n\n');
 }
 
@@ -230,7 +241,7 @@ export function shotlistSliceContinuationInput(
     `Scene:\n${sceneLine(scene)}`,
     `SLICE ${slice.index + 1} of ${slice.of} — continue THIS excerpt only. Existing clips for the slice:\n${existing || '(none)'}`,
     `NEW CLIP IDS — never reuse an id above. Give the first new clip the id "${prefix}${nextLetter}" and continue that sequence.`,
-    `SCRIPT (this slice only — pick up after the existing clips and cover the rest of the excerpt):\n${slice.text.trim() || show.sourceText}`,
+    `SCRIPT (this slice only — pick up after the existing clips and cover the rest of the excerpt):\n${slice.text.trim() || requiredSceneScriptText(show, scene)}`,
   ].join('\n\n');
 }
 

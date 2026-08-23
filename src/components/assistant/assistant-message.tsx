@@ -1,6 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useMemo } from 'react';
 import {
   assistantActionRunnable,
   visibleAssistantContent,
@@ -13,28 +11,7 @@ import {
   type CopilotActionDispatch,
 } from '@/lib/llm/skill-actions';
 import type { WorkspaceState } from '@/types/workspace';
-
-const MD = {
-  p: ({ children }: { children?: ReactNode }) => <p className="copilot__md-p">{children}</p>,
-  strong: ({ children }: { children?: ReactNode }) => <strong className="copilot__md-strong">{children}</strong>,
-  em: ({ children }: { children?: ReactNode }) => <em className="copilot__md-em">{children}</em>,
-  h1: ({ children }: { children?: ReactNode }) => <h3 className="copilot__md-h">{children}</h3>,
-  h2: ({ children }: { children?: ReactNode }) => <h3 className="copilot__md-h">{children}</h3>,
-  h3: ({ children }: { children?: ReactNode }) => <h3 className="copilot__md-h">{children}</h3>,
-  h4: ({ children }: { children?: ReactNode }) => <h4 className="copilot__md-h copilot__md-h--sm">{children}</h4>,
-  ul: ({ children }: { children?: ReactNode }) => <ul className="copilot__md-ul">{children}</ul>,
-  ol: ({ children }: { children?: ReactNode }) => <ol className="copilot__md-ol">{children}</ol>,
-  li: ({ children }: { children?: ReactNode }) => <li className="copilot__md-li">{children}</li>,
-  hr: () => <hr className="copilot__md-hr" />,
-  blockquote: ({ children }: { children?: ReactNode }) => <blockquote className="copilot__md-blockquote">{children}</blockquote>,
-  code: ({ className, children }: { className?: string; children?: ReactNode }) => {
-    if (className?.startsWith('language-')) {
-      return <pre className="copilot__md-pre"><code>{children}</code></pre>;
-    }
-    return <code className="copilot__md-code">{children}</code>;
-  },
-  pre: ({ children }: { children?: ReactNode }) => <>{children}</>,
-};
+import { AssistantMarkdown } from './assistant-markdown';
 
 interface AssistantMessageViewProps {
   message: AssistantMessage;
@@ -66,7 +43,7 @@ export function AssistantMessageView({
     <div className="asst-turn">
       {body ? (
         <div className="asst-m asst-m--assistant">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD}>{body}</ReactMarkdown>
+          <AssistantMarkdown>{body}</AssistantMarkdown>
         </div>
       ) : null}
       {action && !message.applied && (

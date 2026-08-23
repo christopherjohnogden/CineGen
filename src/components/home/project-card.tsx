@@ -43,7 +43,11 @@ export function ProjectCard({ project, onOpen, onDelete, selected = false, onSel
 
         {/* Selection accent corner */}
         {selected && <div className="pm-card__sel-corner" />}
-        {project.cloud && <span className="pm-card__cloud-badge">Cloud{project.cloudRole ? ` · ${project.cloudRole}` : ''}</span>}
+        {project.cloud && (
+          <span className="pm-card__cloud-badge">
+            {project.cloudTeamName || 'Cloud'}{project.cloudRole ? ` · ${project.cloudRole}` : ''}
+          </span>
+        )}
 
         {/* Hover overlay with name */}
         <div className="pm-card__hover-overlay">

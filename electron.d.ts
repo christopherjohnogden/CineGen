@@ -20,6 +20,8 @@ export interface ProjectMeta {
   useSqlite?: boolean;
   cloud?: boolean;
   cloudRole?: 'owner' | 'editor';
+  cloudTeamId?: string;
+  cloudTeamName?: string;
 }
 
 export interface ElectronAPI {

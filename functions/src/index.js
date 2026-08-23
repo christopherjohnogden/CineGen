@@ -40,9 +40,13 @@ async function accessFor(projectId, uid) {
   const snapshot = await db.doc(`projectAccess/${projectId}`).get();
   if (!snapshot.exists) throw new HttpsError('not-found', 'Project access was not found.');
   const access = snapshot.data();
-  const role = access?.members?.[uid];
+  let role = access?.members?.[uid];
+  if (role !== 'owner' && role !== 'editor' && typeof access?.teamId === 'string' && access.teamId) {
+    const teamSnapshot = await db.doc(`teams/${access.teamId}`).get();
+    role = teamSnapshot.data()?.members?.[uid];
+  }
   if (role !== 'owner' && role !== 'editor') {
-    throw new HttpsError('permission-denied', 'You do not have access to this project.');
+    throw new HttpsError('permission-denied', 'You do not have access to this team project.');
   }
   return { ...access, role };
 }

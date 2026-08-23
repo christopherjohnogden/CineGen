@@ -6,10 +6,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function teamMember(teamId) {
+      return signedIn()
+        && teamId is string
+        && exists(/databases/$(database)/documents/teams/$(teamId))
+        && get(/databases/$(database)/documents/teams/$(teamId)).data.members.get(request.auth.uid, '') in ['owner', 'editor'];
+    }
+
+    function teamOwner(teamId) {
+      return signedIn()
+        && teamId is string
+        && exists(/databases/$(database)/documents/teams/$(teamId))
+        && get(/databases/$(database)/documents/teams/$(teamId)).data.members.get(request.auth.uid, '') == 'owner';
+    }
+
     function projectMember(projectId) {
       return signedIn()
         && exists(/databases/$(database)/documents/projectAccess/$(projectId))
-        && get(/databases/$(database)/documents/projectAccess/$(projectId)).data.members[request.auth.uid] in ['owner', 'editor'];
+        && (
+          get(/databases/$(database)/documents/projectAccess/$(projectId)).data.members.get(request.auth.uid, '') in ['owner', 'editor']
+          || teamMember(get(/databases/$(database)/documents/projectAccess/$(projectId)).data.get('teamId', ''))
+        );
     }
 
     match /users/{userId} {
@@ -32,16 +49,40 @@ service cloud.firestore {
 
     match /projectAccess/{projectId} {
       allow get: if signedIn()
-        && (request.auth.uid in resource.data.memberIds
+        && (teamMember(resource.data.get('teamId', ''))
+          || request.auth.uid in resource.data.memberIds
           || exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(projectId)));
+      allow list: if signedIn()
+        && (teamMember(resource.data.get('teamId', ''))
+          || request.auth.uid in resource.data.memberIds);
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && (teamOwner(request.resource.data.get('teamId', ''))
+          || request.resource.data.members.get(request.auth.uid, '') == 'owner')
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(projectId));
+      allow update, delete: if signedIn()
+        && (teamOwner(resource.data.get('teamId', ''))
+          || resource.data.members.get(request.auth.uid, '') == 'owner');
+    }
+
+    match /teams/{teamId} {
+      // A user's personal team has a deterministic ID. Permit that user to
+      // read the path before it exists so the client can safely create it in
+      // a transaction. Existing shared teams remain member-only.
+      allow get: if signedIn()
+        && (teamId == 'team_' + request.auth.uid
+          || request.auth.uid in resource.data.memberIds);
       allow list: if signedIn()
         && request.auth.uid in resource.data.memberIds;
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.members[request.auth.uid] == 'owner'
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(projectId));
-      allow update, delete: if signedIn()
-        && resource.data.members[request.auth.uid] == 'owner';
+        && request.resource.data.members.get(request.auth.uid, '') == 'owner'
+        && request.auth.uid in request.resource.data.memberIds;
+      allow update: if signedIn()
+        && resource.data.members.get(request.auth.uid, '') == 'owner'
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if signedIn()
+        && resource.data.members.get(request.auth.uid, '') == 'owner';
     }
 
     match /emailIndex/{emailHash} {

@@ -169,6 +169,44 @@ export interface ParsedShotlist {
   coveredToEnd?: boolean;
 }
 
+/**
+ * A shotlist request is executed once per target scene, even when the user
+ * chooses "Shotlist everything". Bind the response to that target rather than
+ * trusting model-authored scene IDs or clip-number prefixes. This prevents a
+ * model that repeats Scene 1 identifiers from overwriting or landing inside a
+ * different scene during a full-show run.
+ */
+export function bindShotlistToScene(parsed: ParsedShotlist, scene: DirectorScene): ParsedShotlist {
+  const idMap = new Map<string, string>();
+  const used = new Set<string>();
+  const clips = parsed.clips.map((clip, index) => {
+    const requestedPrefix = `${scene.number}-`;
+    const base = clip.id.startsWith(requestedPrefix)
+      ? clip.id
+      : `${requestedPrefix}${clip.id || `clip-${index + 1}`}`;
+    let id = base;
+    let duplicate = 2;
+    while (used.has(id)) {
+      id = `${base}-${duplicate}`;
+      duplicate += 1;
+    }
+    used.add(id);
+    idMap.set(clip.id, id);
+    return { ...clip, id, sceneId: scene.id };
+  }).map((clip) => ({
+    ...clip,
+    altOf: clip.altOf ? (idMap.get(clip.altOf) ?? clip.altOf) : undefined,
+  }));
+
+  return {
+    ...parsed,
+    // Scene structure comes from Breakdown and remains authoritative. A
+    // per-scene shotlist response contributes clips, never new scene records.
+    scenes: [],
+    clips,
+  };
+}
+
 export function parseShotlistPayload(raw: unknown, fallbackSceneId?: string): ParsedShotlist {
   const record = asRecord(raw);
   if (!record) return { scenes: [], clips: [], errors: ['Shotlist JSON was empty.'], rawClipCount: 0 };

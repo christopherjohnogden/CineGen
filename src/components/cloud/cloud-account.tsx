@@ -10,11 +10,12 @@ import { cloudAuth } from '@/lib/cloud/firebase';
 import { isCloudProjectId, promoteLocalProject } from '@/lib/cloud/projects';
 import {
   getProjectCollaboration,
-  inviteProjectCollaborator,
-  removeProjectCollaborator,
-  setProjectCollaboratorRole,
+  inviteTeamMember,
+  removeTeamMember,
+  renameTeam,
+  setTeamMemberRole,
   type ProjectAccess,
-  type ProjectRole,
+  type TeamRole,
 } from '@/lib/cloud/collaboration';
 import {
   configureProjectFunding,
@@ -123,9 +124,9 @@ export function CloudAccountButton({ onAccountChange }: { onAccountChange?: () =
   );
 }
 
-const roleOptions: Array<{ value: ProjectRole; label: string; description: string }> = [
-  { value: 'editor', label: 'Editor', description: 'Can edit project and media' },
-  { value: 'owner', label: 'Owner', description: 'Can manage people and delete' },
+const roleOptions: Array<{ value: TeamRole; label: string; description: string }> = [
+  { value: 'editor', label: 'Editor', description: 'Can edit every team project' },
+  { value: 'owner', label: 'Owner', description: 'Can manage the team and projects' },
 ];
 
 function RoleDropdown({
@@ -134,10 +135,10 @@ function RoleDropdown({
   ariaLabel,
   onChange,
 }: {
-  value: ProjectRole;
+  value: TeamRole;
   disabled?: boolean;
   ariaLabel: string;
-  onChange: (role: ProjectRole) => void;
+  onChange: (role: TeamRole) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -173,7 +174,7 @@ function RoleDropdown({
     if (disabled) setOpen(false);
   }, [disabled]);
 
-  const selectRole = (role: ProjectRole) => {
+  const selectRole = (role: TeamRole) => {
     if (role !== value) onChange(role);
     setOpen(false);
     triggerRef.current?.focus();
@@ -385,8 +386,10 @@ export function CloudAccountCard({ projectId, useSqlite }: { projectId?: string;
   const [error, setError] = useState('');
   const [mediaStatus, setMediaStatus] = useState('');
   const [collaboration, setCollaboration] = useState<ProjectAccess | null>(null);
+  const [collaborationLoading, setCollaborationLoading] = useState(false);
+  const [teamName, setTeamName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<ProjectRole>('editor');
+  const [inviteRole, setInviteRole] = useState<TeamRole>('editor');
   const [collaborationBusy, setCollaborationBusy] = useState(false);
 
   useEffect(() => {
@@ -406,14 +409,18 @@ export function CloudAccountCard({ projectId, useSqlite }: { projectId?: string;
 
   const refreshCollaboration = useCallback(async () => {
     if (!projectId || !user || !synced) return;
+    setCollaborationLoading(true);
     try {
       setCollaboration(await getProjectCollaboration(projectId));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load project collaborators.');
+      setError(cause instanceof Error ? cause.message : 'Could not load the project team.');
+    } finally {
+      setCollaborationLoading(false);
     }
   }, [projectId, synced, user]);
 
   useEffect(() => { void refreshCollaboration(); }, [refreshCollaboration]);
+  useEffect(() => { setTeamName(collaboration?.teamName ?? ''); }, [collaboration?.teamName]);
 
   const enableSync = useCallback(async () => {
     if (!projectId) return;
@@ -435,21 +442,21 @@ export function CloudAccountCard({ projectId, useSqlite }: { projectId?: string;
     setCollaborationBusy(true);
     setError('');
     try {
-      setCollaboration(await inviteProjectCollaborator(projectId, user, inviteEmail, inviteRole));
+      setCollaboration(await inviteTeamMember(projectId, user, inviteEmail, inviteRole));
       setInviteEmail('');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The collaborator could not be invited.');
+      setError(cause instanceof Error ? cause.message : 'The teammate could not be invited.');
     } finally {
       setCollaborationBusy(false);
     }
   }, [inviteEmail, inviteRole, projectId, user]);
 
-  const changeRole = useCallback(async (memberUid: string, role: ProjectRole) => {
+  const changeRole = useCallback(async (memberUid: string, role: TeamRole) => {
     if (!projectId || !user) return;
     setCollaborationBusy(true);
     setError('');
     try {
-      setCollaboration(await setProjectCollaboratorRole(projectId, user, memberUid, role));
+      setCollaboration(await setTeamMemberRole(projectId, user, memberUid, role));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The permission could not be changed.');
     } finally {
@@ -462,20 +469,33 @@ export function CloudAccountCard({ projectId, useSqlite }: { projectId?: string;
     setCollaborationBusy(true);
     setError('');
     try {
-      setCollaboration(await removeProjectCollaborator(projectId, user, memberUid));
+      setCollaboration(await removeTeamMember(projectId, user, memberUid));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The collaborator could not be removed.');
+      setError(cause instanceof Error ? cause.message : 'The teammate could not be removed.');
     } finally {
       setCollaborationBusy(false);
     }
   }, [projectId, user]);
+
+  const saveTeamName = useCallback(async () => {
+    if (!projectId || !user || !teamName.trim() || teamName.trim() === collaboration?.teamName) return;
+    setCollaborationBusy(true);
+    setError('');
+    try {
+      setCollaboration(await renameTeam(projectId, user, teamName));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The team name could not be saved.');
+    } finally {
+      setCollaborationBusy(false);
+    }
+  }, [collaboration?.teamName, projectId, teamName, user]);
 
   const currentRole = user ? collaboration?.members[user.uid] : undefined;
 
   return (
     <section className="sp-card" id="sp-section-cloud">
       <h3 className="sp-card__title">Cloud Account</h3>
-      <p className="sp-card__desc">Project structure, scripts, shots, timelines, and edits sync through your private Firebase account. API keys stay on this device. Original media uploads automatically when Cloud Storage is available.</p>
+      <p className="sp-card__desc">Projects, scripts, shots, timelines, and edits sync through Firebase. Team members get the same projects on desktop and web, while API keys stay on their owner’s device.</p>
       <div className="cloud-account-card__row">
         <div className="cloud-account-card__identity">
           <span className={`cloud-auth__status-dot${user ? ' is-connected' : ''}`} />
@@ -485,25 +505,37 @@ export function CloudAccountCard({ projectId, useSqlite }: { projectId?: string;
       </div>
       {user && projectId && (
         <div className="cloud-account-card__sync">
-          <div><strong>{synced ? 'This project is syncing' : 'This project is local only'}</strong><span>{synced ? 'Changes save to Firebase automatically.' : 'Upload it once, then open it from either app.'}</span></div>
+          <div><strong>{synced ? 'This team project is syncing' : 'This project is local only'}</strong><span>{synced ? 'Changes save automatically and are available to the whole team.' : 'Upload it once to add it to your team workspace.'}</span></div>
           {!synced && <button type="button" className="sp-btn sp-btn--accent" disabled={syncing} onClick={() => void enableSync()}>{syncing ? 'Uploading…' : 'Sync this project'}</button>}
         </div>
+      )}
+      {user && projectId && synced && collaborationLoading && !collaboration && (
+        <div className="cloud-team-loading" aria-label="Loading team" role="status"><span /><span /><span /></div>
       )}
       {user && projectId && synced && collaboration && (
         <div className="cloud-collaboration">
           <div className="cloud-collaboration__heading">
-            <div><strong>Project collaborators</strong><span>Your access: {currentRole ?? 'member'}</span></div>
+            <div>
+              <span className="cloud-collaboration__eyebrow">Team workspace</span>
+              {currentRole === 'owner' ? (
+                <div className="cloud-collaboration__team-name">
+                  <input value={teamName} onChange={(event) => setTeamName(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void saveTeamName()} aria-label="Team name" />
+                  {teamName.trim() !== collaboration.teamName && <button type="button" disabled={collaborationBusy || !teamName.trim()} onClick={() => void saveTeamName()}>Save</button>}
+                </div>
+              ) : <strong>{collaboration.teamName}</strong>}
+              <span>Every cloud project in this team is shared · Your access: {currentRole ?? 'member'}</span>
+            </div>
           </div>
           <div className="cloud-collaboration__members">
             {collaboration.memberDetails.map((member) => (
               <div className="cloud-collaboration__member" key={member.uid}>
-                <div><strong>{member.email || 'CineGen user'}</strong><span>{member.uid === collaboration.ownerId ? 'Original owner' : member.role}</span></div>
+                <div><strong>{member.email || 'CineGen user'}</strong><span>{member.uid === collaboration.ownerId ? 'Team founder' : member.role}</span></div>
                 {currentRole === 'owner' && member.uid !== collaboration.ownerId && (
                   <div className="cloud-collaboration__member-actions">
                     <RoleDropdown
                       value={member.role}
                       disabled={collaborationBusy}
-                      ariaLabel={`Permission for ${member.email}`}
+                      ariaLabel={`Team permission for ${member.email}`}
                       onChange={(role) => void changeRole(member.uid, role)}
                     />
                     <button type="button" className="cloud-collaboration__remove" disabled={collaborationBusy} onClick={() => void removeMember(member.uid)}>Remove</button>
@@ -514,12 +546,12 @@ export function CloudAccountCard({ projectId, useSqlite }: { projectId?: string;
           </div>
           {currentRole === 'owner' && (
             <div className="cloud-collaboration__invite">
-              <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Collaborator email" aria-label="Collaborator email" />
-              <RoleDropdown value={inviteRole} ariaLabel="Collaborator permission" onChange={setInviteRole} />
+              <input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Teammate email" aria-label="Teammate email" />
+              <RoleDropdown value={inviteRole} ariaLabel="Team permission" onChange={setInviteRole} />
               <button type="button" className="sp-btn sp-btn--accent" disabled={collaborationBusy || !inviteEmail.trim()} onClick={() => void invite()}>{collaborationBusy ? 'Saving…' : 'Invite'}</button>
             </div>
           )}
-          {currentRole === 'editor' && <p className="cloud-collaboration__note">Editors can change project content and media. Only owners can manage access or delete the project.</p>}
+          {currentRole === 'editor' && <p className="cloud-collaboration__note">Editors can change content and media across every project in this team. Team owners manage people and deletion.</p>}
           {currentRole && <OwnerFundingPanel projectId={projectId} canManage={user.uid === collaboration.ownerId} />}
         </div>
       )}

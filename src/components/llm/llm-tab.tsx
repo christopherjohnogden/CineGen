@@ -1,6 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { assistantMarkdownComponents } from '@/components/assistant/assistant-markdown';
 import { getApiKey, getCutVisionModel } from '@/lib/utils/api-key';
 import type { Asset, MediaFolder } from '@/types/project';
 import type { Timeline } from '@/types/timeline';
@@ -88,6 +89,7 @@ import {
   stripSkillActionBlock,
 } from '@/lib/llm/skill-actions';
 import { isShotListMessage } from '@/lib/llm/shot-list-parse';
+import { ASSISTANT_RESPONSE_STYLE } from '@/lib/llm/response-style';
 import {
   detectSkillAuthoringCancel,
   detectSkillAuthoringIntent,
@@ -557,7 +559,11 @@ function buildUnifiedModelOptions(params: {
   return options;
 }
 
-const DEFAULT_SYSTEM_PROMPT = 'You are CineGen\u2019s production copilot. Help with prompts, scripts, shot plans, edit decisions, transcript analysis, and practical creative workflows. Keep answers concise, concrete, and production-minded. When listing timeline clips, use a single chronological numbered list with inline [timeline:Name / clip:ClipName @ time] citations — never markdown tables. If the user repeats a question, answer again in the same list format; do not switch to tables or say you already answered.';
+const DEFAULT_SYSTEM_PROMPT = [
+  'You are CineGen’s production copilot. Help with prompts, scripts, shot plans, edit decisions, transcript analysis, and practical creative workflows. Keep answers concise, concrete, and production-minded.',
+  ASSISTANT_RESPONSE_STYLE,
+  'When listing timeline clips, use a single chronological numbered list with inline [timeline:Name / clip:ClipName @ time] citations — never markdown tables. If the user repeats a question, answer again in the same list format; do not switch to tables or say you already answered.',
+].join(' ');
 
 function joinCopilotSystemPrompt(parts: Array<string | undefined | null>): string {
   return parts.map((part) => part?.trim()).filter(Boolean).join('\n\n');
@@ -2801,37 +2807,6 @@ export function LLMTab({
     );
   }, [assetIdByName, handleCitationClick, renderComposerTokenText, resolveCitation, timelineIdByName]);
 
-  const markdownComponents = useMemo(() => ({
-    p: ({ children }: { children?: React.ReactNode }) => <p className="copilot__md-p">{children}</p>,
-    strong: ({ children }: { children?: React.ReactNode }) => <strong className="copilot__md-strong">{children}</strong>,
-    em: ({ children }: { children?: React.ReactNode }) => <em className="copilot__md-em">{children}</em>,
-    h1: ({ children }: { children?: React.ReactNode }) => <h3 className="copilot__md-h">{children}</h3>,
-    h2: ({ children }: { children?: React.ReactNode }) => <h3 className="copilot__md-h">{children}</h3>,
-    h3: ({ children }: { children?: React.ReactNode }) => <h3 className="copilot__md-h">{children}</h3>,
-    h4: ({ children }: { children?: React.ReactNode }) => <h4 className="copilot__md-h copilot__md-h--sm">{children}</h4>,
-    ul: ({ children }: { children?: React.ReactNode }) => <ul className="copilot__md-ul">{children}</ul>,
-    ol: ({ children }: { children?: React.ReactNode }) => <ol className="copilot__md-ol">{children}</ol>,
-    li: ({ children }: { children?: React.ReactNode }) => <li className="copilot__md-li">{children}</li>,
-    hr: () => <hr className="copilot__md-hr" />,
-    blockquote: ({ children }: { children?: React.ReactNode }) => <blockquote className="copilot__md-blockquote">{children}</blockquote>,
-    code: ({ className, children }: { className?: string; children?: React.ReactNode }) => {
-      const isBlock = className?.startsWith('language-');
-      if (isBlock) return <pre className="copilot__md-pre"><code>{children}</code></pre>;
-      return <code className="copilot__md-code">{children}</code>;
-    },
-    pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-    table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="copilot__md-table-wrap">
-        <table className="copilot__md-table">{children}</table>
-      </div>
-    ),
-    thead: ({ children }: { children?: React.ReactNode }) => <thead className="copilot__md-thead">{children}</thead>,
-    tbody: ({ children }: { children?: React.ReactNode }) => <tbody className="copilot__md-tbody">{children}</tbody>,
-    tr: ({ children }: { children?: React.ReactNode }) => <tr className="copilot__md-tr">{children}</tr>,
-    th: ({ children }: { children?: React.ReactNode }) => <th className="copilot__md-th">{children}</th>,
-    td: ({ children }: { children?: React.ReactNode }) => <td className="copilot__md-td">{children}</td>,
-  }), []);
-
   const renderMessageContent = useCallback((content: string, role: ChatRole = 'assistant') => {
     if (role === 'user') {
       return renderCitationText(content);
@@ -2856,7 +2831,7 @@ export function LLMTab({
     );
 
     const citationComponents = {
-      ...markdownComponents,
+      ...assistantMarkdownComponents,
       p: ({ children }: { children?: React.ReactNode }) => (
         <p className="copilot__md-p">{injectCitations(children, citations, resolveCitation, assetIdByName, timelineIdByName, handleCitationClick, PLACEHOLDER_PREFIX)}</p>
       ),
@@ -2882,7 +2857,7 @@ export function LLMTab({
         {processed}
       </ReactMarkdown>
     );
-  }, [assetIdByName, handleCitationClick, markdownComponents, renderCitationText, resolveCitation, timelineIdByName]);
+  }, [assetIdByName, handleCitationClick, renderCitationText, resolveCitation, timelineIdByName]);
 
   const hasMessages = messages.length > 0 || isSending;
 

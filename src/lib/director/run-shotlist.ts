@@ -2,6 +2,7 @@ import type { DirectorScene, DirectorShow } from '@/types/director';
 import { directorShotlistParallel, type DirectorLlmProvider } from './cli-provider';
 import type { OpenAiPricedUsage } from '@/lib/llm/openai-usage';
 import {
+  bindShotlistToScene,
   clipDisplayLabels,
   mergeShotlist,
   parseShotlistPayload,
@@ -46,6 +47,13 @@ export async function runDirectorShotlist(
   const gate = createGate(parallel ? FAL_SHOTLIST_CONCURRENCY : 1);
   let firstError: string | null = null;
   let applyChain = Promise.resolve();
+  const targetById = new Map(targets.map((scene) => [scene.id, scene]));
+
+  const parseForScene = (payload: unknown, sceneId: string) => {
+    const scene = targetById.get(sceneId);
+    const parsed = parseShotlistPayload(payload, sceneId);
+    return scene ? bindShotlistToScene(parsed, scene) : parsed;
+  };
 
   const superseded = () => Boolean(host.signal?.aborted) || host.getShow().sourceText !== start.sourceText;
   const announce = (): string => {
@@ -54,7 +62,7 @@ export async function runDirectorShotlist(
     return requestId;
   };
   const apply = (sceneId: string, payload: unknown, onlyNewClips = false): { added: number; coveredToEnd?: boolean } => {
-    const parsed = parseShotlistPayload(payload, sceneId);
+    const parsed = parseForScene(payload, sceneId);
     if (parsed.errors[0] && !firstError) firstError = parsed.errors[0];
     console.log('[director:shotlist]', sceneId, `raw=${parsed.rawClipCount}`, `parsed=${parsed.clips.length}`, `coveredToEnd=${String(parsed.coveredToEnd)}`, parsed.errors.length ? parsed.errors : '');
     if (parsed.rawClipCount > 0 && parsed.clips.length === 0 && !firstError) {
@@ -89,6 +97,16 @@ export async function runDirectorShotlist(
     return run;
   };
 
+  // Resolve every target before deleting an existing shotlist or starting an
+  // LLM request. A scoped run must never fall back to the full screenplay.
+  const scriptsByScene = new Map(targets.map((scene) => [scene.id, sceneScriptText(start, scene).trim()]));
+  const unresolved = targets.find((scene) => !scriptsByScene.get(scene.id));
+  if (unresolved) {
+    return {
+      error: `Could not isolate Scene ${unresolved.number} from the screenplay. Re-run Breakdown before shotlisting this scene.`,
+    };
+  }
+
   const targetIds = new Set(targets.map((scene) => scene.id));
   const before = host.getShow();
   if (before.clips.some((clip) => targetIds.has(clip.sceneId))) {
@@ -103,7 +121,7 @@ export async function runDirectorShotlist(
   const shotlistScene = async (scene: DirectorScene) => {
     if (superseded()) return;
     const estClips = Math.max(1, Math.round(estimateSceneSeconds(host.getShow(), scene) / start.clipLengthSec));
-    const script = sceneScriptText(host.getShow(), scene) || start.sourceText;
+    const script = scriptsByScene.get(scene.id)!;
     const slices = parallel
       ? splitScriptForCoverage(script, falSliceCount(estClips))
       : [script];
@@ -150,7 +168,7 @@ export async function runDirectorShotlist(
       ));
       if (superseded()) return;
       await accept(sliceIndex, payload, false);
-      let parsed = parseShotlistPayload(payload, scene.id);
+      let parsed = parseForScene(payload, scene.id);
       let coveredToEnd = parsed.coveredToEnd;
       let sliceClips = parsed.clips.filter((clip) => !clip.altOf);
 
@@ -183,7 +201,7 @@ export async function runDirectorShotlist(
         ));
         if (superseded()) return;
         await accept(sliceIndex, contPayload, true);
-        parsed = parseShotlistPayload(contPayload, scene.id);
+        parsed = parseForScene(contPayload, scene.id);
         const existingIds = new Set(sliceClips.map((clip) => clip.id));
         const added = parsed.clips.filter((clip) => !clip.altOf && !existingIds.has(clip.id));
         if (added.length === 0) break;

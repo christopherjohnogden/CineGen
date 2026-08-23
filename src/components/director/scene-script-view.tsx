@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ScriptScene } from '@/lib/director/scene-split';
+import { sceneScriptItems } from '@/lib/director/scene-script-items';
 import { highlightRunsForScene } from '@/lib/director/scene-assets';
 import type { BreakdownKind, DirectorShow } from '@/types/director';
 import { PaginatedPages } from './paginated-pages';
 
 interface SceneScriptViewProps {
-  scene: ScriptScene;
-  sceneIndex: number;
+  scenes: ScriptScene[];
+  /** A scene index shows an excerpt; `all` renders the complete script as one continuous page flow. */
+  filter: 'all' | number;
+  /** Preferred scene when an asset occurrence is focused while the complete script is visible. */
+  focusSceneIndex?: number;
   show: DirectorShow;
   onAssetClick: (kind: BreakdownKind, name: string) => void;
   /** Tag of a rail card the user clicked — scroll that highlight into view. */
@@ -24,15 +28,26 @@ const KIND_OPTIONS: { kind: BreakdownKind; label: string }[] = [
 
 interface Popover { name: string; x: number; y: number }
 
-export function SceneScriptView({ scene, sceneIndex, show, onAssetClick, onTagSelection, focusTag }: SceneScriptViewProps) {
+export function SceneScriptView({ scenes, filter, focusSceneIndex, show, onAssetClick, onTagSelection, focusTag }: SceneScriptViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [pop, setPop] = useState<Popover | null>(null);
+  const items = sceneScriptItems(scenes, filter);
+
+  useEffect(() => {
+    wrapRef.current?.querySelector<HTMLElement>('.dse-paperwrap')?.scrollTo({ top: 0 });
+  }, [filter]);
 
   useEffect(() => {
     if (!focusTag) return;
-    const mark = wrapRef.current?.querySelector<HTMLElement>(`[data-tag="${CSS.escape(focusTag)}"]`);
+    const wrap = wrapRef.current;
+    const selector = `[data-tag="${CSS.escape(focusTag)}"]`;
+    const sceneSelector = focusSceneIndex === undefined
+      ? ''
+      : `[data-scene-index="${focusSceneIndex}"] `;
+    const mark = wrap?.querySelector<HTMLElement>(`${sceneSelector}${selector}`)
+      ?? wrap?.querySelector<HTMLElement>(selector);
     mark?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [focusTag, scene.index]);
+  }, [filter, focusSceneIndex, focusTag]);
 
   // On mouse-up, if the user has selected non-empty text inside this view, show the tag
   // popover anchored just above the selection. Coordinates are relative to wrapRef so the
@@ -63,10 +78,15 @@ export function SceneScriptView({ scene, sceneIndex, show, onAssetClick, onTagSe
   return (
     <div ref={wrapRef} className="dbk-scriptwrap" onMouseUp={onMouseUp}>
       <PaginatedPages
-        items={scene.elements}
-        renderItem={(el) => (
-          <div data-el-id={el.id} className={`dse-el dse-el--${el.type}`}>
-            {highlightRunsForScene(el.text, show, sceneIndex, scene).map((run, i) =>
+        items={items}
+        renderItem={(item) => (
+          <div
+            data-el-id={item.id}
+            data-source-el-id={item.element.id}
+            data-scene-index={item.sceneIndex}
+            className={`dse-el dse-el--${item.element.type}`}
+          >
+            {highlightRunsForScene(item.element.text, show, item.sceneIndex, item.scene).map((run, i) =>
               run.kind ? (
                 <mark
                   key={i}

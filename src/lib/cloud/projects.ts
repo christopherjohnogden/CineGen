@@ -28,6 +28,8 @@ const BATCH_SIZE = 350;
 export interface AvailableProjectMeta extends ProjectMeta {
   cloud?: boolean;
   cloudRole?: ProjectRole;
+  cloudTeamId?: string;
+  cloudTeamName?: string;
 }
 
 interface CloudProjectDocument {
@@ -320,6 +322,8 @@ export async function listCloudProjects(): Promise<AvailableProjectMeta[]> {
       useSqlite: data.useSqlite !== false,
       cloud: true,
       cloudRole: access.members[user.uid],
+      cloudTeamId: access.teamId || undefined,
+      cloudTeamName: access.teamName || undefined,
     } satisfies AvailableProjectMeta;
   }));
   return projects
