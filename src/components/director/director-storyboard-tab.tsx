@@ -34,7 +34,7 @@ export function DirectorStoryboardTab({
   onGenerate,
 }: DirectorStoryboardTabProps) {
   const plan = useMemo(() => storyboardPlan(show), [show]);
-  const [openPromptIds, setOpenPromptIds] = useState<Set<string>>(new Set());
+  const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const [confirmBatch, setConfirmBatch] = useState(false);
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
@@ -76,6 +76,12 @@ export function DirectorStoryboardTab({
   const generatedVisible = visible.filter((frame) => Boolean(imageFor(frame)));
   const viewerIndex = generatedVisible.findIndex((frame) => frame.id === viewerId);
   const viewer = viewerIndex >= 0 ? generatedVisible[viewerIndex] : undefined;
+  const inspectorIndex = visible.findIndex((frame) => frame.id === inspectorId);
+  const inspector = inspectorIndex >= 0 ? visible[inspectorIndex] : undefined;
+  const inspectorReferences = inspector
+    ? referencesByClipId.get(inspector.clip.id) ?? { references: [], missingElementTags: [] }
+    : { references: [], missingElementTags: [] };
+  const inspectorImage = inspector ? imageFor(inspector) : undefined;
 
   function stepViewer(delta: number) {
     if (generatedVisible.length === 0) return;
@@ -84,14 +90,25 @@ export function DirectorStoryboardTab({
     setViewerId(generatedVisible[next].id);
   }
 
-  const togglePrompt = (id: string) => {
-    setOpenPromptIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  useEffect(() => {
+    if (!inspectorId || viewerId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setInspectorId(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [inspectorId, viewerId]);
+
+  useEffect(() => {
+    if (inspectorId && !plan.some((frame) => frame.id === inspectorId)) setInspectorId(null);
+  }, [inspectorId, plan]);
+
+  function stepInspector(delta: number) {
+    if (visible.length === 0) return;
+    const current = visible.findIndex((frame) => frame.id === inspectorId);
+    const next = (Math.max(0, current) + delta + visible.length) % visible.length;
+    setInspectorId(visible[next].id);
+  }
 
   const updatePrompt = (frame: StoryboardPlanFrame, prompt: string, customPrompt = true) => {
     onChange(upsertStoryboardFrame(show, frame, { prompt, customPrompt }));
@@ -198,18 +215,23 @@ export function DirectorStoryboardTab({
                         {clipFrames.map((frame, index) => {
                           const saved = frame.saved;
                           const image = imageFor(frame);
-                          const promptOpen = openPromptIds.has(frame.id);
                           const working = saved?.status === 'generating';
                           const referenceSet = referencesByClipId.get(frame.clip.id) ?? { references: [], missingElementTags: [] };
                           const elementReferences = referenceSet.references.filter((reference) => reference.source === 'element');
                           const lookReferences = referenceSet.references.filter((reference) => reference.source === 'look-bible');
                           return (
-                            <div key={frame.id} className={`dstory-card${frame.stale ? ' dstory-card--stale' : ''}`} style={{ '--story-index': index } as React.CSSProperties}>
+                            <article key={frame.id} className={`dstory-card${frame.stale ? ' dstory-card--stale' : ''}${frame.id === inspectorId ? ' dstory-card--selected' : ''}`} style={{ '--story-index': index } as React.CSSProperties}>
+                              <button
+                                type="button"
+                                className="dstory-card__open"
+                                onClick={() => setInspectorId(frame.id)}
+                                aria-label={`Open prompt for ${frame.clipLabel} shot ${frame.beat.n}`}
+                              />
                               <div className="dstory-card__visual" style={{ aspectRatio: show.aspectRatio.replace(':', ' / ') }}>
                                 {image ? (
-                                  <button type="button" className="dstory-card__image" onClick={() => setViewerId(frame.id)} aria-label={`Open ${frame.clipLabel} shot ${frame.beat.n}`}>
+                                  <div className="dstory-card__image">
                                     <img src={image} alt={`${frame.clipLabel} shot ${frame.beat.n}: ${frame.beat.text}`} />
-                                  </button>
+                                  </div>
                                 ) : working ? (
                                   <div className="dstory-card__skeleton" aria-label="Rendering storyboard frame"><span /><span /><span /></div>
                                 ) : (
@@ -253,20 +275,10 @@ export function DirectorStoryboardTab({
                                 </div>
                                 {saved?.error && <span className="dstory-card__error">{saved.error}</span>}
                                 <div className="dstory-card__actions">
-                                  <button type="button" onClick={() => togglePrompt(frame.id)}>{promptOpen ? 'Close prompt' : 'Edit prompt'}</button>
                                   <button type="button" disabled={working} onClick={() => onGenerate([frame.id])}>{image ? 'Regenerate' : working ? 'Rendering' : 'Generate'}</button>
                                 </div>
-                                {promptOpen && (
-                                  <div className="dstory-prompt">
-                                    <label htmlFor={`dstory-prompt-${frame.id}`}>Storyboard prompt</label>
-                                    <textarea id={`dstory-prompt-${frame.id}`} value={frame.prompt} onChange={(event) => updatePrompt(frame, event.target.value)} />
-                                    {saved?.customPrompt && (
-                                      <button type="button" onClick={() => updatePrompt(frame, frame.derivedPrompt, false)}>Use shotlist wording</button>
-                                    )}
-                                  </div>
-                                )}
                               </div>
-                            </div>
+                            </article>
                           );
                         })}
                       </div>
@@ -278,6 +290,90 @@ export function DirectorStoryboardTab({
           );
         })}
       </div>
+
+      {inspector && (
+        <aside className="dstory-inspector" aria-labelledby="dstory-inspector-title">
+          <header className="dstory-inspector__head">
+            <div>
+              <span className="dstory-inspector__eyebrow">Scene {inspector.scene.number} · {inspector.clipLabel}.{inspector.beat.n}</span>
+              <h2 id="dstory-inspector-title">Shot prompt</h2>
+            </div>
+            <button type="button" className="dstory-inspector__close" onClick={() => setInspectorId(null)} aria-label="Close shot prompt">Close</button>
+          </header>
+
+          <div className="dstory-inspector__scroll">
+            <button
+              type="button"
+              className="dstory-inspector__preview"
+              style={{ aspectRatio: show.aspectRatio.replace(':', ' / ') }}
+              disabled={!inspectorImage}
+              onClick={() => setViewerId(inspector.id)}
+              aria-label={inspectorImage ? `View ${inspector.clipLabel} shot ${inspector.beat.n} full screen` : 'Storyboard frame has not been generated'}
+            >
+              {inspectorImage ? (
+                <img src={inspectorImage} alt={`${inspector.clipLabel} shot ${inspector.beat.n}`} />
+              ) : (
+                <div className="dstory-card__blank" aria-hidden><span className="dstory-card__reticle" /><span>Frame {inspector.beat.n}</span></div>
+              )}
+              <div className="dstory-card__slate">
+                <span>{inspector.clipLabel}.{inspector.beat.n}</span>
+                <span>{inspector.beat.from}–{inspector.beat.to}</span>
+              </div>
+            </button>
+
+            <section className="dstory-inspector__shot">
+              <span>Camera</span>
+              <strong>{inspector.beat.cam || inspector.beat.framing || `Shot ${inspector.beat.n}`}</strong>
+              <p>{inspector.beat.text.replace(/\s*Hard cut\.\s*$/i, '')}</p>
+            </section>
+
+            <label className="dstory-inspector__prompt" htmlFor={`dstory-inspector-prompt-${inspector.id}`}>
+              <span>Generation prompt</span>
+              <textarea
+                id={`dstory-inspector-prompt-${inspector.id}`}
+                value={inspector.prompt}
+                onChange={(event) => updatePrompt(inspector, event.target.value)}
+              />
+              <small>{inspector.prompt.trim().split(/\s+/).filter(Boolean).length} words · {storyboardModelLabel(selectedModel)}</small>
+            </label>
+
+            <section className="dstory-inspector__references">
+              <div className="dstory-inspector__section-head">
+                <span>Reference lock</span>
+                <strong>{inspectorReferences.references.length} supplied</strong>
+              </div>
+              {inspectorReferences.references.length > 0 ? (
+                <div className="dstory-inspector__reference-grid">
+                  {inspectorReferences.references.map((reference) => (
+                    <div key={`${reference.source}-${reference.id}`}>
+                      <img src={reference.url} alt={`${reference.name} reference`} />
+                      <span>{reference.name}</span>
+                      <small>{reference.source === 'element' ? reference.type : 'Look Bible'}</small>
+                    </div>
+                  ))}
+                </div>
+              ) : <p>No Element or Look Bible images are linked to this shot.</p>}
+              {inspectorReferences.missingElementTags.length > 0 && (
+                <p className="dstory-inspector__missing">Missing images: {inspectorReferences.missingElementTags.join(', ')}</p>
+              )}
+            </section>
+          </div>
+
+          <footer className="dstory-inspector__foot">
+            <div className="dstory-inspector__nav" aria-label="Browse shot prompts">
+              <button type="button" onClick={() => stepInspector(-1)}>Previous</button>
+              <span>{inspectorIndex + 1} / {visible.length}</span>
+              <button type="button" onClick={() => stepInspector(1)}>Next</button>
+            </div>
+            <div className="dstory-inspector__actions">
+              <button type="button" disabled={!inspector.saved?.customPrompt} onClick={() => updatePrompt(inspector, inspector.derivedPrompt, false)}>Reset prompt</button>
+              <button type="button" className="director-tab__btn director-tab__btn--accent" disabled={inspector.saved?.status === 'generating'} onClick={() => onGenerate([inspector.id])}>
+                {inspector.saved?.status === 'generating' ? 'Rendering' : inspectorImage ? 'Regenerate frame' : 'Generate frame'}
+              </button>
+            </div>
+          </footer>
+        </aside>
+      )}
 
       {viewer && (
         <div className="dstory-viewer" role="dialog" aria-modal="true" aria-label={`${viewer.clipLabel} shot ${viewer.beat.n}`} onMouseDown={(event) => {
