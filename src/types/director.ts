@@ -2,7 +2,7 @@ import type { ScreenplayElement } from '@/lib/director/screenplay';
 import type { BeatSheet } from '@/lib/director/beatsheet';
 
 export type ClipLengthSec = 10 | 15 | 20 | 30;
-export type DirectorMode = 'source' | 'breakdown' | 'shotlist' | 'generate';
+export type DirectorMode = 'source' | 'breakdown' | 'shotlist' | 'storyboard' | 'generate';
 export type BreakdownKind = 'character' | 'location' | 'prop' | 'vehicle';
 export type TakeStatus = 'queued' | 'running' | 'done' | 'failed';
 export type IsolateMode = 'held' | 'native';
@@ -298,6 +298,31 @@ export interface DirectorFraming {
   look?: DirectorFramingLook;
 }
 
+export type DirectorStoryboardModelId = 'nano_banana_2' | 'gpt_image_2';
+export type DirectorStoryboardStatus = 'idle' | 'generating' | 'ready' | 'failed';
+
+/** One generated still for one numbered beat inside a shotlist clip. */
+export interface DirectorStoryboardFrame {
+  /** Stable `${clipId}::${beatN}` key. */
+  id: string;
+  clipId: string;
+  beatN: number;
+  prompt: string;
+  /** Keeps an edited prompt from being replaced when the shotlist changes. */
+  customPrompt?: boolean;
+  modelId: DirectorStoryboardModelId;
+  status: DirectorStoryboardStatus;
+  imageUrl?: string;
+  assetId?: string;
+  jobId?: string;
+  error?: string;
+  generatedAt?: string;
+  /** Fingerprint of the live shotlist language used for the rendered image. */
+  generatedSourceHash?: string;
+  /** Exact prompt used for the rendered image. */
+  generatedPrompt?: string;
+}
+
 export interface DirectorLookBible {
   filmRefs: string[];
   moodBoards: DirectorMoodBoard[];
@@ -352,6 +377,10 @@ export interface DirectorShow {
   breakdownApproved: boolean;
   scenes: DirectorScene[];
   clips: DirectorClip[];
+  /** Storyboard stills, one per beat in each shotlist clip. */
+  storyboardFrames?: DirectorStoryboardFrame[];
+  /** Default model for new storyboard stills. */
+  storyboardModelId?: DirectorStoryboardModelId;
   /** Liked framings (frame + blocking map) collected like a storyboard. */
   framingReserve?: DirectorFraming[];
   selectedSceneId?: string;

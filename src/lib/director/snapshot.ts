@@ -40,6 +40,12 @@ export function normalizeDirectorShow(value: DirectorShow): DirectorShow {
       ...clip,
       beats: clip.beats.map(ensureBeatOrigin),
     })),
+    storyboardFrames: Array.isArray(value.storyboardFrames) ? value.storyboardFrames.map((frame) => (
+      frame.status === 'generating'
+        ? { ...frame, status: 'failed' as const, error: 'Generation was interrupted. Retry this frame.' }
+        : frame
+    )) : [],
+    storyboardModelId: value.storyboardModelId === 'gpt_image_2' ? 'gpt_image_2' : 'nano_banana_2',
     framingReserve: Array.isArray(value.framingReserve) ? value.framingReserve : [],
   };
   return adoptClipFramings(normalized);

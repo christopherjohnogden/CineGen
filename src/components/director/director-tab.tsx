@@ -6,6 +6,7 @@ import { DirectorStructureRail } from './director-structure-rail';
 import { DirectorScriptTab } from './director-script-tab';
 import { DirectorBreakdownTab } from './director-breakdown-tab';
 import { DirectorShotlistTab } from './director-shotlist-tab';
+import { DirectorStoryboardTab } from './director-storyboard-tab';
 import { DirectorGenerateTab } from './director-generate-tab';
 import { DirectorSetupDrawer } from './director-setup-drawer';
 import { DirectorLookBiblePanel } from './director-look-bible';
@@ -60,6 +61,16 @@ import { parseVariantKey, variantKey, variantTakeLabel } from '@/lib/director/sl
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { defaultFolderForNewElement, projectFolderId } from '@/lib/elements/library';
 import { HIGGSFIELD_MODELS } from '@/lib/higgsfield/higgsfield-models';
+import { runWorkflow } from '@/lib/cloud/funding';
+import {
+  storyboardPlan,
+  storyboardGenerationErrorMessage,
+  storyboardPromptWithReferences,
+  storyboardReferences,
+  storyboardResultUrl,
+  runStoryboardWithRetry,
+  upsertStoryboardFrame,
+} from '@/lib/director/storyboard';
 import { planDirectorFolders } from '@/lib/director/folders';
 import { stagingDiagramPrompt } from '@/lib/director/staging-map';
 import {
@@ -107,6 +118,7 @@ export function DirectorTab() {
     { id: 'source', label: 'Script' },
     { id: 'breakdown', label: 'Breakdown' },
     { id: 'shotlist', label: 'Shotlist' },
+    { id: 'storyboard', label: 'Storyboard' },
     { id: 'generate', label: 'Generate' },
   ];
 
@@ -132,7 +144,10 @@ export function DirectorTab() {
   };
   const liveSceneIds = new Set(show.scenes.map((scene) => scene.id));
   const nonAltClipCount = show.clips.filter((clip) => !clip.altOf && liveSceneIds.has(clip.sceneId)).length;
-  const withRail = show.mode === 'shotlist' || show.mode === 'generate';
+  const storyboardFrameCount = show.clips
+    .filter((clip) => !clip.altOf && liveSceneIds.has(clip.sceneId))
+    .reduce((total, clip) => total + clip.beats.length, 0);
+  const withRail = show.mode === 'shotlist' || show.mode === 'storyboard' || show.mode === 'generate';
 
   const setShow = useCallback((director: DirectorShow) => {
     // Eagerly update the ref: async jobs read-modify-write showRef.current, and
@@ -1046,6 +1061,116 @@ export function DirectorTab() {
     });
   }, [generateOne, setShow]);
 
+  const generateStoryboardFrame = useCallback(async (frameId: string): Promise<void> => {
+    const currentPlan = storyboardPlan(showRef.current).find((frame) => frame.id === frameId);
+    if (!currentPlan) return;
+    const modelId = showRef.current.storyboardModelId ?? HIGGSFIELD_MODELS.nanoBanana;
+    const prompt = currentPlan.prompt.trim();
+    if (!prompt) {
+      setShow(upsertStoryboardFrame(showRef.current, currentPlan, {
+        status: 'failed',
+        error: 'Write a storyboard prompt before generating this frame.',
+      }));
+      return;
+    }
+    setShow(upsertStoryboardFrame(showRef.current, currentPlan, {
+      prompt,
+      modelId,
+      status: 'generating',
+      error: undefined,
+    }));
+    try {
+      const referenceSet = storyboardReferences(showRef.current, currentPlan.clip, elementsRef.current);
+      const referenceUrls = referenceSet.references.map((reference) => reference.url);
+      const generationPrompt = storyboardPromptWithReferences(prompt, referenceSet.references);
+      const inputs: Record<string, unknown> = {
+        prompt: generationPrompt,
+        aspect_ratio: showRef.current.aspectRatio,
+        resolution: '2k',
+        ...(referenceUrls.length > 0 ? { input_images: referenceUrls } : {}),
+      };
+      const result = await runStoryboardWithRetry(() => runWorkflow({
+          nodeId: `storyboard-${currentPlan.id}`,
+          nodeType: modelId === HIGGSFIELD_MODELS.gptImage ? 'hf-gpt-image-2' : 'hf-nano-banana-pro',
+          modelId,
+          outputType: 'image',
+          inputs,
+        }));
+      const url = storyboardResultUrl(result);
+      if (!url) throw new Error('Higgsfield finished but returned no storyboard image.');
+
+      const latestPlan = storyboardPlan(showRef.current).find((frame) => frame.id === frameId) ?? currentPlan;
+      const clipLabel = latestPlan.clipLabel;
+      const planned = planDirectorFolders({
+        folders: foldersRef.current,
+        scene: latestPlan.scene,
+        clip: latestPlan.clip,
+        variantKey: `storyboard-${latestPlan.beat.n}`,
+        clipLabel,
+      });
+      foldersRef.current = [...foldersRef.current, ...planned.foldersToAdd];
+      for (const folder of planned.foldersToAdd) dispatch({ type: 'ADD_FOLDER', folder });
+      for (const folder of planned.foldersToRename) {
+        foldersRef.current = foldersRef.current.map((entry) => (
+          entry.id === folder.id ? { ...entry, ...folder } : entry
+        ));
+        dispatch({ type: 'UPDATE_FOLDER', folder });
+      }
+      const asset: Asset = {
+        id: generateId(),
+        name: `${clipLabel} · S${latestPlan.beat.n} storyboard`,
+        type: 'image',
+        url,
+        sourceUrl: url,
+        thumbnailUrl: url,
+        createdAt: timestamp(),
+        folderId: planned.clipId,
+        metadata: {
+          generatedVia: 'director-storyboard',
+          directorSceneId: latestPlan.scene.id,
+          directorClipId: latestPlan.clip.id,
+          directorBeatN: latestPlan.beat.n,
+          storyboardFrameId: latestPlan.id,
+          higgsfieldModel: modelId,
+          storyboardReferenceIds: referenceSet.references.map((reference) => reference.id),
+          storyboardReferenceNames: referenceSet.references.map((reference) => reference.name),
+        },
+      };
+      dispatch({ type: 'ADD_ASSET', asset });
+      setShow(upsertStoryboardFrame(showRef.current, latestPlan, {
+        prompt,
+        modelId,
+        status: 'ready',
+        imageUrl: url,
+        assetId: asset.id,
+        error: undefined,
+        generatedAt: timestamp(),
+        generatedSourceHash: latestPlan.sourceHash,
+        generatedPrompt: prompt,
+      }));
+    } catch (error) {
+      const latestPlan = storyboardPlan(showRef.current).find((frame) => frame.id === frameId) ?? currentPlan;
+      setShow(upsertStoryboardFrame(showRef.current, latestPlan, {
+        prompt,
+        modelId,
+        status: 'failed',
+        error: storyboardGenerationErrorMessage(error),
+      }));
+    }
+  }, [dispatch, setShow]);
+
+  const runStoryboard = useCallback((frameIds: string[]) => {
+    const queue = [...new Set(frameIds)];
+    if (queue.length === 0) return;
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const frameId = queue.shift();
+        if (frameId) await generateStoryboardFrame(frameId);
+      }
+    });
+    void Promise.all(workers);
+  }, [generateStoryboardFrame]);
+
   const recoverLiveTakes = useCallback(async () => {
     if (!window.electronAPI?.higgsfield?.generate || recoverInFlight.current) return;
     if (directorJobIsRunning(showRef.current, 'generate')) return;
@@ -1202,6 +1327,7 @@ export function DirectorTab() {
       breakdownApproved: false,
       scenes: [],
       clips: [],
+      storyboardFrames: [],
       stylePrefix: '',
       selectedSceneId: undefined,
       selectedClipId: undefined,
@@ -1226,6 +1352,7 @@ export function DirectorTab() {
               {tab.id === 'source' && show.sourceText.trim() && <span className="director-tab__stab-dot" />}
               {tab.id === 'breakdown' && show.breakdown.length > 0 && <span className="director-tab__stab-badge">{show.breakdown.length}</span>}
               {tab.id === 'shotlist' && nonAltClipCount > 0 && <span className="director-tab__stab-badge">{nonAltClipCount}</span>}
+              {tab.id === 'storyboard' && storyboardFrameCount > 0 && <span className="director-tab__stab-badge">{storyboardFrameCount}</span>}
             </button>
           ))}
         </div>
@@ -1334,6 +1461,18 @@ export function DirectorTab() {
         )}
         {show.mode === 'shotlist' && (
           <DirectorShotlistTab show={show} elements={state.elements} sceneFilter={sceneFilter} expandRequest={expandRequest} syncing={cascade.running} onChange={setShow} onShotlist={startManualShotlist} onStopShotlist={stopShotlist} onSceneNotes={(sceneId, notes) => runSceneNotes(sceneId, notes)} onClipNotes={(clipId, notes) => runClipNotes(clipId, notes)} onReshotBeat={(clipId, beatN) => void runReshotBeat(clipId, beatN)} onReshotClip={(clipId) => void runReshotClip(clipId)} onSelectClip={selectClip} />
+        )}
+        {show.mode === 'storyboard' && (
+          <DirectorStoryboardTab
+            show={show}
+            assets={state.assets}
+            elements={state.elements}
+            sceneFilter={sceneFilter}
+            expandRequest={expandRequest}
+            higgsfieldReady={higgsfieldReady}
+            onChange={setShow}
+            onGenerate={runStoryboard}
+          />
         )}
         {show.mode === 'generate' && (
           <DirectorGenerateTab

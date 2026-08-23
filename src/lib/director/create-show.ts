@@ -19,6 +19,8 @@ export function createEmptyDirectorShow(): DirectorShow {
     breakdownApproved: false,
     scenes: [],
     clips: [],
+    storyboardFrames: [],
+    storyboardModelId: 'nano_banana_2',
     framingReserve: [],
     jobStatus: null,
   };
