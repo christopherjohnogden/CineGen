@@ -1,6 +1,7 @@
 import { doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { cloudDb, cloudFunctions } from './firebase';
+import { getModelDefinition } from '@/lib/fal/models';
 
 export type FundedProvider = 'fal' | 'higgsfield';
 
@@ -25,6 +26,62 @@ export interface WorkflowRunParams {
   modelId: string;
   outputType?: 'image' | 'video' | 'audio' | 'text' | '3d';
   inputs: Record<string, unknown>;
+}
+
+function topviewMediaInputs(inputs: Record<string, unknown>, outputType: string): Array<{ value: string; role: string }> {
+  const media: Array<{ value: string; role: string }> = [];
+  const add = (value: unknown, role: string) => {
+    if (typeof value === 'string' && value.trim()) media.push({ value: value.trim(), role });
+    if (Array.isArray(value)) value.forEach((entry) => add(entry, role));
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      if (typeof record.value === 'string') add(record.value, typeof record.role === 'string' ? record.role : role);
+    }
+  };
+  add(inputs.medias, 'image');
+  add(inputs.image_urls, 'image');
+  add(inputs.input_image_urls, 'image');
+  add(inputs.reference_images, 'image');
+  add(inputs.image_url, outputType === 'video' ? 'start_image' : 'image');
+  add(inputs.first_frame, 'start_image');
+  add(inputs.first_frame_url, 'start_image');
+  add(inputs.end_frame, 'end_image');
+  add(inputs.end_frame_url, 'end_image');
+  return media.filter((entry, index, all) => all.findIndex((candidate) => (
+    candidate.value === entry.value && candidate.role === entry.role
+  )) === index);
+}
+
+async function runTopviewWorkflow(params: WorkflowRunParams): Promise<unknown> {
+  const model = getModelDefinition(params.nodeType);
+  if (!model || model.provider !== 'topview') throw new Error('Topview model configuration is unavailable.');
+  const prompt = String(params.inputs.prompt ?? '').trim();
+  if (!prompt) throw new Error('Connect a prompt before running this Topview model.');
+  const medias = topviewMediaInputs(params.inputs, model.outputType);
+  const requestedModel = typeof params.inputs.model === 'string' ? params.inputs.model : 'auto';
+  if (model.outputType === 'image') {
+    return window.electronAPI.topview.generateImage({
+      prompt,
+      model: requestedModel,
+      aspectRatio: typeof params.inputs.aspect_ratio === 'string' ? params.inputs.aspect_ratio : undefined,
+      resolution: typeof params.inputs.resolution === 'string' ? params.inputs.resolution : undefined,
+      generateCount: typeof params.inputs.generate_count === 'number' ? params.inputs.generate_count : 1,
+      medias,
+    });
+  }
+  if (model.outputType === 'video') {
+    const duration = Number(params.inputs.duration ?? params.inputs.durationSec ?? 5);
+    return window.electronAPI.topview.generate({
+      prompt,
+      model: requestedModel,
+      durationSec: Number.isFinite(duration) ? duration : 5,
+      aspectRatio: typeof params.inputs.aspect_ratio === 'string' ? params.inputs.aspect_ratio : undefined,
+      resolution: typeof params.inputs.resolution === 'string' ? params.inputs.resolution : undefined,
+      generateAudio: params.inputs.generate_audio === undefined ? undefined : Boolean(params.inputs.generate_audio),
+      medias,
+    });
+  }
+  throw new Error('Topview currently supports image and video nodes, not this node type.');
 }
 
 let activeProjectId = '';
@@ -111,6 +168,9 @@ async function runFunded(projectId: string, provider: FundedProvider, params: Wo
 }
 
 export async function runWorkflow(params: WorkflowRunParams): Promise<unknown> {
+  if (getModelDefinition(params.nodeType)?.provider === 'topview') {
+    return runTopviewWorkflow(params);
+  }
   try {
     return await window.electronAPI.workflow.run(params);
   } catch (localError) {

@@ -1,9 +1,9 @@
 import type { ClipLengthSec, DirectorShow } from '@/types/director';
 import { CLIP_LENGTHS } from '@/types/director';
-import { listDirectorAdapters } from '@/lib/director/video-adapter';
+import { DirectorResolutionPicker } from './director-resolution-picker';
+import { getDirectorAdapter } from '@/lib/director/video-adapter';
 
 const ASPECTS = ['16:9', '9:16', '1:1', '21:9', '4:3'];
-const RESOLUTIONS = ['480p', '720p', '1080p'];
 
 interface DirectorSetupDrawerProps {
   show: DirectorShow;
@@ -11,38 +11,31 @@ interface DirectorSetupDrawerProps {
 }
 
 export function DirectorSetupDrawer({ show, onChange }: DirectorSetupDrawerProps) {
-  const adapters = listDirectorAdapters();
+  const adapter = getDirectorAdapter(show.adapterId);
+  const maxDurationSec = adapter.capabilities.maxDurationSec;
+  const clipLengths = maxDurationSec === undefined
+    ? CLIP_LENGTHS
+    : CLIP_LENGTHS.filter((value) => value <= maxDurationSec);
+  const clipLengthTitle = maxDurationSec === undefined
+    ? `How long each shotlisted clip runs. ${adapter.label} checks the selected model's live duration options when rendering. Existing clips keep their timing.`
+    : `How long each shotlisted clip runs. ${adapter.label} supports up to ${maxDurationSec}s. Existing clips keep their timing.`;
   return (
     <div className="dsetup">
       <Seg
         label="Clip length"
         value={String(show.clipLengthSec)}
-        options={CLIP_LENGTHS.map((value) => ({ id: String(value), label: `${value}s` }))}
+        options={clipLengths.map((value) => ({ id: String(value), label: `${value}s` }))}
         onChange={(next) => onChange({ ...show, clipLengthSec: Number(next) as ClipLengthSec })}
-        title="How long each shotlisted clip runs. Applies to the next shotlist run — existing clips keep their timing."
+        title={clipLengthTitle}
       />
-      <div className="dsetup-field dsetup-field--adapter">
-        <label className="director-tab__label" htmlFor="director-adapter">Adapter</label>
-        <select
-          id="director-adapter"
-          value={show.adapterId}
-          onChange={(event) => onChange({ ...show, adapterId: event.target.value })}
-        >
-          {adapters.map((adapter) => (
-            <option key={adapter.id} value={adapter.id}>{adapter.label}</option>
-          ))}
-        </select>
-      </div>
       <Seg
         label="Aspect"
         value={show.aspectRatio}
         options={ASPECTS.map((value) => ({ id: value, label: value }))}
         onChange={(aspectRatio) => onChange({ ...show, aspectRatio })}
       />
-      <Seg
-        label="Resolution"
+      <DirectorResolutionPicker
         value={show.resolution}
-        options={RESOLUTIONS.map((value) => ({ id: value, label: value }))}
         onChange={(resolution) => onChange({ ...show, resolution })}
       />
       <label className="dsetup-field--audio dtog" title="Include audio on generated clips">

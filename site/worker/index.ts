@@ -14,6 +14,9 @@ interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   MEDIA: R2Bucket;
+  CINEGEN_HIGGSFIELD_TOKEN_SECRET?: string;
+  CINEGEN_TOPVIEW_TOKEN_SECRET?: string;
+  CINEGEN_WORKSPACE_PROVIDER_SECRET?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {

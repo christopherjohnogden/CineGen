@@ -3,10 +3,12 @@ import { bodyForVariant, compileClipBody, compileOptionsForShow, prependPrefix }
 import { isolatedPrompt, rewritePrefixForIsolate, withFramingReference } from './isolate-prompt';
 import { compileLookBible } from './look-bible';
 import { clipWithResolvedStaging } from './framing-reserve';
+import { compileLtx25DirectorPrompt } from './ltx25-prompt';
 
 export interface DirectorVideoCapabilities {
   multiPrompt: boolean;
-  maxDurationSec: number;
+  /** Omit when the provider publishes model-specific limits at runtime. */
+  maxDurationSec?: number;
   resolutions: string[];
   aspectRatios: string[];
   referenceInputs: boolean;
@@ -16,7 +18,7 @@ export interface DirectorVideoCapabilities {
 export interface DirectorGenerateRequest {
   adapterId: string;
   label: string;
-  provider: 'higgsfield' | 'fal' | 'kie';
+  provider: 'topview' | 'higgsfield' | 'artlist' | 'runpod' | 'fal' | 'kie';
   modelId: string;
   outputType: 'video';
   prompt: string;
@@ -28,7 +30,7 @@ export interface DirectorGenerateRequest {
 export interface DirectorVideoAdapter {
   id: string;
   label: string;
-  provider: 'higgsfield' | 'fal' | 'kie';
+  provider: 'topview' | 'higgsfield' | 'artlist' | 'runpod' | 'fal' | 'kie';
   modelId: string;
   capabilities: DirectorVideoCapabilities;
   buildRequest: (args: {
@@ -123,10 +125,131 @@ export const seedance25Adapter: DirectorVideoAdapter = {
   },
 };
 
-const ADAPTERS: DirectorVideoAdapter[] = [seedance25Adapter];
+export const artlistAutoAdapter: DirectorVideoAdapter = {
+  id: 'artlist-auto',
+  label: 'Artlist AI · Auto',
+  provider: 'artlist',
+  modelId: 'auto',
+  capabilities: {
+    multiPrompt: true,
+    maxDurationSec: 30,
+    resolutions: ['720p', '1080p'],
+    aspectRatios: ['16:9', '9:16', '1:1', '21:9', '4:3'],
+    referenceInputs: true,
+    generateAudio: true,
+  },
+  buildRequest({ show, clip, variant, referenceImages = [] }) {
+    const compiled = compiledPrompt(show, clip, variant);
+    const medias = [...new Set(referenceImages.map((url) => url.trim()).filter(Boolean))]
+      .slice(0, 3)
+      .map((value) => ({ value, role: 'image' as const }));
+    const prompt = medias.length > 0
+      ? `${compiled.prompt}\n\nARTLIST ELEMENT REFERENCES — every attached still is authoritative. Preserve identity, wardrobe, location, prop, vehicle, silhouette, materials, colors, and design details from the references.`
+      : compiled.prompt;
+    return {
+      adapterId: this.id,
+      label: this.label,
+      provider: this.provider,
+      modelId: this.modelId,
+      outputType: 'video',
+      prompt,
+      durationSec: compiled.durationSec,
+      params: {
+        aspect_ratio: show.aspectRatio,
+        duration: compiled.durationSec,
+        resolution: show.resolution,
+        generate_audio: show.generateAudio,
+      },
+      ...(medias.length > 0 ? { medias } : {}),
+    };
+  },
+};
+
+export const topviewAutoAdapter: DirectorVideoAdapter = {
+  id: 'topview-auto',
+  label: 'Topview AI · Auto',
+  provider: 'topview',
+  modelId: 'auto',
+  capabilities: {
+    multiPrompt: true,
+    resolutions: ['720p', '1080p'],
+    aspectRatios: ['16:9', '9:16', '1:1', '3:4', '4:3', '21:9'],
+    referenceInputs: true,
+    generateAudio: true,
+  },
+  buildRequest({ show, clip, variant, referenceImages = [] }) {
+    const compiled = compiledPrompt(show, clip, variant);
+    const durationSec = compiled.durationSec;
+    const medias = [...new Set(referenceImages.map((url) => url.trim()).filter(Boolean))]
+      .map((value) => ({ value, role: 'image' as const }));
+    const prompt = medias.length > 0
+      ? `${compiled.prompt}\n\nTOPVIEW ELEMENT REFERENCES — use every attached still as an authoritative reference. Preserve each depicted character, location, prop, vehicle, wardrobe, silhouette, material, color, and design detail. Do not render element names or @ mention tags as text.`
+      : `${compiled.prompt}\n\nDo not render element names or @ mention tags as text.`;
+    return {
+      adapterId: this.id,
+      label: this.label,
+      provider: this.provider,
+      modelId: this.modelId,
+      outputType: 'video',
+      prompt,
+      durationSec,
+      params: {
+        aspect_ratio: show.aspectRatio,
+        duration: durationSec,
+        resolution: show.resolution,
+        generate_audio: show.generateAudio,
+      },
+      ...(medias.length > 0 ? { medias } : {}),
+    };
+  },
+};
+
+export const runpodLtx25Adapter: DirectorVideoAdapter = {
+  id: 'runpod-ltx-2.5',
+  label: 'RunPod · LTX-2.5',
+  provider: 'runpod',
+  modelId: 'runpod-ltx-2.5',
+  capabilities: {
+    multiPrompt: true,
+    maxDurationSec: 20,
+    resolutions: ['720p', '1080p'],
+    aspectRatios: ['16:9', '9:16', '1:1'],
+    referenceInputs: true,
+    generateAudio: true,
+  },
+  buildRequest({ show, clip, variant, referenceImages = [] }) {
+    const medias = [...new Set(referenceImages.map((url) => url.trim()).filter(Boolean))]
+      .slice(0, 1)
+      .map((value) => ({ value, role: 'image' as const }));
+    const compiled = compileLtx25DirectorPrompt({
+      show,
+      clip,
+      variant,
+      hasFirstFrame: medias.length > 0,
+    });
+    return {
+      adapterId: this.id,
+      label: this.label,
+      provider: this.provider,
+      modelId: this.modelId,
+      outputType: 'video',
+      prompt: compiled.prompt,
+      durationSec: compiled.durationSec,
+      params: {
+        aspect_ratio: show.aspectRatio,
+        duration: compiled.durationSec,
+        resolution: show.resolution,
+        generate_audio: show.generateAudio,
+      },
+      ...(medias.length > 0 ? { medias } : {}),
+    };
+  },
+};
+
+const ADAPTERS: DirectorVideoAdapter[] = [topviewAutoAdapter, seedance25Adapter, artlistAutoAdapter, runpodLtx25Adapter];
 
 export function getDirectorAdapter(id: string | undefined): DirectorVideoAdapter {
-  return ADAPTERS.find((adapter) => adapter.id === id) ?? seedance25Adapter;
+  return ADAPTERS.find((adapter) => adapter.id === id) ?? topviewAutoAdapter;
 }
 
 export function listDirectorAdapters(): DirectorVideoAdapter[] {

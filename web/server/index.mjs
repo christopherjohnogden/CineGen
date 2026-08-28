@@ -5,6 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import Busboy from 'busboy';
+import { createArtlistService } from './services/artlist.mjs';
 import { createCutWorkflowHandlers } from './services/cut-workflow.mjs';
 import { createElementsHandlers } from './services/elements.mjs';
 import { createExportHandlers } from './services/export.mjs';
@@ -16,6 +17,7 @@ import { createMediaHandlers } from './services/media.mjs';
 import { createMusicHandlers } from './services/music.mjs';
 import { createSam3Service } from './services/sam3.mjs';
 import { createSyncHandlers } from './services/sync.mjs';
+import { createTopviewService } from './services/topview.mjs';
 import { createTranscriptionHandlers } from './services/transcription.mjs';
 import { createVisionServices } from './services/vision.mjs';
 import { createWorkflowServices } from './services/workflow.mjs';
@@ -77,7 +79,7 @@ const EMPTY_DIRECTOR = {
   clipLengthSec: 20,
   stylePrefix: '',
   aspectRatio: '16:9',
-  adapterId: 'seedance-2.5',
+  adapterId: 'topview-auto',
   resolution: '720p',
   generateAudio: true,
   genre: 'auto',
@@ -762,6 +764,24 @@ export async function createCineGenWebServer(options = {}) {
     }
     return `/media/${path.relative(mediaRoot, resolved).split(path.sep).map(encodeURIComponent).join('/')}`;
   };
+  const artlistService = options.artlistService ?? createArtlistService({
+    dataRoot,
+    pathForMediaReference,
+    publicBaseUrl: options.publicBaseUrl ?? process.env.CINEGEN_PUBLIC_BASE_URL,
+    tokenSecret: options.artlistTokenSecret ?? process.env.CINEGEN_ARTLIST_TOKEN_SECRET,
+  });
+  for (const [method, handler] of Object.entries(artlistService.handlers)) {
+    handlers.set(`artlist.${method}`, handler);
+  }
+  const topviewService = options.topviewService ?? createTopviewService({
+    dataRoot,
+    pathForMediaReference,
+    publicBaseUrl: options.publicBaseUrl ?? process.env.CINEGEN_PUBLIC_BASE_URL,
+    tokenSecret: options.topviewTokenSecret ?? process.env.CINEGEN_TOPVIEW_TOKEN_SECRET,
+  });
+  for (const [method, handler] of Object.entries(topviewService.handlers)) {
+    handlers.set(`topview.${method}`, handler);
+  }
   for (const [method, handler] of Object.entries(createCutWorkflowHandlers({
     dataRoot,
     store,
@@ -860,6 +880,21 @@ export async function createCineGenWebServer(options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && pathname === '/api/artlist/oauth/callback') {
+        await artlistService.handleCallback(url, response);
+        return;
+      }
+
+      if (request.method === 'GET' && pathname === '/api/artlist/oauth/client-metadata') {
+        artlistService.handleClientMetadata(response);
+        return;
+      }
+
+      if (request.method === 'GET' && pathname === '/api/topview/oauth/callback') {
+        await topviewService.handleCallback(url, response);
+        return;
+      }
+
       if (pathname === '/api/sam3' || pathname.startsWith('/api/sam3/')) {
         await sam3Service.handleHttp(request, response);
         return;
@@ -931,6 +966,8 @@ export async function createCineGenWebServer(options = {}) {
     store,
     events,
     handlers,
+    artlistService,
+    topviewService,
     dataRoot,
     async listen(port = options.port ?? Number(process.env.PORT || DEFAULT_PORT), host = options.host || process.env.HOST || '127.0.0.1') {
       await new Promise((resolve, reject) => {

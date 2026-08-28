@@ -1,4 +1,5 @@
 import { getApiKey } from '@/lib/utils/api-key';
+import { toFileUrl } from '@/lib/utils/file-url';
 
 export type FileMediaType = 'image' | 'video' | 'audio' | '';
 
@@ -45,7 +46,7 @@ export function getLocalPathForFile(file: File): string | undefined {
 export async function resolveMediaFileUrl(file: File): Promise<string> {
   const localPath = getLocalPathForFile(file);
   if (localPath) {
-    return `local-media://file${localPath}`;
+    return toFileUrl(localPath);
   }
 
   const apiKey = getApiKey();

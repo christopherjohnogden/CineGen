@@ -4,7 +4,7 @@ import {
   getCliProviderLabel,
   type CliLlmProviderId,
 } from '@/lib/llm/claude-code-session';
-import { HIGGSFIELD_LLM_CLI_SUPPORTED, type DirectorLlmProvider } from '@/lib/director/cli-provider';
+import type { DirectorLlmProvider } from '@/lib/director/cli-provider';
 
 export interface DirectorCliInfo {
   id: CliLlmProviderId;
@@ -18,8 +18,6 @@ interface DirectorLlmPickerProps {
   falReady: boolean;
   /** True when an OpenAI API key is configured in Settings. */
   openaiReady: boolean;
-  /** True when the Higgsfield account is connected. */
-  higgsfieldReady: boolean;
   onChange: (provider: DirectorLlmProvider) => void;
   title?: string;
   menuLabel?: string;
@@ -33,7 +31,7 @@ interface LlmOption {
 }
 
 export function DirectorLlmPicker({
-  provider, providers, falReady, openaiReady, higgsfieldReady, onChange,
+  provider, providers, falReady, openaiReady, onChange,
   title = 'LLM used for breakdown, shotlist, look bible and rewrites',
   menuLabel = 'Director LLM',
 }: DirectorLlmPickerProps) {
@@ -80,14 +78,6 @@ export function DirectorLlmPicker({
       name: 'fal.ai',
       sub: falReady ? 'Gemini 2.5 Flash · hosted' : 'Add fal key in Settings',
       disabled: !falReady,
-    },
-    {
-      id: 'higgsfield' as const,
-      name: 'Higgsfield',
-      sub: !HIGGSFIELD_LLM_CLI_SUPPORTED
-        ? 'Their CLI can’t run LLM jobs yet'
-        : higgsfieldReady ? 'GPT-5 mini · hosted' : 'Not connected',
-      disabled: !higgsfieldReady || !HIGGSFIELD_LLM_CLI_SUPPORTED,
     },
   ];
   const current = options.find((option) => option.id === provider) ?? options[0];

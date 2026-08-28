@@ -281,7 +281,8 @@ async function extractMetadata(job: StandardMediaJob): Promise<MediaMetadata> {
  * generate_thumbnail — extract a midpoint JPEG frame for video, or a quick early frame fallback.
  */
 async function generateThumbnail(job: StandardMediaJob): Promise<{ outputPath: string }> {
-  if (nativeAddon && isVideoInput(job.inputPath)) {
+  const videoInput = isVideoInput(job.inputPath);
+  if (nativeAddon && videoInput) {
     activeJobs.set(job.id, { job });
     try {
       nativeAddon.generateThumbnail(job.inputPath, job.outputPath, 0.5);
@@ -291,20 +292,23 @@ async function generateThumbnail(job: StandardMediaJob): Promise<{ outputPath: s
     }
   }
 
-  let seekTime = THUMBNAIL_FALLBACK_OFFSET_SECONDS;
-  try {
-    const duration = await probeDuration(job);
-    if (duration > 0) {
-      seekTime = Math.max(0, duration * 0.5);
+  let seekTime = 0;
+  if (videoInput) {
+    seekTime = THUMBNAIL_FALLBACK_OFFSET_SECONDS;
+    try {
+      const duration = await probeDuration(job);
+      if (duration > 0) {
+        seekTime = Math.max(0, duration * 0.5);
+      }
+    } catch {
+      // Fall back to a quick early frame if probing fails.
     }
-  } catch {
-    // Fall back to a quick early frame if probing fails.
   }
 
   const args = [
     '-y',
     '-threads', LIGHT_FFMPEG_THREADS,
-    '-ss', `${seekTime}`,
+    ...(videoInput ? ['-ss', `${seekTime}`] : []),
     '-i', job.inputPath,
     '-frames:v', '1',
     '-q:v', '2',

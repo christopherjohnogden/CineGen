@@ -15,9 +15,120 @@ interface WebSyncAPI {
 export type BrowserElectronAPI = ElectronAPI & { sync: WebSyncAPI };
 
 const browserObjectUrls = new WeakMap<File, string>();
+const RUNPOD_STATUS_RPC_TIMEOUT_MS = 30_000;
 
 function rpc<T>(namespace: string, method: string, ...args: unknown[]): Promise<T> {
   return invokeRpc<T>(namespace, method, args);
+}
+
+type ArtlistStatus = Awaited<ReturnType<ElectronAPI['artlist']['accountStatus']>>;
+type HiggsfieldStatus = Awaited<ReturnType<ElectronAPI['higgsfield']['accountStatus']>>;
+type TopviewStatus = Awaited<ReturnType<ElectronAPI['topview']['accountStatus']>>;
+
+async function connectHiggsfieldInBrowser(): Promise<HiggsfieldStatus> {
+  const popup = window.open('about:blank', 'cinegen-higgsfield-oauth', 'popup,width=560,height=760');
+  if (!popup) throw new Error('Allow pop-ups for CineGen, then try Connect Higgsfield again.');
+
+  try {
+    popup.document.title = 'Connecting Higgsfield…';
+    const started = await rpc<HiggsfieldStatus & { authorizationUrl?: string }>(
+      'higgsfield',
+      'authLogin',
+      window.location.origin,
+    );
+    if (!started.authorizationUrl) throw new Error(started.error || 'Higgsfield did not return an authorization link.');
+    popup.location.replace(started.authorizationUrl);
+
+    const deadline = Date.now() + 3 * 60 * 1000;
+    let closedAt = 0;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const status = await rpc<HiggsfieldStatus>('higgsfield', 'accountStatus');
+      if (status.connected) return status;
+      if (popup.closed) {
+        if (!closedAt) closedAt = Date.now();
+        if (Date.now() - closedAt > 5000) {
+          throw new Error(status.error || 'Higgsfield authorization was not completed.');
+        }
+      }
+    }
+    throw new Error('Higgsfield sign-in timed out. Try connecting again.');
+  } catch (error) {
+    if (!popup.closed) popup.close();
+    throw error;
+  }
+}
+
+async function connectArtlistInBrowser(): Promise<ArtlistStatus> {
+  // Open synchronously from the button click so browsers do not block the
+  // authorization window while CineGen prepares PKCE on the server.
+  const popup = window.open('about:blank', 'cinegen-artlist-oauth', 'popup,width=560,height=760');
+  if (!popup) throw new Error('Allow pop-ups for CineGen, then try Connect Artlist again.');
+
+  try {
+    popup.document.title = 'Connecting Artlist…';
+    const started = await rpc<ArtlistStatus & { authorizationUrl?: string }>(
+      'artlist',
+      'authLogin',
+      window.location.origin,
+    );
+    if (!started.authorizationUrl) throw new Error(started.error || 'Artlist did not return an authorization link.');
+    popup.location.replace(started.authorizationUrl);
+
+    const deadline = Date.now() + 3 * 60 * 1000;
+    let closedAt = 0;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const status = await rpc<ArtlistStatus>('artlist', 'accountStatus');
+      if (status.connected) return status;
+      if (popup.closed) {
+        if (!closedAt) closedAt = Date.now();
+        if (Date.now() - closedAt > 5000) {
+          throw new Error(status.error || 'Artlist authorization was not completed.');
+        }
+      }
+    }
+    throw new Error('Artlist sign-in timed out. Try connecting again.');
+  } catch (error) {
+    if (!popup.closed) popup.close();
+    throw error;
+  }
+}
+
+async function connectTopviewInBrowser(): Promise<TopviewStatus> {
+  // Open synchronously from the button click so browsers do not block the
+  // authorization window while CineGen prepares DCR and PKCE on the server.
+  const popup = window.open('about:blank', 'cinegen-topview-oauth', 'popup,width=560,height=760');
+  if (!popup) throw new Error('Allow pop-ups for CineGen, then try Connect Topview again.');
+
+  try {
+    popup.document.title = 'Connecting Topview…';
+    const started = await rpc<TopviewStatus & { authorizationUrl?: string }>(
+      'topview',
+      'authLogin',
+      window.location.origin,
+    );
+    if (!started.authorizationUrl) throw new Error(started.error || 'Topview did not return an authorization link.');
+    popup.location.replace(started.authorizationUrl);
+
+    const deadline = Date.now() + 3 * 60 * 1000;
+    let closedAt = 0;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const status = await rpc<TopviewStatus>('topview', 'accountStatus');
+      if (status.connected) return status;
+      if (popup.closed) {
+        if (!closedAt) closedAt = Date.now();
+        if (Date.now() - closedAt > 5000) {
+          throw new Error(status.error || 'Topview authorization was not completed.');
+        }
+      }
+    }
+    throw new Error('Topview sign-in timed out. Try connecting again.');
+  } catch (error) {
+    if (!popup.closed) popup.close();
+    throw error;
+  }
 }
 
 function acceptFromFilters(filters: NonNullable<DialogOpenOptions>['filters']): string {
@@ -286,7 +397,12 @@ export const browserElectronAPI: BrowserElectronAPI = {
   pod: {
     start: (params) => rpc('pod', 'start', params),
     stop: (params) => rpc('pod', 'stop', params),
-    status: (params) => rpc('pod', 'status', params),
+    status: (params) => invokeRpc('pod', 'status', [params], { timeoutMs: RUNPOD_STATUS_RPC_TIMEOUT_MS }),
+    setupLtx25: (params) => rpc('pod', 'setupLtx25', params),
+    statusLtx25: (params) => invokeRpc('pod', 'statusLtx25', [params], { timeoutMs: RUNPOD_STATUS_RPC_TIMEOUT_MS }),
+    terminateLtx25: (params) => rpc('pod', 'terminateLtx25', params),
+    generateLtx25: (params) => rpc('pod', 'generateLtx25', params),
+    generateSessionImage: (params) => rpc('pod', 'generateSessionImage', params),
   },
   export: {
     start: (params) => rpc('export', 'start', params),
@@ -346,11 +462,24 @@ export const browserElectronAPI: BrowserElectronAPI = {
   },
   higgsfield: {
     accountStatus: () => rpc('higgsfield', 'accountStatus'),
-    authLogin: () => rpc('higgsfield', 'authLogin'),
+    authLogin: connectHiggsfieldInBrowser,
     authLogout: () => rpc('higgsfield', 'authLogout'),
     quickEdit: (params) => rpc('higgsfield', 'quickEdit', params),
     generate: (params) => rpc('higgsfield', 'generate', params),
     generateList: (params) => rpc('higgsfield', 'generateList', params),
+  },
+  artlist: {
+    accountStatus: () => rpc('artlist', 'accountStatus'),
+    authLogin: connectArtlistInBrowser,
+    authLogout: () => rpc('artlist', 'authLogout'),
+    generate: (params) => rpc('artlist', 'generate', params),
+  },
+  topview: {
+    accountStatus: () => rpc('topview', 'accountStatus'),
+    authLogin: connectTopviewInBrowser,
+    authLogout: () => rpc('topview', 'authLogout'),
+    generate: (params) => rpc('topview', 'generate', params),
+    generateImage: (params) => rpc('topview', 'generateImage', params),
   },
   copilot: {
     analyzeVisualRefs: (params) => rpc('copilot', 'analyzeVisualRefs', params),

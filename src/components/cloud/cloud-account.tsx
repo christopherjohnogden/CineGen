@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
@@ -41,7 +40,6 @@ function friendlyAuthError(error: unknown): string {
 
 function CloudAuthDialog({ onClose }: { onClose: () => void }) {
   const user = useCloudUser();
-  const [mode, setMode] = useState<'signin' | 'create'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -51,38 +49,32 @@ function CloudAuthDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError('');
     try {
-      if (mode === 'create') {
-        try {
-          await createUserWithEmailAndPassword(cloudAuth, email.trim(), password);
-        } catch (cause) {
-          // A lost response can report a network error after Firebase already
-          // created the account. A sign-in retry makes that case seamless.
-          if (cause instanceof Error && cause.message.includes('network-request-failed')) {
-            await signInWithEmailAndPassword(cloudAuth, email.trim(), password);
-          } else {
-            throw cause;
-          }
-        }
-      } else {
-        await signInWithEmailAndPassword(cloudAuth, email.trim(), password);
-      }
+      await signInWithEmailAndPassword(cloudAuth, email.trim(), password);
       onClose();
     } catch (cause) {
       setError(friendlyAuthError(cause));
     } finally {
       setBusy(false);
     }
-  }, [email, mode, onClose, password]);
+  }, [email, onClose, password]);
 
   return (
     <div className="cloud-auth__backdrop" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="cloud-auth__dialog" role="dialog" aria-modal="true" aria-label="CineGen Cloud account">
         <div className="cloud-auth__header">
-          <div>
-            <h2>CineGen Cloud</h2>
-            <p>One account keeps project data in sync across desktop and web.</p>
+          <div className="cloud-auth__identity">
+            <span className="cloud-auth__brand-mark" aria-hidden>
+              <svg viewBox="0 0 24 24"><path d="M7.2 7.1A7 7 0 1 0 17.5 16M8.8 10.1h6.5M8.8 13.8h4.4" /></svg>
+            </span>
+            <div>
+              <span className="cloud-auth__eyebrow">CineGen workspace</span>
+              <h2>Welcome back</h2>
+              <p>Sign in to sync projects and collaborate with your team.</p>
+            </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close">×</button>
+          <button className="cloud-auth__close" type="button" onClick={onClose} aria-label="Close">
+            <svg viewBox="0 0 16 16" aria-hidden><path d="m4 4 8 8m0-8-8 8" /></svg>
+          </button>
         </div>
         {user ? (
           <div className="cloud-auth__signed-in">
@@ -91,18 +83,22 @@ function CloudAuthDialog({ onClose }: { onClose: () => void }) {
             <button type="button" className="sp-btn sp-btn--muted" onClick={() => void signOut(cloudAuth)}>Sign out</button>
           </div>
         ) : (
-          <>
-            <div className="cloud-auth__mode">
-              <button className={mode === 'signin' ? 'is-active' : ''} onClick={() => setMode('signin')}>Sign in</button>
-              <button className={mode === 'create' ? 'is-active' : ''} onClick={() => setMode('create')}>Create account</button>
-            </div>
-            <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label>
-            <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === 'create' ? 'new-password' : 'current-password'} onKeyDown={(event) => event.key === 'Enter' && void submit()} /></label>
+          <form className="cloud-auth__form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+            <label>
+              <span>Email address</span>
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="you@studio.com" autoFocus />
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Enter your password" />
+            </label>
             {error && <p className="cloud-auth__error">{error}</p>}
-            <button type="button" className="cloud-auth__submit" disabled={busy || !email.trim() || password.length < 6} onClick={() => void submit()}>
-              {busy ? 'Connecting…' : mode === 'create' ? 'Create account' : 'Sign in'}
+            <button type="submit" className="cloud-auth__submit" disabled={busy || !email.trim() || password.length < 6}>
+              <span>{busy ? 'Signing in…' : 'Sign in'}</span>
+              {!busy && <svg viewBox="0 0 16 16" aria-hidden><path d="M3 8h9m-3.5-3.5L12 8l-3.5 3.5" /></svg>}
             </button>
-          </>
+            <p className="cloud-auth__privacy">Your credentials are handled securely by CineGen Cloud.</p>
+          </form>
         )}
       </div>
     </div>

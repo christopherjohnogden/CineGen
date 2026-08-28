@@ -9,12 +9,19 @@ import {
   resolveMediaFileUrl,
   type FileMediaType,
 } from '@/lib/utils/media-file';
+import { toFileUrl } from '@/lib/utils/file-url';
 import type { WorkflowNodeData } from '@/types/workflow';
 import { PORT_COLORS } from '@/lib/workflows/node-registry';
 
 type FilePickerNodeProps = NodeProps & { data: WorkflowNodeData };
 
 const ACCEPT = 'image/*,video/*,audio/*';
+const DEFAULT_VISUAL_WIDTH = 280;
+const DEFAULT_VISUAL_HEIGHT = 157.5;
+
+function positiveDimension(value: number | null | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 function FilePickerNodeInner({ id, data, selected, width, height }: FilePickerNodeProps) {
   const { updateNodeData } = useReactFlow();
@@ -58,7 +65,7 @@ function FilePickerNodeInner({ id, data, selected, width, height }: FilePickerNo
         return;
       }
 
-      const url = `local-media://file${filePath}`;
+      const url = toFileUrl(filePath);
       updateNodeData(id, {
         config: { ...data.config, fileUrl: url, fileType: mediaType, fileName },
       });
@@ -120,12 +127,14 @@ function FilePickerNodeInner({ id, data, selected, width, height }: FilePickerNo
   const isVisualMedia = Boolean(fileUrl && (fileType === 'image' || fileType === 'video'));
 
   if (isVisualMedia) {
+    const visualWidth = positiveDimension(width, DEFAULT_VISUAL_WIDTH);
+    const visualHeight = positiveDimension(height, DEFAULT_VISUAL_HEIGHT);
     return (
       <div
         className={`file-picker-node file-picker-node--visual${selected ? ' file-picker-node--selected' : ''}`}
         data-media-type={fileType}
         aria-label={`${fileType} node: ${fileName || 'Untitled media'}`}
-        style={{ width: width ?? 280, height: height ?? 157.5 }}
+        style={{ width: visualWidth, height: visualHeight }}
       >
         <NodeResizer
           isVisible={!!selected}

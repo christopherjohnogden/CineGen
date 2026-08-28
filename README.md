@@ -47,7 +47,7 @@ Segment objects from images with text, click, or box prompts. Red overlay, white
 
 ### Director
 
-Turn a script or idea into a production record: breakdown, Elements, timed Seedance 2.5 shotlist, isolate-to-full or isolate-to-native regeneration, and takes filed under Scene / Clip / Variant folders in the Edit media pool.
+Turn a script or idea into a production record: breakdown, Elements, provider-ready shotlists, isolate-to-full or isolate-to-native regeneration, and takes filed under Scene / Clip / Variant folders in the Edit media pool.
 
 ### Edit — Dual Viewer
 
@@ -113,7 +113,8 @@ A production page between Spaces and Edit. Paste or **upload a script**, set cli
 - **LLM** — pick Claude, Codex, or Gemini CLI in the Director toolbar for breakdown, shotlist, look bible, and rewrite
 - **Breakdown** — scenes plus characters, locations, props, and vehicles with `@Tags`; match existing Elements or create missing ones
 - **Shotlist** — timed beats in Seedance heading grammar; isolate one shot as a 20s hold or its native 5–8s length without making a second clip
-- **Generate** — Seedance 2.5 takes (full or isolated) queued into nested Edit media-pool folders named like `1A · T03`
+- **Generate** — Topview AI is the default video provider; switch between Topview MCP, Higgsfield Seedance 2.5, Artlist MCP, or a RunPod LTX-2.5 session in Settings. Full or isolated takes land in nested Edit media-pool folders named like `1A · T03`
+- **Element-aware Topview renders** — tagged character, location, prop, vehicle, framing, and staging stills are uploaded as named omni references; finished generations are saved to the connected Topview board
 - **Notes** — rewrite the active variant from director notes with Keep / Discard
 
 ### Edit — Non-Linear Editor
@@ -170,7 +171,7 @@ Renders the timeline to MP4 using FFmpeg.
 | Node Editor | @xyflow/react (React Flow) |
 | Database | SQLite via better-sqlite3 |
 | Media | FFmpeg + FFprobe (static binaries) |
-| AI Providers | fal.ai, kie.ai, RunPod, Ollama (local) |
+| AI Providers | Topview MCP, Higgsfield, Artlist MCP, fal.ai, kie.ai, RunPod, Ollama (local) |
 | Validation | Zod |
 | Testing | Vitest + Testing Library |
 | Styling | Vanilla CSS (dark theme) |
@@ -254,7 +255,7 @@ See the [CineGen Cloud Site guide](site/README.md) for its storage model, comman
 
 ## API Keys
 
-CineGen does **not** ship with any API keys. All keys are configured in-app through the Settings page and stored locally on your machine. No keys are ever transmitted anywhere except to the provider you're calling.
+CineGen does **not** ship with any API keys. Keys and account connections are configured in-app through Settings and stored locally or encrypted on the CineGen web server. They are only sent to the provider being called.
 
 | Provider | What It Enables | Where to Get a Key |
 |----------|----------------|-------------------|
@@ -262,8 +263,10 @@ CineGen does **not** ship with any API keys. All keys are configured in-app thro
 | [kie.ai](https://kie.ai) | Runway Gen-4, Veo 3.1, Flux 2 Pro, GPT-4o Image, Wan 2.6, Suno Music | [kie.ai](https://kie.ai) |
 | [RunPod](https://runpod.io) | GPU cloud for custom model endpoints | [runpod.io/console](https://www.runpod.io/console/user/settings) |
 | [Ollama](https://ollama.com) | Local LLM inference (no key needed — just install and run) | [ollama.com/download](https://ollama.com/download) |
+| [Topview MCP](https://www.topview.ai/mcp) | Default Director video generation with live model selection, element references, and results saved to a Topview board | Connect your Topview account in CineGen Settings |
+| [Artlist MCP](https://artlist.io/mcp) | Director video generation using Artlist AI credits and element reference stills | Connect your Artlist account in CineGen Settings; hosted web needs an HTTPS client-metadata URL or Artlist-issued client ID |
 
-Open the app, go to **Settings**, and paste your keys. You only need keys for the providers you want to use — everything else still works.
+Open the app and go to **Settings** to connect an account or add the keys you want to use. Everything else still works without unconfigured providers.
 
 ---
 

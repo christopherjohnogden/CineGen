@@ -17,12 +17,25 @@ export function CreateTab() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('pip');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const [activePanel, setActivePanel] = useState<SidebarPanel>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; spaceId: string } | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   // (canvas ref removed — node addition uses custom event)
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const syncLayout = () => {
+      setIsMobile(query.matches);
+      setSidebarOpen(!query.matches);
+      if (!query.matches) setActivePanel(null);
+    };
+    syncLayout();
+    query.addEventListener('change', syncLayout);
+    return () => query.removeEventListener('change', syncLayout);
+  }, []);
 
   const handlePreviewModeChange = useCallback((mode: PreviewMode) => {
     setPreviewMode(mode);
@@ -54,7 +67,8 @@ export function CreateTab() {
   const handleAddNode = useCallback((nodeType: string) => {
     window.dispatchEvent(new CustomEvent('cinegen:add-node', { detail: nodeType }));
     setActivePanel(null);
-  }, []);
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
 
   /* ── Rename ── */
 
@@ -98,6 +112,7 @@ export function CreateTab() {
   }, [ctxMenu]);
 
   const isFullscreen = previewMode === 'fullscreen' && timelineOpen;
+  const activeSpace = state.spaces.find((space) => space.id === state.activeSpaceId);
 
   /* ── Tool buttons config ── */
   const tools: { id: SidebarPanel; title: string; icon: React.ReactNode }[] = [
@@ -116,9 +131,20 @@ export function CreateTab() {
   ];
 
   return (
-    <div className={`create-tab${timelineOpen ? ' create-tab--timeline-open' : ''}${!sidebarOpen ? ' create-tab--sidebar-collapsed' : ''}`}>
+    <div className={`create-tab${timelineOpen ? ' create-tab--timeline-open' : ''}${!sidebarOpen ? ' create-tab--sidebar-collapsed' : ''}${isMobile ? ' create-tab--mobile' : ''}`}>
+      {isMobile && sidebarOpen && (
+        <button
+          type="button"
+          className="cs-mobile-scrim"
+          aria-label="Close Spaces menu"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       {/* ── Sidebar ── */}
-      <aside className={`cs-sidebar${sidebarOpen ? '' : ' cs-sidebar--collapsed'}`}>
+      <aside
+        className={`cs-sidebar${sidebarOpen ? '' : ' cs-sidebar--collapsed'}${isMobile && sidebarOpen ? ' cs-sidebar--mobile-open' : ''}`}
+        aria-hidden={isMobile && !sidebarOpen}
+      >
         {sidebarOpen ? (
           <>
             {/* Tool buttons row */}
@@ -192,7 +218,10 @@ export function CreateTab() {
                       <div
                         key={space.id}
                         className={`cs-sidebar__item${isActive ? ' cs-sidebar__item--active' : ''}`}
-                        onClick={() => dispatch({ type: 'OPEN_SPACE', spaceId: space.id })}
+                        onClick={() => {
+                          dispatch({ type: 'OPEN_SPACE', spaceId: space.id });
+                          if (isMobile) setSidebarOpen(false);
+                        }}
                         onDoubleClick={() => startRename(space)}
                         onContextMenu={(e) => handleSpaceContextMenu(e, space.id)}
                         title={isRenaming ? undefined : space.name}
@@ -259,6 +288,41 @@ export function CreateTab() {
 
       {/* ── Workspace ── */}
       <div className="create-tab__workspace">
+        {isMobile && (
+          <div className="cs-mobile-bar">
+            <button
+              type="button"
+              className="cs-mobile-bar__button"
+              onClick={() => { setActivePanel(null); setSidebarOpen(true); }}
+              aria-label="Open Spaces menu"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="4" y1="7" x2="20" y2="7" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="17" x2="20" y2="17" />
+              </svg>
+            </button>
+            <div className="cs-mobile-bar__identity">
+              <span>Space</span>
+              <strong>{activeSpace?.name ?? 'Untitled'}</strong>
+            </div>
+            <button
+              type="button"
+              className="cs-mobile-bar__models"
+              onClick={() => {
+                setActivePanel(null);
+                setSidebarOpen(false);
+                window.dispatchEvent(new Event('cinegen:open-node-palette'));
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Add node
+            </button>
+          </div>
+        )}
         {openSpaces.length > 1 && (
           <div className="cs-tabs">
             {openSpaces.map((space) => {

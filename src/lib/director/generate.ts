@@ -190,7 +190,7 @@ export function generateViewerMessage(take: DirectorTake | undefined, hasUrl: bo
     return `${takeChipLabel(take)} generating…`;
   }
   if (take?.status === 'failed') {
-    return take.error?.trim() || 'Generation failed. Check Higgsfield CLI is installed and connected in Settings.';
+    return take.error?.trim() || 'Generation failed. Check that the selected provider is connected in Settings.';
   }
   return 'No take yet for this variant';
 }
@@ -211,12 +211,12 @@ export function generationPreflight(args: {
   clipCount: number;
   seconds: number;
   adapterLabel: string;
-  higgsfieldConnected?: boolean;
-  higgsfieldError?: string;
+  providerConnected?: boolean;
+  providerError?: string;
 }): { summary: string; warnings: string[] } {
   const warnings: string[] = [];
-  if (args.higgsfieldConnected === false) {
-    warnings.push(args.higgsfieldError?.trim() || 'Higgsfield CLI is not connected. Generation will fail until it is.');
+  if (args.providerConnected === false) {
+    warnings.push(args.providerError?.trim() || `${args.adapterLabel} is not connected. Connect it in Settings before generating.`);
   }
   return {
     summary: `${args.clipCount} clip${args.clipCount === 1 ? '' : 's'} · ${args.seconds}s · ${args.adapterLabel}`,
@@ -282,7 +282,9 @@ export function prepareDirectorGeneration(args: {
       directorClipId: args.clip.id,
       directorTakeId: take.id,
       directorVariant: key,
-      higgsfieldModel: adapter.modelId,
+      generationProvider: adapter.provider,
+      generationModel: adapter.modelId,
+      ...(adapter.provider === 'higgsfield' ? { higgsfieldModel: adapter.modelId } : {}),
     },
   };
   return {

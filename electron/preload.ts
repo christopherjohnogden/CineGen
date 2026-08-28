@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start:  (params: { runpodKey: string; podId: string }) => ipcRenderer.invoke('pod:start', params),
     stop:   (params: { runpodKey: string; podId: string }) => ipcRenderer.invoke('pod:stop', params),
     status: (params: { runpodKey: string; podId: string }) => ipcRenderer.invoke('pod:status', params),
+    setupLtx25: (params: unknown) => ipcRenderer.invoke('pod:setup-ltx25', params),
+    statusLtx25: (params: unknown) => ipcRenderer.invoke('pod:status-ltx25', params),
+    terminateLtx25: (params: unknown) => ipcRenderer.invoke('pod:terminate-ltx25', params),
+    generateLtx25: (params: unknown) => ipcRenderer.invoke('pod:generate-ltx25', params),
+    generateSessionImage: (params: unknown) => ipcRenderer.invoke('pod:generate-session-image', params),
   },
   export: {
     start: (params: unknown) => ipcRenderer.invoke('export:start', params),
@@ -88,6 +93,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     quickEdit: (params: unknown) => ipcRenderer.invoke('higgsfield:quick-edit', params),
     generate: (params: unknown) => ipcRenderer.invoke('higgsfield:generate', params),
     generateList: (params?: unknown) => ipcRenderer.invoke('higgsfield:generate-list', params),
+  },
+  artlist: {
+    accountStatus: () => ipcRenderer.invoke('artlist:account-status'),
+    authLogin: () => ipcRenderer.invoke('artlist:auth-login'),
+    authLogout: () => ipcRenderer.invoke('artlist:auth-logout'),
+    generate: (params: unknown) => ipcRenderer.invoke('artlist:generate', params),
+  },
+  topview: {
+    accountStatus: () => ipcRenderer.invoke('topview:account-status'),
+    authLogin: () => ipcRenderer.invoke('topview:auth-login'),
+    authLogout: () => ipcRenderer.invoke('topview:auth-logout'),
+    submit: (params: unknown) => ipcRenderer.invoke('topview:submit', params),
+    query: (params: unknown) => ipcRenderer.invoke('topview:query', params),
+    generate: (params: unknown) => ipcRenderer.invoke('topview:generate', params),
+    generateImage: (params: unknown) => ipcRenderer.invoke('topview:generate-image', params),
   },
   copilot: {
     analyzeVisualRefs: (params: {

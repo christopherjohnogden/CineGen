@@ -10,6 +10,17 @@ import {
   type HiggsfieldOutputKind,
   type HiggsfieldResult,
 } from './higgsfield.js';
+import {
+  getRunpodLtx25Status,
+  runRunpodLtx25Job,
+  runRunpodSessionImageJob,
+  setupRunpodLtx25,
+  terminateRunpodLtx25,
+  type Ltx25GpuProfile,
+  type Ltx25VideoInput,
+  type RunpodSessionImageInput,
+  type RunpodSessionImageModel,
+} from '../../src/lib/runpod/ltx25-service.js';
 
 // --- kie.ai client (moved from lib/kie/client.ts) ---
 
@@ -449,6 +460,228 @@ async function getPodStatus(
   };
 }
 
+const LTX25_MAX_REFERENCE_BYTES = 14 * 1024 * 1024;
+const LTX25_MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const RUNPOD_SESSION_MAX_IMAGE_BYTES = 100 * 1024 * 1024;
+const LTX25_REFERENCE_TIMEOUT_MS = 45_000;
+
+function ltx25ImageType(bytes: Buffer): string | undefined {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  if (bytes.length >= 6 && /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString('ascii'))) return 'image/gif';
+  if (bytes.length >= 2 && bytes.subarray(0, 2).toString('ascii') === 'BM') return 'image/bmp';
+  if (bytes.length >= 12 && bytes.subarray(4, 8).toString('ascii') === 'ftyp' && /^(avif|avis)$/.test(bytes.subarray(8, 12).toString('ascii'))) return 'image/avif';
+  return undefined;
+}
+
+function ltx25PublicUrl(value: string): URL {
+  let url: URL;
+  try { url = new URL(value); } catch {
+    throw new Error('The LTX-2.5 first-frame reference URL is invalid.');
+  }
+  const host = url.hostname.toLowerCase();
+  const isIpLiteral = /^\d+(?:\.\d+){3}$/.test(host) || host.includes(':');
+  if (url.protocol !== 'https:' || url.username || url.password || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || isIpLiteral) {
+    throw new Error('The LTX-2.5 first-frame reference must use a public HTTPS URL.');
+  }
+  return url;
+}
+
+async function readLtx25Reference(response: Response): Promise<Buffer> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > LTX25_MAX_REFERENCE_BYTES) {
+    throw new Error('The LTX-2.5 first-frame reference is larger than 14 MB.');
+  }
+  if (!response.body) {
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength > LTX25_MAX_REFERENCE_BYTES) throw new Error('The LTX-2.5 first-frame reference is larger than 14 MB.');
+    return bytes;
+  }
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > LTX25_MAX_REFERENCE_BYTES) {
+        await reader.cancel();
+        throw new Error('The LTX-2.5 first-frame reference is larger than 14 MB.');
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, length);
+}
+
+function ltx25ImageDataUrl(bytes: Buffer): string {
+  const type = ltx25ImageType(bytes);
+  if (!type) throw new Error('LTX-2.5 requires a supported raster image as its first-frame reference.');
+  return `data:${type};base64,${bytes.toString('base64')}`;
+}
+
+async function ltx25ReferenceToDataUrl(value: string): Promise<string> {
+  if (value.startsWith('data:image/')) return value;
+  if (value.startsWith('local-media://file')) {
+    const filePath = localMediaPath(value);
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) throw new Error('The LTX-2.5 first-frame reference is not a file.');
+    if (stat.size > LTX25_MAX_REFERENCE_BYTES) throw new Error('The LTX-2.5 first-frame reference is larger than 14 MB.');
+    const bytes = await fs.readFile(filePath);
+    return ltx25ImageDataUrl(bytes);
+  }
+  if (/^https?:\/\//i.test(value)) {
+    const url = ltx25PublicUrl(value);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), LTX25_REFERENCE_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(url, { redirect: 'error', signal: controller.signal });
+    } catch {
+      clearTimeout(timeout);
+      throw new Error('Could not load the LTX-2.5 first-frame reference.');
+    }
+    try {
+      if (!response.ok) throw new Error(`Could not load the LTX-2.5 first-frame reference (${response.status}).`);
+      return ltx25ImageDataUrl(await readLtx25Reference(response));
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('Loading the LTX-2.5 first-frame reference timed out.');
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error('The LTX-2.5 first-frame reference is not available to the desktop app.');
+}
+
+async function prepareLtx25Input(input: Ltx25VideoInput): Promise<Ltx25VideoInput> {
+  const first = input.referenceImages?.find((value) => typeof value === 'string' && value.trim());
+  // Leaving references undefined deliberately selects the shared service's
+  // text-to-video branch; a fabricated 1x1 first frame breaks ComfyUI/PyAV.
+  // Keep fallback-frame construction in that tested service boundary.
+  return {
+    ...input,
+    referenceImages: first ? [await ltx25ReferenceToDataUrl(first)] : undefined,
+  };
+}
+
+function sessionImageDataUrl(value: string, index: number): string {
+  const match = /^data:image\/[A-Za-z0-9.+-]+;base64,([\s\S]+)$/i.exec(value.trim());
+  const encoded = match?.[1]?.replace(/\s+/g, '') ?? '';
+  if (
+    !encoded
+    || encoded.length > Math.ceil(LTX25_MAX_REFERENCE_BYTES / 3) * 4 + 8
+    || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)
+    || encoded.length % 4 === 1
+  ) {
+    throw new Error(`RunPod reference image ${index + 1} is invalid or larger than 14 MB.`);
+  }
+  const bytes = Buffer.from(encoded, 'base64');
+  if (!bytes.length || bytes.byteLength > LTX25_MAX_REFERENCE_BYTES) {
+    throw new Error(`RunPod reference image ${index + 1} is invalid or larger than 14 MB.`);
+  }
+  const mediaType = ltx25ImageType(bytes);
+  if (mediaType !== 'image/png' && mediaType !== 'image/jpeg' && mediaType !== 'image/webp') {
+    throw new Error(`RunPod reference image ${index + 1} must be a PNG, JPEG, or WebP image.`);
+  }
+  return `data:${mediaType};base64,${bytes.toString('base64')}`;
+}
+
+async function prepareSessionImageInput(input: RunpodSessionImageInput): Promise<RunpodSessionImageInput> {
+  const references = Array.isArray(input.referenceImages)
+    ? input.referenceImages.filter((value) => typeof value === 'string' && value.trim())
+    : [];
+  if (references.length > 3) {
+    throw new Error('RunPod session image jobs support up to three reference images.');
+  }
+  const preparedReferences = await Promise.all(references.map(async (reference, index) => {
+    const dataUrl = reference.trim().startsWith('data:')
+      ? reference
+      : await ltx25ReferenceToDataUrl(reference.trim());
+    return sessionImageDataUrl(dataUrl, index);
+  }));
+  return {
+    ...input,
+    referenceImages: preparedReferences.length ? preparedReferences : undefined,
+  };
+}
+
+async function materializeLtx25Video<T extends Awaited<ReturnType<typeof runRunpodLtx25Job>>>(result: T): Promise<T> {
+  const data = result.output?.data;
+  if (!data) return result;
+  const encoded = data.includes(',') ? data.slice(data.indexOf(',') + 1) : data;
+  if (!encoded || encoded.length > Math.ceil(LTX25_MAX_VIDEO_BYTES / 3) * 4 + 8) {
+    throw new Error('The LTX-2.5 video is larger than CineGen can import automatically.');
+  }
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 === 1) {
+    throw new Error('LTX-2.5 returned an invalid video file.');
+  }
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.byteLength > LTX25_MAX_VIDEO_BYTES) throw new Error('The LTX-2.5 video is larger than CineGen can import automatically.');
+  const extension = bytes.length >= 4 && bytes.subarray(0, 4).equals(Buffer.from('1a45dfa3', 'hex'))
+    ? '.webm'
+    : bytes.length >= 12 && bytes.subarray(4, 8).toString('ascii') === 'ftyp' ? '.mp4' : undefined;
+  if (!extension) throw new Error('LTX-2.5 returned an unsupported video file.');
+  const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'cinegen-ltx25-'));
+  const outputPath = path.join(outputDirectory, `result${extension}`);
+  await fs.writeFile(outputPath, bytes, { flag: 'wx', mode: 0o600 });
+  return {
+    ...result,
+    output: {
+      ...result.output,
+      url: `local-media://file${outputPath}`,
+      mediaType: extension === '.webm' ? 'video/webm' : 'video/mp4',
+      data: undefined,
+    },
+  };
+}
+
+async function materializeSessionImage<
+  T extends Awaited<ReturnType<typeof runRunpodSessionImageJob>>,
+>(result: T): Promise<T> {
+  const raw = result.output?.data?.trim();
+  if (!raw) return result;
+  const match = /^data:image\/[A-Za-z0-9.+-]+;base64,([\s\S]+)$/i.exec(raw);
+  const encoded = (match?.[1] ?? raw).replace(/\s+/g, '');
+  if (
+    !encoded
+    || encoded.length > Math.ceil(RUNPOD_SESSION_MAX_IMAGE_BYTES / 3) * 4 + 8
+    || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)
+    || encoded.length % 4 === 1
+  ) {
+    throw new Error('RunPod returned an invalid or oversized image file.');
+  }
+  const bytes = Buffer.from(encoded, 'base64');
+  if (!bytes.length || bytes.byteLength > RUNPOD_SESSION_MAX_IMAGE_BYTES) {
+    throw new Error('RunPod returned an invalid or oversized image file.');
+  }
+  const mediaType = ltx25ImageType(bytes);
+  const extension = mediaType === 'image/png'
+    ? '.png'
+    : mediaType === 'image/jpeg'
+      ? '.jpg'
+      : mediaType === 'image/webp'
+        ? '.webp'
+        : undefined;
+  if (!extension || !mediaType) throw new Error('RunPod returned an unsupported image file.');
+  const outputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'cinegen-runpod-image-'));
+  const outputPath = path.join(outputDirectory, `result${extension}`);
+  await fs.writeFile(outputPath, bytes, { flag: 'wx', mode: 0o600 });
+  const { data: _data, ...safeOutput } = result.output;
+  return {
+    ...result,
+    output: {
+      ...safeOutput,
+      url: `local-media://file${outputPath}`,
+      mediaType,
+    },
+  };
+}
+
 // --- fal.ai client (moved from lib/fal/client.ts) ---
 
 function configureFal(key: string) {
@@ -654,5 +887,55 @@ export function registerWorkflowHandlers(): void {
 
   ipcMain.handle('pod:status', async (_event, params: { runpodKey: string; podId: string }) => {
     return await getPodStatus(params.runpodKey, params.podId);
+  });
+
+  ipcMain.handle('pod:setup-ltx25', async (_event, params: {
+    runpodKey: string;
+    huggingFaceToken: string;
+    gpuProfile?: Ltx25GpuProfile;
+    imageModels?: RunpodSessionImageModel[];
+  }) => {
+    return await setupRunpodLtx25(params);
+  });
+
+  ipcMain.handle('pod:status-ltx25', async (_event, params: {
+    runpodKey: string;
+    podId: string;
+    podUrl: string;
+    podAuthToken: string;
+    secretIds?: string[];
+  }) => {
+    return await getRunpodLtx25Status(params);
+  });
+
+  ipcMain.handle('pod:terminate-ltx25', async (_event, params: {
+    runpodKey: string;
+    podId: string;
+    secretIds?: string[];
+  }) => {
+    return await terminateRunpodLtx25(params);
+  });
+
+  ipcMain.handle('pod:generate-ltx25', async (_event, params: {
+    podId: string;
+    podUrl: string;
+    podAuthToken: string;
+    jobId?: string;
+    input?: Ltx25VideoInput;
+  }) => {
+    const prepared = params.input ? await prepareLtx25Input(params.input) : undefined;
+    return await materializeLtx25Video(await runRunpodLtx25Job({ ...params, input: prepared }));
+  });
+
+  ipcMain.handle('pod:generate-session-image', async (_event, params: {
+    podId: string;
+    podUrl: string;
+    podAuthToken: string;
+    model?: RunpodSessionImageModel;
+    jobId?: string;
+    input?: RunpodSessionImageInput;
+  }) => {
+    const prepared = params.input ? await prepareSessionImageInput(params.input) : undefined;
+    return await materializeSessionImage(await runRunpodSessionImageJob({ ...params, input: prepared }));
   });
 }

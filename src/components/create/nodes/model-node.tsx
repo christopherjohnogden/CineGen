@@ -15,6 +15,7 @@ import { addClipToTrack } from '@/lib/editor/timeline-operations';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { getLayerDecomposeStageLabel } from '@/lib/workflows/layer-decompose';
+import { modelProvider, modelProviderLabel } from '@/lib/workflows/provider-model-options';
 import type { TranscriptSegment, TranscriptWord, WorkflowNodeData } from '@/types/workflow';
 import type { Asset } from '@/types/project';
 
@@ -29,6 +30,12 @@ function formatTime(sec: number): string {
 
 const HEADER_HEIGHT = 40;
 const PORT_SPACING = 28;
+const DEFAULT_MEDIA_NODE_WIDTH = 300;
+const DEFAULT_MEDIA_NODE_HEIGHT = 168.75;
+
+function positiveDimension(value: number | null | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 interface PortEntry {
   handleId: string;
@@ -64,6 +71,8 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
   const status = data.result?.status ?? 'idle';
   const url = data.result?.url;
   const accentColor = CATEGORY_COLORS[modelDef.category];
+  const provider = modelProvider(modelDef);
+  const providerLabel = modelProviderLabel(modelDef);
   const outputPorts = modelDef.outputs?.length
     ? modelDef.outputs.map((output) => ({
         handleId: output.id,
@@ -115,8 +124,10 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
   const isModel3d = modelDef.outputType === 'model3d';
   const isVisualOutput = modelDef.outputType === 'image' || modelDef.outputType === 'video';
   const isRunning = status === 'running';
+  const isRunpodLtxSession = modelDef.nodeType === 'runpod-ltx25-session';
   const reportedProgress = typeof data.result?.progress === 'number' ? data.result.progress : undefined;
   const [progress, setProgress] = useState(0);
+  const [runpodElapsedSeconds, setRunpodElapsedSeconds] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [visualMediaError, setVisualMediaError] = useState(false);
@@ -141,6 +152,18 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
     }, 1500);
     return () => clearInterval(interval);
   }, [isRunning, reportedProgress]);
+
+  useEffect(() => {
+    if (!isRunning || !isRunpodLtxSession) {
+      setRunpodElapsedSeconds(0);
+      return;
+    }
+    const startedAt = data.result?.progressStartedAt ?? Date.now();
+    const updateElapsed = () => setRunpodElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(interval);
+  }, [data.result?.progressStartedAt, isRunning, isRunpodLtxSession]);
 
   const generations = (data.generations as string[]) ?? [];
   const activeIdx = (data.activeGeneration as number) ?? generations.length - 1;
@@ -397,6 +420,8 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
     ? 'Segment'
     : modelDef.nodeType === 'sam3-track-cloud'
       ? 'Track'
+      : modelDef.nodeType === 'runpod-ltx25-session' && status === 'error' && data.result?.remoteJobId
+        ? 'Resume render'
       : 'Run Model';
   const visualActionDisabled = (modelDef.nodeType === 'sam3-segment' || modelDef.nodeType === 'sam3-segment-cloud')
     ? !inputImageUrl
@@ -412,12 +437,14 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
       void runNode(id);
     }
   };
+  const mediaNodeWidth = positiveDimension(width, DEFAULT_MEDIA_NODE_WIDTH);
+  const mediaNodeHeight = positiveDimension(height, DEFAULT_MEDIA_NODE_HEIGHT);
 
   return (
     <div
       className={cls}
       style={isFullBleedVisual
-        ? { width: width ?? 300, height: height ?? 168.75, minWidth: 0, maxWidth: 'none' }
+        ? { width: mediaNodeWidth, height: mediaNodeHeight, minWidth: 0, maxWidth: 'none' }
         : { width: 300, minWidth: 300, maxWidth: 300 }}
     >
       {isFullBleedVisual && (
@@ -503,6 +530,7 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
                 {modelOutputBadge(modelDef.outputType)}
               </span>
               <span className="model-node__media-name">{modelDef.name}</span>
+              <span className={`model-node__provider model-node__provider--${provider}`}>{providerLabel}</span>
             </div>
             <div className="model-node__media-actions nodrag">
               {elementField && elementCount < elementMax && (
@@ -550,10 +578,13 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
           )}
 
           {isRunning ? (
-            <div className="model-node__media-progress nodrag" aria-label={`${Math.round(progress)} percent complete`}>
+            <div
+              className="model-node__media-progress nodrag"
+              aria-label={isRunpodLtxSession ? `${formatTime(runpodElapsedSeconds)} elapsed` : `${Math.round(progress)} percent complete`}
+            >
               <div className="model-node__media-progress-copy">
                 <span>{progressMessage || 'Generating…'}</span>
-                <strong>{Math.round(progress)}%</strong>
+                <strong>{isRunpodLtxSession ? formatTime(runpodElapsedSeconds) : `${Math.round(progress)}%`}</strong>
               </div>
               <div className="model-node__media-progress-track">
                 <span style={{ width: `${progress}%`, background: accentColor }} />
@@ -585,6 +616,7 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
             {modelOutputBadge(modelDef.outputType)}
           </span>
           <span className="model-node__name">{modelDef.name}</span>
+          <span className={`model-node__provider model-node__provider--${provider}`}>{providerLabel}</span>
           {activeUrl && !isModel3d && (
             <button
               type="button"
@@ -912,7 +944,9 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
               <div className="model-node__progress-wrap nodrag">
                 <div className="model-node__progress">
                   <div className="model-node__progress-bar" style={{ width: `${progress}%` }} />
-                  <span className="model-node__progress-text">{Math.round(progress)}%</span>
+                  <span className="model-node__progress-text">
+                    {isRunpodLtxSession ? `${formatTime(runpodElapsedSeconds)} elapsed` : `${Math.round(progress)}%`}
+                  </span>
                   <button
                     type="button"
                     className="model-node__progress-cancel"

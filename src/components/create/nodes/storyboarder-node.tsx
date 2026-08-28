@@ -1,9 +1,17 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Handle, Position, type NodeProps, useReactFlow, type Node } from '@xyflow/react';
-import { ALL_MODELS, getModelDefinition } from '@/lib/fal/models';
+import { getModelDefinition } from '@/lib/fal/models';
 import { CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
 import { runWorkflow } from '@/lib/cloud/funding';
+import { providerModelOptions } from '@/lib/workflows/provider-model-options';
+import { runDirectorJsonJob } from '@/lib/director/run-llm';
+import {
+  isDirectorLlmProvider,
+  pickInstalledDirectorLlm,
+  type DirectorLlmProvider,
+} from '@/lib/director/cli-provider';
+import { getOpenAiApiKey } from '@/lib/utils/api-key';
 import { useWorkspace, getActiveTimeline } from '@/components/workspace/workspace-shell';
 import { addClipToTrack } from '@/lib/editor/timeline-operations';
 import { clipEffectiveDuration } from '@/types/timeline';
@@ -33,13 +41,22 @@ type StoryboardMode = 'image' | 'video';
 
 const SHOT_COUNT_OPTIONS = [3, 6, 9, 12];
 
-const LLM_OPTIONS = [
-  { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
-  { value: 'anthropic/claude-opus-4.6', label: 'Claude Opus 4.6' },
-  { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
-  { value: 'meta-llama/llama-4-maverick', label: 'Llama 4 Maverick' },
+const LLM_OPTIONS: Array<{ value: DirectorLlmProvider; label: string; transport: 'LOCAL' | 'CONNECTED' | 'CLOUD' }> = [
+  { value: 'claude-code', label: 'Claude Code', transport: 'LOCAL' },
+  { value: 'codex', label: 'Codex', transport: 'LOCAL' },
+  { value: 'gemini', label: 'Gemini CLI', transport: 'LOCAL' },
+  { value: 'luna', label: 'ChatGPT Luna', transport: 'CONNECTED' },
+  { value: 'openai', label: 'OpenAI Luna', transport: 'CLOUD' },
+  { value: 'fal', label: 'fal.ai · Gemini 2.5 Flash', transport: 'CLOUD' },
 ];
+
+function parseStoryboardLlm(value: unknown): DirectorLlmProvider {
+  if (isDirectorLlmProvider(value)) return value;
+  // Earlier Storyboarder builds stored a hosted model ID here. Preserve those
+  // projects by routing their planning jobs through the same fal.ai provider.
+  if (typeof value === 'string' && value.includes('/')) return 'fal';
+  return 'claude-code';
+}
 
 const HEADER_HEIGHT = 52;
 const PORT_SPACING = 24;
@@ -61,10 +78,10 @@ IMPORTANT RULES:
 - Start wide to establish the scene, then move in as tension builds
 - Do NOT use words like "split", "collage", "grid", "side-by-side", "multiple panels", or "montage"
 
-Respond with ONLY a JSON array of strings. Each string is a shot description prompt. No other text, no markdown, no explanation.
+Respond with ONLY a JSON object whose "shots" value is an array of strings. Each string is a shot description prompt. No other text, no markdown, no explanation.
 
 Example output format:
-["Wide establishing shot of...", "Medium shot of the character...", "Close-up on..."]`;
+{"shots":["Wide establishing shot of...", "Medium shot of the character...", "Close-up on..."]}`;
 
 function extractResultUrl(result: unknown, path: string): string | undefined {
   const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.');
@@ -83,26 +100,54 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [planningStatus, setPlanningStatus] = useState<'idle' | 'planning' | 'generating' | 'done'>('idle');
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const [cliAvailability, setCliAvailability] = useState<Record<string, boolean>>({});
+  const [cliDetectionComplete, setCliDetectionComplete] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
 
   const mode = (data.config?.mode as StoryboardMode) ?? 'image';
-  const selectedModel = (data.config?.selectedModel as string) ?? 'nano-banana-2';
-  const selectedVideoModel = (data.config?.selectedVideoModel as string) ?? 'kling-3-image';
-  const selectedLlm = (data.config?.selectedLlm as string) ?? 'google/gemini-2.5-flash';
+  const selectedModel = (data.config?.selectedModel as string) ?? 'topview-image-auto';
+  const selectedVideoModel = (data.config?.selectedVideoModel as string) ?? 'topview-video-auto';
+  const selectedLlm = parseStoryboardLlm(data.config?.selectedLlm);
   const shotCount = (data.config?.shotCount as number) ?? 9;
   const rawShots = (data.config?.shots as ShotEntry[]) ?? [];
   const shots: ShotEntry[] = Array.from({ length: shotCount }, (_, i) =>
     rawShots[i] ?? { prompt: '', url: null, status: 'idle' as const, duration: 5 },
   );
 
-  const imageModels = Object.entries(ALL_MODELS)
-    .filter(([, m]) => m.category === 'image')
-    .map(([key, m]) => ({ key, name: m.name }));
+  const imageModels = providerModelOptions(['image', 'image-edit']);
+  const videoModels = providerModelOptions(['video']);
+  const llmOptions = LLM_OPTIONS.map((option) => ({
+    ...option,
+    disabled: option.value === 'claude-code' || option.value === 'codex' || option.value === 'gemini'
+      ? cliDetectionComplete && !cliAvailability[option.value]
+      : option.value === 'luna'
+        ? cliDetectionComplete && !cliAvailability.codex
+        : option.value === 'openai'
+          ? !getOpenAiApiKey()
+          : option.value === 'fal'
+            ? !getApiKey()
+            : false,
+  }));
 
-  const videoModels = Object.entries(ALL_MODELS)
-    .filter(([, m]) => m.category === 'video')
-    .map(([key, m]) => ({ key, name: m.name }));
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI.llm.cliDetect().then(({ providers }) => {
+      if (cancelled) return;
+      const availability = Object.fromEntries(providers.map((provider) => [provider.id, provider.installed]));
+      setCliAvailability(availability);
+      setCliDetectionComplete(true);
+      const available = pickInstalledDirectorLlm(selectedLlm, providers, {
+        falReady: Boolean(getApiKey()), openaiReady: Boolean(getOpenAiApiKey()),
+      });
+      if (available !== selectedLlm) {
+        updateNodeData(id, { config: { ...data.config, selectedLlm: available } });
+      }
+    }).catch(() => setCliDetectionComplete(true));
+    return () => { cancelled = true; };
+  // Detect once per node. Settings changes are picked up when the node remounts.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   // Close settings when clicking outside
   useEffect(() => {
@@ -156,7 +201,7 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
 
     const provider = modelDef.provider ?? 'fal';
     const apiKey = provider === 'kie' ? getKieApiKey() : getApiKey();
-    if (!apiKey) { updateShot(index, { status: 'error', error: `No ${provider} API key configured` }); return; }
+    if (provider !== 'topview' && !apiKey) { updateShot(index, { status: 'error', error: `No ${provider} API key configured` }); return; }
 
     updateShot(index, { status: 'running', error: undefined });
 
@@ -203,7 +248,7 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
 
     const provider = videoModelDef.provider ?? 'fal';
     const apiKey = provider === 'kie' ? getKieApiKey() : getApiKey();
-    if (!apiKey) { updateShot(index, { videoStatus: 'error', videoError: `No ${provider} API key configured` }); return; }
+    if (provider !== 'topview' && !apiKey) { updateShot(index, { videoStatus: 'error', videoError: `No ${provider} API key configured` }); return; }
 
     updateShot(index, { videoStatus: 'running', videoError: undefined });
 
@@ -280,29 +325,24 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
       return;
     }
 
-    const apiKey = getApiKey();
-    if (!apiKey) return;
-
     setPlanningStatus('planning');
     try {
       const planPrompt = `Scene description: "${scenePrompt}"\n\nGenerate exactly ${shotCount} sequential cinematic shot descriptions for this scene. Each shot should progress the story.`;
-      const llmResult = await runWorkflow({
-        apiKey, kieKey: getKieApiKey(), runpodKey: getRunpodApiKey(),
-        runpodEndpointId: undefined, podUrl: getPodUrl(),
-        nodeId: id, nodeType: 'openrouter-llm', modelId: 'openrouter/router',
-        inputs: { prompt: planPrompt, system_prompt: STORYBOARD_SYSTEM_PROMPT, model: selectedLlm, temperature: 0.8, max_tokens: 2048 },
-      });
+      const llmResult = await runDirectorJsonJob(
+        STORYBOARD_SYSTEM_PROMPT,
+        planPrompt,
+        selectedLlm,
+        `storyboarder-${id}-${Date.now()}`,
+        undefined,
+        { fast: true },
+      );
 
-      const llmData = (llmResult as Record<string, unknown>)?.data ?? llmResult;
-      const rawText = (llmData as Record<string, unknown>)?.output as string ?? (llmData as Record<string, unknown>)?.text as string ?? '';
-
-      let shotDescriptions: string[] = [];
-      try {
-        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) shotDescriptions = JSON.parse(jsonMatch[0]);
-      } catch {
-        shotDescriptions = rawText.split('\n').filter((line) => line.trim().length > 10).slice(0, shotCount);
-      }
+      const resultRecord = llmResult && typeof llmResult === 'object' && !Array.isArray(llmResult)
+        ? llmResult as Record<string, unknown>
+        : {};
+      let shotDescriptions = Array.isArray(resultRecord.shots)
+        ? resultRecord.shots.filter((shot): shot is string => typeof shot === 'string' && shot.trim().length > 0)
+        : [];
 
       if (shotDescriptions.length === 0) { setPlanningStatus('idle'); return; }
       shotDescriptions = shotDescriptions.slice(0, shotCount);
@@ -462,21 +502,25 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
                   <div className="storyboarder-node__setting">
                     <label>Image Model</label>
                     <select value={selectedModel} onChange={(e) => updateNodeData(id, { config: { ...data.config, selectedModel: e.target.value } })}>
-                      {imageModels.map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}
+                      {imageModels.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                     </select>
                   </div>
                   {mode === 'video' && (
                     <div className="storyboarder-node__setting">
                       <label>Video Model</label>
                       <select value={selectedVideoModel} onChange={(e) => updateNodeData(id, { config: { ...data.config, selectedVideoModel: e.target.value } })}>
-                        {videoModels.map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}
+                        {videoModels.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                       </select>
                     </div>
                   )}
                   <div className="storyboarder-node__setting">
                     <label>Planning LLM</label>
                     <select value={selectedLlm} onChange={(e) => updateNodeData(id, { config: { ...data.config, selectedLlm: e.target.value } })}>
-                      {LLM_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      {llmOptions.map((option) => (
+                        <option key={option.value} value={option.value} disabled={option.disabled}>
+                          {option.transport} · {option.label}{option.disabled ? ' · unavailable' : ''}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="storyboarder-node__setting">

@@ -1,9 +1,10 @@
 import { memo, useCallback, useRef, useState } from 'react';
 import { Handle, Position, type NodeProps, useReactFlow, type Node } from '@xyflow/react';
-import { ALL_MODELS, getModelDefinition } from '@/lib/fal/models';
+import { getModelDefinition } from '@/lib/fal/models';
 import { CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
 import { runWorkflow } from '@/lib/cloud/funding';
+import { providerModelOptions } from '@/lib/workflows/provider-model-options';
 import type { WorkflowNodeData } from '@/types/workflow';
 
 type ShotBoardNodeProps = NodeProps & { data: WorkflowNodeData };
@@ -30,12 +31,10 @@ function ShotBoardNodeInner({ id, data, selected }: ShotBoardNodeProps) {
   const { updateNodeData, getEdges, getNode } = useReactFlow();
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
 
-  const selectedModel = (data.config?.selectedModel as string) ?? 'nano-banana-2';
+  const selectedModel = (data.config?.selectedModel as string) ?? 'topview-image-auto';
   const shots: ShotEntry[] = (data.config?.shots as ShotEntry[]) ?? [];
 
-  const imageModels = Object.entries(ALL_MODELS)
-    .filter(([, m]) => m.category === 'image')
-    .map(([key, m]) => ({ key, name: m.name }));
+  const imageModels = providerModelOptions(['image', 'image-edit']);
 
   const findConnectedImageUrl = (): string | undefined => {
     const edges = getEdges();
@@ -84,7 +83,7 @@ function ShotBoardNodeInner({ id, data, selected }: ShotBoardNodeProps) {
 
     const provider = modelDef.provider ?? 'fal';
     const apiKey = provider === 'kie' ? getKieApiKey() : getApiKey();
-    if (!apiKey) {
+    if (provider !== 'topview' && !apiKey) {
       updateShot(index, { status: 'error', error: `No ${provider} API key configured` });
       return;
     }
@@ -191,7 +190,7 @@ function ShotBoardNodeInner({ id, data, selected }: ShotBoardNodeProps) {
             onChange={(e) => updateNodeData(id, { config: { ...data.config, selectedModel: e.target.value } })}
           >
             {imageModels.map((m) => (
-              <option key={m.key} value={m.key}>{m.name}</option>
+              <option key={m.key} value={m.key}>{m.label}</option>
             ))}
           </select>
 

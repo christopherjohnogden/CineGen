@@ -21,6 +21,7 @@ import { CreateTab } from '@/components/create/create-tab';
 import { EditTab } from '@/components/edit/edit-tab';
 import { LLMTab } from '@/components/llm/llm-tab';
 import { notifyCopilotResponseReady } from '@/lib/llm/copilot-notifications';
+import { attachElementMentionToGraph } from '@/lib/llm/prompt-elements';
 import {
   assetNeedsGeneratedPersist,
   buildPersistedAssetUpdate,
@@ -97,6 +98,7 @@ type WorkspaceAction =
   | { type: 'REMOVE_ELEMENT_FOLDER'; folderId: string }
   | { type: 'SET_DIRECTOR'; director: DirectorShow }
   | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
+  | { type: 'APPLY_ELEMENT_MENTION'; nodeId: string; elementId: string; config: Record<string, unknown> }
   | { type: 'HYDRATE'; payload: HydratePayload }
   | { type: 'UNDO' }
   | { type: 'REDO' };
@@ -393,6 +395,29 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
           },
         ),
       };
+
+    case 'APPLY_ELEMENT_MENTION': {
+      const updatedNodes = state.nodes.map((node) => (
+        node.id === action.nodeId
+          ? { ...node, data: { ...node.data, config: { ...node.data.config, ...action.config } } }
+          : node
+      ));
+      const bound = attachElementMentionToGraph({
+        nodes: updatedNodes,
+        edges: state.edges,
+        promptNodeId: action.nodeId,
+        elementId: action.elementId,
+      });
+      return {
+        ...state,
+        nodes: bound.nodes,
+        edges: bound.edges,
+        spaces: updateActiveSpace(state.spaces, state.activeSpaceId, {
+          nodes: bound.nodes,
+          edges: bound.edges,
+        }),
+      };
+    }
 
     case 'SET_EDGES':
       return {
@@ -724,7 +749,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
 
 const MAX_HISTORY = 50;
 const UNDOABLE_ACTIONS: WorkspaceAction['type'][] = [
-  'SET_NODES', 'SET_EDGES', 'UPDATE_NODE_CONFIG',
+  'SET_NODES', 'SET_EDGES', 'UPDATE_NODE_CONFIG', 'APPLY_ELEMENT_MENTION',
   'ADD_SPACE', 'RENAME_SPACE', 'REMOVE_SPACE', 'CLOSE_SPACE', 'OPEN_SPACE', 'SET_ACTIVE_SPACE',
   'ADD_ASSET', 'UPDATE_ASSET', 'REMOVE_ASSET', 'REMOVE_ASSETS',
   'ADD_FOLDER', 'UPDATE_FOLDER', 'REMOVE_FOLDER',
@@ -832,7 +857,7 @@ const SAVE_DEBOUNCE_MS = 500;
 const STALE_DERIVE_JOB_MS = 15000;
 const DERIVE_JOB_TYPES = ['generate_thumbnail', 'compute_waveform', 'generate_filmstrip', 'generate_proxy'] as const;
 const PERSIST_ACTIONS: WorkspaceAction['type'][] = [
-  'SET_NODES', 'SET_EDGES', 'UPDATE_NODE_CONFIG', 'ADD_SPACE', 'RENAME_SPACE', 'REMOVE_SPACE', 'CLOSE_SPACE', 'OPEN_SPACE', 'SET_ACTIVE_SPACE',
+  'SET_NODES', 'SET_EDGES', 'UPDATE_NODE_CONFIG', 'APPLY_ELEMENT_MENTION', 'ADD_SPACE', 'RENAME_SPACE', 'REMOVE_SPACE', 'CLOSE_SPACE', 'OPEN_SPACE', 'SET_ACTIVE_SPACE',
   'ADD_ASSET', 'UPDATE_ASSET', 'REMOVE_ASSET', 'REMOVE_ASSETS',
   'ADD_FOLDER', 'UPDATE_FOLDER', 'REMOVE_FOLDER',
   'SET_TIMELINE', 'ADD_TIMELINE', 'REMOVE_TIMELINE', 'CLOSE_TIMELINE', 'OPEN_TIMELINE', 'SET_ACTIVE_TIMELINE',

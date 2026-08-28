@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import {
   storyboardPlan,
+  storyboardModelOption,
+  storyboardModelForRunpodSession,
+  storyboardRunpodDimensions,
   storyboardGenerationErrorMessage,
   isRetryableStoryboardError,
   runStoryboardWithRetry,
   storyboardPromptWithReferences,
+  storyboardQwenRequest,
+  storyboardPromptWithoutImageReferences,
   storyboardReferences,
   storyboardReferenceUrls,
   storyboardResultUrl,
@@ -128,14 +133,92 @@ describe('director storyboard plan', () => {
     );
   });
 
+  it('builds Qwen references and numbered bindings from the same ordered Element set', () => {
+    const elements: Element[] = [
+      { id: 'jordan', name: 'Jordan', type: 'character', description: '', createdAt: '', updatedAt: '', images: [{ id: '1', url: 'https://cdn.test/jordan.jpg', source: 'upload', createdAt: '' }] },
+      { id: 'office', name: 'Office', type: 'location', description: '', createdAt: '', updatedAt: '', images: [{ id: '2', url: 'https://cdn.test/office.jpg', source: 'upload', createdAt: '' }] },
+    ];
+    const references = storyboardReferences(show(), show().clips[0], elements).references;
+
+    const fresh = storyboardQwenRequest(storyboardPlan(show())[0].prompt, references);
+    expect(fresh.referenceImages).toEqual([
+      'https://cdn.test/office.jpg',
+      'https://cdn.test/jordan.jpg',
+      'https://cdn.test/look.jpg',
+    ]);
+    expect(fresh.prompt).toContain('Picture 1 is the base location');
+    expect(fresh.prompt).toContain('Picture 2 is a character identity reference');
+    expect(fresh.prompt).toContain('Picture 3 is a visual-style reference only');
+    expect(fresh.prompt).toContain('ACTION — the character shown in Picture 2 wheels toward the desk.');
+    expect(fresh.prompt).toContain('the location shown in Picture 1');
+    expect(fresh.prompt).not.toContain('@');
+
+    const revision = storyboardQwenRequest(
+      'REVISE PROMPT',
+      references,
+      'https://cdn.test/existing-frame.jpg',
+    );
+    expect(revision.referenceImages).toEqual([
+      'https://cdn.test/existing-frame.jpg',
+      'https://cdn.test/office.jpg',
+      'https://cdn.test/jordan.jpg',
+    ]);
+    expect(revision.prompt).toContain('Picture 1 is the base scene');
+    expect(revision.prompt).toContain('Picture 2 is the location reference');
+    expect(revision.prompt).toContain('Picture 3 is a character identity reference');
+  });
+
   it('reports shot tags that do not have an Element image', () => {
     const resolved = storyboardReferences(show(), show().clips[0], []);
     expect(resolved.references.map((reference) => reference.source)).toEqual(['look-bible']);
     expect(resolved.missingElementTags).toEqual(['@Jordan', '@Office']);
   });
+
+  it('removes identity-lock copy when a text-only model receives no reference files', () => {
+    const prompt = storyboardPlan(show())[0].prompt;
+    expect(prompt).toContain('ACTIVE REFERENCES');
+    const textOnly = storyboardPromptWithoutImageReferences(prompt);
+    expect(textOnly).not.toContain('ACTIVE REFERENCES');
+    expect(textOnly).not.toContain('SUPPLIED IMAGE BINDINGS');
+    expect(textOnly).toContain('ACTION — @Jordan wheels toward the desk.');
+    expect(textOnly).toContain('FRAME —');
+  });
 });
 
 describe('storyboard generation result', () => {
+  it('describes RunPod storyboard models and maps film ratios to native image sizes', () => {
+    expect(storyboardModelOption('runpod_sdxl_session')).toMatchObject({
+      provider: 'runpod',
+      sessionModel: 'sdxl',
+    });
+    expect(storyboardModelOption('runpod_qwen_image_edit_session')).toMatchObject({
+      provider: 'runpod',
+      sessionModel: 'qwen-image-edit',
+      requiresSourceImage: true,
+    });
+    expect(storyboardModelOption('runpod_sdxl_session').label).toBe('RunPod Session · SDXL');
+    expect(storyboardModelOption('nano_banana_2').label).toBe('Higgsfield · Nano Banana 2');
+    expect(storyboardRunpodDimensions('16:9')).toEqual({ width: 1344, height: 768 });
+    expect(storyboardRunpodDimensions('9:16')).toEqual({ width: 768, height: 1344 });
+    expect(storyboardRunpodDimensions('4:3')).toEqual({ width: 1152, height: 896 });
+  });
+
+  it('selects an installed RunPod image model when a generation session becomes ready', () => {
+    expect(storyboardModelForRunpodSession('nano_banana_2', true, ['sdxl', 'qwen-image-edit']))
+      .toBe('runpod_sdxl_session');
+    expect(storyboardModelForRunpodSession('nano_banana_2', true, ['qwen-image-edit']))
+      .toBe('runpod_qwen_image_edit_session');
+  });
+
+  it('preserves an available RunPod choice and does not change providers for an unavailable session', () => {
+    expect(storyboardModelForRunpodSession('runpod_qwen_image_edit_session', true, ['sdxl', 'qwen-image-edit']))
+      .toBe('runpod_qwen_image_edit_session');
+    expect(storyboardModelForRunpodSession('gpt_image_2', false, ['sdxl']))
+      .toBe('gpt_image_2');
+    expect(storyboardModelForRunpodSession('gpt_image_2', true, []))
+      .toBe('gpt_image_2');
+  });
+
   it('finds image URLs in desktop, web, and funded relay response envelopes', () => {
     expect(storyboardResultUrl({ url: 'https://cdn.test/direct.jpg' })).toBe('https://cdn.test/direct.jpg');
     expect(storyboardResultUrl({ output: { url: '/media/generated/board.png' } })).toBe('/media/generated/board.png');
@@ -165,5 +248,6 @@ describe('storyboard generation result', () => {
   it('turns opaque provider transport failures into a useful message', () => {
     expect(isRetryableStoryboardError(new Error('internal [0]'))).toBe(true);
     expect(storyboardGenerationErrorMessage(new Error('internal [0]'))).toContain('after three attempts');
+    expect(storyboardGenerationErrorMessage(new Error('HTTP 504'), 'runpod')).toContain('RunPod session');
   });
 });

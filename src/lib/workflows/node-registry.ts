@@ -92,7 +92,7 @@ const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
     ],
     outputs: [],
     defaultData: {
-      selectedModel: 'nano-banana-2',
+      selectedModel: 'topview-image-auto',
       shots: [
         { prompt: 'Establishing wide shot - full scene, character in context', url: null, status: 'idle' },
         { prompt: 'Full body shot, straight-on', url: null, status: 'idle' },
@@ -116,8 +116,9 @@ const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
     ],
     outputs: [],
     defaultData: {
-      selectedModel: 'nano-banana-2',
-      selectedLlm: 'google/gemini-2.5-flash',
+      selectedModel: 'topview-image-auto',
+      selectedVideoModel: 'topview-video-auto',
+      selectedLlm: 'claude-code',
       shotCount: 9,
       shots: [],
     },

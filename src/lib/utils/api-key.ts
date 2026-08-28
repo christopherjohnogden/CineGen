@@ -38,6 +38,50 @@ export function getRunpodApiKey(): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+export function getRunpodLtxEndpointId(): string | undefined {
+  const value = getSettingsValue('runpodLtxEndpointId');
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+export function getRunpodLtxPodId(): string | undefined {
+  const primary = getSettingsValue('runpodLtxPodId');
+  const value = typeof primary === 'string' && primary.trim() ? primary : getSettingsValue('podId');
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+export function getRunpodLtxPodUrl(): string | undefined {
+  const primary = getSettingsValue('runpodLtxPodUrl');
+  const value = typeof primary === 'string' && primary.trim() ? primary : getSettingsValue('podUrl');
+  return typeof value === 'string' && value.trim() ? value.trim().replace(/\/$/, '') : undefined;
+}
+
+export function getRunpodLtxPodAuthToken(): string | undefined {
+  const primary = getSettingsValue('runpodLtxPodAuthToken');
+  const value = typeof primary === 'string' && primary.trim() ? primary : getSettingsValue('podAuthToken');
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+export type RunpodSessionImageModel = 'sdxl' | 'qwen-image-edit';
+
+export function getRunpodSessionImageModels(): RunpodSessionImageModel[] {
+  // A running Pod is immutable: only advertise the models recorded when that
+  // Pod was created. Planned choices apply to the next session, never an old one.
+  const value = getSettingsValue(getRunpodLtxPodId()
+    ? 'runpodLtxActiveImageModels'
+    : 'runpodLtxImageModels');
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((model): model is RunpodSessionImageModel => (
+    model === 'sdxl' || model === 'qwen-image-edit'
+  )))];
+}
+
+export function isRunpodGenerationSessionReady(): boolean {
+  return getSettingsValue('runpodLtxStatus') === 'ready'
+    && Boolean(getRunpodLtxPodId())
+    && Boolean(getRunpodLtxPodUrl())
+    && Boolean(getRunpodLtxPodAuthToken());
+}
+
 export function getPodUrl(): string | undefined {
   const value = getSettingsValue('podUrl');
   return typeof value === 'string' && value.trim() ? value : undefined;

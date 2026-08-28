@@ -28,7 +28,16 @@ import {
 } from '@/lib/director/job-inputs';
 import { applyWrittenLook, lookBibleImageUrls } from '@/lib/director/look-bible';
 import { ENRICH_CHARACTER_SYSTEM_PROMPT, buildEnrichInput, parseEnrichResult } from '@/lib/director/enrich';
-import { getApiKey, getOpenAiApiKey } from '@/lib/utils/api-key';
+import {
+  getApiKey,
+  getOpenAiApiKey,
+  getRunpodLtxPodAuthToken,
+  getRunpodLtxPodId,
+  getRunpodLtxPodUrl,
+  getRunpodSessionImageModels,
+  isRunpodGenerationSessionReady,
+} from '@/lib/utils/api-key';
+import { adapterIdForVideoProvider, getVideoGenerationProvider } from '@/lib/utils/video-generation-provider';
 import { runDirectorJsonJob } from '@/lib/director/run-llm';
 import { runDirectorShotlist } from '@/lib/director/run-shotlist';
 import { cancelCliCopilotChat } from '@/lib/llm/cli-copilot-client';
@@ -57,6 +66,8 @@ import {
 } from '@/lib/director/generate';
 import { matchListedJobToTake } from '@/lib/director/rejoin-takes';
 import { getDirectorAdapter } from '@/lib/director/video-adapter';
+import { generateLtx25AndWait } from '@/lib/runpod/ltx25-client';
+import { generateSessionImageAndWait } from '@/lib/runpod/session-image-client';
 import { parseVariantKey, variantKey, variantTakeLabel } from '@/lib/director/slate';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { defaultFolderForNewElement, projectFolderId } from '@/lib/elements/library';
@@ -65,9 +76,14 @@ import { runWorkflow } from '@/lib/cloud/funding';
 import {
   storyboardPlan,
   storyboardGenerationErrorMessage,
+  storyboardModelForRunpodSession,
+  storyboardModelOption,
+  storyboardQwenRequest,
   storyboardPromptWithReferences,
+  storyboardPromptWithoutImageReferences,
   storyboardReferences,
   storyboardResultUrl,
+  storyboardRunpodDimensions,
   runStoryboardWithRetry,
   upsertStoryboardFrame,
 } from '@/lib/director/storyboard';
@@ -108,10 +124,14 @@ export function DirectorTab() {
   elementsRef.current = state.elements;
 
   const [selectedBeatN, setSelectedBeatN] = useState(1);
-  const [preflight, setPreflight] = useState('Seedance 2.5');
+  const [preflight, setPreflight] = useState('Topview AI · Auto');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [cliProviders, setCliProviders] = useState<Record<CliLlmProviderId, DirectorCliInfo>>(EMPTY_CLI_PROVIDERS);
   const [higgsfieldReady, setHiggsfieldReady] = useState(false);
+  const [runpodStoryboardSession, setRunpodStoryboardSession] = useState(() => ({
+    ready: isRunpodGenerationSessionReady(),
+    models: getRunpodSessionImageModels(),
+  }));
   const [openDrawer, setOpenDrawer] = useState<'setup' | 'look' | null>(null);
 
   const TABS: { id: DirectorMode; label: string }[] = [
@@ -157,6 +177,34 @@ export function DirectorTab() {
     showRef.current = director;
     dispatch({ type: 'SET_DIRECTOR', director });
   }, [dispatch]);
+
+  useEffect(() => {
+    const syncVideoProvider = () => {
+      const adapterId = adapterIdForVideoProvider(getVideoGenerationProvider());
+      const current = showRef.current;
+      if (current.adapterId !== adapterId) setShow({ ...current, adapterId });
+    };
+    syncVideoProvider();
+    window.addEventListener('cinegen:settings-changed', syncVideoProvider);
+    return () => window.removeEventListener('cinegen:settings-changed', syncVideoProvider);
+  }, [setShow]);
+
+  useEffect(() => {
+    const syncRunpodStoryboardSession = () => {
+      const ready = isRunpodGenerationSessionReady();
+      const models = getRunpodSessionImageModels();
+      setRunpodStoryboardSession({ ready, models });
+
+      const current = showRef.current;
+      const storyboardModelId = storyboardModelForRunpodSession(current.storyboardModelId, ready, models);
+      if (storyboardModelId && storyboardModelId !== current.storyboardModelId) {
+        setShow({ ...current, storyboardModelId });
+      }
+    };
+    syncRunpodStoryboardSession();
+    window.addEventListener('cinegen:settings-changed', syncRunpodStoryboardSession);
+    return () => window.removeEventListener('cinegen:settings-changed', syncRunpodStoryboardSession);
+  }, [setShow]);
 
   const recordSpend = useCallback((usage: Parameters<typeof mergeDirectorLlmSpend>[1]) => {
     const current = showRef.current;
@@ -213,22 +261,49 @@ export function DirectorTab() {
       let connected: boolean | undefined;
       let error: string | undefined;
       try {
-        const status = await window.electronAPI.higgsfield.accountStatus();
-        connected = status.connected;
-        error = status.error;
+        if (adapter.provider === 'topview') {
+          const [status, higgsfieldStatus] = await Promise.all([
+            window.electronAPI.topview.accountStatus(),
+            window.electronAPI.higgsfield.accountStatus().catch(() => ({ connected: false })),
+          ]);
+          connected = status.connected;
+          error = status.error;
+          if (!cancelled) setHiggsfieldReady(Boolean(higgsfieldStatus.connected));
+        } else if (adapter.provider === 'artlist') {
+          const [status, higgsfieldStatus] = await Promise.all([
+            window.electronAPI.artlist.accountStatus(),
+            window.electronAPI.higgsfield.accountStatus().catch(() => ({ connected: false })),
+          ]);
+          connected = status.connected;
+          error = status.error;
+          if (!cancelled) setHiggsfieldReady(Boolean(higgsfieldStatus.connected));
+        } else if (adapter.provider === 'runpod') {
+          const higgsfieldStatus = await window.electronAPI.higgsfield.accountStatus().catch(() => ({ connected: false }));
+          connected = Boolean(getRunpodLtxPodId() && getRunpodLtxPodUrl() && getRunpodLtxPodAuthToken());
+          error = connected ? undefined : 'Start an LTX-2.5 Pod session in Settings.';
+          if (!cancelled) setHiggsfieldReady(Boolean(higgsfieldStatus.connected));
+        } else {
+          const status = await window.electronAPI.higgsfield.accountStatus();
+          connected = status.connected;
+          error = status.error;
+        }
       } catch (err) {
         connected = false;
-        error = err instanceof Error ? err.message : 'Higgsfield unavailable';
+        error = err instanceof Error ? err.message : `${adapter.label} unavailable`;
       }
       if (cancelled) return;
-      setHiggsfieldReady(Boolean(connected));
+      if (adapter.provider !== 'topview' && adapter.provider !== 'artlist' && adapter.provider !== 'runpod') setHiggsfieldReady(Boolean(connected));
       const result = generationPreflight({
         clipCount: 1,
         seconds: selectedClip(show)?.seconds ?? 0,
         adapterLabel: adapter.label,
-        higgsfieldConnected: connected,
-        higgsfieldError: error,
+        providerConnected: connected,
+        providerError: error,
       });
+      const maxDurationSec = adapter.capabilities.maxDurationSec;
+      if (maxDurationSec !== undefined && (selectedClip(show)?.seconds ?? 0) > maxDurationSec) {
+        result.warnings.push(`${adapter.label} supports direct clips up to ${maxDurationSec}s. Choose a shorter clip/isolate or another provider before rendering.`);
+      }
       setPreflight(result.summary);
       setWarnings(result.warnings);
     };
@@ -941,8 +1016,33 @@ export function DirectorTab() {
       setShow({ ...current, jobStatus: { type: 'generate', message, error: true } });
       return message;
     }
-    if (!window.electronAPI?.higgsfield?.generate) {
-      const message = 'Higgsfield generate is only available in the CineGen desktop app.';
+    const adapter = getDirectorAdapter(current.adapterId);
+    const activeVariant = clip.activeVariant;
+    const intendedDuration = activeVariant.kind === 'isolated' && activeVariant.mode === 'native'
+      ? clip.beats.find((beat) => beat.n === activeVariant.beatN)?.dur ?? clip.seconds
+      : clip.seconds;
+    const maxDurationSec = adapter.capabilities.maxDurationSec;
+    if (maxDurationSec !== undefined && intendedDuration > maxDurationSec) {
+      const message = `${adapter.label} supports direct clips up to ${maxDurationSec}s. Choose a shorter clip/isolate, or select another provider in Settings.`;
+      setShow({ ...current, jobStatus: { type: 'generate', message, error: true } });
+      return message;
+    }
+    const canGenerate = adapter.provider === 'topview'
+      ? Boolean(window.electronAPI?.topview?.generate)
+      : adapter.provider === 'artlist'
+        ? Boolean(window.electronAPI?.artlist?.generate)
+      : adapter.provider === 'runpod'
+        ? Boolean((window.electronAPI?.pod as typeof window.electronAPI.pod & { generateLtx25?: unknown })?.generateLtx25)
+        : Boolean(window.electronAPI?.higgsfield?.generate);
+    if (!canGenerate) {
+      const message = adapter.provider === 'runpod'
+        ? 'RunPod LTX-2.5 generation is not available in this CineGen build.'
+        : `${adapter.label} generation is only available in the CineGen desktop app.`;
+      setShow({ ...current, jobStatus: { type: 'generate', message, error: true } });
+      return message;
+    }
+    if (adapter.provider === 'runpod' && !(getRunpodLtxPodId() && getRunpodLtxPodUrl() && getRunpodLtxPodAuthToken())) {
+      const message = 'Start an LTX-2.5 Pod session in Settings before generating.';
       setShow({ ...current, jobStatus: { type: 'generate', message, error: true } });
       return message;
     }
@@ -978,29 +1078,69 @@ export function DirectorTab() {
     }, clip.id, prepared.take));
 
     try {
-      const submitted = await window.electronAPI.higgsfield.generate({
-        prompt: prepared.request.prompt,
-        model: prepared.request.modelId,
-        outputType: 'video',
-        params: prepared.request.params,
-        medias: prepared.request.medias,
-        wait: false,
-      });
-      const jobId = submitted.jobId;
+      const submitted = prepared.request.provider === 'runpod'
+        ? await generateLtx25AndWait({
+            prompt: prepared.request.prompt,
+            durationSec: prepared.request.durationSec,
+            aspectRatio: String(prepared.request.params.aspect_ratio ?? current.aspectRatio),
+            resolution: String(prepared.request.params.resolution ?? current.resolution),
+            generateAudio: Boolean(prepared.request.params.generate_audio),
+            referenceImages: prepared.request.medias
+              ?.filter((media) => media.role === 'image' || media.role === 'start_image')
+              .map((media) => media.value),
+          }, {
+            onJobId: (jobId) => {
+              recoverAttempted.current.add(prepared.take.id);
+              setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, { jobId }));
+            },
+          })
+        : prepared.request.provider === 'topview'
+          ? await window.electronAPI.topview.generate({
+              prompt: prepared.request.prompt,
+              model: prepared.request.modelId,
+              durationSec: prepared.request.durationSec,
+              aspectRatio: String(prepared.request.params.aspect_ratio ?? current.aspectRatio),
+              resolution: String(prepared.request.params.resolution ?? current.resolution),
+              generateAudio: Boolean(prepared.request.params.generate_audio),
+              medias: prepared.request.medias,
+            })
+        : prepared.request.provider === 'artlist'
+          ? await window.electronAPI.artlist.generate({
+              prompt: prepared.request.prompt,
+              model: prepared.request.modelId,
+              durationSec: prepared.request.durationSec,
+              aspectRatio: String(prepared.request.params.aspect_ratio ?? current.aspectRatio),
+              resolution: String(prepared.request.params.resolution ?? current.resolution),
+              generateAudio: Boolean(prepared.request.params.generate_audio),
+              medias: prepared.request.medias,
+            })
+          : await window.electronAPI.higgsfield.generate({
+              prompt: prepared.request.prompt,
+              model: prepared.request.modelId,
+              outputType: 'video',
+              params: prepared.request.params,
+              medias: prepared.request.medias,
+              wait: false,
+            });
+      const jobId = 'jobId' in submitted
+        ? submitted.jobId
+        : ('generationId' in submitted
+            ? submitted.generationId
+            : ('taskId' in submitted ? submitted.taskId : undefined));
       if (jobId) {
         recoverAttempted.current.add(prepared.take.id);
         setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, { jobId }));
       }
       const result = submitted.url
         ? submitted
-        : jobId
+        : jobId && prepared.request.provider === 'higgsfield'
           ? await window.electronAPI.higgsfield.generate({
               jobId,
               model: prepared.request.modelId,
               outputType: 'video',
             })
           : submitted;
-      if (!result.url) throw new Error('Higgsfield finished but returned no video URL.');
+      if (!result.url) throw new Error(`${prepared.request.label} finished but returned no video URL.`);
       dispatch({
         type: 'UPDATE_ASSET',
         asset: {
@@ -1008,12 +1148,20 @@ export function DirectorTab() {
           url: result.url,
           fileRef: result.url,
           duration: result.durationSec ?? prepared.request.durationSec,
-          metadata: { generating: false, generatedVia: 'director', higgsfieldModel: prepared.request.modelId },
+          metadata: {
+            generating: false,
+            generatedVia: 'director',
+            generationProvider: prepared.request.provider,
+            generationModel: 'model' in result && result.model ? result.model : prepared.request.modelId,
+            ...(prepared.request.provider === 'higgsfield' ? { higgsfieldModel: prepared.request.modelId } : {}),
+            ...('accountUrl' in result && result.accountUrl ? { artlistAccountUrl: result.accountUrl } : {}),
+            ...('boardUrl' in result && result.boardUrl ? { topviewBoardUrl: result.boardUrl } : {}),
+          },
         },
       });
       setShow(updateDirectorTake(showRef.current, clip.id, prepared.take.id, {
         status: 'done',
-        jobId: result.jobId ?? jobId,
+        jobId: ('jobId' in result ? result.jobId : undefined) ?? jobId,
       }));
       return null;
     } catch (error) {
@@ -1061,10 +1209,14 @@ export function DirectorTab() {
     });
   }, [generateOne, setShow]);
 
-  const generateStoryboardFrame = useCallback(async (frameId: string): Promise<void> => {
+  const generateStoryboardFrame = useCallback(async (
+    frameId: string,
+    requestedModelId?: DirectorShow['storyboardModelId'],
+  ): Promise<void> => {
     const currentPlan = storyboardPlan(showRef.current).find((frame) => frame.id === frameId);
     if (!currentPlan) return;
-    const modelId = showRef.current.storyboardModelId ?? HIGGSFIELD_MODELS.nanoBanana;
+    const modelId = requestedModelId ?? showRef.current.storyboardModelId ?? HIGGSFIELD_MODELS.nanoBanana;
+    const modelOption = storyboardModelOption(modelId);
     const prompt = currentPlan.prompt.trim();
     if (!prompt) {
       setShow(upsertStoryboardFrame(showRef.current, currentPlan, {
@@ -1075,29 +1227,79 @@ export function DirectorTab() {
     }
     setShow(upsertStoryboardFrame(showRef.current, currentPlan, {
       prompt,
-      modelId,
       status: 'generating',
       error: undefined,
     }));
     try {
       const referenceSet = storyboardReferences(showRef.current, currentPlan.clip, elementsRef.current);
       const referenceUrls = referenceSet.references.map((reference) => reference.url);
-      const generationPrompt = storyboardPromptWithReferences(prompt, referenceSet.references);
-      const inputs: Record<string, unknown> = {
-        prompt: generationPrompt,
-        aspect_ratio: showRef.current.aspectRatio,
-        resolution: '2k',
-        ...(referenceUrls.length > 0 ? { input_images: referenceUrls } : {}),
-      };
-      const result = await runStoryboardWithRetry(() => runWorkflow({
-          nodeId: `storyboard-${currentPlan.id}`,
-          nodeType: modelId === HIGGSFIELD_MODELS.gptImage ? 'hf-gpt-image-2' : 'hf-nano-banana-pro',
-          modelId,
-          outputType: 'image',
-          inputs,
-        }));
+      const dimensions = storyboardRunpodDimensions(showRef.current.aspectRatio);
+      const result = modelOption.provider === 'runpod'
+        ? await (async () => {
+            if (!isRunpodGenerationSessionReady() || !modelOption.sessionModel) {
+              throw new Error('Start a RunPod Generation Session in Settings before rendering this storyboard model.');
+            }
+            if (!getRunpodSessionImageModels().includes(modelOption.sessionModel)) {
+              throw new Error(`${modelOption.shortLabel} was not included in this RunPod session. End it when you are finished, select the model in Settings, then start a new session.`);
+            }
+
+            const existingFrame = currentPlan.saved?.imageUrl?.trim();
+            const qwenRequest = modelOption.sessionModel === 'qwen-image-edit'
+              ? storyboardQwenRequest(prompt, referenceSet.references, existingFrame)
+              : undefined;
+            if (modelOption.requiresSourceImage && !qwenRequest?.referenceImages.length) {
+              throw new Error('Qwen Image Edit needs an existing storyboard frame or a linked Element image to use as its source.');
+            }
+            const generationPrompt = qwenRequest?.prompt
+              ?? storyboardPromptWithoutImageReferences(prompt);
+            const priorJobId = currentPlan.saved?.jobId?.trim();
+            const priorError = currentPlan.saved?.error?.toLowerCase() ?? '';
+            const resumeJobId = priorJobId && (
+              currentPlan.saved?.status === 'generating'
+              || priorError.includes('invalid image-generation task')
+              || priorError.includes('still working')
+              || priorError.includes('could not read the result')
+              || priorError.includes('proxy read timeout')
+            ) ? priorJobId : undefined;
+            return await generateSessionImageAndWait({
+              model: modelOption.sessionModel,
+              prompt: generationPrompt,
+              width: dimensions.width,
+              height: dimensions.height,
+              ...(qwenRequest?.referenceImages.length
+                ? { referenceImages: qwenRequest.referenceImages }
+                : {}),
+            }, {
+              ...(resumeJobId ? { resumeJobId } : {}),
+              onJobId: (jobId) => {
+                const latest = storyboardPlan(showRef.current).find((frame) => frame.id === frameId) ?? currentPlan;
+                setShow(upsertStoryboardFrame(showRef.current, latest, {
+                  prompt,
+                  status: 'generating',
+                  jobId,
+                  error: undefined,
+                }));
+              },
+            });
+          })()
+        : await (async () => {
+            const generationPrompt = storyboardPromptWithReferences(prompt, referenceSet.references);
+            const inputs: Record<string, unknown> = {
+              prompt: generationPrompt,
+              aspect_ratio: showRef.current.aspectRatio,
+              resolution: '2k',
+              ...(referenceUrls.length > 0 ? { input_images: referenceUrls } : {}),
+            };
+            return await runStoryboardWithRetry(() => runWorkflow({
+              nodeId: `storyboard-${currentPlan.id}`,
+              nodeType: modelId === HIGGSFIELD_MODELS.gptImage ? 'hf-gpt-image-2' : 'hf-nano-banana-pro',
+              modelId,
+              outputType: 'image',
+              inputs,
+            }));
+          })();
       const url = storyboardResultUrl(result);
-      if (!url) throw new Error('Higgsfield finished but returned no storyboard image.');
+      if (!url) throw new Error(`${modelOption.provider === 'runpod' ? 'RunPod' : 'Higgsfield'} finished but returned no storyboard image.`);
 
       const latestPlan = storyboardPlan(showRef.current).find((frame) => frame.id === frameId) ?? currentPlan;
       const clipLabel = latestPlan.clipLabel;
@@ -1127,11 +1329,17 @@ export function DirectorTab() {
         folderId: planned.clipId,
         metadata: {
           generatedVia: 'director-storyboard',
+          generationProvider: modelOption.provider,
+          generationModel: result && typeof result === 'object' && 'model' in result && typeof result.model === 'string'
+            ? result.model
+            : modelOption.shortLabel,
           directorSceneId: latestPlan.scene.id,
           directorClipId: latestPlan.clip.id,
           directorBeatN: latestPlan.beat.n,
           storyboardFrameId: latestPlan.id,
-          higgsfieldModel: modelId,
+          ...(modelOption.provider === 'higgsfield'
+            ? { higgsfieldModel: modelId }
+            : { runpodSessionModel: modelOption.sessionModel }),
           storyboardReferenceIds: referenceSet.references.map((reference) => reference.id),
           storyboardReferenceNames: referenceSet.references.map((reference) => reference.name),
         },
@@ -1143,6 +1351,9 @@ export function DirectorTab() {
         status: 'ready',
         imageUrl: url,
         assetId: asset.id,
+        jobId: result && typeof result === 'object' && 'jobId' in result && typeof result.jobId === 'string'
+          ? result.jobId
+          : undefined,
         error: undefined,
         generatedAt: timestamp(),
         generatedSourceHash: latestPlan.sourceHash,
@@ -1152,9 +1363,8 @@ export function DirectorTab() {
       const latestPlan = storyboardPlan(showRef.current).find((frame) => frame.id === frameId) ?? currentPlan;
       setShow(upsertStoryboardFrame(showRef.current, latestPlan, {
         prompt,
-        modelId,
         status: 'failed',
-        error: storyboardGenerationErrorMessage(error),
+        error: storyboardGenerationErrorMessage(error, modelOption.provider),
       }));
     }
   }, [dispatch, setShow]);
@@ -1162,10 +1372,13 @@ export function DirectorTab() {
   const runStoryboard = useCallback((frameIds: string[]) => {
     const queue = [...new Set(frameIds)];
     if (queue.length === 0) return;
-    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+    const modelId = showRef.current.storyboardModelId ?? HIGGSFIELD_MODELS.nanoBanana;
+    const provider = storyboardModelOption(modelId).provider;
+    const workerCount = provider === 'runpod' ? 1 : Math.min(2, queue.length);
+    const workers = Array.from({ length: workerCount }, async () => {
       while (queue.length > 0) {
         const frameId = queue.shift();
-        if (frameId) await generateStoryboardFrame(frameId);
+        if (frameId) await generateStoryboardFrame(frameId, modelId);
       }
     });
     void Promise.all(workers);
@@ -1177,6 +1390,7 @@ export function DirectorTab() {
     const live: Array<{ clipId: string; take: (typeof showRef.current.clips)[number]['takes'][number] }> = [];
     for (const clip of showRef.current.clips) {
       for (const take of clip.takes) {
+        if (getDirectorAdapter(take.adapterId).provider !== 'higgsfield') continue;
         if (!isDirectorTakeLive(take) || recoverAttempted.current.has(take.id)) continue;
         live.push({ clipId: clip.id, take });
       }
@@ -1400,7 +1614,6 @@ export function DirectorTab() {
             providers={cliProviders}
             falReady={Boolean(getApiKey())}
             openaiReady={Boolean(getOpenAiApiKey())}
-            higgsfieldReady={higgsfieldReady}
             onChange={(llmProvider) => setShow({ ...show, llmProvider })}
           />
         </div>
@@ -1470,6 +1683,8 @@ export function DirectorTab() {
             sceneFilter={sceneFilter}
             expandRequest={expandRequest}
             higgsfieldReady={higgsfieldReady}
+            runpodReady={runpodStoryboardSession.ready}
+            runpodImageModels={runpodStoryboardSession.models}
             onChange={setShow}
             onGenerate={runStoryboard}
           />

@@ -18,7 +18,7 @@ const DURATION_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
   const { updateNodeData } = useReactFlow();
-  const { state } = useWorkspace();
+  const { state, dispatch } = useWorkspace();
   const shots: MultiPromptShot[] = (data.config?.shots as MultiPromptShot[]) ?? [{ prompt: '', duration: 5 }];
   const totalDuration = shots.reduce((total, shot) => total + shot.duration, 0);
 
@@ -35,6 +35,21 @@ function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
       updateShots(newShots);
     },
     [shots, updateShots],
+  );
+
+  const handleMentionInsert = useCallback(
+    (index: number, element: (typeof state.elements)[number], value: string) => {
+      const newShots = shots.map((shot, shotIndex) => (
+        shotIndex === index ? { ...shot, prompt: value } : shot
+      ));
+      dispatch({
+        type: 'APPLY_ELEMENT_MENTION',
+        nodeId: id,
+        elementId: element.id,
+        config: { shots: newShots },
+      });
+    },
+    [dispatch, id, shots],
   );
 
   const handleDurationChange = useCallback(
@@ -96,6 +111,7 @@ function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
             <MentionTextarea
               value={shot.prompt}
               onChange={(value) => handlePromptChange(i, value)}
+              onMentionInsert={(element, value) => handleMentionInsert(i, element, value)}
               placeholder={`Describe shot ${i + 1}...`}
               rows={3}
               elements={state.elements}

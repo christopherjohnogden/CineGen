@@ -13,10 +13,7 @@ import {
 } from '@/lib/assistant/assistant';
 import { AssistantMessageView } from '@/components/assistant/assistant-message';
 import { DirectorLlmPicker, type DirectorCliInfo } from '@/components/director/director-llm-picker';
-import {
-  HIGGSFIELD_LLM_CLI_SUPPORTED,
-  type DirectorLlmProvider,
-} from '@/lib/director/cli-provider';
+import type { DirectorLlmProvider } from '@/lib/director/cli-provider';
 import { runDirectorTextJob } from '@/lib/director/run-llm';
 import { isCliCopilotProvider, type CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { buildModeSystemPrompt, buildProjectContext } from '@/lib/llm/project-context';
@@ -43,7 +40,6 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
   const [cliProviders, setCliProviders] = useState(EMPTY_CLI);
   const [falReady, setFalReady] = useState(false);
   const [openaiReady, setOpenaiReady] = useState(false);
-  const [higgsfieldReady, setHiggsfieldReady] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -57,7 +53,7 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
     codex: cliProviders.codex.installed,
     gemini: cliProviders.gemini.installed,
   };
-  const canSend = assistantProviderReady(provider, installed, { falReady, openaiReady, higgsfieldReady });
+  const canSend = assistantProviderReady(provider, installed, { falReady, openaiReady });
   const selectedNode = state.activeTab === 'create'
     ? state.nodes.find((node) => node.selected && node.type !== 'group') ?? null
     : null;
@@ -91,11 +87,7 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
       setProvider(pickAssistantProvider(stored?.provider, providers, {
         falReady: fal,
         openaiReady: openai,
-        higgsfieldReady: HIGGSFIELD_LLM_CLI_SUPPORTED,
       }));
-    }).catch(() => {});
-    window.electronAPI.higgsfield.accountStatus().then((status) => {
-      if (!cancelled) setHiggsfieldReady(Boolean(status.connected) && HIGGSFIELD_LLM_CLI_SUPPORTED);
     }).catch(() => {});
     setHydrated(true);
     const id = window.setTimeout(() => inputRef.current?.focus(), 40);
@@ -183,7 +175,6 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
             providers={cliProviders}
             falReady={falReady}
             openaiReady={openaiReady}
-            higgsfieldReady={higgsfieldReady}
             onChange={setProvider}
             title="Model for this assistant"
             menuLabel="Director LLM"

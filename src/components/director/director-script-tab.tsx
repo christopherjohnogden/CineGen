@@ -43,6 +43,14 @@ export function DirectorScriptTab({ show, onChange, onBreakdown, onStartOver }: 
 
   const [doc, setDocState] = useState<Screenplay>(() => docFromShow(show));
 
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    if (query.matches) {
+      setLeftOpen(false);
+      setRightOpen(false);
+    }
+  }, []);
+
   // Re-sync from sourceText ONLY when it changes externally (upload, or another tab),
   // not from our own serialize round-trip. We compare against what we last serialized.
   const lastSerialized = useRef(serializeScreenplay(doc));

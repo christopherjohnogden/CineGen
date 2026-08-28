@@ -14,6 +14,7 @@ interface CustomSelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }
 
 const MENU_MAX_HEIGHT = 240;
@@ -25,6 +26,7 @@ export function CustomSelect({
   onChange,
   placeholder = 'Select…',
   className,
+  disabled = false,
 }: CustomSelectProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -35,10 +37,15 @@ export function CustomSelect({
   const selected = options.find((option) => option.value === value);
 
   const openMenu = useCallback(() => {
+    if (disabled) return;
     const index = options.findIndex((option) => option.value === value);
     setHighlighted(index >= 0 ? index : 0);
     setOpen(true);
-  }, [options, value]);
+  }, [disabled, options, value]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   const commit = useCallback(
     (index: number) => {
@@ -153,6 +160,7 @@ export function CustomSelect({
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"
+        disabled={disabled}
       >
         <span
           className={

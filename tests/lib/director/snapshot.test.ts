@@ -21,6 +21,7 @@ describe('director snapshot', () => {
     expect(directorFromSnapshot({ director: show }).sourceText).toBe('You woke up early.');
     expect(directorFromWorkflow({ director: show }).sourceText).toBe('You woke up early.');
     expect(directorFromSnapshot({}).clipLengthSec).toBe(20);
+    expect(directorFromSnapshot({}).adapterId).toBe('topview-auto');
     expect(directorFromUnknown({
       sourceText: 'x',
       clipLengthSec: 20,
@@ -40,6 +41,25 @@ describe('director snapshot', () => {
       ...createEmptyDirectorShow(),
       jobStatus: { type: 'look-bible', message: 'Writing look bible…' },
     }).jobStatus).toBeNull();
+  });
+
+  it('preserves RunPod storyboard model selections', () => {
+    expect(directorFromUnknown({
+      ...createEmptyDirectorShow(),
+      storyboardModelId: 'runpod_sdxl_session',
+    }).storyboardModelId).toBe('runpod_sdxl_session');
+    expect(directorFromUnknown({
+      ...createEmptyDirectorShow(),
+      storyboardModelId: 'runpod_qwen_image_edit_session',
+    }).storyboardModelId).toBe('runpod_qwen_image_edit_session');
+  });
+
+  it.each(['720p', '1080p'])('persists the %s Director generation resolution', (resolution) => {
+    const show = { ...createEmptyDirectorShow(), resolution };
+
+    expect(directorFromUnknown(structuredClone(show)).resolution).toBe(resolution);
+    expect(directorFromSnapshot({ director: structuredClone(show) }).resolution).toBe(resolution);
+    expect(directorFromWorkflow({ director: structuredClone(show) }).resolution).toBe(resolution);
   });
 
   it('strips a Final Draft ElementSettings trailer from a saved script', () => {
@@ -112,6 +132,7 @@ describe('director generate folders', () => {
     expect(prepared.asset.name).toMatch(/^9A · T01$/);
     expect(prepared.take.number).toBe(1);
     expect(prepared.request.params).not.toHaveProperty('multi_shots');
+    expect(prepared.request.provider).toBe('topview');
     expect(prepared.request.params.duration).toBe(20);
   });
 });

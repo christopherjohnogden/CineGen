@@ -31,6 +31,7 @@ import { ensureClipStaging } from '@/lib/director/staging-diagram';
 import { adoptClipFramings, applyFraming, applyFramingToBeat, beatFramingId, boundFramingId, clearFramingBind, resolveClipStaging, revertFramingOnBeat } from '@/lib/director/framing-reserve';
 import { clipIsDirtyFromLlmOrigin, resetClipToLlmOrigin } from '@/lib/director/llm-origin';
 import { copyButtonLabel, useCopiedFlash } from '@/hooks/use-copied-flash';
+import { DirectorResolutionPicker } from './director-resolution-picker';
 
 interface DirectorGenerateTabProps {
   show: DirectorShow;
@@ -78,6 +79,13 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
   const { show, assets, warnings, selectedBeatN, onSelectBeat, onChange, onGenerate, onClipNotes, onRemoveAsset } = props;
   const clip = selectedClip(show);
   const adapter = getDirectorAdapter(show.adapterId);
+  const providerLabel = adapter.provider === 'topview'
+    ? 'Topview MCP'
+    : adapter.provider === 'artlist'
+      ? 'Artlist MCP'
+    : adapter.provider === 'runpod'
+      ? 'RunPod Pod'
+      : 'Higgsfield CLI';
   const videoRef = useRef<HTMLVideoElement>(null);
   const shotsSectionRef = useRef<HTMLDetailsElement>(null);
   const shotsBodyRef = useRef<HTMLDivElement>(null);
@@ -233,12 +241,18 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             </div>
             <div className="dgen-actions-col">
               <div className="dgen-actions">
+                <DirectorResolutionPicker
+                  compact
+                  value={show.resolution}
+                  providerLabel={adapter.label}
+                  onChange={(resolution) => onChange({ ...show, resolution })}
+                />
                 <button
                   type="button"
                   className={`director-tab__btn director-tab__btn--accent${generating ? ' director-tab__btn--busy' : ''}`}
                   onClick={() => onGenerate('active')}
                   disabled={generating}
-                  title={generating ? 'Generating via Higgsfield CLI…' : `Generate this clip with ${adapter.label} (Higgsfield CLI)`}
+                  title={generating ? `Generating via ${providerLabel}…` : `Generate this clip with ${adapter.label} (${providerLabel})`}
                 >
                   {generating ? (
                     <>
@@ -278,7 +292,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
                 </button>
               </div>
               <span className="director-tab__meta dgen-actions-meta">
-                {adapter.label} · {queuedCount} queued · Scene {scene?.number ?? '—'} · {sceneClipCount} clips · show {runtimeSeconds(show.clips)}s
+                {adapter.label} · {show.resolution} · {queuedCount} queued · Scene {scene?.number ?? '—'} · {sceneClipCount} clips · show {runtimeSeconds(show.clips)}s
               </span>
             </div>
           </div>
@@ -347,9 +361,10 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             take={selectedTake}
             variantLabel={variantLabel}
             adapterLabel={adapter.label}
+            providerLabel={providerLabel}
             clipLabel={`${thisLabel} · ${clip.title}`}
             videoRef={videoRef}
-            onFetchTake={props.onFetchTake}
+            onFetchTake={adapter.provider === 'higgsfield' ? props.onFetchTake : undefined}
             fetchingTake={props.fetchingTake}
           />
           {!isolated && assetSource && timelineClip.beats.length > 1 && (
@@ -445,7 +460,7 @@ export function DirectorGenerateTab(props: DirectorGenerateTabProps) {
             <summary className="dsl-section-head">
               <span className="dsl-tw" aria-hidden />
               <span className="dsl-section-title">Prompt</span>
-              <span className="director-tab__meta">what this variant sends</span>
+              <span className="director-tab__meta">{adapter.label} format · what this variant sends</span>
               <button
                 type="button"
                 className="director-tab__btn"

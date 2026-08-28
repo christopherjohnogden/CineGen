@@ -2989,6 +2989,165 @@
 }
 
 /* ============================================
+   Phone editor — one focused work area at a time
+   ============================================ */
+
+.edit-mobile-nav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .edit-tab,
+  .edit-tab[data-panel-mode="full"],
+  .edit-tab[data-panel-mode="compact"],
+  .edit-tab[data-panel-mode="full"][data-right-panel="true"],
+  .edit-tab[data-panel-mode="compact"][data-right-panel="true"] {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding-bottom: var(--mobile-project-nav-height, 62px);
+    overflow: hidden;
+  }
+
+  .edit-mobile-nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+    min-height: 52px;
+    padding: 6px 7px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--border-subtle);
+    background: color-mix(in srgb, var(--bg-base) 96%, transparent);
+  }
+
+  .edit-mobile-nav__button {
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-tertiary);
+    font: 650 10px/1 var(--font-display);
+    letter-spacing: .055em;
+    text-transform: uppercase;
+  }
+
+  .edit-mobile-nav__button--active {
+    border-color: color-mix(in srgb, var(--accent) 34%, var(--border-subtle));
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+    color: var(--accent);
+  }
+
+  .edit-tab > .left-panel,
+  .edit-tab > .edit-tab__viewers,
+  .edit-tab > .edit-tab__timeline-area,
+  .edit-tab > .clip-properties-panel {
+    display: none;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .edit-tab > .edit-tab__left-resize,
+  .edit-tab > .edit-tab__viewer-timeline-resize,
+  .edit-tab > .edit-tab__right-resize {
+    display: none;
+  }
+
+  .edit-tab[data-mobile-pane="media"] > .left-panel,
+  .edit-tab[data-mobile-pane="viewer"] > .edit-tab__viewers,
+  .edit-tab[data-mobile-pane="timeline"] > .edit-tab__timeline-area,
+  .edit-tab[data-mobile-pane="inspector"] > .clip-properties-panel {
+    display: flex;
+  }
+
+  .edit-tab > .left-panel,
+  .edit-tab > .clip-properties-panel {
+    border-right: 0;
+    border-left: 0;
+  }
+
+  .mp__header,
+  .source-viewer__header,
+  .timeline-viewer__header,
+  .clip-properties-panel__header {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .mp__back-btn,
+  .mp__header-tools button,
+  .source-viewer__close,
+  .timeline-viewer__source-toggle,
+  .clip-properties-panel__close {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .edit-tab__viewers {
+    flex-direction: column;
+  }
+
+  .edit-tab__viewer-divider {
+    width: 100%;
+    height: 1px;
+  }
+
+  .source-viewer,
+  .timeline-viewer {
+    min-height: 0;
+    border-right: 0;
+  }
+
+  .source-viewer__transport,
+  .timeline-viewer__transport {
+    min-height: 46px;
+    height: 46px;
+  }
+
+  .source-viewer__btn,
+  .timeline-viewer__btn {
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  .edit-tab__timeline-area {
+    flex-direction: column;
+  }
+
+  .tool-sidebar {
+    width: 100%;
+    height: 48px;
+    padding: 4px 7px;
+    flex-direction: row;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    scrollbar-width: none;
+  }
+
+  .tool-sidebar::-webkit-scrollbar { display: none; }
+  .tool-sidebar__btn { width: 40px; height: 40px; flex: 0 0 40px; }
+  .tool-sidebar__separator { width: 1px; height: 28px; margin: 0 4px; flex: 0 0 1px; }
+  .edit-tab__timeline-content { width: 100%; }
+
+  .clip-properties-panel__section { padding: 16px 14px; }
+  .clip-properties-panel__row { min-height: 44px; }
+  .clip-properties-panel__slider { min-height: 36px; }
+  .clip-properties-panel__toggle-btn,
+  .clip-properties-panel__add-kf { min-height: 42px; }
+}
+
+@media (prefers-reduced-motion: reduce) and (max-width: 767px) {
+  .edit-mobile-nav__button { transition: none; }
+}
+
+/* ============================================
    Transition Overlay
    ============================================ */
 

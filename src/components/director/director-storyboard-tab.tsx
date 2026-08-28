@@ -6,11 +6,13 @@ import { CustomSelect } from '@/components/ui/custom-select';
 import {
   STORYBOARD_MODELS,
   storyboardModelLabel,
+  storyboardModelOption,
   storyboardPlan,
   storyboardReferences,
   upsertStoryboardFrame,
   type StoryboardPlanFrame,
 } from '@/lib/director/storyboard';
+import { toFileUrl } from '@/lib/utils/file-url';
 
 interface DirectorStoryboardTabProps {
   show: DirectorShow;
@@ -19,6 +21,8 @@ interface DirectorStoryboardTabProps {
   sceneFilter: string | null;
   expandRequest: { clipId: string; n: number } | null;
   higgsfieldReady: boolean;
+  runpodReady: boolean;
+  runpodImageModels: readonly string[];
   onChange: (show: DirectorShow) => void;
   onGenerate: (frameIds: string[]) => void;
 }
@@ -30,6 +34,8 @@ export function DirectorStoryboardTab({
   sceneFilter,
   expandRequest,
   higgsfieldReady,
+  runpodReady,
+  runpodImageModels,
   onChange,
   onGenerate,
 }: DirectorStoryboardTabProps) {
@@ -48,6 +54,19 @@ export function DirectorStoryboardTab({
   const generatingCount = plan.filter((frame) => frame.saved?.status === 'generating').length;
   const needsGeneration = plan.filter((frame) => !frame.saved?.imageUrl || frame.stale);
   const selectedModel = show.storyboardModelId ?? 'nano_banana_2';
+  const selectedModelOption = storyboardModelOption(selectedModel);
+  const selectedModelReady = selectedModelOption.provider === 'runpod'
+    ? runpodReady && Boolean(selectedModelOption.sessionModel && runpodImageModels.includes(selectedModelOption.sessionModel))
+    : true;
+  const providerStatus = selectedModelOption.provider === 'runpod'
+    ? selectedModelReady
+      ? `${storyboardModelLabel(selectedModel)} ready on this RunPod session`
+      : runpodReady
+        ? `${storyboardModelLabel(selectedModel)} was not included in this session`
+        : 'Start a RunPod Generation Session in Settings'
+    : higgsfieldReady ? 'Higgsfield connected' : 'Higgsfield or owner funding';
+  const providerConnected = selectedModelOption.provider === 'runpod' ? selectedModelReady : higgsfieldReady;
+  const providerLabel = selectedModelOption.provider === 'runpod' ? 'RunPod Session' : 'Higgsfield';
 
   useEffect(() => {
     if (!expandRequest || show.mode !== 'storyboard') return;
@@ -68,10 +87,30 @@ export function DirectorStoryboardTab({
     return () => window.removeEventListener('keydown', onKeyDown);
   });
 
-  const imageFor = (frame: StoryboardPlanFrame): string | undefined => {
+  const imageSourcesFor = (frame: StoryboardPlanFrame): string[] => {
     const asset = frame.saved?.assetId ? assetById.get(frame.saved.assetId) : undefined;
-    return asset?.thumbnailUrl || asset?.url || frame.saved?.imageUrl;
+    return [...new Set([
+      asset?.fileRef,
+      asset?.thumbnailUrl,
+      asset?.url,
+      asset?.sourceUrl,
+      frame.saved?.imageUrl,
+    ].map(toFileUrl).filter(Boolean))];
   };
+
+  const imageFor = (frame: StoryboardPlanFrame): string | undefined => imageSourcesFor(frame)[0];
+
+  const frameHasRequiredSource = (frame: StoryboardPlanFrame): boolean => (
+    !selectedModelOption.requiresSourceImage
+    || Boolean(imageFor(frame))
+    || (referencesByClipId.get(frame.clip.id)?.references.length ?? 0) > 0
+  );
+  const canGenerateFrame = (frame: StoryboardPlanFrame): boolean => selectedModelReady && frameHasRequiredSource(frame);
+  const sourceEligibleNeeds = needsGeneration.filter(frameHasRequiredSource);
+  const generatableNeeds = selectedModelReady ? sourceEligibleNeeds : [];
+  const sourceBlockedCount = selectedModelOption.requiresSourceImage
+    ? needsGeneration.length - sourceEligibleNeeds.length
+    : 0;
 
   const generatedVisible = visible.filter((frame) => Boolean(imageFor(frame)));
   const viewerIndex = generatedVisible.findIndex((frame) => frame.id === viewerId);
@@ -132,6 +171,45 @@ export function DirectorStoryboardTab({
 
   return (
     <div className="director-tab__stage dstory-stage">
+      <div className={`dstory-route dstory-route--${selectedModelOption.provider}`} aria-label="Storyboard image renderer">
+        <div className="dstory-route__identity">
+          <span className="dstory-route__eyebrow">Storyboard image renderer</span>
+          <div className="dstory-route__title">
+            <strong>{providerLabel}</strong>
+            <span aria-hidden>→</span>
+            <span>{storyboardModelLabel(selectedModel)}</span>
+          </div>
+          <div className="dstory-provider" role="status" aria-live="polite">
+            <span className={`dstory-provider__dot${providerConnected ? ' dstory-provider__dot--on' : ''}`} />
+            {providerStatus}{sourceBlockedCount > 0 ? ` · ${sourceBlockedCount} frame${sourceBlockedCount === 1 ? '' : 's'} need a source` : ''}
+          </div>
+        </div>
+        <label className="dstory-model">
+          <span className="director-tab__label">Provider &amp; model</span>
+          <CustomSelect
+            value={selectedModel}
+            options={STORYBOARD_MODELS.map(({ value, label }) => ({ value, label }))}
+            onChange={(value) => onChange({ ...show, storyboardModelId: value as DirectorStoryboardModelId })}
+            className="dstory-model__select"
+            disabled={generatingCount > 0}
+          />
+        </label>
+        <button
+          type="button"
+          className={`director-tab__btn director-tab__btn--accent${generatingCount ? ' director-tab__btn--busy' : ''}`}
+          disabled={generatableNeeds.length === 0 || generatingCount > 0}
+          onClick={() => setConfirmBatch(true)}
+        >
+          {generatingCount > 0
+            ? `Rendering ${generatingCount}`
+            : generatableNeeds.length > 0
+              ? `Generate ${generatableNeeds.length} frames`
+              : needsGeneration.length > 0
+                ? selectedModelReady ? 'Source image needed' : 'Session not ready'
+                : 'Storyboard complete'}
+        </button>
+      </div>
+
       <header className="dstory-head">
         <div className="dstory-head__copy">
           <span className="director-tab__label">Previsualization desk</span>
@@ -144,42 +222,22 @@ export function DirectorStoryboardTab({
             {readyCount} ready · {plan.length - readyCount} remaining{generatingCount ? ` · ${generatingCount} rendering` : ''}
           </span>
         </div>
-        <div className="dstory-head__controls">
-          <label className="dstory-model">
-            <span className="director-tab__label">Image model</span>
-            <CustomSelect
-              value={selectedModel}
-              options={STORYBOARD_MODELS.map(({ value, label }) => ({ value, label }))}
-              onChange={(value) => onChange({ ...show, storyboardModelId: value as DirectorStoryboardModelId })}
-              className="dstory-model__select"
-            />
-          </label>
-          <div className="dstory-provider">
-            <span className={`dstory-provider__dot${higgsfieldReady ? ' dstory-provider__dot--on' : ''}`} />
-            {higgsfieldReady ? 'Higgsfield connected' : 'Higgsfield or owner funding'}
-          </div>
-          <button
-            type="button"
-            className={`director-tab__btn director-tab__btn--accent${generatingCount ? ' director-tab__btn--busy' : ''}`}
-            disabled={needsGeneration.length === 0 || generatingCount > 0}
-            onClick={() => setConfirmBatch(true)}
-          >
-            {generatingCount > 0 ? `Rendering ${generatingCount}` : needsGeneration.length > 0 ? `Generate ${needsGeneration.length} frames` : 'Storyboard complete'}
-          </button>
-        </div>
       </header>
 
       {confirmBatch && (
         <div className="dstory-confirm" role="alertdialog" aria-labelledby="dstory-confirm-title">
           <div>
-            <strong id="dstory-confirm-title">Generate {needsGeneration.length} storyboard frames?</strong>
-            <span>Higgsfield will render each missing or outdated frame with {storyboardModelLabel(selectedModel)}.</span>
+            <strong id="dstory-confirm-title">Generate {generatableNeeds.length} storyboard frames?</strong>
+            <span>
+              {selectedModelOption.provider === 'runpod' ? 'Your shared RunPod session' : 'Higgsfield'} will render each missing or outdated frame with {storyboardModelLabel(selectedModel)}.
+              {selectedModelOption.requiresSourceImage ? ' Qwen uses the existing frame or first linked reference as its edit source.' : ''}
+            </span>
           </div>
           <div className="dstory-confirm__actions">
             <button type="button" className="director-tab__btn" onClick={() => setConfirmBatch(false)}>Cancel</button>
             <button type="button" className="director-tab__btn director-tab__btn--accent" onClick={() => {
               setConfirmBatch(false);
-              onGenerate(needsGeneration.map((frame) => frame.id));
+              onGenerate(generatableNeeds.map((frame) => frame.id));
             }}>Start storyboard</button>
           </div>
         </div>
@@ -214,8 +272,12 @@ export function DirectorStoryboardTab({
                       <div className="dstory-grid">
                         {clipFrames.map((frame, index) => {
                           const saved = frame.saved;
-                          const image = imageFor(frame);
+                          const imageSources = imageSourcesFor(frame);
+                          const image = imageSources[0];
                           const working = saved?.status === 'generating';
+                          const rendererModel = (image || working) && saved?.modelId ? saved.modelId : selectedModel;
+                          const rendererOption = storyboardModelOption(rendererModel);
+                          const rendererProvider = rendererOption.provider === 'runpod' ? 'RunPod Session' : 'Higgsfield';
                           const referenceSet = referencesByClipId.get(frame.clip.id) ?? { references: [], missingElementTags: [] };
                           const elementReferences = referenceSet.references.filter((reference) => reference.source === 'element');
                           const lookReferences = referenceSet.references.filter((reference) => reference.source === 'look-bible');
@@ -230,7 +292,7 @@ export function DirectorStoryboardTab({
                               <div className="dstory-card__visual" style={{ aspectRatio: show.aspectRatio.replace(':', ' / ') }}>
                                 {image ? (
                                   <div className="dstory-card__image">
-                                    <img src={image} alt={`${frame.clipLabel} shot ${frame.beat.n}: ${frame.beat.text}`} />
+                                    <StoryboardImage sources={imageSources} alt={`${frame.clipLabel} shot ${frame.beat.n}: ${frame.beat.text}`} />
                                   </div>
                                 ) : working ? (
                                   <div className="dstory-card__skeleton" aria-label="Rendering storyboard frame"><span /><span /><span /></div>
@@ -274,8 +336,14 @@ export function DirectorStoryboardTab({
                                   )}
                                 </div>
                                 {saved?.error && <span className="dstory-card__error">{saved.error}</span>}
+                                <div className="dstory-card__renderer">
+                                  <span>{image ? 'Frame model' : working ? 'Rendering with' : 'Next render'}</span>
+                                  <strong>{rendererProvider} · {storyboardModelLabel(rendererModel)}</strong>
+                                </div>
                                 <div className="dstory-card__actions">
-                                  <button type="button" disabled={working} onClick={() => onGenerate([frame.id])}>{image ? 'Regenerate' : working ? 'Rendering' : 'Generate'}</button>
+                                  <button type="button" disabled={working || !canGenerateFrame(frame)} onClick={() => onGenerate([frame.id])}>
+                                    {image ? 'Regenerate' : working ? 'Rendering' : selectedModelOption.requiresSourceImage && !canGenerateFrame(frame) ? 'Source needed' : 'Generate'}
+                                  </button>
                                 </div>
                               </div>
                             </article>
@@ -311,7 +379,7 @@ export function DirectorStoryboardTab({
               aria-label={inspectorImage ? `View ${inspector.clipLabel} shot ${inspector.beat.n} full screen` : 'Storyboard frame has not been generated'}
             >
               {inspectorImage ? (
-                <img src={inspectorImage} alt={`${inspector.clipLabel} shot ${inspector.beat.n}`} />
+                <StoryboardImage sources={imageSourcesFor(inspector)} alt={`${inspector.clipLabel} shot ${inspector.beat.n}`} />
               ) : (
                 <div className="dstory-card__blank" aria-hidden><span className="dstory-card__reticle" /><span>Frame {inspector.beat.n}</span></div>
               )}
@@ -334,7 +402,7 @@ export function DirectorStoryboardTab({
                 value={inspector.prompt}
                 onChange={(event) => updatePrompt(inspector, event.target.value)}
               />
-              <small>{inspector.prompt.trim().split(/\s+/).filter(Boolean).length} words · {storyboardModelLabel(selectedModel)}</small>
+              <small>{inspector.prompt.trim().split(/\s+/).filter(Boolean).length} words · Next render: {providerLabel} · {storyboardModelLabel(selectedModel)}</small>
             </label>
 
             <section className="dstory-inspector__references">
@@ -367,7 +435,7 @@ export function DirectorStoryboardTab({
             </div>
             <div className="dstory-inspector__actions">
               <button type="button" disabled={!inspector.saved?.customPrompt} onClick={() => updatePrompt(inspector, inspector.derivedPrompt, false)}>Reset prompt</button>
-              <button type="button" className="director-tab__btn director-tab__btn--accent" disabled={inspector.saved?.status === 'generating'} onClick={() => onGenerate([inspector.id])}>
+              <button type="button" className="director-tab__btn director-tab__btn--accent" disabled={inspector.saved?.status === 'generating' || !canGenerateFrame(inspector)} onClick={() => onGenerate([inspector.id])}>
                 {inspector.saved?.status === 'generating' ? 'Rendering' : inspectorImage ? 'Regenerate frame' : 'Generate frame'}
               </button>
             </div>
@@ -380,7 +448,7 @@ export function DirectorStoryboardTab({
           if (event.target === event.currentTarget) setViewerId(null);
         }}>
           <div className="dstory-viewer__frame">
-            <img src={imageFor(viewer)} alt={`${viewer.clipLabel} shot ${viewer.beat.n}: ${viewer.beat.text}`} />
+            <StoryboardImage sources={imageSourcesFor(viewer)} alt={`${viewer.clipLabel} shot ${viewer.beat.n}: ${viewer.beat.text}`} />
             <div className="dstory-viewer__caption">
               <div>
                 <span>{viewer.clipLabel}.{viewer.beat.n} · Scene {viewer.scene.number}</span>
@@ -400,5 +468,23 @@ export function DirectorStoryboardTab({
         </div>
       )}
     </div>
+  );
+}
+
+/** Try the durable project copy first, then fall back through thumbnails/provider URLs. */
+function StoryboardImage({ sources, alt }: { sources: string[]; alt: string }) {
+  const sourceKey = sources.join('\n');
+  const [sourceIndex, setSourceIndex] = useState(0);
+
+  useEffect(() => setSourceIndex(0), [sourceKey]);
+
+  const source = sources[sourceIndex];
+  if (!source) return null;
+  return (
+    <img
+      src={source}
+      alt={alt}
+      onError={() => setSourceIndex((current) => current + 1)}
+    />
   );
 }

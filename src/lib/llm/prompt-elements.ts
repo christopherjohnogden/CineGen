@@ -7,8 +7,8 @@ import { generateId } from '@/lib/utils/ids';
 import { NODE_REGISTRY, resolveElementNodeIds } from '@/lib/workflows/node-registry';
 
 const TAG_PATTERN = /@([A-Za-z0-9][\w-]*)/g;
-const ELEMENT_X_OFFSET = 240;
-const ELEMENT_ROW = 170;
+const ELEMENT_Y_OFFSET = 72;
+const AUTO_PROMPT_IDS_KEY = '_mentionPromptNodeIds';
 
 export function extractPromptTags(prompt: string): string[] {
   const tags: string[] = [];
@@ -62,70 +62,144 @@ export function bindPromptMentionsToGraph(params: {
   )));
   if (mentioned.length === 0) return { nodes: params.nodes, edges: params.edges };
 
-  const nodes = [...params.nodes];
-  const edges = [...params.edges];
-  const elementNodeIds = new Map<string, string>();
+  return attachElementsToPromptGraph({
+    nodes: params.nodes,
+    edges: params.edges,
+    promptNodeIds: params.promptNodeIds,
+    elementIds: mentioned.map((element) => element.id),
+  });
+}
 
-  for (const node of nodes) {
-    if (node.type !== 'element') continue;
-    for (const elementId of resolveElementNodeIds(node.data.config)) {
-      if (!elementNodeIds.has(elementId)) elementNodeIds.set(elementId, node.id);
-    }
+/**
+ * Add an explicitly selected @-mention to a prompt's shared Element node.
+ * Selection is ID-driven so element names containing spaces or punctuation are
+ * not lost when the visible @mention is parsed later.
+ */
+export function attachElementMentionToGraph(params: {
+  nodes: Node<WorkflowNodeData>[];
+  edges: Edge[];
+  promptNodeId: string;
+  elementId: string;
+}): { nodes: Node<WorkflowNodeData>[]; edges: Edge[] } {
+  return attachElementsToPromptGraph({
+    nodes: params.nodes,
+    edges: params.edges,
+    promptNodeIds: [params.promptNodeId],
+    elementIds: [params.elementId],
+  });
+}
+
+/** Reconnect a prompt's auto-created Element stack when its model is wired later. */
+export function reconcilePromptMentionConnections(params: {
+  nodes: Node<WorkflowNodeData>[];
+  edges: Edge[];
+  promptNodeId: string;
+}): { nodes: Node<WorkflowNodeData>[]; edges: Edge[] } {
+  const stack = params.nodes.find((node) => (
+    node.type === 'element' && autoPromptIds(node.data.config).includes(params.promptNodeId)
+  ));
+  const elementIds = stack ? resolveElementNodeIds(stack.data.config) : [];
+  if (elementIds.length === 0) return { nodes: params.nodes, edges: params.edges };
+  return attachElementsToPromptGraph({
+    nodes: params.nodes,
+    edges: params.edges,
+    promptNodeIds: [params.promptNodeId],
+    elementIds,
+  });
+}
+
+function attachElementsToPromptGraph(params: {
+  nodes: Node<WorkflowNodeData>[];
+  edges: Edge[];
+  promptNodeIds: string[];
+  elementIds: string[];
+}): { nodes: Node<WorkflowNodeData>[]; edges: Edge[] } {
+  const promptNodes = params.nodes.filter((node) => params.promptNodeIds.includes(node.id));
+  const elementIds = [...new Set(params.elementIds.filter(Boolean))];
+  if (promptNodes.length === 0 || elementIds.length === 0) {
+    return { nodes: params.nodes, edges: params.edges };
   }
 
-  const origin = promptNodes[0] ?? nodes[0];
-  let created = 0;
-  for (const element of mentioned) {
-    const existingId = elementNodeIds.get(element.id);
-    if (existingId) continue;
-    const elementNode: Node<WorkflowNodeData> = {
+  const nodes = [...params.nodes];
+  const edges = [...params.edges];
+  const models = targetReferenceModels(nodes, edges, params.promptNodeIds);
+  for (const prompt of promptNodes) {
+    for (const model of models) {
+      if (edges.some((edge) => edge.source === prompt.id && edge.target === model.id)) continue;
+      const targetHandle = promptInputHandle(model);
+      if (targetHandle) edges.push(makeEdge(prompt.id, 'text', model.id, targetHandle, 'text'));
+    }
+  }
+  const modelIds = new Set(models.map((model) => model.id));
+  const elementNodes = nodes.filter((node) => node.type === 'element');
+
+  const taggedNode = elementNodes.find((node) => (
+    autoPromptIds(node.data.config).some((id) => params.promptNodeIds.includes(id))
+  ));
+  const connectedNodes = elementNodes.filter((node) => (
+    edges.some((edge) => edge.source === node.id && modelIds.has(edge.target))
+  ));
+  const matchingConnectedNode = connectedNodes.find((node) => (
+    resolveElementNodeIds(node.data.config).some((id) => elementIds.includes(id))
+  ));
+  let elementNode = taggedNode
+    ?? matchingConnectedNode
+    ?? (connectedNodes.length === 1 ? connectedNodes[0] : undefined);
+
+  if (elementNode) {
+    const index = nodes.findIndex((node) => node.id === elementNode!.id);
+    const mergedIds = [...new Set([...resolveElementNodeIds(elementNode.data.config), ...elementIds])];
+    const promptIds = [...new Set([...autoPromptIds(elementNode.data.config), ...params.promptNodeIds])];
+    elementNode = {
+      ...elementNode,
+      data: {
+        ...elementNode.data,
+        config: {
+          ...elementNode.data.config,
+          elementIds: mergedIds,
+          elementId: '',
+          [AUTO_PROMPT_IDS_KEY]: promptIds,
+        },
+      },
+    };
+    nodes[index] = elementNode;
+  } else {
+    const origin = promptNodes[0];
+    elementNode = {
       id: generateId(),
       type: 'element',
       position: {
-        x: origin.position.x - ELEMENT_X_OFFSET,
-        y: origin.position.y + created * ELEMENT_ROW,
+        x: origin.position.x,
+        y: origin.position.y + (origin.measured?.height ?? origin.height ?? 240) + ELEMENT_Y_OFFSET,
       },
+      ...(origin.parentId ? { parentId: origin.parentId, extent: origin.extent } : {}),
       data: {
         type: 'element',
-        label: element.name,
-        config: { ...NODE_REGISTRY.element.defaultData, elementIds: [element.id] },
+        label: 'Element References',
+        config: {
+          ...NODE_REGISTRY.element.defaultData,
+          elementIds,
+          [AUTO_PROMPT_IDS_KEY]: params.promptNodeIds,
+        },
       },
     };
     nodes.push(elementNode);
-    elementNodeIds.set(element.id, elementNode.id);
-    created += 1;
-  }
-
-  const models = targetImageModels(nodes, edges, params.promptNodeIds);
-  for (const prompt of promptNodes) {
-    for (const model of models) {
-      const promptHandle = promptInputHandle(model);
-      if (promptHandle && !hasEdge(edges, prompt.id, 'text', model.id, promptHandle)) {
-        edges.push(makeEdge(prompt.id, 'text', model.id, promptHandle));
-      }
-    }
   }
 
   for (const model of models) {
-    const needed = mentioned
-      .map((element) => elementNodeIds.get(element.id))
-      .filter((id): id is string => Boolean(id))
-      .filter((id) => !edges.some((edge) => edge.source === id && edge.target === model.id));
-    if (needed.length === 0) continue;
-    const { handles, elementCount } = nextMediaHandles(model, edges, needed.length);
-    for (const [index, sourceId] of needed.entries()) {
-      const handle = handles[index];
-      if (!handle) break;
-      edges.push(makeEdge(sourceId, 'element', model.id, handle));
-    }
-    if (elementCount !== undefined) {
+    if (edges.some((edge) => edge.source === elementNode.id && edge.target === model.id)) continue;
+    const target = nextReferenceHandle(model, edges);
+    if (!target) continue;
+    edges.push(makeEdge(elementNode.id, 'element', model.id, target.handle));
+    if (target.elementCount !== undefined) {
       const index = nodes.findIndex((node) => node.id === model.id);
-      if (index >= 0) {
+      const current = nodes[index];
+      if (current) {
         nodes[index] = {
-          ...nodes[index],
+          ...current,
           data: {
-            ...nodes[index].data,
-            config: { ...nodes[index].data.config, _elementCount: elementCount },
+            ...current.data,
+            config: { ...current.data.config, _elementCount: target.elementCount },
           },
         };
       }
@@ -144,86 +218,106 @@ function uniqueElements(elements: Element[]): Element[] {
   });
 }
 
-function targetImageModels(
+function targetReferenceModels(
   nodes: Node<WorkflowNodeData>[],
   edges: Edge[],
   promptNodeIds: string[],
 ): Node<WorkflowNodeData>[] {
-  const imageModels = nodes.filter((node) => getModelDefinition(node.type ?? '')?.outputType === 'image');
-  const wired = imageModels.filter((model) => (
+  const models = nodes.filter((node) => {
+    const model = getModelDefinition(node.type ?? '');
+    return Boolean(model && hasReferenceInput(model));
+  });
+  const wired = models.filter((model) => (
     edges.some((edge) => promptNodeIds.includes(edge.source) && edge.target === model.id)
   ));
   if (wired.length > 0) return wired;
-  return imageModels.length === 1 ? imageModels : [];
+  return models.length === 1 ? models : [];
+}
+
+function hasReferenceInput(model: NonNullable<ReturnType<typeof getModelDefinition>>): boolean {
+  return model.inputs.some((field) => (
+    (field.portType === 'image' || field.portType === 'media')
+    && (field.fieldType === 'port' || field.fieldType === 'element-list')
+  ));
 }
 
 function promptInputHandle(model: Node<WorkflowNodeData>): string | undefined {
   const def = getModelDefinition(model.type ?? '');
-  return def?.inputs.find((field) => field.portType === 'text' && field.id === 'prompt')?.id
-    ?? def?.inputs.find((field) => field.portType === 'text' && field.required)?.id;
+  return def?.inputs.find((field) => field.fieldType === 'port' && field.id === 'prompt')?.id
+    ?? def?.inputs.find((field) => field.fieldType === 'port' && field.portType === 'text' && field.required)?.id;
 }
 
-function nextMediaHandles(
+function nextReferenceHandle(
   model: Node<WorkflowNodeData>,
   edges: Edge[],
-  count: number,
-): { handles: string[]; elementCount?: number } {
+): { handle: string; elementCount?: number } | undefined {
   const def = getModelDefinition(model.type ?? '');
   const used = new Set(edges.filter((edge) => edge.target === model.id).map((edge) => edge.targetHandle));
-  const handles: string[] = [];
-  if (!def) return { handles };
+  if (!def) return undefined;
 
-  const multi = def.inputs.find((field) => (
+  const multiPorts = def.inputs.filter((field) => (
     field.fieldType === 'port'
     && field.multiple
     && (field.portType === 'image' || field.portType === 'media')
   ));
-  if (multi) {
-    return { handles: Array.from({ length: count }, () => multi.id) };
-  }
+  const preferredMulti = multiPorts.find((field) => field.id === 'medias') ?? multiPorts[0];
+  if (preferredMulti) return { handle: preferredMulti.id };
 
-  for (const field of def.inputs) {
-    if (field.fieldType !== 'port') continue;
-    if (field.portType !== 'image' && field.portType !== 'media') continue;
-    if (used.has(field.id)) continue;
-    handles.push(field.id);
-    if (handles.length >= count) return { handles };
-  }
+  const singlePorts = def.inputs.filter((field) => (
+    field.fieldType === 'port'
+    && !field.multiple
+    && (field.portType === 'image' || field.portType === 'media')
+    && !used.has(field.id)
+  ));
+  // Image-edit models such as Qwen require a primary source image before any
+  // optional references. Keep Nano Banana's optional primary/list behavior.
+  const requiredSingle = singlePorts.find((field) => field.required && field.id === 'image_url')
+    ?? singlePorts.find((field) => field.required);
+  if (requiredSingle) return { handle: requiredSingle.id };
 
-  const listField = def.inputs.find((field) => (
+  const listFields = def.inputs.filter((field) => (
     field.fieldType === 'element-list'
     && (field.portType === 'image' || field.portType === 'media')
   ));
-  if (!listField) return { handles };
-  let index = Number(model.data.config._elementCount ?? 0);
-  while (handles.length < count) {
-    handles.push(`${listField.id}_${index}`);
-    index += 1;
+  const listField = listFields.find((field) => field.id === 'extra_images') ?? listFields[0];
+  if (listField) {
+    let index = 0;
+    while (used.has(`${listField.id}_${index}`)) index += 1;
+    return {
+      handle: `${listField.id}_${index}`,
+      elementCount: Math.max(Number(model.data.config._elementCount ?? 0), index + 1),
+    };
   }
-  return { handles, elementCount: index };
+
+  const preferredSingle = singlePorts.find((field) => field.id === 'image_url')
+    ?? singlePorts.find((field) => field.id === 'start_image')
+    ?? singlePorts[0];
+  return preferredSingle ? { handle: preferredSingle.id } : undefined;
 }
 
-function hasEdge(
-  edges: Edge[],
+function autoPromptIds(config: Record<string, unknown> | undefined): string[] {
+  const raw = config?.[AUTO_PROMPT_IDS_KEY];
+  if (Array.isArray(raw)) {
+    return raw.filter((id): id is string => typeof id === 'string' && id !== '');
+  }
+  const legacy = config?._mentionPromptNodeId;
+  return typeof legacy === 'string' && legacy ? [legacy] : [];
+}
+
+function makeEdge(
   source: string,
   sourceHandle: string,
   target: string,
   targetHandle: string,
-): boolean {
-  return edges.some((edge) => (
-    edge.source === source
-    && edge.sourceHandle === sourceHandle
-    && edge.target === target
-    && edge.targetHandle === targetHandle
-  ));
-}
-
-function makeEdge(source: string, sourceHandle: string, target: string, targetHandle: string): Edge {
+  sourcePortType = 'image',
+): Edge {
   return {
     id: generateId(),
     source,
     sourceHandle,
     target,
     targetHandle,
+    type: 'animated',
+    data: { sourcePortType },
   };
 }

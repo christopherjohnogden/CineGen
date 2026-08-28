@@ -21,6 +21,19 @@ import type { TranscriptSegment, TranscriptWord, WorkflowNodeData } from '@/type
 import type { Element } from '@/types/elements';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
 import { runWorkflow } from '@/lib/cloud/funding';
+import {
+  RUNPOD_LTX25_SESSION_NODE_TYPE,
+  runRunpodLtx25Session,
+} from './runpod-ltx25-session';
+import { isRetryableRunpodLtx25PollError } from '@/lib/runpod/ltx25-client';
+import {
+  isRunpodSessionImageNodeType,
+  RUNPOD_QWEN_IMAGE_EDIT_SESSION_NODE_TYPE,
+  runpodSessionImageLabel,
+  runRunpodSessionImage,
+} from './runpod-session-image';
+import { isRetryableRunpodSessionImagePollError } from '@/lib/runpod/session-image-client';
+import { qwenMultiImagePrompt, type QwenPromptPicture } from '@/lib/runpod/qwen-prompt';
 
 interface WorkflowDispatch {
   setNodeRunning: (nodeId: string, running: boolean) => void;
@@ -42,6 +55,17 @@ interface ElementData {
   referenceImageUrls: string[];
   allUrls: string[];
   name: string;
+  type: Element['type'];
+}
+
+function stringValues(value: unknown): string[] {
+  if (typeof value === 'string') return value.trim() ? [value.trim()] : [];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(stringValues);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
 }
 
 interface LayerDecomposeVisionHints {
@@ -67,6 +91,14 @@ const WHISPERX_STAGE_PROGRESS: Record<string, number> = {
   diarize_skip: 90,
   finalizing: 96,
 };
+const RUNPOD_LTX25_STAGE_PROGRESS: Record<string, number> = {
+  submitting: 6,
+  queued: 12,
+  retrying: 18,
+  rendering: 55,
+  checking: 88,
+  ready: 100,
+};
 
 function getNodeStageProgress(nodeType: string, stage?: string): number | undefined {
   if (!stage) return undefined;
@@ -75,6 +107,9 @@ function getNodeStageProgress(nodeType: string, stage?: string): number | undefi
   }
   if (nodeType === 'whisperx-local') {
     return WHISPERX_STAGE_PROGRESS[stage];
+  }
+  if (nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE) {
+    return RUNPOD_LTX25_STAGE_PROGRESS[stage];
   }
   return undefined;
 }
@@ -542,6 +577,27 @@ export async function executeFromNode(
   edges: Edge[],
   dispatch: WorkflowDispatch,
 ): Promise<void> {
+  const activeExecution = activeNodeExecutions.get(targetNodeId);
+  if (activeExecution) return activeExecution;
+
+  let execution: Promise<void>;
+  execution = executeFromNodeOnce(targetNodeId, nodes, edges, dispatch).finally(() => {
+    if (activeNodeExecutions.get(targetNodeId) === execution) {
+      activeNodeExecutions.delete(targetNodeId);
+    }
+  });
+  activeNodeExecutions.set(targetNodeId, execution);
+  return execution;
+}
+
+const activeNodeExecutions = new Map<string, Promise<void>>();
+
+async function executeFromNodeOnce(
+  targetNodeId: string,
+  nodes: Node<WorkflowNodeData>[],
+  edges: Edge[],
+  dispatch: WorkflowDispatch,
+): Promise<void> {
   const upstream = getUpstreamNodes(targetNodeId, nodes, edges);
   upstream.push(targetNodeId);
 
@@ -717,6 +773,7 @@ function resolveUtilityOutputs(
               .map((idx) => el.images[idx].url),
             allUrls: el.images.map((img) => img.url),
             name: el.name,
+            type: el.type,
           });
         }
         // Single element keeps the original scalar shape; a stack emits an array
@@ -769,10 +826,36 @@ async function executeModelNode(
     return;
   }
 
-  dispatch.setNodeResult(nodeId, buildRunningResult(nodeType, isLayerDecomposeNodeType(nodeType) ? 'init' : undefined));
+  let runpodLtx25JobId = nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE
+    ? data.result?.remoteJobId?.trim() ?? ''
+    : '';
+  const progressStartedAt = Date.now();
+  dispatch.setNodeResult(nodeId, buildRunningResult(
+    nodeType,
+    isLayerDecomposeNodeType(nodeType)
+      ? 'init'
+      : nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE
+        ? (runpodLtx25JobId ? 'checking' : 'submitting')
+        : undefined,
+    undefined,
+    nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE ? { progressStartedAt } : undefined,
+  ));
+  let runpodSessionImageJobId = isRunpodSessionImageNodeType(nodeType)
+    ? data.result?.remoteJobId?.trim() ?? ''
+    : '';
 
   try {
     let falInputs: Record<string, unknown> = {};
+    const qwenElementBindings: ElementData[] = [];
+    const rememberQwenElements = (items: ElementData[]): void => {
+      for (const item of items) {
+        if (!qwenElementBindings.some((entry) => (
+          entry.frontalImageUrl === item.frontalImageUrl && entry.name === item.name
+        ))) {
+          qwenElementBindings.push(item);
+        }
+      }
+    };
 
     // Collect element-list data grouped by field ID
     const elementListData = new Map<string, ElementData[]>();
@@ -798,7 +881,15 @@ async function executeModelNode(
         const items = elementListData.get(field.id);
         if (!items || items.length === 0) continue;
 
-        if (field.falParam === 'elements') {
+        if (nodeType === RUNPOD_QWEN_IMAGE_EDIT_SESSION_NODE_TYPE) {
+          // Qwen accepts up to three separate images. Give every selected
+          // Element one identity slot before considering alternate views.
+          rememberQwenElements(items);
+          falInputs[field.falParam] = uniqueStrings([
+            ...stringValues(falInputs[field.falParam]),
+            ...items.map((item) => item.frontalImageUrl),
+          ]).slice(0, 3);
+        } else if (field.falParam === 'elements') {
           // fal.ai Kling format: array of { frontal_image_url, reference_image_urls }
           // Kling allows max 3 reference images per element
           falInputs[field.falParam] = items.map((el) => ({
@@ -890,8 +981,27 @@ async function executeModelNode(
           ? flatValue
           : null;
 
+      if (
+        nodeType === RUNPOD_QWEN_IMAGE_EDIT_SESSION_NODE_TYPE
+        && elementStack
+        && (field.portType === 'image' || field.portType === 'media')
+      ) {
+        // Older/manual Spaces graphs may connect the shared Element stack to
+        // Qwen's required Image socket. Preserve the whole stack instead of
+        // collapsing it to the first Element.
+        rememberQwenElements(elementStack);
+        falInputs[field.falParam] = uniqueStrings([
+          ...stringValues(falInputs[field.falParam]),
+          ...elementStack.map((item) => item.frontalImageUrl),
+        ]).slice(0, 3);
+        continue;
+      }
+
       const needsArrayParam =
-        (field.falParam.endsWith('s') && field.falParam.startsWith('image_url'))
+        field.multiple
+        || field.schemaType === 'array'
+        || field.falParam === 'medias'
+        || (field.falParam.endsWith('s') && field.falParam.startsWith('image_url'))
         || field.falParam === 'filesUrl'
         || field.falParam === 'imageUrls'
         || field.falParam === 'image_input'
@@ -977,7 +1087,68 @@ async function executeModelNode(
 
     // Also resolve @mentions in the regular prompt field
     const useKieMentions = modelDef.provider === 'kie';
-    if (typeof falInputs.prompt === 'string' && connectedElements.length > 0) {
+    if (
+      nodeType === RUNPOD_QWEN_IMAGE_EDIT_SESSION_NODE_TYPE
+      && typeof falInputs.prompt === 'string'
+    ) {
+      const directlyConnectedUrls = uniqueStrings([
+        ...stringValues(falInputs.image_url),
+        ...stringValues(falInputs.image_urls),
+        ...stringValues(falInputs.referenceImages),
+      ]);
+      const elementForUrl = (url: string): ElementData | undefined => qwenElementBindings.find((element) => (
+        element.frontalImageUrl === url || element.allUrls.includes(url)
+      ));
+      const rawSourceUrls = directlyConnectedUrls.filter((url) => !elementForUrl(url));
+      const elementPriority: Record<Element['type'], number> = {
+        location: 0,
+        character: 1,
+        prop: 2,
+        vehicle: 3,
+      };
+      const orderedElements = qwenElementBindings
+        .map((element, index) => ({ element, index }))
+        .sort((left, right) => (
+          elementPriority[left.element.type] - elementPriority[right.element.type]
+          || left.index - right.index
+        ))
+        .map(({ element }) => element);
+      // Picture 1 is Qwen's base. Prefer an explicitly connected source, then
+      // a location, followed by one frontal view of every other Element. Only
+      // after that may alternate views use a spare slot.
+      const primaryReferenceUrls = uniqueStrings([
+        ...rawSourceUrls,
+        ...orderedElements.map((element) => element.frontalImageUrl),
+      ]);
+      // With several distinct Elements, one clear picture per Element is more
+      // reliable than spending a spare slot on a duplicate view that can
+      // overpower the other subject. Alternate views are useful only when
+      // there is a single primary reference to describe.
+      const alternateReferenceUrls = primaryReferenceUrls.length === 1
+        ? orderedElements.flatMap((element) => [
+            ...element.referenceImageUrls,
+            ...element.allUrls,
+          ])
+        : [];
+      const referenceUrls = uniqueStrings([
+        ...primaryReferenceUrls,
+        ...alternateReferenceUrls,
+      ]).slice(0, 3);
+      const promptPictures: QwenPromptPicture[] = referenceUrls.map((url) => {
+        const element = elementForUrl(url);
+        return element
+          ? {
+              kind: element.type,
+              key: `element:${element.name}:${element.frontalImageUrl}`,
+              name: element.name,
+            }
+          : { kind: 'source', key: `source:${url}` };
+      });
+      falInputs.referenceImages = referenceUrls;
+      delete falInputs.image_url;
+      delete falInputs.image_urls;
+      falInputs.prompt = qwenMultiImagePrompt(falInputs.prompt, promptPictures);
+    } else if (typeof falInputs.prompt === 'string' && connectedElements.length > 0) {
       falInputs.prompt = resolveElementMentions(falInputs.prompt, connectedElements, useKieMentions);
     }
 
@@ -1055,7 +1226,72 @@ async function executeModelNode(
 
     let result: unknown;
 
-    if (modelDef.provider === 'local') {
+    if (nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE) {
+      dispatch.setNodeResult(nodeId, buildRunningResult(
+        nodeType,
+        runpodLtx25JobId ? 'checking' : 'submitting',
+        runpodLtx25JobId
+          ? 'Resuming the existing LTX-2.5 render'
+          : 'Rendering with the active LTX-2.5 Pod session',
+        {
+          ...(runpodLtx25JobId ? { remoteJobId: runpodLtx25JobId } : {}),
+          progressStartedAt,
+        },
+      ));
+      result = await runRunpodLtx25Session(buildApiInputs(), {
+        ...(runpodLtx25JobId ? { resumeJobId: runpodLtx25JobId } : {}),
+        onJobId: (jobId) => {
+          runpodLtx25JobId = jobId;
+          dispatch.setNodeResult(nodeId, buildRunningResult(
+            nodeType,
+            'queued',
+            'LTX-2.5 render submitted to this session',
+            { remoteJobId: jobId, progressStartedAt },
+          ));
+        },
+        onStatus: (update) => {
+          const remoteJobId = update.jobId?.trim() || runpodLtx25JobId;
+          if (remoteJobId) runpodLtx25JobId = remoteJobId;
+          const stage = update.status === 'queued' && update.phase !== 'submitting'
+            ? 'queued'
+            : update.phase ?? (update.status === 'in_progress' ? 'rendering' : update.status === 'completed' ? 'ready' : undefined);
+          const message = stage === 'queued'
+            ? 'Queued behind another job on this RunPod session'
+            : update.message;
+          dispatch.setNodeResult(nodeId, buildRunningResult(
+            nodeType,
+            stage,
+            message,
+            {
+              ...(remoteJobId ? { remoteJobId } : {}),
+              progressStartedAt,
+            },
+          ));
+        },
+      });
+    } else if (isRunpodSessionImageNodeType(nodeType)) {
+      const label = runpodSessionImageLabel(nodeType);
+      dispatch.setNodeResult(nodeId, buildRunningResult(
+        nodeType,
+        undefined,
+        runpodSessionImageJobId
+          ? `Resuming the existing ${label} render`
+          : `Rendering with ${label} on the active RunPod session`,
+        runpodSessionImageJobId ? { remoteJobId: runpodSessionImageJobId } : undefined,
+      ));
+      result = await runRunpodSessionImage(nodeType, buildApiInputs(), {
+        ...(runpodSessionImageJobId ? { resumeJobId: runpodSessionImageJobId } : {}),
+        onJobId: (jobId) => {
+          runpodSessionImageJobId = jobId;
+          dispatch.setNodeResult(nodeId, buildRunningResult(
+            nodeType,
+            undefined,
+            `${label} is rendering the image`,
+            { remoteJobId: jobId },
+          ));
+        },
+      });
+    } else if (modelDef.provider === 'local') {
       // Local model — run via IPC through the local Python runner, polling for completion
       const { jobId } = await window.electronAPI.localModel.run({ nodeType, inputs: falInputs });
       const partialLocalResult: Partial<NonNullable<WorkflowNodeData['result']>> = {};
@@ -1448,9 +1684,15 @@ async function executeModelNode(
       }
     }
   } catch (error) {
+    const retainedRemoteJobId = runpodLtx25JobId && isRetryableRunpodLtx25PollError(error)
+      ? runpodLtx25JobId
+      : runpodSessionImageJobId && isRetryableRunpodSessionImagePollError(error)
+        ? runpodSessionImageJobId
+        : '';
     dispatch.setNodeResult(nodeId, {
       status: 'error',
       error: error instanceof Error ? error.message : 'Unknown error',
+      ...(retainedRemoteJobId ? { remoteJobId: retainedRemoteJobId } : {}),
     });
   } finally {
     dispatch.setNodeRunning(nodeId, false);

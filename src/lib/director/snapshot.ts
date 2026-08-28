@@ -32,6 +32,7 @@ export function normalizeDirectorShow(value: DirectorShow): DirectorShow {
     lookBible: lookBibleFrom(value.lookBible),
     stylePrefix: typeof value.stylePrefix === 'string' ? value.stylePrefix : '',
     genre: typeof value.genre === 'string' && value.genre.trim() ? value.genre : 'auto',
+    resolution: value.resolution === '1080p' ? '1080p' : '720p',
     llmProvider: parseDirectorLlmProvider(value.llmProvider),
     llmSpend: directorLlmSpendFrom(value.llmSpend),
     sourceFileName: typeof value.sourceFileName === 'string' ? value.sourceFileName : undefined,
@@ -45,7 +46,11 @@ export function normalizeDirectorShow(value: DirectorShow): DirectorShow {
         ? { ...frame, status: 'failed' as const, error: 'Generation was interrupted. Retry this frame.' }
         : frame
     )) : [],
-    storyboardModelId: value.storyboardModelId === 'gpt_image_2' ? 'gpt_image_2' : 'nano_banana_2',
+    storyboardModelId: (
+      value.storyboardModelId === 'gpt_image_2'
+      || value.storyboardModelId === 'runpod_sdxl_session'
+      || value.storyboardModelId === 'runpod_qwen_image_edit_session'
+    ) ? value.storyboardModelId : 'nano_banana_2',
     framingReserve: Array.isArray(value.framingReserve) ? value.framingReserve : [],
   };
   return adoptClipFramings(normalized);

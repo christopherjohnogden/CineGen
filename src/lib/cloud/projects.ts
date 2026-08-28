@@ -92,7 +92,7 @@ export function isCloudProjectId(projectId: string): boolean {
 function defaultDirector() {
   return {
     sourceText: '', clipLengthSec: 20, stylePrefix: '', aspectRatio: '16:9',
-    adapterId: 'seedance-2.5', resolution: '720p', generateAudio: true,
+    adapterId: 'topview-auto', resolution: '720p', generateAudio: true,
     genre: 'auto', mode: 'source', breakdown: [], breakdownApproved: false,
     scenes: [], clips: [], jobStatus: null,
   };

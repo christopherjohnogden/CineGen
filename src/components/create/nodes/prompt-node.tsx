@@ -11,7 +11,7 @@ type PromptNodeProps = NodeProps & { data: WorkflowNodeData };
 
 function PromptNodeInner({ id, data, selected }: PromptNodeProps) {
   const { updateNodeData } = useReactFlow();
-  const { state } = useWorkspace();
+  const { state, dispatch } = useWorkspace();
   const prompt = (data.config?.prompt as string) ?? '';
   const wordCount = prompt.trim() ? prompt.trim().split(/\s+/).length : 0;
 
@@ -20,6 +20,18 @@ function PromptNodeInner({ id, data, selected }: PromptNodeProps) {
       updateNodeData(id, { config: { ...data.config, prompt: value } });
     },
     [id, data.config, updateNodeData],
+  );
+
+  const handleMentionInsert = useCallback(
+    (element: (typeof state.elements)[number], value: string) => {
+      dispatch({
+        type: 'APPLY_ELEMENT_MENTION',
+        nodeId: id,
+        elementId: element.id,
+        config: { prompt: value },
+      });
+    },
+    [dispatch, id],
   );
 
   return (
@@ -33,6 +45,7 @@ function PromptNodeInner({ id, data, selected }: PromptNodeProps) {
       <MentionTextarea
         value={prompt}
         onChange={handleChange}
+        onMentionInsert={handleMentionInsert}
         placeholder="Describe the shot, movement, light, and feeling..."
         rows={5}
         elements={state.elements}

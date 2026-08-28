@@ -14,6 +14,8 @@ import {
 import { registerProjectHandlers } from './ipc/project.js';
 import { registerWorkflowHandlers } from './ipc/workflows.js';
 import { registerHiggsfieldHandlers } from './ipc/higgsfield.js';
+import { registerArtlistHandlers } from './ipc/artlist.js';
+import { registerTopviewHandlers } from './ipc/topview.js';
 import { registerExportHandlers } from './ipc/exports.js';
 import { registerElementHandlers } from './ipc/elements.js';
 import { registerElementsLibraryHandlers } from './ipc/elements-library.js';
@@ -403,6 +405,8 @@ app.whenReady().then(async () => {
   registerProjectHandlers();
   registerWorkflowHandlers();
   registerHiggsfieldHandlers();
+  registerArtlistHandlers();
+  registerTopviewHandlers();
   registerExportHandlers();
   registerElementHandlers();
   registerElementsLibraryHandlers();

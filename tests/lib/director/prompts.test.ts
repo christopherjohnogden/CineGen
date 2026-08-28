@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DirectorClip } from '@/types/director';
 import { isolatedPrompt, rewritePrefixForIsolate } from '@/lib/director/isolate-prompt';
 import { compileClipBody, retimeClipToSeconds, validateClipTimings } from '@/lib/director/prompt-compiler';
-import { seedance25Adapter } from '@/lib/director/video-adapter';
+import { artlistAutoAdapter, runpodLtx25Adapter, seedance25Adapter, topviewAutoAdapter } from '@/lib/director/video-adapter';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import { BREAKDOWN_AUDIT_SYSTEM_PROMPT, BREAKDOWN_IDENTIFY_SYSTEM_PROMPT, BREAKDOWN_SYSTEM_PROMPT, shotlistContinueSystemPrompt, shotlistSystemPrompt } from '@/lib/director/llm-jobs';
 
@@ -103,6 +103,14 @@ describe('director isolate prompt', () => {
 });
 
 describe('seedance 2.5 adapter', () => {
+  it.each(['720p', '1080p'])('passes a %s Director selection to Higgsfield', (resolution) => {
+    const show = { ...createEmptyDirectorShow(), resolution };
+    const request = seedance25Adapter.buildRequest({ show, clip, variant: { kind: 'full' } });
+
+    expect(seedance25Adapter.capabilities.resolutions).toContain(resolution);
+    expect(request.params.resolution).toBe(resolution);
+  });
+
   it('uses the compiled prompt for shots — Seedance 2.5 has no multi_shots flag', () => {
     const show = createEmptyDirectorShow();
     const full = seedance25Adapter.buildRequest({ show, clip, variant: { kind: 'full' } });
@@ -152,6 +160,102 @@ describe('seedance 2.5 adapter', () => {
     };
     const full = seedance25Adapter.buildRequest({ show, clip: edited, variant: { kind: 'full' } });
     expect(full.prompt).toContain('ELEMENTS — @Edited');
+  });
+});
+
+describe('Artlist adapter', () => {
+  it('passes a maximum of three unique element stills to Artlist', () => {
+    const show = createEmptyDirectorShow();
+    const request = artlistAutoAdapter.buildRequest({
+      show,
+      clip,
+      variant: { kind: 'full' },
+      referenceImages: ['https://cdn.example/a.png', 'https://cdn.example/b.png', 'https://cdn.example/a.png', 'https://cdn.example/c.png', 'https://cdn.example/d.png'],
+    });
+    expect(request.provider).toBe('artlist');
+    expect(request.modelId).toBe('auto');
+    expect(request.medias).toEqual([
+      { value: 'https://cdn.example/a.png', role: 'image' },
+      { value: 'https://cdn.example/b.png', role: 'image' },
+      { value: 'https://cdn.example/c.png', role: 'image' },
+    ]);
+    expect(request.prompt).toContain('ARTLIST ELEMENT REFERENCES');
+  });
+});
+
+describe('Topview adapter', () => {
+  it('keeps the full Director duration for live Topview model validation and every unique element reference', () => {
+    const show = createEmptyDirectorShow();
+    const request = topviewAutoAdapter.buildRequest({
+      show,
+      clip,
+      variant: { kind: 'full' },
+      referenceImages: [
+        'https://cdn.example/peter.png',
+        'https://cdn.example/office.png',
+        'https://cdn.example/peter.png',
+        'https://cdn.example/book.png',
+        'https://cdn.example/jordan.png',
+      ],
+    });
+
+    expect(show.adapterId).toBe('topview-auto');
+    expect(show.clipLengthSec).toBe(20);
+    expect(request.provider).toBe('topview');
+    expect(request.modelId).toBe('auto');
+    expect(request.durationSec).toBe(20);
+    expect(request.params.duration).toBe(20);
+    expect(request.medias).toHaveLength(4);
+    expect(request.prompt).toContain('TOPVIEW ELEMENT REFERENCES');
+  });
+});
+
+describe('RunPod LTX-2.5 adapter', () => {
+  it.each(['720p', '1080p'])('passes a %s Director selection to the generation session', (resolution) => {
+    const show = { ...createEmptyDirectorShow(), resolution };
+    const request = runpodLtx25Adapter.buildRequest({ show, clip, variant: { kind: 'full' } });
+
+    expect(runpodLtx25Adapter.capabilities.resolutions).toContain(resolution);
+    expect(request.params.resolution).toBe(resolution);
+  });
+
+  it('passes the compiled Director prompt and element stills to LTX-2.5', () => {
+    const show = createEmptyDirectorShow();
+    const request = runpodLtx25Adapter.buildRequest({
+      show,
+      clip,
+      variant: { kind: 'full' },
+      referenceImages: ['https://cdn.example/peter.png', 'https://cdn.example/jordan.png'],
+    });
+    expect(request.adapterId).toBe('runpod-ltx-2.5');
+    expect(request.provider).toBe('runpod');
+    expect(request.modelId).toBe('runpod-ltx-2.5');
+    expect(request.params).toEqual({
+      aspect_ratio: show.aspectRatio,
+      duration: 20,
+      resolution: show.resolution,
+      generate_audio: show.generateAudio,
+    });
+    expect(request.medias).toEqual([
+      { value: 'https://cdn.example/peter.png', role: 'image' },
+    ]);
+    expect(request.prompt).toContain('The first frame locks composition and identity');
+    expect(request.prompt).toContain('A hard cut transitions to');
+    expect(request.prompt).not.toContain('SEGMENT 1 —');
+    expect(request.prompt.length).toBeLessThanOrEqual(1_000);
+  });
+
+  it('uses only the first unique still because the bundled worker is image-to-video', () => {
+    const show = createEmptyDirectorShow();
+    const refs = Array.from({ length: 9 }, (_, index) => `https://cdn.example/${index}.png`);
+    const request = runpodLtx25Adapter.buildRequest({
+      show,
+      clip,
+      variant: { kind: 'full' },
+      referenceImages: [refs[0], ...refs],
+    });
+    expect(request.medias).toHaveLength(1);
+    expect(request.medias?.map((media) => media.value)).toEqual(refs.slice(0, 1));
   });
 });
 

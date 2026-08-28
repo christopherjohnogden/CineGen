@@ -199,7 +199,12 @@ export function ElementsTab() {
 
       {filtered.length === 0 ? (
         <div className="elements-tab__empty">
-          <span className="elements-tab__empty-icon">📦</span>
+          <span className="elements-tab__empty-icon" aria-hidden="true">
+            <svg width="44" height="44" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+              <path d="M8 16 24 7l16 9-16 9L8 16Z" />
+              <path d="M8 16v17l16 9 16-9V16M24 25v17" />
+            </svg>
+          </span>
           <span className="elements-tab__empty-text">{emptyHint}</span>
           {state.elements.length === 0 && (
             <button className="elements-tab__add-btn" onClick={handleAdd} type="button">

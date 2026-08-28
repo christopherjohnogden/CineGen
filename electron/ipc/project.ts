@@ -90,7 +90,7 @@ function defaultSnapshot(id: string, name: string) {
       clipLengthSec: 20,
       stylePrefix: '',
       aspectRatio: '16:9',
-      adapterId: 'seedance-2.5',
+      adapterId: 'topview-auto',
       resolution: '720p',
       generateAudio: true,
       genre: 'auto',

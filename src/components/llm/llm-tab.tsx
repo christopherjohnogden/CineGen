@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { assistantMarkdownComponents } from '@/components/assistant/assistant-markdown';
 import { getApiKey, getCutVisionModel } from '@/lib/utils/api-key';
+import { getVideoGenerationProvider } from '@/lib/utils/video-generation-provider';
+import { generateLtx25AndWait } from '@/lib/runpod/ltx25-client';
 import type { Asset, MediaFolder } from '@/types/project';
 import type { Timeline } from '@/types/timeline';
 import type { Element } from '@/types/elements';
@@ -890,7 +892,9 @@ export function LLMTab({
   const [activeSkillId, setActiveSkillId] = useState<string | null>(initialState.activeSkillId ?? null);
   const [skillAuthoringActive, setSkillAuthoringActive] = useState(false);
   const [skillAuthoringCliSessionId, setSkillAuthoringCliSessionId] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => (
+    typeof window === 'undefined' || !window.matchMedia('(max-width: 767px)').matches
+  ));
   const [indexPopover, setIndexPopover] = useState<'assets' | 'transcripts' | 'clips' | null>(null);
   const [acousticBatch, setAcousticBatch] = useState<{ total: number; done: number } | null>(null);
   const acousticInFlightRef = useRef(false);
@@ -910,6 +914,15 @@ export function LLMTab({
   const prevIsSendingRef = useRef(false);
   const sendingAssistantIdRef = useRef<string | null>(null);
   const workModeMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const phoneQuery = window.matchMedia('(max-width: 767px)');
+    const handleBreakpointChange = (event: MediaQueryListEvent) => {
+      setSidebarOpen(!event.matches);
+    };
+    phoneQuery.addEventListener('change', handleBreakpointChange);
+    return () => phoneQuery.removeEventListener('change', handleBreakpointChange);
+  }, []);
 
   const transcriptReadyCount = useMemo(() => (
     assets.filter((asset) => {
@@ -1530,10 +1543,15 @@ export function LLMTab({
     setSkillAuthoringCliSessionId(null);
   }, [messages]);
 
-  // Async execution of generate_media steps (Higgsfield generation → place on the active timeline
-  // or asset bin). Kept out of the synchronous executeSkillAction.
+  // Async media generation through the configured video provider, then placement on the active
+  // timeline or in the asset bin. Kept out of the synchronous executeSkillAction.
   const runGenerateMediaSteps = useCallback(async (steps: SkillGenerateMediaStep[]) => {
     for (const step of steps) {
+      const videoProvider = step.outputType === 'video' ? getVideoGenerationProvider() : 'higgsfield';
+      const useTopview = videoProvider === 'topview';
+      const useArtlist = videoProvider === 'artlist';
+      const useRunpod = videoProvider === 'runpod';
+      const generationProvider = useRunpod ? 'runpod' : useTopview ? 'topview' : useArtlist ? 'artlist' : 'higgsfield';
       const model = step.model
         || (step.outputType === 'video' ? HIGGSFIELD_MODELS.seedance : HIGGSFIELD_MODELS.nanoBanana);
       const refClip = step.refClipId ? timelines.flatMap((t) => t.clips).find((c) => c.id === step.refClipId) : undefined;
@@ -1542,20 +1560,70 @@ export function LLMTab({
       const assetId = generateId();
       const pendingAsset = {
         id: assetId, name: 'Generating…', type: step.outputType, url: '', duration: 5,
-        metadata: { generating: true, generatedVia: 'copilot', quickEditPrompt: step.prompt, higgsfieldModel: model },
+        metadata: {
+          generating: true,
+          generatedVia: 'copilot',
+          quickEditPrompt: step.prompt,
+          generationProvider,
+          generationModel: useRunpod ? 'runpod-ltx-2.5' : (useTopview || useArtlist) ? 'auto' : model,
+          ...(!useTopview && !useArtlist && !useRunpod ? { higgsfieldModel: model } : {}),
+        },
       } as unknown as Asset;
       dispatch({ type: 'ADD_ASSET', asset: pendingAsset });
 
       try {
-        const res = await window.electronAPI.higgsfield.generate({
-          prompt: step.prompt,
-          model,
-          outputType: step.outputType,
-          referenceValue: refAsset?.fileRef || (refAsset as { url?: string } | undefined)?.url,
-        });
+        const referenceValue = refAsset?.fileRef || (refAsset as { url?: string } | undefined)?.url;
+        const res = useRunpod
+          ? await generateLtx25AndWait({
+              prompt: step.prompt,
+              durationSec: 5,
+              aspectRatio: '16:9',
+              resolution: '720p',
+              generateAudio: true,
+              referenceImages: referenceValue ? [referenceValue] : undefined,
+            })
+          : useTopview
+            ? await window.electronAPI.topview.generate({
+                prompt: step.prompt,
+                model: 'auto',
+                durationSec: 5,
+                aspectRatio: '16:9',
+                resolution: '720p',
+                generateAudio: true,
+                medias: referenceValue ? [{ value: referenceValue, role: 'image' }] : undefined,
+              })
+          : useArtlist
+            ? await window.electronAPI.artlist.generate({
+                prompt: step.prompt,
+                model: 'auto',
+                durationSec: 5,
+                aspectRatio: '16:9',
+                resolution: '720p',
+                medias: referenceValue ? [{ value: referenceValue, role: 'image' }] : undefined,
+              })
+            : await window.electronAPI.higgsfield.generate({
+                prompt: step.prompt,
+                model,
+                outputType: step.outputType,
+                referenceValue,
+              });
+        if (!res.url) {
+          const providerLabel = useRunpod ? 'RunPod LTX-2.5' : useTopview ? 'Topview' : useArtlist ? 'Artlist' : 'Higgsfield';
+          throw new Error(`${providerLabel} finished without returning media.`);
+        }
+        const completedMetadata = {
+          generating: false,
+          generatedVia: 'copilot',
+          quickEditPrompt: step.prompt,
+          generationProvider,
+          generationModel: (useTopview || useArtlist || useRunpod) && 'model' in res && res.model
+            ? res.model
+            : useRunpod ? 'runpod-ltx-2.5' : (useTopview || useArtlist) ? 'auto' : model,
+          ...(!useTopview && !useArtlist && !useRunpod ? { higgsfieldModel: model } : {}),
+        };
         dispatch({
           type: 'ADD_ASSET',
-          asset: { ...pendingAsset, name: step.prompt.slice(0, 40), url: res.url, fileRef: res.url, duration: res.durationSec ?? 5, metadata: { generating: false, generatedVia: 'copilot', quickEditPrompt: step.prompt, higgsfieldModel: model } } as unknown as Asset,
+          asset: { ...pendingAsset, name: step.prompt.slice(0, 40), url: res.url, fileRef: res.url, duration: res.durationSec ?? 5, metadata: completedMetadata } as unknown as Asset,
         });
 
         if (step.target === 'timeline') {
@@ -1612,7 +1680,7 @@ export function LLMTab({
       director: workspaceState.director,
     });
 
-    // Async generate_media steps (Higgsfield generation + placement).
+    // Async generate_media steps (configured provider + placement).
     const genSteps = action.steps.filter((s): s is SkillGenerateMediaStep => s.type === 'generate_media');
     if (genSteps.length > 0) {
       void runGenerateMediaSteps(genSteps).catch((err) => {
@@ -2405,6 +2473,9 @@ export function LLMTab({
     setSkillAuthoringActive(false);
     setSkillAuthoringCliSessionId(null);
     setCliSession(DEFAULT_CLI_LLM_SESSION);
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+      setSidebarOpen(false);
+    }
   }, [saveCurrentSession]);
 
   const handleLoadSession = useCallback((sessionId: string) => {
@@ -2441,6 +2512,7 @@ export function LLMTab({
       }
       setActiveSessionId(sessionId);
       setError('');
+      if (window.matchMedia('(max-width: 767px)').matches) setSidebarOpen(false);
 
       // Update active in history
       setChatHistory((prev) => {
@@ -3995,7 +4067,14 @@ export function LLMTab({
   );
 
   return (
-    <div className={`copilot${hasMessages ? ' copilot--active' : ''}`}>
+    <div className={`copilot${hasMessages ? ' copilot--active' : ''}`} data-sidebar-open={sidebarOpen ? 'true' : undefined}>
+      <button
+        type="button"
+        className="copilot__sidebar-backdrop"
+        onClick={() => setSidebarOpen(false)}
+        aria-label="Close chat history"
+        tabIndex={sidebarOpen ? 0 : -1}
+      />
       {/* ── Left Sidebar (chat history) ── */}
       <aside className={`copilot__sidebar${sidebarOpen ? '' : ' copilot__sidebar--closed'}`}>
         <div className="copilot__sidebar-head">
@@ -4083,7 +4162,10 @@ export function LLMTab({
           <div className="copilot__sidebar-footer-actions">
             <button
               className="copilot__sidebar-settings-btn copilot__sidebar-settings-btn--compact"
-              onClick={() => setShowSettings(!showSettings)}
+              onClick={() => {
+                setShowSettings(!showSettings);
+                if (window.matchMedia('(max-width: 767px)').matches) setSidebarOpen(false);
+              }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
               Settings

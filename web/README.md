@@ -71,6 +71,11 @@ Common server settings:
 | `CINEGEN_WEB_MAX_JSON_BYTES` | `67108864` | Maximum JSON request size. |
 | `CINEGEN_WEB_MAX_UPLOAD_BYTES` | `4294967296` | Maximum browser upload size. |
 | `CINEGEN_PUBLIC_BASE_URL` | unset | Public HTTPS origin used when a cloud provider must fetch web media directly. |
+| `CINEGEN_ARTLIST_CLIENT_ID` | unset | Optional Artlist-issued OAuth client ID, useful for localhost testing. |
+| `CINEGEN_ARTLIST_CLIENT_SECRET` | unset | Optional server-only secret for an Artlist-issued confidential client. |
+| `CINEGEN_ARTLIST_CLIENT_METADATA_URL` | unset | Public HTTPS OAuth client metadata document used when the callback runs on a different origin. |
+| `CINEGEN_ARTLIST_TOKEN_SECRET` | generated locally | Stable server-only key material for encrypting Artlist refresh tokens. |
+| `CINEGEN_TOPVIEW_TOKEN_SECRET` | generated locally | Stable server-only key material for encrypting Topview OAuth tokens. Required for multi-instance deployments. |
 | `CINEGEN_FFMPEG_PATH` | `ffmpeg` | Optional FFmpeg override for acoustic analysis. Export and core media jobs use bundled static binaries. |
 
 fal.ai, kie.ai, and RunPod keys are entered in CineGen Settings. The browser sends them with the individual operation; the server forwards them to the selected provider and does not persist them. There are intentionally no fal/kie/RunPod key variables in `.env.example`.
@@ -94,6 +99,8 @@ Web data defaults to `web/.data`; desktop data remains in the Electron applicati
 - The hosted cut workflow uses deterministic project-index retrieval; desktop-only story-graph/local reranking is not run on the server.
 - Ollama and Claude Code/Codex/Gemini CLI chat run on the server when their runtimes are reachable. Missing tools are reported as unavailable; CLI visual references remain unsupported.
 - Higgsfield generation and Quick Edit use a server-side Higgsfield CLI when configured. Device login/logout is disabled unless explicitly enabled on a trusted local server.
+- Artlist video generation uses Artlist's remote MCP directly from the web server. OAuth tokens are encrypted server-side, and Director element images are forwarded as generation references. Hosted HTTPS deployments publish `/api/artlist/oauth/client-metadata`; localhost needs an Artlist-issued client ID or a public client metadata URL because Artlist disables anonymous dynamic client registration.
+- Topview video generation uses Topview's official remote MCP. Sign-in opens Topview OAuth in a popup, credentials remain encrypted server-side, and Director element images are uploaded as named omni references. Topview is the default Director video provider; its model and allowed duration, resolution, aspect ratio, and audio settings are selected and validated from Topview's live generation configuration.
 - LTX, Qwen Edit, Layer Decompose, WhisperX, local transcription, and SAM 3 require the corresponding runtime or worker configuration. Missing integrations fail with a clear capability message instead of falling back to arbitrary commands.
 - Native AVFoundation playback, desktop file dialogs, and arbitrary local paths remain desktop-only. The web build uses browser playback and uploads instead.
 - Local web media up to 90 MB can be staged to fal.ai per request. Larger provider inputs require a correctly secured public `CINEGEN_PUBLIC_BASE_URL`.

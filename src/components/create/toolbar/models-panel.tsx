@@ -1,8 +1,12 @@
 
 
 import { useState, useMemo } from 'react';
-import { getModelsByProvider } from '@/lib/fal/models';
-import { getProvider } from '@/lib/utils/api-key';
+import { ALL_MODELS } from '@/lib/fal/models';
+import {
+  compareModelsByProvider,
+  modelProvider,
+  modelProviderLabel,
+} from '@/lib/workflows/provider-model-options';
 
 interface ModelsPanelProps {
   onSelect: (nodeType: string) => void;
@@ -18,12 +22,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export function ModelsPanel({ onSelect }: ModelsPanelProps) {
   const [search, setSearch] = useState('');
-  const provider = getProvider();
 
   const groups = useMemo(() => {
-    const models = Object.values(getModelsByProvider(provider));
+    const models = Object.values(ALL_MODELS).sort(compareModelsByProvider);
     const filtered = search
-      ? models.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()))
+      ? models.filter((model) => (
+          `${modelProviderLabel(model)} ${model.name}`.toLowerCase().includes(search.toLowerCase())
+        ))
       : models;
 
     return CATEGORY_ORDER
@@ -33,7 +38,7 @@ export function ModelsPanel({ onSelect }: ModelsPanelProps) {
         models: filtered.filter((m) => m.category === cat),
       }))
       .filter((g) => g.models.length > 0);
-  }, [search, provider]);
+  }, [search]);
 
   return (
     <div className="toolbar-panel">
@@ -60,6 +65,11 @@ export function ModelsPanel({ onSelect }: ModelsPanelProps) {
                     {model.outputType === 'video' ? 'VID' : model.outputType === 'audio' ? 'AUD' : 'IMG'}
                   </span>
                   <span className="models-panel__card-name">{model.name}</span>
+                  <span
+                    className={`models-panel__card-provider${modelProvider(model) === 'topview' ? ' models-panel__card-provider--topview' : ''}`}
+                  >
+                    {modelProviderLabel(model)}
+                  </span>
                 </button>
               ))}
             </div>

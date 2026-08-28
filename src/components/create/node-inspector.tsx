@@ -4,6 +4,7 @@ import { useCallback, useState, useEffect } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import { ALL_MODELS } from '@/lib/fal/models';
 import { CATEGORY_COLORS } from '@/lib/workflows/node-registry';
+import { modelProvider, modelProviderLabel } from '@/lib/workflows/provider-model-options';
 import { getLayerDecomposeStageLabel } from '@/lib/workflows/layer-decompose';
 import { useRunNode } from './workflow-canvas';
 import { CustomSelect } from '@/components/ui/custom-select';
@@ -244,8 +245,10 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
 
   const status = data.result?.status ?? 'idle';
   const isRunning = status === 'running';
+  const isRunpodLtxSession = modelDef?.nodeType === 'runpod-ltx25-session';
   const reportedProgress = typeof data.result?.progress === 'number' ? data.result.progress : undefined;
   const [progress, setProgress] = useState(0);
+  const [runpodElapsedSeconds, setRunpodElapsedSeconds] = useState(0);
   const progressMessage = data.result?.progressMessage
     ?? getLayerDecomposeStageLabel(data.result?.progressStage)
     ?? (isRunning ? 'Running…' : undefined);
@@ -265,6 +268,18 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
     }, 1500);
     return () => clearInterval(interval);
   }, [isRunning, reportedProgress]);
+
+  useEffect(() => {
+    if (!isRunning || !isRunpodLtxSession) {
+      setRunpodElapsedSeconds(0);
+      return;
+    }
+    const startedAt = data.result?.progressStartedAt ?? Date.now();
+    const updateElapsed = () => setRunpodElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(interval);
+  }, [data.result?.progressStartedAt, isRunning, isRunpodLtxSession]);
 
   if (!modelDef) return null;
 
@@ -305,6 +320,11 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
           {modelOutputBadge(modelDef.outputType)}
         </span>
         <span className="node-inspector__name">{modelDef.name}</span>
+        <span
+          className={`model-node__provider${modelProvider(modelDef) === 'topview' ? ' model-node__provider--topview' : ''}`}
+        >
+          {modelProviderLabel(modelDef)}
+        </span>
       </div>
 
       {inspectorFields.length > 0 && (
@@ -360,7 +380,11 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
           <div className="model-node__progress-wrap">
             <div className="model-node__progress">
               <div className="model-node__progress-bar" style={{ width: `${progress}%` }} />
-              <span className="model-node__progress-text">{Math.round(progress)}%</span>
+              <span className="model-node__progress-text">
+                {isRunpodLtxSession
+                  ? `${Math.floor(runpodElapsedSeconds / 60)}:${String(runpodElapsedSeconds % 60).padStart(2, '0')} elapsed`
+                  : `${Math.round(progress)}%`}
+              </span>
               <button
                 type="button"
                 className="model-node__progress-cancel"

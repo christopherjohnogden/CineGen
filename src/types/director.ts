@@ -298,7 +298,11 @@ export interface DirectorFraming {
   look?: DirectorFramingLook;
 }
 
-export type DirectorStoryboardModelId = 'nano_banana_2' | 'gpt_image_2';
+export type DirectorStoryboardModelId =
+  | 'nano_banana_2'
+  | 'gpt_image_2'
+  | 'runpod_sdxl_session'
+  | 'runpod_qwen_image_edit_session';
 export type DirectorStoryboardStatus = 'idle' | 'generating' | 'ready' | 'failed';
 
 /** One generated still for one numbered beat inside a shotlist clip. */
@@ -406,7 +410,7 @@ export interface DirectorShow {
 }
 
 export const CLIP_LENGTHS: ClipLengthSec[] = [10, 15, 20, 30];
-export const DEFAULT_DIRECTOR_ADAPTER_ID = 'seedance-2.5';
+export const DEFAULT_DIRECTOR_ADAPTER_ID = 'topview-auto';
 export const DIRECTOR_GENRES = [
   { id: 'auto', label: 'Auto' },
   { id: 'action', label: 'Action' },

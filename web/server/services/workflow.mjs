@@ -16,6 +16,7 @@ import {
   validatePublicUrl,
   validateRoute,
 } from './_shared.mjs';
+import { createRunpodLtx25Handlers } from './runpod-ltx25.mjs';
 
 const KIE_BASE_URL = 'https://api.kie.ai/api/v1';
 const RUNPOD_SERVERLESS_URL = 'https://api.runpod.ai/v2';
@@ -678,7 +679,10 @@ export function createWorkflowServices(options = {}) {
 
   return {
     workflowHandlers,
-    podHandlers: createPodControlHandlers(dependencies),
+    podHandlers: {
+      ...createPodControlHandlers(dependencies),
+      ...createRunpodLtx25Handlers(dependencies),
+    },
   };
 }
 

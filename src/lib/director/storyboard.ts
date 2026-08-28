@@ -11,10 +11,37 @@ import { grammarLensLine } from './craft/coverage';
 import { compileLookBible, lookBibleImageUrls } from './look-bible';
 import { normalizeElementTag } from './prompt-compiler';
 import { clipDisplayLabels } from './shotlist';
+import { qwenMultiImagePrompt, type QwenPromptPicture } from '@/lib/runpod/qwen-prompt';
 
-export const STORYBOARD_MODELS: Array<{ value: DirectorStoryboardModelId; label: string; shortLabel: string }> = [
-  { value: 'nano_banana_2', label: 'Google Nano Banana 2', shortLabel: 'Nano Banana 2' },
-  { value: 'gpt_image_2', label: 'GPT Image 2', shortLabel: 'GPT Image 2' },
+export type StoryboardModelProvider = 'higgsfield' | 'runpod';
+
+export interface StoryboardModelOption {
+  value: DirectorStoryboardModelId;
+  label: string;
+  shortLabel: string;
+  provider: StoryboardModelProvider;
+  sessionModel?: 'sdxl' | 'qwen-image-edit';
+  requiresSourceImage?: boolean;
+}
+
+export const STORYBOARD_MODELS: StoryboardModelOption[] = [
+  { value: 'nano_banana_2', label: 'Higgsfield · Nano Banana 2', shortLabel: 'Nano Banana 2', provider: 'higgsfield' },
+  { value: 'gpt_image_2', label: 'Higgsfield · GPT Image 2', shortLabel: 'GPT Image 2', provider: 'higgsfield' },
+  {
+    value: 'runpod_sdxl_session',
+    label: 'RunPod Session · SDXL',
+    shortLabel: 'SDXL',
+    provider: 'runpod',
+    sessionModel: 'sdxl',
+  },
+  {
+    value: 'runpod_qwen_image_edit_session',
+    label: 'RunPod Session · Qwen Image Edit',
+    shortLabel: 'Qwen Image Edit',
+    provider: 'runpod',
+    sessionModel: 'qwen-image-edit',
+    requiresSourceImage: true,
+  },
 ];
 
 export interface StoryboardPlanFrame {
@@ -42,6 +69,11 @@ export interface StoryboardReference {
 export interface StoryboardReferenceSet {
   references: StoryboardReference[];
   missingElementTags: string[];
+}
+
+export interface StoryboardQwenRequest {
+  prompt: string;
+  referenceImages: string[];
 }
 
 export function storyboardFrameId(clipId: string, beatN: number): string {
@@ -243,19 +275,127 @@ export function storyboardReferences(
   return { references: references.slice(0, max), missingElementTags };
 }
 
+function storyboardReferenceBinding(reference: StoryboardReference, imageNumber: number): string {
+  return `IMAGE ${imageNumber} — ${reference.source === 'element' ? `ELEMENT ${reference.tag ?? reference.name}` : 'LOOK BIBLE'}: ${reference.name}. ${reference.source === 'element' ? 'Match its visible identity and design exactly.' : 'Use only its photographic lighting, palette, texture, and atmosphere; do not copy an illustrated medium.'}`;
+}
+
 export function storyboardPromptWithReferences(
   prompt: string,
   references: StoryboardReference[],
 ): string {
   if (references.length === 0) return prompt;
-  const bindings = references.map((reference, index) => (
-    `IMAGE ${index + 1} — ${reference.source === 'element' ? `ELEMENT ${reference.tag ?? reference.name}` : 'LOOK BIBLE'}: ${reference.name}. ${reference.source === 'element' ? 'Match its visible identity and design exactly.' : 'Use only its photographic lighting, palette, texture, and atmosphere; do not copy an illustrated medium.'}`
-  ));
+  const bindings = references.map((reference, index) => storyboardReferenceBinding(reference, index + 1));
   return `${prompt}\n\nSUPPLIED IMAGE BINDINGS — Use these exact roles; do not merge identities or assign one image to another subject.\n${bindings.join('\n')}`;
+}
+
+/** Build one Qwen edit request whose numbered prompt bindings exactly match its 1–3 images. */
+export function storyboardQwenRequest(
+  prompt: string,
+  references: StoryboardReference[],
+  existingFrame?: string,
+): StoryboardQwenRequest {
+  const selected: Array<{ url: string; reference?: StoryboardReference; existing?: true }> = [];
+  const used = new Set<string>();
+  const add = (entry: { url: string; reference?: StoryboardReference; existing?: true }): void => {
+    const url = entry.url.trim();
+    if (!url || used.has(url) || selected.length >= 3) return;
+    used.add(url);
+    selected.push({ ...entry, url });
+  };
+
+  if (existingFrame?.trim()) add({ url: existingFrame, existing: true });
+  const typePriority: Record<NonNullable<StoryboardReference['type']>, number> = {
+    location: 0,
+    character: 1,
+    prop: 2,
+    vehicle: 3,
+  };
+  const orderedReferences = references
+    .map((reference, index) => ({ reference, index }))
+    .sort((left, right) => {
+      if (left.reference.source !== right.reference.source) {
+        return left.reference.source === 'element' ? -1 : 1;
+      }
+      if (left.reference.source !== 'element') return left.index - right.index;
+      return (typePriority[left.reference.type ?? 'prop'] - typePriority[right.reference.type ?? 'prop'])
+        || left.index - right.index;
+    })
+    .map(({ reference }) => reference);
+  for (const reference of orderedReferences) add({ url: reference.url, reference });
+
+  const basePrompt = existingFrame?.trim()
+    ? `Refine Picture 1, the existing storyboard frame, into the final live-action film still described below. Preserve its composition and recognizable identities unless the direction explicitly changes them.\n\n${prompt}`
+    : prompt;
+  if (selected.length === 0) return { prompt: basePrompt, referenceImages: [] };
+
+  const pictures: QwenPromptPicture[] = selected.map((entry) => (
+    entry.existing
+      ? { kind: 'source', key: `source:${entry.url}` }
+      : {
+          kind: entry.reference!.source === 'look-bible'
+            ? 'look'
+            : entry.reference!.type ?? 'prop',
+          key: `reference:${entry.reference!.id}`,
+          name: entry.reference!.name,
+          tag: entry.reference!.tag,
+        }
+  ));
+  return {
+    prompt: qwenMultiImagePrompt(basePrompt, pictures),
+    referenceImages: selected.map((entry) => entry.url),
+  };
+}
+
+/** Remove image-lock language when a text-only model cannot receive those reference files. */
+export function storyboardPromptWithoutImageReferences(prompt: string): string {
+  return prompt
+    .replace(/\n\nSUPPLIED IMAGE BINDINGS —[\s\S]*$/i, '')
+    .replace(/\n\nACTIVE REFERENCES —[\s\S]*?(?=\n\n[A-Z][A-Z /-]+ —|$)/i, '')
+    .trim();
 }
 
 export function storyboardModelLabel(modelId: string | undefined): string {
   return STORYBOARD_MODELS.find((model) => model.value === modelId)?.shortLabel ?? 'Nano Banana 2';
+}
+
+export function storyboardModelOption(modelId: string | undefined): StoryboardModelOption {
+  return STORYBOARD_MODELS.find((model) => model.value === modelId) ?? STORYBOARD_MODELS[0];
+}
+
+/**
+ * Prefer an image model that is actually installed in the active RunPod session.
+ * SDXL is the default because it can create a frame from text alone; Qwen Image
+ * Edit remains selected when the user already chose it and the session has it.
+ */
+export function storyboardModelForRunpodSession(
+  current: DirectorStoryboardModelId | undefined,
+  ready: boolean,
+  activeModels: readonly string[],
+): DirectorStoryboardModelId | undefined {
+  if (!ready) return current;
+
+  const currentOption = storyboardModelOption(current);
+  if (
+    currentOption.provider === 'runpod'
+    && currentOption.sessionModel
+    && activeModels.includes(currentOption.sessionModel)
+  ) {
+    return currentOption.value;
+  }
+  if (activeModels.includes('sdxl')) return 'runpod_sdxl_session';
+  if (activeModels.includes('qwen-image-edit')) return 'runpod_qwen_image_edit_session';
+  return current;
+}
+
+/** Native ComfyUI dimensions close to one SDXL megapixel, rounded to model-friendly multiples. */
+export function storyboardRunpodDimensions(aspectRatio: string): { width: number; height: number } {
+  switch (aspectRatio.trim()) {
+    case '9:16': return { width: 768, height: 1344 };
+    case '4:3': return { width: 1152, height: 896 };
+    case '21:9': return { width: 1536, height: 640 };
+    case '1:1': return { width: 1024, height: 1024 };
+    default: return { width: 1344, height: 768 };
+  }
 }
 
 export function storyboardResultUrl(value: unknown, depth = 0): string | undefined {
@@ -306,10 +446,15 @@ export function isRetryableStoryboardError(error: unknown): boolean {
   ].some((needle) => message.includes(needle));
 }
 
-export function storyboardGenerationErrorMessage(error: unknown): string {
+export function storyboardGenerationErrorMessage(
+  error: unknown,
+  provider: StoryboardModelProvider = 'higgsfield',
+): string {
   const message = storyboardErrorText(error);
   if (isRetryableStoryboardError(error)) {
-    return 'Higgsfield could not accept the request after three attempts. Its image service may be temporarily unavailable—wait a moment, then retry this frame or select GPT Image 2.';
+    return provider === 'runpod'
+      ? 'The RunPod session is still working, but CineGen could not read the result. Check the session in Settings, then retry this frame.'
+      : 'Higgsfield could not accept the request after three attempts. Its image service may be temporarily unavailable—wait a moment, then retry this frame or select GPT Image 2.';
   }
   if (!message) return 'Storyboard generation failed. Retry this frame.';
   return message;

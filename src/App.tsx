@@ -59,7 +59,7 @@ export function App() {
   // Listen for project open events from the PM window (main process relay)
   useEffect(() => {
     if (IS_PM) return;
-    const unsub = window.electronAPI.pm.onOpenProject((id, sqlite) => {
+    const unsub = window.electronAPI?.pm?.onOpenProject((id, sqlite) => {
       handleOpenProject(id, sqlite);
     });
     return unsub;

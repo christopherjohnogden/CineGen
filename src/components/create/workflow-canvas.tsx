@@ -16,6 +16,7 @@ import {
   type Node,
   type NodeChange,
   type EdgeChange,
+  type FinalConnectionState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -32,7 +33,10 @@ import { getMediaTypeForFile, isMediaDragEvent, resolveMediaFileUrl } from '@/li
 import { executeFromNode } from '@/lib/workflows/execute';
 import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
+import { reconcilePromptMentionConnections } from '@/lib/llm/prompt-elements';
+import { areWorkflowPortsCompatible } from '@/lib/workflows/port-compatibility';
 import { createContext, useContext } from 'react';
+import type { PortType } from '@/types/workflow';
 
 type RunNodeFn = (nodeId: string) => void;
 const RunNodeContext = createContext<RunNodeFn>(() => {});
@@ -40,17 +44,25 @@ export function useRunNode() { return useContext(RunNodeContext); }
 
 const VIEWPORT_STORAGE_KEY = 'cinegen_canvas_viewport';
 
+interface PendingPaletteConnection {
+  sourceNodeId: string;
+  sourceHandleId: string | null;
+  sourcePortType: PortType;
+}
+
 function WorkflowCanvasInner() {
   const { state, dispatch } = useWorkspace();
   const { screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [palettePos, setPalettePos] = useState({ x: 0, y: 0 });
+  const [pendingPaletteConnection, setPendingPaletteConnection] = useState<PendingPaletteConnection | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [typeWarning, setTypeWarning] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [isFileDragging, setIsFileDragging] = useState(false);
   const mouseRef = useRef({ x: 0, y: 0 });
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const nodesRef = useRef(state.nodes);
@@ -131,19 +143,16 @@ function WorkflowCanvasInner() {
       }
 
       if (sourcePort && targetPort && sourcePort.type !== targetPort.type) {
-        // Allow media port to connect to image/video/audio, but warn on mismatch
-        const MEDIA_TYPES = ['image', 'video', 'audio'];
-        if (targetPort.type === 'media' && [...MEDIA_TYPES, 'element'].includes(sourcePort.type)) {
-          // A general media/reference input accepts generated media and Element nodes.
-        } else if (sourcePort.type === 'media' && MEDIA_TYPES.includes(targetPort.type)) {
+        if (!areWorkflowPortsCompatible(sourcePort.type, targetPort.type)) {
+          return;
+        }
+        if (sourcePort.type === 'media' && ['image', 'video', 'audio'].includes(targetPort.type)) {
           const fileType = sourceNode.data.config?.fileType as string;
           if (fileType && fileType !== targetPort.type) {
             setTypeWarning(
               `This input expects ${targetPort.type}, but the uploaded file is ${fileType}. The connection may not work correctly.`,
             );
           }
-        } else {
-          return;
         }
       }
 
@@ -157,7 +166,20 @@ function WorkflowCanvasInner() {
         data: { sourcePortType: sourcePort?.type ?? 'text' },
       };
 
-      dispatch({ type: 'SET_EDGES', edges: [...state.edges, newEdge] });
+      const nextEdges = [...state.edges, newEdge];
+      if (sourceNode.data.type === 'prompt' || sourceNode.data.type === 'multiPrompt' || sourceNode.data.type === 'shotPrompt') {
+        const reconciled = reconcilePromptMentionConnections({
+          nodes: state.nodes,
+          edges: nextEdges,
+          promptNodeId: sourceNode.id,
+        });
+        if (reconciled.nodes !== state.nodes) {
+          dispatch({ type: 'SET_NODES', nodes: reconciled.nodes });
+        }
+        dispatch({ type: 'SET_EDGES', edges: reconciled.edges });
+      } else {
+        dispatch({ type: 'SET_EDGES', edges: nextEdges });
+      }
     },
     [state.nodes, state.edges, dispatch],
   );
@@ -166,6 +188,10 @@ function WorkflowCanvasInner() {
     (nodeType: string) => {
       const definition = NODE_REGISTRY[nodeType];
       if (!definition) return;
+      const targetInput = pendingPaletteConnection
+        ? definition.inputs.find((input) => areWorkflowPortsCompatible(pendingPaletteConnection.sourcePortType, input.type))
+        : null;
+      if (pendingPaletteConnection && !targetInput) return;
       const flowPosition = screenToFlowPosition({ x: palettePos.x, y: palettePos.y });
 
       const modelDef = getModelDefinition(nodeType);
@@ -181,11 +207,62 @@ function WorkflowCanvasInner() {
         } as WorkflowNodeData,
       };
 
-      dispatch({ type: 'SET_NODES', nodes: [...state.nodes, newNode] });
+      const nextNodes = [...state.nodes, newNode];
+      if (pendingPaletteConnection && targetInput) {
+        const newEdge: Edge = {
+          id: generateId(),
+          source: pendingPaletteConnection.sourceNodeId,
+          target: newNode.id,
+          sourceHandle: pendingPaletteConnection.sourceHandleId,
+          targetHandle: targetInput.id,
+          type: 'animated',
+          data: { sourcePortType: pendingPaletteConnection.sourcePortType },
+        };
+        const nextEdges = [...state.edges, newEdge];
+        const sourceNode = state.nodes.find((node) => node.id === pendingPaletteConnection.sourceNodeId);
+        if (sourceNode?.data.type === 'prompt' || sourceNode?.data.type === 'multiPrompt' || sourceNode?.data.type === 'shotPrompt') {
+          const reconciled = reconcilePromptMentionConnections({
+            nodes: nextNodes,
+            edges: nextEdges,
+            promptNodeId: sourceNode.id,
+          });
+          dispatch({ type: 'SET_NODES', nodes: reconciled.nodes });
+          dispatch({ type: 'SET_EDGES', edges: reconciled.edges });
+        } else {
+          dispatch({ type: 'SET_NODES', nodes: nextNodes });
+          dispatch({ type: 'SET_EDGES', edges: nextEdges });
+        }
+      } else {
+        dispatch({ type: 'SET_NODES', nodes: nextNodes });
+      }
       setPaletteOpen(false);
+      setPendingPaletteConnection(null);
     },
-    [screenToFlowPosition, palettePos, state.nodes, dispatch],
+    [screenToFlowPosition, palettePos, pendingPaletteConnection, state.nodes, state.edges, dispatch],
   );
+
+  const handleConnectEnd = useCallback((event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+    if (connectionState.isValid || connectionState.toNode || connectionState.fromHandle?.type !== 'source') return;
+    const sourceNode = state.nodes.find((node) => node.id === connectionState.fromHandle?.nodeId);
+    const sourceDefinition = sourceNode ? NODE_REGISTRY[sourceNode.data.type] : null;
+    const sourcePort = sourceDefinition?.outputs.find((port) => port.id === connectionState.fromHandle?.id)
+      ?? sourceDefinition?.outputs[0];
+    if (!sourceNode || !sourcePort) return;
+
+    const pointer = 'changedTouches' in event
+      ? event.changedTouches[0]
+      : event;
+    if (!pointer) return;
+
+    setContextMenu(null);
+    setPendingPaletteConnection({
+      sourceNodeId: sourceNode.id,
+      sourceHandleId: connectionState.fromHandle.id ?? sourcePort.id,
+      sourcePortType: sourcePort.type,
+    });
+    setPalettePos({ x: pointer.clientX, y: pointer.clientY });
+    setPaletteOpen(true);
+  }, [state.nodes]);
 
   // --- Grouping logic ---
   const handleGroupSelected = useCallback(() => {
@@ -380,17 +457,35 @@ function WorkflowCanvasInner() {
         e.preventDefault();
         if (paletteOpen) {
           setPaletteOpen(false);
+          setPendingPaletteConnection(null);
         } else {
           setPalettePos({ x: mouseRef.current.x, y: mouseRef.current.y });
+          setPendingPaletteConnection(null);
           setPaletteOpen(true);
         }
       } else if (e.key === 'Escape' && paletteOpen) {
         setPaletteOpen(false);
+        setPendingPaletteConnection(null);
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [paletteOpen]);
+
+  useEffect(() => {
+    function handleOpenNodePalette() {
+      const rect = canvasWrapperRef.current?.getBoundingClientRect();
+      const position = rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      setContextMenu(null);
+      setPendingPaletteConnection(null);
+      setPalettePos(position);
+      setPaletteOpen(true);
+    }
+    window.addEventListener('cinegen:open-node-palette', handleOpenNodePalette);
+    return () => window.removeEventListener('cinegen:open-node-palette', handleOpenNodePalette);
+  }, []);
 
   const workflowDispatch = useCallback(() => ({
     setNodeRunning: (nodeId: string, running: boolean) =>
@@ -543,6 +638,7 @@ function WorkflowCanvasInner() {
   return (
     <RunNodeContext.Provider value={handleRunNode}>
     <div
+      ref={canvasWrapperRef}
       className={`workflow-canvas-wrapper${isFileDragging ? ' workflow-canvas-wrapper--file-drag' : ''}`}
       onMouseMove={(e) => {
         mouseRef.current = { x: e.clientX, y: e.clientY };
@@ -558,11 +654,18 @@ function WorkflowCanvasInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
+        onConnectEnd={handleConnectEnd}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={handleContextMenu}
         onSelectionContextMenu={handleContextMenu}
-        onPaneClick={() => { paletteOpen && setPaletteOpen(false); setContextMenu(null); }}
+        onPaneClick={() => {
+          if (paletteOpen) {
+            setPaletteOpen(false);
+            setPendingPaletteConnection(null);
+          }
+          setContextMenu(null);
+        }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={{ type: 'animated' }}
@@ -618,7 +721,11 @@ function WorkflowCanvasInner() {
         <NodePalette
           position={palettePos}
           onSelect={handlePaletteSelect}
-          onClose={() => setPaletteOpen(false)}
+          onClose={() => {
+            setPaletteOpen(false);
+            setPendingPaletteConnection(null);
+          }}
+          sourcePortType={pendingPaletteConnection?.sourcePortType}
         />
       )}
 

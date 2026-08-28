@@ -1,10 +1,14 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { FilePickerNode } from '@/components/create/nodes/file-picker-node';
 import type { WorkflowNodeData } from '@/types/workflow';
 
-function renderNode(config: WorkflowNodeData['config'], selected = false) {
+function renderNode(
+  config: WorkflowNodeData['config'],
+  selected = false,
+  dimensions: { width?: number; height?: number } = {},
+) {
   const data: WorkflowNodeData = {
     type: 'filePicker',
     label: 'Media',
@@ -24,13 +28,44 @@ function renderNode(config: WorkflowNodeData['config'], selected = false) {
           isConnectable: true,
           positionAbsoluteX: 0,
           positionAbsoluteY: 0,
+          width: dimensions.width,
+          height: dimensions.height,
         } as never)}
       />
     </ReactFlowProvider>,
   );
 }
 
+afterEach(cleanup);
+
 describe('FilePickerNode visual media layout', () => {
+  it('uses a visible default size while React Flow reports zero initial dimensions', () => {
+    const { container } = renderNode({
+      fileUrl: 'local-media://file/Users/editor/frame.jpg',
+      fileType: 'image',
+      fileName: 'frame.jpg',
+    }, false, { width: 0, height: 0 });
+
+    expect(screen.getByRole('img', { name: 'frame.jpg' })).toBeInTheDocument();
+    expect(container.querySelector('.file-picker-node--visual')).toHaveStyle({
+      width: '280px',
+      height: '157.5px',
+    });
+  });
+
+  it('preserves dimensions after the media node is resized', () => {
+    const { container } = renderNode({
+      fileUrl: 'local-media://file/Users/editor/take.mp4',
+      fileType: 'video',
+      fileName: 'take.mp4',
+    }, false, { width: 560, height: 315 });
+
+    expect(container.querySelector('.file-picker-node--visual')).toHaveStyle({
+      width: '560px',
+      height: '315px',
+    });
+  });
+
   it('renders an imported image as the full node surface with its output handle', () => {
     const { container } = renderNode({
       fileUrl: 'https://media.example/frame.jpg',

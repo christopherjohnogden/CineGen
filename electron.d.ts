@@ -3,6 +3,12 @@ import type { ExportJob } from './src/types/export';
 import type { TranscriptSegment } from './src/types/workflow';
 import type { ElementsLibrary } from './src/types/elements';
 import type {
+  Ltx25GpuProfile,
+  RunpodSessionImageInput,
+  RunpodSessionImageJobResult,
+  RunpodSessionImageModel,
+} from './src/lib/runpod/ltx25-service';
+import type {
   AssetVisualSummary,
   CutWorkflowResult,
   EditorialBrief,
@@ -51,6 +57,69 @@ export interface ElectronAPI {
     start:  (params: { runpodKey: string; podId: string }) => Promise<unknown>;
     stop:   (params: { runpodKey: string; podId: string }) => Promise<unknown>;
     status: (params: { runpodKey: string; podId: string }) => Promise<{ status: string; ip: string | null; port: number | null }>;
+    setupLtx25: (params: {
+      runpodKey: string;
+      huggingFaceToken: string;
+      gpuProfile: Ltx25GpuProfile;
+      imageModels: RunpodSessionImageModel[];
+    }) => Promise<{
+      podId: string;
+      podUrl: string;
+      podAuthToken: string;
+      secretIds: string[];
+      status: 'downloading' | 'error';
+      phase: string;
+      message: string;
+      gpuProfile: Ltx25GpuProfile;
+      imageModels?: RunpodSessionImageModel[];
+      costPerHr: number | null;
+      gpu: string | null;
+    }>;
+    statusLtx25: (params: {
+      runpodKey: string;
+      podId: string;
+      podUrl: string;
+      podAuthToken: string;
+      secretIds?: string[];
+    }) => Promise<{
+      status: 'downloading' | 'ready' | 'error' | 'ended';
+      phase: string;
+      message: string;
+      podId: string;
+      podUrl: string;
+      costPerHr: number | null;
+      gpu: string | null;
+    }>;
+    terminateLtx25: (params: { runpodKey: string; podId: string; secretIds?: string[] }) => Promise<{ ok: true; warning?: string }>;
+    generateLtx25: (params: {
+      podId: string;
+      podUrl: string;
+      podAuthToken: string;
+      jobId?: string;
+      input?: {
+        prompt: string;
+        durationSec?: number;
+        aspectRatio?: string;
+        resolution?: string;
+        generateAudio?: boolean;
+        referenceImages?: string[];
+      };
+    }) => Promise<{
+      jobId: string;
+      status: 'queued' | 'in_progress' | 'completed' | 'failed';
+      phase: string;
+      message?: string;
+      output?: { url?: string; durationSec: number; model: 'LTX-2.5' };
+      error?: string;
+    }>;
+    generateSessionImage: (params: {
+      podId: string;
+      podUrl: string;
+      podAuthToken: string;
+      model?: RunpodSessionImageModel;
+      jobId?: string;
+      input?: RunpodSessionImageInput;
+    }) => Promise<RunpodSessionImageJobResult>;
   };
   export: {
     start: (params: {
@@ -310,6 +379,112 @@ export interface ElectronAPI {
       wait?: boolean;
     }) => Promise<{ url?: string; text?: string; mediaType: 'image' | 'video' | 'audio' | 'text' | '3d'; durationSec?: number; jobId?: string; model: string }>;
     generateList: (params?: { video?: boolean; size?: number }) => Promise<Array<Record<string, unknown>>>;
+  };
+  artlist: {
+    accountStatus: () => Promise<{
+      connected: boolean;
+      configured: boolean;
+      error?: string;
+      setupRequired?: boolean;
+      setupMessage?: string;
+    }>;
+    authLogin: () => Promise<{ connected: boolean; configured: boolean; error?: string }>;
+    authLogout: () => Promise<void>;
+    generate: (params: {
+      prompt: string;
+      model?: string;
+      durationSec?: number;
+      aspectRatio?: string;
+      resolution?: string;
+      generateAudio?: boolean;
+      medias?: Array<{ value: string; role?: string }>;
+    }) => Promise<{
+      url: string;
+      mediaType: 'video';
+      durationSec?: number;
+      generationId?: string;
+      accountUrl?: string;
+      model?: string;
+    }>;
+  };
+  topview: {
+    accountStatus: () => Promise<{
+      connected: boolean;
+      configured: boolean;
+      email?: string;
+      credits?: number;
+      error?: string;
+    }>;
+    authLogin: () => Promise<{
+      connected: boolean;
+      configured: boolean;
+      email?: string;
+      credits?: number;
+      error?: string;
+    }>;
+    authLogout: () => Promise<void>;
+    submit?: (params: {
+      prompt: string;
+      model?: string;
+      durationSec?: number;
+      aspectRatio?: string;
+      resolution?: string;
+      generateAudio?: boolean;
+      medias?: Array<{ value: string; role?: string }>;
+    }) => Promise<{
+      taskId: string;
+      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+      boardId: string;
+      model: string;
+      durationSec: number;
+    }>;
+    query?: (params: {
+      taskId: string;
+      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+      boardId: string;
+      model: string;
+      durationSec: number;
+    }) => Promise<{
+      taskId: string;
+      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+      boardId: string;
+      model: string;
+      durationSec: number;
+      status: 'init' | 'running' | 'success' | 'fail';
+      url?: string;
+      boardUrl?: string;
+      error?: string;
+    }>;
+    generate: (params: {
+      prompt: string;
+      model?: string;
+      durationSec?: number;
+      aspectRatio?: string;
+      resolution?: string;
+      generateAudio?: boolean;
+      medias?: Array<{ value: string; role?: string }>;
+    }) => Promise<{
+      url: string;
+      mediaType: 'video';
+      durationSec?: number;
+      taskId?: string;
+      boardUrl?: string;
+      model?: string;
+    }>;
+    generateImage: (params: {
+      prompt: string;
+      model?: string;
+      aspectRatio?: string;
+      resolution?: string;
+      generateCount?: number;
+      medias?: Array<{ value: string; role?: string }>;
+    }) => Promise<{
+      url: string;
+      mediaType: 'image';
+      taskId?: string;
+      boardUrl?: string;
+      model?: string;
+    }>;
   };
   copilot: {
     analyzeVisualRefs: (params: {

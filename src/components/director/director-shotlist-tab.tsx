@@ -18,6 +18,7 @@ import { DirectorSceneCoverage } from './director-scene-coverage';
 import { DirectorsNotesField } from './director-notes-field';
 import { beatScriptContext } from '@/lib/director/craft/coverage';
 import { copyButtonLabel, useCopiedFlash } from '@/hooks/use-copied-flash';
+import { DirectorShotlistImport } from './director-shotlist-import';
 
 interface DirectorShotlistTabProps {
   show: DirectorShow;
@@ -162,6 +163,7 @@ export function DirectorShotlistTab({ show, elements, sceneFilter, expandRequest
         >
           Shotlist show
         </button>
+        <DirectorShotlistImport show={show} disabled={working} onChange={onChange} />
         {(working || mainClips.length > 0) && (
           <span className="director-tab__row" style={{ marginLeft: 'auto', alignItems: 'center', flexWrap: 'nowrap' }}>
             {mainClips.length > 0 && (
@@ -601,8 +603,8 @@ function ClipRow({ show, clip, label, startSec, open, copied, onToggle, onQueue,
             <>
               <span className="director-tab__meta">
                 {isolated
-                  ? `Isolated prompt — one unbroken take, ${request.durationSec}s`
-                  : `Full multishot prompt — ${request.durationSec}s`}
+                  ? `${adapter.label} · isolated prompt — one unbroken take, ${request.durationSec}s`
+                  : `${adapter.label} · full multishot prompt — ${request.durationSec}s`}
               </span>
               <pre className="dsl-prompt">{request.prompt}</pre>
             </>

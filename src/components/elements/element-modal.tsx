@@ -5,12 +5,25 @@ import type { Element, ElementType, ElementImage } from '@/types/elements';
 import { ElementImageUpload } from './element-image-upload';
 import { ElementGenerate } from './element-generate';
 
-const ELEMENT_TYPES: { id: ElementType; label: string; icon: string }[] = [
-  { id: 'character', label: 'Character', icon: '👤' },
-  { id: 'location', label: 'Location', icon: '🏔' },
-  { id: 'prop', label: 'Prop', icon: '🎬' },
-  { id: 'vehicle', label: 'Vehicle', icon: '🚗' },
+const ELEMENT_TYPES: { id: ElementType; label: string }[] = [
+  { id: 'character', label: 'Character' },
+  { id: 'location', label: 'Location' },
+  { id: 'prop', label: 'Prop' },
+  { id: 'vehicle', label: 'Vehicle' },
 ];
+
+function ElementTypeIcon({ type }: { type: ElementType }) {
+  if (type === 'character') {
+    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="8" r="3" /><path d="M6.5 19c.6-4 2.4-6 5.5-6s4.9 2 5.5 6" /></svg>;
+  }
+  if (type === 'location') {
+    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 19 9.2 9l3.2 5 2.1-3.2L20 19H4Z" /><path d="m7.8 11.8 1.5 1 1.3-1.2" /></svg>;
+  }
+  if (type === 'prop') {
+    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M5 8.5h14v10H5zM5 8.5l3-4h8l3 4" /><path d="M10 4.5 8.5 8.5M15.5 4.5 14 8.5" /></svg>;
+  }
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 15.5v-4l2-4h10l3 4v4H4Z" /><circle cx="7.5" cy="16.5" r="1.8" /><circle cx="16.5" cy="16.5" r="1.8" /><path d="M6 11.5h11" /></svg>;
+}
 
 interface ElementModalProps {
   element?: Element;
@@ -74,7 +87,7 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
                   className={`element-modal__type-btn ${type === t.id ? 'element-modal__type-btn--active' : ''}`}
                   onClick={() => setType(t.id)}
                 >
-                  <span>{t.icon}</span>
+                  <span><ElementTypeIcon type={t.id} /></span>
                   <span>{t.label}</span>
                 </button>
               ))}

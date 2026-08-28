@@ -11,6 +11,7 @@ describe('browser Electron adapter installation', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     removeInstalledAdapter();
   });
@@ -95,6 +96,159 @@ describe('browser Electron adapter installation', () => {
     expect(url).toBe('/api/rpc/llm/openaiRealtimeSession');
     expect(JSON.parse(String(request.body))).toEqual({
       args: [{ apiKey: 'sk-test', sdp: 'offer-sdp', voice: 'cedar' }],
+    });
+  });
+
+  it('puts an outer deadline around a stalled RunPod session status check', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { browserElectronAPI } = await import('../src/platform/install');
+    const status = browserElectronAPI.pod.statusLtx25({
+      runpodKey: 'rp-key',
+      podId: 'pod-1',
+      podUrl: 'https://pod-1-8000.proxy.runpod.net',
+      podAuthToken: 'pod-token',
+    });
+    const rejected = expect(status).rejects.toMatchObject({ code: 'RPC_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejected;
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/rpc/pod/statusLtx25');
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal?.aborted).toBe(true);
+  });
+
+  it('opens Artlist OAuth and waits for the server-side connection', async () => {
+    vi.useFakeTimers();
+    const popup = {
+      closed: false,
+      close: vi.fn(function close(this: { closed: boolean }) { this.closed = true; }),
+      document: { title: '' },
+      location: { replace: vi.fn() },
+    };
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({
+          ok: true,
+          result: {
+            connected: false,
+            configured: true,
+            authorizationUrl: 'https://auth.artlist.io/authorize?client_id=cinegen',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({ ok: true, result: { connected: true, configured: true } }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { browserElectronAPI } = await import('../src/platform/install');
+    const connectedPromise = browserElectronAPI.artlist.authLogin();
+    await vi.runAllTimersAsync();
+    await expect(connectedPromise).resolves.toEqual({ connected: true, configured: true });
+    expect(popup.location.replace).toHaveBeenCalledWith('https://auth.artlist.io/authorize?client_id=cinegen');
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      args: [window.location.origin],
+    });
+  });
+
+  it('opens Higgsfield OAuth and waits for the server-side connection', async () => {
+    vi.useFakeTimers();
+    const popup = {
+      closed: false,
+      close: vi.fn(function close(this: { closed: boolean }) { this.closed = true; }),
+      document: { title: '' },
+      location: { replace: vi.fn() },
+    };
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({
+          ok: true,
+          result: {
+            connected: false,
+            authorizationUrl: 'https://mcp.higgsfield.ai/oauth2/authorize?client_id=cinegen',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({ ok: true, result: { connected: true } }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { browserElectronAPI } = await import('../src/platform/install');
+    const connectedPromise = browserElectronAPI.higgsfield.authLogin();
+    await vi.runAllTimersAsync();
+    await expect(connectedPromise).resolves.toEqual({ connected: true });
+    expect(popup.location.replace).toHaveBeenCalledWith('https://mcp.higgsfield.ai/oauth2/authorize?client_id=cinegen');
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      args: [window.location.origin],
+    });
+  });
+
+  it('opens Topview OAuth and waits for the server-side connection', async () => {
+    vi.useFakeTimers();
+    const popup = {
+      closed: false,
+      close: vi.fn(function close(this: { closed: boolean }) { this.closed = true; }),
+      document: { title: '' },
+      location: { replace: vi.fn() },
+    };
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({
+          ok: true,
+          result: {
+            connected: false,
+            configured: true,
+            authorizationUrl: 'https://www.topview.ai/mcp_oauth/oauth/authorize?client_id=cinegen',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({
+          ok: true,
+          result: { connected: true, configured: true, email: 'artist@example.com' },
+        }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { browserElectronAPI } = await import('../src/platform/install');
+    const connectedPromise = browserElectronAPI.topview.authLogin();
+    await vi.runAllTimersAsync();
+    await expect(connectedPromise).resolves.toEqual({
+      connected: true,
+      configured: true,
+      email: 'artist@example.com',
+    });
+    expect(popup.location.replace).toHaveBeenCalledWith(
+      'https://www.topview.ai/mcp_oauth/oauth/authorize?client_id=cinegen',
+    );
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      args: [window.location.origin],
     });
   });
 

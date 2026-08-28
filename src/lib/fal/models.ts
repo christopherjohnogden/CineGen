@@ -853,9 +853,66 @@ export const LOCAL_MODEL_REGISTRY: Record<string, ModelDefinition> = {
 };
 
 export const RUNPOD_MODEL_REGISTRY: Record<string, ModelDefinition> = {
+  'runpod-ltx25-session': {
+    id: 'runpod-ltx25-session', nodeType: 'runpod-ltx25-session', name: 'LTX-2.5 Session',
+    category: 'video', description: 'Uses the active temporary LTX-2.5 Pod session', outputType: 'video',
+    provider: 'runpod',
+    responseMapping: { path: 'url' },
+    inputs: [
+      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
+      { id: 'image_url', portType: 'image', label: 'First Frame', required: false, falParam: 'image_url', fieldType: 'port' },
+      { id: 'duration_sec', portType: 'number', label: 'Duration', required: false, falParam: 'durationSec', fieldType: 'select', default: '5', options: [
+        { value: '5', label: '5 seconds' }, { value: '10', label: '10 seconds' }, { value: '15', label: '15 seconds' }, { value: '20', label: '20 seconds' },
+      ]},
+      { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspectRatio', fieldType: 'select', default: '16:9', options: [
+        { value: '16:9', label: '16:9 Landscape' }, { value: '9:16', label: '9:16 Portrait' }, { value: '1:1', label: '1:1 Square' },
+      ]},
+      { id: 'resolution', portType: 'text', label: 'Resolution', required: false, falParam: 'resolution', fieldType: 'select', default: '720p', options: [
+        { value: '720p', label: '720p' }, { value: '1080p', label: '1080p' },
+      ]},
+      { id: 'generate_audio', portType: 'number', label: 'Generate Audio', required: false, falParam: 'generateAudio', fieldType: 'toggle', default: true },
+    ],
+  },
+  'runpod-sdxl-session': {
+    id: 'runpod-sdxl-session', nodeType: 'runpod-sdxl-session', name: 'SDXL Session',
+    category: 'image', description: 'SDXL text-to-image on the active temporary RunPod session', outputType: 'image',
+    provider: 'runpod',
+    responseMapping: { path: 'url' },
+    inputs: [
+      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
+      { id: 'negative_prompt', portType: 'text', label: 'Negative Prompt', required: false, falParam: 'negativePrompt', fieldType: 'port' },
+      { id: 'width', portType: 'number', label: 'Width', required: false, falParam: 'width', fieldType: 'select', default: '1024', options: [
+        { value: '512', label: '512' }, { value: '768', label: '768' }, { value: '1024', label: '1024' }, { value: '1280', label: '1280' },
+      ]},
+      { id: 'height', portType: 'number', label: 'Height', required: false, falParam: 'height', fieldType: 'select', default: '1024', options: [
+        { value: '512', label: '512' }, { value: '768', label: '768' }, { value: '1024', label: '1024' }, { value: '1280', label: '1280' },
+      ]},
+      { id: 'num_inference_steps', portType: 'number', label: 'Steps', required: false, falParam: 'steps', fieldType: 'range', default: 25, min: 10, max: 100, step: 1 },
+      { id: 'guidance_scale', portType: 'number', label: 'Guidance', required: false, falParam: 'guidanceScale', fieldType: 'range', default: 7.5, min: 1, max: 20, step: 0.5 },
+      { id: 'seed', portType: 'number', label: 'Seed', required: false, falParam: 'seed', fieldType: 'number', default: -1 },
+    ],
+  },
+  'runpod-qwen-image-edit-session': {
+    id: 'runpod-qwen-image-edit-session', nodeType: 'runpod-qwen-image-edit-session', name: 'Qwen Image Edit Session',
+    category: 'image-edit', description: 'Qwen instruction-based image editing on the active temporary RunPod session', outputType: 'image',
+    provider: 'runpod',
+    responseMapping: { path: 'url' },
+    inputs: [
+      { id: 'prompt', portType: 'text', label: 'Edit Instruction', required: true, falParam: 'prompt', fieldType: 'port' },
+      { id: 'image_url', portType: 'image', label: 'Image', required: true, falParam: 'image_url', fieldType: 'port' },
+      { id: 'extra_images', portType: 'image', label: 'Reference', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 2 },
+      { id: 'width', portType: 'number', label: 'Width', required: false, falParam: 'width', fieldType: 'select', default: '', options: [
+        { value: '', label: 'Source width' }, { value: '512', label: '512' }, { value: '768', label: '768' }, { value: '1024', label: '1024' }, { value: '1280', label: '1280' },
+      ]},
+      { id: 'height', portType: 'number', label: 'Height', required: false, falParam: 'height', fieldType: 'select', default: '', options: [
+        { value: '', label: 'Source height' }, { value: '512', label: '512' }, { value: '768', label: '768' }, { value: '1024', label: '1024' }, { value: '1280', label: '1280' },
+      ]},
+      { id: 'seed', portType: 'number', label: 'Seed', required: false, falParam: 'seed', fieldType: 'number', default: -1 },
+    ],
+  },
   'runpod-sdxl': {
-    id: 'runpod-sdxl', nodeType: 'runpod-sdxl', name: 'Stable Diffusion XL',
-    category: 'image', description: 'SDXL text/image-to-image on RunPod', outputType: 'image',
+    id: 'runpod-sdxl', nodeType: 'runpod-sdxl', name: 'Stable Diffusion XL (Serverless)',
+    category: 'image', description: 'SDXL through a separately configured RunPod serverless endpoint', outputType: 'image',
     provider: 'runpod',
     runpodEndpointId: '2urujiktqqceer',
     responseMapping: { path: 'output.image_url' },
@@ -880,8 +937,8 @@ export const RUNPOD_MODEL_REGISTRY: Record<string, ModelDefinition> = {
     ],
   },
   'runpod-ltx-video': {
-    id: 'runpod-ltx-video', nodeType: 'runpod-ltx-video', name: 'LTX Video',
-    category: 'video', description: 'LTX-Video text/image-to-video on RunPod', outputType: 'video',
+    id: 'runpod-ltx-video', nodeType: 'runpod-ltx-video', name: 'LTX Video (Serverless)',
+    category: 'video', description: 'LTX-Video through a separately configured RunPod serverless endpoint', outputType: 'video',
     provider: 'runpod',
     runpodEndpointId: '',
     responseMapping: { path: 'output.video_url' },
@@ -940,8 +997,8 @@ export const RUNPOD_MODEL_REGISTRY: Record<string, ModelDefinition> = {
     ],
   },
   'runpod-qwen-image-edit': {
-    id: 'runpod-qwen-image-edit', nodeType: 'runpod-qwen-image-edit', name: 'Qwen Image Edit',
-    category: 'image-edit', description: 'Qwen2.5-VL instruction-based image editing on RunPod', outputType: 'image',
+    id: 'runpod-qwen-image-edit', nodeType: 'runpod-qwen-image-edit', name: 'Qwen Image Edit (Serverless)',
+    category: 'image-edit', description: 'Qwen image editing through a separately configured RunPod serverless endpoint', outputType: 'image',
     provider: 'runpod',
     runpodEndpointId: 'qwen_image_edit_2511_v1.1',
     responseMapping: { path: 'output.image_url' },
@@ -1126,8 +1183,41 @@ export const POD_MODEL_REGISTRY: Record<string, ModelDefinition> = {
   },
 };
 
-/** Combined registry of all model definitions (fal + kie + local + runpod + pod + higgsfield). */
-export const ALL_MODELS: Record<string, ModelDefinition> = { ...MODEL_REGISTRY, ...KIE_MODEL_REGISTRY, ...LOCAL_MODEL_REGISTRY, ...RUNPOD_MODEL_REGISTRY, ...POD_MODEL_REGISTRY, ...HIGGSFIELD_MODEL_REGISTRY };
+const TOPVIEW_MODEL_REGISTRY: Record<string, ModelDefinition> = {
+  'topview-image-auto': {
+    id: 'topview/image/auto', nodeType: 'topview-image-auto', name: 'Image · Auto (live catalog)',
+    category: 'image', description: 'Topview image generation or editing using the live recommended model', outputType: 'image',
+    provider: 'topview', responseMapping: { path: 'url' },
+    inputs: [
+      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
+      { id: 'image_url', portType: 'image', label: 'Image', required: false, falParam: 'image_url', fieldType: 'port' },
+      { id: 'extra_images', portType: 'image', label: 'Reference', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 15 },
+      { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: NANO_BANANA_ASPECT_OPTS },
+      { id: 'resolution', portType: 'text', label: 'Resolution', required: false, falParam: 'resolution', fieldType: 'select', default: '1K', options: [
+        { value: '1K', label: '1K' }, { value: '2K', label: '2K' }, { value: '4K', label: '4K' },
+      ] },
+    ],
+  },
+  'topview-video-auto': {
+    id: 'topview/video/auto', nodeType: 'topview-video-auto', name: 'Video · Auto (live catalog)',
+    category: 'video', description: 'Topview video generation using the live recommended model', outputType: 'video',
+    provider: 'topview', responseMapping: { path: 'url' },
+    inputs: [
+      { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
+      { id: 'image_url', portType: 'image', label: 'First Frame', required: false, falParam: 'image_url', fieldType: 'port', mediaRole: 'start_image' },
+      { id: 'extra_images', portType: 'image', label: 'Reference', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 8 },
+      { id: 'duration', portType: 'number', label: 'Duration', required: false, falParam: 'duration', fieldType: 'select', default: 5, options: Array.from({ length: 27 }, (_, index) => ({ value: String(index + 4), label: `${index + 4}s` })) },
+      { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: NANO_BANANA_ASPECT_OPTS },
+      { id: 'resolution', portType: 'text', label: 'Resolution', required: false, falParam: 'resolution', fieldType: 'select', default: '720p', options: [
+        { value: '720p', label: '720p' }, { value: '1080p', label: '1080p' },
+      ] },
+      { id: 'generate_audio', portType: 'number', label: 'Generate Audio', required: false, falParam: 'generate_audio', fieldType: 'toggle', default: true },
+    ],
+  },
+};
+
+/** Combined registry of all model definitions. Topview comes first because it is CineGen's default cloud provider. */
+export const ALL_MODELS: Record<string, ModelDefinition> = { ...TOPVIEW_MODEL_REGISTRY, ...HIGGSFIELD_MODEL_REGISTRY, ...MODEL_REGISTRY, ...KIE_MODEL_REGISTRY, ...LOCAL_MODEL_REGISTRY, ...RUNPOD_MODEL_REGISTRY, ...POD_MODEL_REGISTRY };
 
 export function getModelDefinition(nodeType: string): ModelDefinition | undefined {
   return ALL_MODELS[nodeType];

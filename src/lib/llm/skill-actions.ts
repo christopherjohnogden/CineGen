@@ -76,8 +76,8 @@ export interface SkillEditTimelineStep {
   ops: TimelineEditOp[];
 }
 
-/** Generate media via Higgsfield and place it. Executed asynchronously in the renderer (not via
- *  the synchronous executeSkillAction), since generation is an async CLI round-trip. */
+/** Generate media via the configured provider and place it. Executed asynchronously in the
+ *  renderer (not via the synchronous executeSkillAction), since generation is async. */
 export interface SkillGenerateMediaStep {
   type: 'generate_media';
   prompt: string;

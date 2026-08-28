@@ -62,7 +62,7 @@ export interface ModelDefinition {
   inputs: ModelInputField[];
   outputType: 'image' | 'video' | 'audio' | 'text' | 'model3d';
   outputs?: ModelOutputField[];
-  provider?: 'fal' | 'kie' | 'local' | 'runpod' | 'pod' | 'higgsfield';
+  provider?: 'topview' | 'higgsfield' | 'fal' | 'kie' | 'local' | 'runpod' | 'pod';
   runpodEndpointId?: string;
   podRoute?: string;  // e.g. 'sdxl', 'flux', 'qwen-edit', 'ltx', 'wan-t2v', 'wan-i2v'
   responseMapping: {
@@ -106,6 +106,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     progress?: number;
     progressStage?: string;
     progressMessage?: string;
+    /** Renderer timestamp used to show honest elapsed time for long remote jobs. */
+    progressStartedAt?: number;
     error?: string;
     layers?: LayerInfo[];
     selectedLayerIndex?: number;
@@ -113,6 +115,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     language?: string;
     transcriptPath?: string;
     wordTimestampsStatus?: 'idle' | 'loading' | 'ready' | 'error';
+    /** Remote render retained so a transient transfer failure can resume without paying for another job. */
+    remoteJobId?: string;
   };
   generations?: string[];
   activeGeneration?: number;

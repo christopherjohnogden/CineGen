@@ -1,20 +1,24 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { NODE_REGISTRY } from '@/lib/workflows/node-registry';
 import { ALL_MODELS } from '@/lib/fal/models';
-import type { NodeCategory } from '@/types/workflow';
+import { areWorkflowPortsCompatible } from '@/lib/workflows/port-compatibility';
+import { compareModelsByProvider, MODEL_PROVIDER_LABELS } from '@/lib/workflows/provider-model-options';
+import type { NodeCategory, PortType } from '@/types/workflow';
 
 interface NodePaletteProps {
   position: { x: number; y: number };
   onSelect: (nodeType: string) => void;
   onClose: () => void;
+  sourcePortType?: PortType | null;
 }
 
-type Tab = 'all' | 'cloud' | 'higgsfield' | 'local' | 'runpod' | 'pod';
+type Tab = 'all' | 'topview' | 'higgsfield' | 'cloud' | 'local' | 'runpod' | 'pod';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'all',        label: 'All'        },
-  { id: 'cloud',      label: 'Cloud'      },
+  { id: 'topview',    label: 'Topview'    },
   { id: 'higgsfield', label: 'Higgsfield' },
+  { id: 'cloud',      label: 'Cloud'      },
   { id: 'local',      label: 'Local'      },
   { id: 'runpod',     label: 'RunPod'     },
   { id: 'pod',        label: 'Pod'        },
@@ -31,15 +35,6 @@ const CATEGORY_LABELS: Record<NodeCategory, string> = {
   audio:        'AUDIO',
 };
 
-const PROVIDER_LABEL: Record<string, string> = {
-  fal:    'fal.ai',
-  kie:    'kie.ai',
-  local:  'local',
-  runpod: 'runpod',
-  pod:    'pod',
-  higgsfield: 'higgsfield',
-};
-
 function modelTypeBadge(outputType: string): string {
   if (outputType === 'video') return 'VID';
   if (outputType === 'audio') return 'AUD';
@@ -48,7 +43,7 @@ function modelTypeBadge(outputType: string): string {
   return 'IMG';
 }
 
-export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
+export function NodePalette({ position, onSelect, onClose, sourcePortType = null }: NodePaletteProps) {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<Tab>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -60,12 +55,19 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
 
   const filteredGroups = useMemo(() => {
     const entries = Object.values(NODE_REGISTRY).filter((n) => {
+      if (sourcePortType && !n.inputs.some((input) => areWorkflowPortsCompatible(sourcePortType, input.type))) {
+        return false;
+      }
       const modelDef = ALL_MODELS[n.type];
       const provider = modelDef ? (modelDef.provider ?? 'fal') : null;
 
       if (tab === 'cloud') {
         if (!n.isModel) return false;
-        return provider === 'fal' || provider === 'kie' || provider === 'higgsfield';
+        return provider === 'topview' || provider === 'fal' || provider === 'kie' || provider === 'higgsfield';
+      }
+      if (tab === 'topview') {
+        if (!n.isModel) return false;
+        return provider === 'topview';
       }
       if (tab === 'higgsfield') {
         if (!n.isModel) return false;
@@ -101,10 +103,10 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
       .map((cat) => ({
         category: cat,
         label: CATEGORY_LABELS[cat],
-        nodes: filtered.filter((n) => n.category === cat),
+        nodes: filtered.filter((n) => n.category === cat).sort(compareModelsByProvider),
       }))
       .filter((g) => g.nodes.length > 0);
-  }, [search, tab]);
+  }, [search, sourcePortType, tab]);
 
   const flatList = useMemo(
     () => filteredGroups.flatMap((g) => g.nodes),
@@ -169,6 +171,12 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
       }}
       onKeyDown={handleKeyDown}
     >
+      {sourcePortType && (
+        <div className="np__connection-context">
+          <span className={`np__connection-dot np__connection-dot--${sourcePortType}`} />
+          Connect {sourcePortType} output
+        </div>
+      )}
       {/* Search */}
       <div className="np__search-row">
         <svg className="np__search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -214,7 +222,11 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
             <span>Coming soon</span>
           </div>
         ) : flatList.length === 0 ? (
-          <div className="np__empty">No results for "{search}"</div>
+          <div className="np__empty">
+            {sourcePortType && !search
+              ? `No compatible nodes for this ${sourcePortType} output`
+              : `No results for "${search}"`}
+          </div>
         ) : (
           filteredGroups.map((group) => (
             <div key={group.category} className="np__group">
@@ -223,7 +235,7 @@ export function NodePalette({ position, onSelect, onClose }: NodePaletteProps) {
                 const idx = flatList.indexOf(node);
                 const modelDef = ALL_MODELS[node.type];
                 const provider = modelDef ? (modelDef.provider ?? 'fal') : null;
-                const providerLabel = provider ? PROVIDER_LABEL[provider] ?? provider : null;
+                const providerLabel = provider ? MODEL_PROVIDER_LABELS[provider] ?? provider : null;
                 const typeBadge = node.isModel
                   ? modelTypeBadge(modelDef?.outputType ?? node.category)
                   : null;

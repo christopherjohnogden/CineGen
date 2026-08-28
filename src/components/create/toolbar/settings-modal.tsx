@@ -51,7 +51,7 @@ const DEFAULT_SETTINGS: Settings = {
 const RUNPOD_MODELS = [
   { key: 'runpod-sdxl',            label: 'Stable Diffusion XL' },
   { key: 'runpod-qwen-image-edit', label: 'Qwen Image Edit' },
-  { key: 'runpod-ltx-video',       label: 'LTX Video' },
+  { key: 'runpod-ltx-video',       label: 'LTX Video (Serverless)' },
   { key: 'runpod-wan-t2v',         label: 'Wan 2.1 T2V' },
   { key: 'runpod-wan-i2v',         label: 'Wan 2.1 I2V' },
   { key: 'runpod-flux-dev',        label: 'FLUX Dev' },

@@ -3,6 +3,11 @@ const UPLOAD_URL = '/api/uploads';
 
 type JsonRecord = Record<string, unknown>;
 
+export interface RpcRequestOptions {
+  /** Optional outer deadline for short control-plane calls. Omit for long-running work. */
+  timeoutMs?: number;
+}
+
 export interface UploadResult {
   url?: string;
   path?: string;
@@ -158,28 +163,53 @@ function unwrapEnvelope<T>(payload: unknown, response: Response, operation: stri
   return payload as T;
 }
 
-async function post<T>(url: string, init: RequestInit, operation: string): Promise<T> {
-  let response: Response;
+async function post<T>(
+  url: string,
+  init: RequestInit,
+  operation: string,
+  options: RpcRequestOptions = {},
+): Promise<T> {
+  const timeoutMs = Number.isFinite(options.timeoutMs) && Number(options.timeoutMs) > 0
+    ? Math.floor(Number(options.timeoutMs))
+    : undefined;
+  const controller = timeoutMs === undefined ? undefined : new AbortController();
+  let didTimeout = false;
+  const timeoutId = controller && timeoutMs !== undefined
+    ? globalThis.setTimeout(() => {
+        didTimeout = true;
+        controller.abort();
+      }, timeoutMs)
+    : undefined;
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       credentials: 'same-origin',
       ...init,
+      signal: controller?.signal ?? init.signal,
     });
+    const payload = await readResponse(response);
+    return normalizeBrowserMediaReferences(unwrapEnvelope<T>(payload, response, operation));
   } catch (cause) {
+    if (cause instanceof BrowserBridgeError) throw cause;
+    if (didTimeout) {
+      throw new BrowserBridgeError(
+        `The CineGen server took too long while running ${operation}.`,
+        { code: 'RPC_TIMEOUT', cause },
+      );
+    }
     throw new BrowserBridgeError(
       `Could not reach the CineGen server while running ${operation}.`,
       { cause },
     );
+  } finally {
+    if (timeoutId !== undefined) globalThis.clearTimeout(timeoutId);
   }
-
-  const payload = await readResponse(response);
-  return normalizeBrowserMediaReferences(unwrapEnvelope<T>(payload, response, operation));
 }
 
 export function invokeRpc<T>(
   namespace: string,
   method: string,
   args: readonly unknown[] = [],
+  options: RpcRequestOptions = {},
 ): Promise<T> {
   const encodedNamespace = encodeURIComponent(namespace);
   const encodedMethod = encodeURIComponent(method);
@@ -194,6 +224,7 @@ export function invokeRpc<T>(
       body: JSON.stringify({ args: prepareRpcArguments(args) }),
     },
     `${namespace}.${method}`,
+    options,
   );
 }
 

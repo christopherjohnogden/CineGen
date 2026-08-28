@@ -96,6 +96,7 @@ function persistEditView(projectId: string, view: PersistedEditView): void {
 export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpRequest | null }) {
   const { state, dispatch, projectId } = useWorkspace();
   const { layout, setLayout } = useEditorLayout();
+  const [mobilePane, setMobilePane] = useState<'media' | 'viewer' | 'timeline' | 'inspector'>('viewer');
 
   useEffect(() => {
     const patches = directorPoolRelabel(state.director, state.assets, state.mediaFolders);
@@ -896,7 +897,15 @@ export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpReq
 
   const handleCloseRightPanel = useCallback(() => {
     setLayout({ inspectorVisible: false });
+    setMobilePane('viewer');
   }, [setLayout]);
+
+  const handleMobilePaneChange = useCallback((pane: 'media' | 'viewer' | 'timeline' | 'inspector') => {
+    setMobilePane(pane);
+    if (pane === 'inspector' && !layout.inspectorVisible) {
+      setLayout({ inspectorVisible: true });
+    }
+  }, [layout.inspectorVisible, setLayout]);
 
   const isCompact = layout.leftPanelMode === 'compact';
 
@@ -905,12 +914,32 @@ export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpReq
       className="edit-tab"
       data-panel-mode={isCompact ? 'compact' : 'full'}
       data-right-panel={layout.inspectorVisible ? 'true' : undefined}
+      data-mobile-pane={mobilePane}
       style={{
         '--left-panel-width': `${layout.leftPanelWidth}px`,
         '--right-panel-width': `${layout.rightPanelWidth}px`,
         '--viewer-split': `${Math.round(layout.viewerTimelineSplit * 100)}%`,
       } as React.CSSProperties}
     >
+      <nav className="edit-mobile-nav" aria-label="Edit workspace">
+        {([
+          ['media', 'Media'],
+          ['viewer', 'Viewer'],
+          ['timeline', 'Timeline'],
+          ['inspector', 'Inspector'],
+        ] as const).map(([pane, label]) => (
+          <button
+            key={pane}
+            type="button"
+            className={`edit-mobile-nav__button${mobilePane === pane ? ' edit-mobile-nav__button--active' : ''}`}
+            onClick={() => handleMobilePaneChange(pane)}
+            aria-pressed={mobilePane === pane}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
       {/* Left panel */}
       <LeftPanel
         assets={state.assets}

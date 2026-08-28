@@ -6,13 +6,22 @@ import type { Element } from '@/types/elements';
 interface MentionTextareaProps {
   value: string;
   onChange: (value: string) => void;
+  onMentionInsert?: (element: Element, value: string) => void;
   placeholder?: string;
   rows?: number;
   elements: Element[];
   disabled?: boolean;
 }
 
-export function MentionTextarea({ value, onChange, placeholder, rows = 5, elements, disabled }: MentionTextareaProps) {
+export function MentionTextarea({
+  value,
+  onChange,
+  onMentionInsert,
+  placeholder,
+  rows = 5,
+  elements,
+  disabled,
+}: MentionTextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -51,7 +60,11 @@ export function MentionTextarea({ value, onChange, placeholder, rows = 5, elemen
     const mention = `@${element.name}`;
     const newValue = before + mention + (after.startsWith(' ') ? '' : ' ') + after;
 
-    onChange(newValue);
+    if (onMentionInsert) {
+      onMentionInsert(element, newValue);
+    } else {
+      onChange(newValue);
+    }
     setShowDropdown(false);
     setFilter('');
     mentionStartRef.current = -1;
@@ -64,7 +77,7 @@ export function MentionTextarea({ value, onChange, placeholder, rows = 5, elemen
         textarea.setSelectionRange(cursorPos, cursorPos);
       }
     });
-  }, [value, onChange]);
+  }, [value, onChange, onMentionInsert]);
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
