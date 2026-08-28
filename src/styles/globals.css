@@ -10642,6 +10642,35 @@ input[type='range']::-moz-range-track {
   background: color-mix(in srgb, var(--success) 6%, var(--bg-input));
 }
 
+.sp-team-provider__desktop-connect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.sp-team-provider__desktop-connect > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sp-team-provider__desktop-connect strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.sp-team-provider__desktop-connect span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .sp-team-provider__status {
   display: inline-flex;
   align-items: center;
@@ -10666,6 +10695,11 @@ input[type='range']::-moz-range-track {
 }
 
 @media (max-width: 760px) {
+  .sp-team-provider__desktop-connect {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .sp-team-provider .sp-field__key-row {
     flex-wrap: wrap;
   }

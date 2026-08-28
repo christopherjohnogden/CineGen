@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ipcMain } from 'electron';
 import { completeOpenAiChat } from '@/lib/llm/openai-chat';
 import { decodeLocalMediaUrl } from '@/lib/media/asset-local-storage';
+import { invokeSharedOpenAi, TEAM_PROVIDER_SENTINEL } from './team-providers.js';
 
 function mimeFromPath(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -41,12 +42,21 @@ export function registerOpenAiLlmHandlers(): void {
       : {};
     const apiKey = typeof record.apiKey === 'string' ? record.apiKey : '';
     const userMessage = typeof record.userMessage === 'string' ? record.userMessage : '';
+    const imageUrls = imageUrlsFrom(record.imageUrls);
+    if (apiKey === TEAM_PROVIDER_SENTINEL) {
+      return invokeSharedOpenAi({
+        ...record,
+        apiKey: TEAM_PROVIDER_SENTINEL,
+        userMessage,
+        imageUrls,
+      });
+    }
     return completeOpenAiChat({
       apiKey,
       model: typeof record.model === 'string' ? record.model : undefined,
       systemPrompt: typeof record.systemPrompt === 'string' ? record.systemPrompt : undefined,
       userMessage,
-      imageUrls: imageUrlsFrom(record.imageUrls),
+      imageUrls,
       maxCompletionTokens: typeof record.maxCompletionTokens === 'number'
         ? record.maxCompletionTokens
         : undefined,

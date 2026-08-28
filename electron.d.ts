@@ -486,6 +486,13 @@ export interface ElectronAPI {
       model?: string;
     }>;
   };
+  teamProviders: {
+    status: () => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
+    connect: () => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
+    disconnect: () => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
+    save: (value: { provider: import('./src/lib/providers/workspace-connections').WorkspaceProviderId; secret: string }) => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
+    remove: (value: { provider: import('./src/lib/providers/workspace-connections').WorkspaceProviderId }) => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
+  };
   copilot: {
     analyzeVisualRefs: (params: {
       apiKey: string;

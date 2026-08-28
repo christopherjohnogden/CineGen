@@ -109,6 +109,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     generate: (params: unknown) => ipcRenderer.invoke('topview:generate', params),
     generateImage: (params: unknown) => ipcRenderer.invoke('topview:generate-image', params),
   },
+  teamProviders: {
+    status: () => ipcRenderer.invoke('team-providers:status'),
+    connect: () => ipcRenderer.invoke('team-providers:connect'),
+    disconnect: () => ipcRenderer.invoke('team-providers:disconnect'),
+    save: (value: unknown) => ipcRenderer.invoke('team-providers:save', value),
+    remove: (value: unknown) => ipcRenderer.invoke('team-providers:remove', value),
+  },
   copilot: {
     analyzeVisualRefs: (params: {
       apiKey: string;

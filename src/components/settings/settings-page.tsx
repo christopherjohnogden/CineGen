@@ -9,6 +9,7 @@ import {
 } from '@/lib/utils/video-generation-provider';
 import {
   TEAM_PROVIDER_SENTINEL,
+  connectWorkspaceProviders,
   getWorkspaceProviderStatus,
   removeWorkspaceProvider,
   saveWorkspaceProvider,
@@ -438,6 +439,7 @@ function TeamProviderConnections({
   const [drafts, setDrafts] = useState<Partial<Record<WorkspaceProviderId, string>>>({});
   const [busy, setBusy] = useState<WorkspaceProviderId | null>(null);
   const [error, setError] = useState('');
+  const [connectingWorkspace, setConnectingWorkspace] = useState(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -507,11 +509,40 @@ function TeamProviderConnections({
     }
   };
 
+  const connectWorkspace = async () => {
+    setConnectingWorkspace(true);
+    setError('');
+    try {
+      applyStatus(await connectWorkspaceProviders());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The desktop could not connect to the team workspace.');
+    } finally {
+      setConnectingWorkspace(false);
+    }
+  };
+
   return (
     <div className="sp-card__fields">
       <p className="sp-card__desc sp-team-provider-note">
-        <strong>Shared with your CineGen team.</strong> Connect each service once. Teammates can use it, but the credential is never shown or downloaded to their device.
+        <strong>{status.desktop?.source === 'local-web' ? 'Connected to your local browser workspace.' : 'Shared with your CineGen team.'}</strong>{' '}
+        {status.desktop?.source === 'local-web'
+          ? 'Desktop can use the provider connections currently configured at localhost:3000. The credentials remain in the browser vault.'
+          : 'Connect each service once. Teammates can use it, but the credential is never shown or downloaded to their device.'}
       </p>
+      {status.desktop?.requiresLogin && (
+        <div className="sp-team-provider__desktop-connect">
+          <div>
+            <strong>Connect desktop to your team</strong>
+            <span>Sign in once so this Mac can use the same hosted provider connections as the browser app.</span>
+          </div>
+          <button
+            type="button"
+            className="sp-btn sp-btn--accent"
+            disabled={connectingWorkspace}
+            onClick={() => void connectWorkspace()}
+          >{connectingWorkspace ? 'Connecting…' : 'Connect team workspace'}</button>
+        </div>
+      )}
       {TEAM_PROVIDER_FIELDS.map((field) => {
         const connected = connectedIds.has(field.id);
         const draft = drafts[field.id] ?? (
@@ -1255,7 +1286,7 @@ export function SettingsPage({ onBack, projectId, useSqlite }: SettingsPageProps
               <section className="sp-card" id="sp-section-api-keys">
                 <h3 className="sp-card__title">Team Provider Access</h3>
                 <p className="sp-card__desc">
-                  On the hosted team workspace, provider connections are shared automatically. In the desktop app they remain on this device.
+                  Provider connections are shared through your secure team vault. Desktop uses a server-side relay, so teammates can generate without downloading or seeing the API keys.
                 </p>
                 <TeamProviderConnections settings={settings} update={update} />
                 <TopviewConnect />

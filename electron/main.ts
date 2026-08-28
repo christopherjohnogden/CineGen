@@ -24,6 +24,7 @@ import { registerClaudeCodeHandlers } from './ipc/claude-code.js';
 import { registerCliLlmDetectHandlers } from './ipc/cli-llm-detect.js';
 import { registerCodexCliHandlers } from './ipc/codex-cli.js';
 import { registerOpenAiLlmHandlers } from './ipc/openai-llm.js';
+import { registerTeamProviderHandlers } from './ipc/team-providers.js';
 import { registerGeminiCliHandlers } from './ipc/gemini-cli.js';
 import { registerMusicPromptHandlers } from './ipc/music-prompt.js';
 import { registerFileSystemHandlers } from './ipc/file-system.js';
@@ -415,6 +416,7 @@ app.whenReady().then(async () => {
   registerCliLlmDetectHandlers();
   registerCodexCliHandlers();
   registerOpenAiLlmHandlers();
+  registerTeamProviderHandlers();
   registerGeminiCliHandlers();
   registerMusicPromptHandlers();
   registerFileSystemHandlers();
