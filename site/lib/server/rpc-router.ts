@@ -197,6 +197,9 @@ export async function handleRpc(
       case "topview.accountStatus":
         result = await topview.accountStatus();
         break;
+      case "topview.modelCatalog":
+        result = await topview.modelCatalog();
+        break;
       case "artlist.accountStatus":
         result = {
           connected: false,
@@ -278,6 +281,12 @@ export async function handleRpc(
         break;
       case "topview.generate":
         result = await topview.generate(args[0]);
+        break;
+      case "topview.generateImage":
+        result = await topview.generate({ ...requireRecord(args[0] ?? {}, "Topview image parameters"), outputType: "image" });
+        break;
+      case "topview.generateAudio":
+        result = await topview.generateAudio(args[0]);
         break;
       case "artlist.authLogin":
       case "artlist.authLogout":

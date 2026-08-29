@@ -102,12 +102,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   topview: {
     accountStatus: () => ipcRenderer.invoke('topview:account-status'),
+    modelCatalog: () => ipcRenderer.invoke('topview:model-catalog'),
     authLogin: () => ipcRenderer.invoke('topview:auth-login'),
     authLogout: () => ipcRenderer.invoke('topview:auth-logout'),
     submit: (params: unknown) => ipcRenderer.invoke('topview:submit', params),
     query: (params: unknown) => ipcRenderer.invoke('topview:query', params),
     generate: (params: unknown) => ipcRenderer.invoke('topview:generate', params),
     generateImage: (params: unknown) => ipcRenderer.invoke('topview:generate-image', params),
+    generateAudio: (params: unknown) => ipcRenderer.invoke('topview:generate-audio', params),
   },
   teamProviders: {
     status: () => ipcRenderer.invoke('team-providers:status'),

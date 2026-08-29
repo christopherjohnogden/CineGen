@@ -54,7 +54,7 @@ describe('director snapshot', () => {
     }).storyboardModelId).toBe('runpod_qwen_image_edit_session');
   });
 
-  it.each(['720p', '1080p'])('persists the %s Director generation resolution', (resolution) => {
+  it.each(['480p', '720p', '1080p'])('persists the %s Director generation resolution', (resolution) => {
     const show = { ...createEmptyDirectorShow(), resolution };
 
     expect(directorFromUnknown(structuredClone(show)).resolution).toBe(resolution);

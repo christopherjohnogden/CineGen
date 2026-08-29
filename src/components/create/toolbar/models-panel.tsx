@@ -4,9 +4,11 @@ import { useState, useMemo } from 'react';
 import { ALL_MODELS } from '@/lib/fal/models';
 import {
   compareModelsByProvider,
+  isLegacyTopviewAutomaticModel,
   modelProvider,
   modelProviderLabel,
 } from '@/lib/workflows/provider-model-options';
+import { useTopviewModelCatalogVersion } from '@/components/create/use-topview-model-catalog';
 
 interface ModelsPanelProps {
   onSelect: (nodeType: string) => void;
@@ -22,9 +24,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export function ModelsPanel({ onSelect }: ModelsPanelProps) {
   const [search, setSearch] = useState('');
+  const topviewCatalogVersion = useTopviewModelCatalogVersion();
 
   const groups = useMemo(() => {
-    const models = Object.values(ALL_MODELS).sort(compareModelsByProvider);
+    const models = Object.values(ALL_MODELS)
+      .filter((model) => !isLegacyTopviewAutomaticModel(model))
+      .sort(compareModelsByProvider);
     const filtered = search
       ? models.filter((model) => (
           `${modelProviderLabel(model)} ${model.name}`.toLowerCase().includes(search.toLowerCase())
@@ -38,7 +43,7 @@ export function ModelsPanel({ onSelect }: ModelsPanelProps) {
         models: filtered.filter((m) => m.category === cat),
       }))
       .filter((g) => g.models.length > 0);
-  }, [search]);
+  }, [search, topviewCatalogVersion]);
 
   return (
     <div className="toolbar-panel">

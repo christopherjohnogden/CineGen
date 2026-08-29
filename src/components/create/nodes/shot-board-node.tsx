@@ -5,6 +5,7 @@ import { CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
 import { runWorkflow } from '@/lib/cloud/funding';
 import { providerModelOptions } from '@/lib/workflows/provider-model-options';
+import { useTopviewModelCatalogVersion } from '@/components/create/use-topview-model-catalog';
 import type { WorkflowNodeData } from '@/types/workflow';
 
 type ShotBoardNodeProps = NodeProps & { data: WorkflowNodeData };
@@ -30,8 +31,9 @@ const PORT_SPACING = 24;
 function ShotBoardNodeInner({ id, data, selected }: ShotBoardNodeProps) {
   const { updateNodeData, getEdges, getNode } = useReactFlow();
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
+  useTopviewModelCatalogVersion();
 
-  const selectedModel = (data.config?.selectedModel as string) ?? 'topview-image-auto';
+  const selectedModel = (data.config?.selectedModel as string) ?? 'topview-image-gpt-image-2';
   const shots: ShotEntry[] = (data.config?.shots as ShotEntry[]) ?? [];
 
   const imageModels = providerModelOptions(['image', 'image-edit']);

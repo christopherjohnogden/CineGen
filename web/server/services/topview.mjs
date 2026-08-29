@@ -27,6 +27,9 @@ const MIME_BY_EXTENSION = new Map([
   ['jpg', 'image/jpeg'],
   ['png', 'image/png'],
   ['webp', 'image/webp'],
+  ['mp3', 'audio/mpeg'],
+  ['wav', 'audio/wav'],
+  ['m4a', 'audio/mp4'],
 ]);
 
 function serviceError(message, code, statusCode = 400, cause) {
@@ -303,6 +306,7 @@ export function parseTopviewMcpResult(result) {
   const boardTaskId = findStringByKeys(documents, ['boardTaskId', 'board_task_id']);
   const boardId = findStringByKeys(documents, ['boardId', 'board_id']);
   const url = findResultUrl(documents);
+  const fileId = findStringByKeys(documents, ['fileId', 'file_id', 'outputFileId', 'output_file_id', 'mediaFileId', 'media_file_id']);
   const error = findStringByKeys(documents, ['errorMsg', 'error_msg', 'errorMessage', 'error_message', 'failMsg', 'message']);
   return {
     status,
@@ -310,6 +314,7 @@ export function parseTopviewMcpResult(result) {
     ...(boardTaskId ? { boardTaskId } : {}),
     ...(boardId ? { boardId } : {}),
     ...(url ? { url } : {}),
+    ...(fileId ? { fileId } : {}),
     ...(error ? { error } : {}),
   };
 }
@@ -999,11 +1004,11 @@ export function createTopviewService(options = {}) {
     }
     const trimmed = value.trim();
     if (trimmed.startsWith('data:')) {
-      const match = /^data:(image\/[^;,]+);base64,(.+)$/s.exec(trimmed);
+      const match = /^data:((?:image|audio)\/[^;,]+);base64,(.+)$/s.exec(trimmed);
       if (!match) throw serviceError(`${label} uses an unsupported inline format.`, 'TOPVIEW_REFERENCE_UNSUPPORTED', 422);
       const format = inferImageFormat('', match[1]);
       const bytes = Buffer.from(match[2], 'base64');
-      if (!format) throw serviceError(`${label} must be a supported image.`, 'TOPVIEW_REFERENCE_UNSUPPORTED', 422);
+      if (!format) throw serviceError(`${label} must be a supported image or audio file.`, 'TOPVIEW_REFERENCE_UNSUPPORTED', 422);
       if (bytes.length > MAX_REFERENCE_BYTES) throw serviceError(`${label} exceeds CineGen's 45 MB Topview upload safety limit.`, 'TOPVIEW_REFERENCE_TOO_LARGE', 413);
       return { bytes, format, contentType: MIME_BY_EXTENSION.get(format) };
     }
@@ -1023,7 +1028,7 @@ export function createTopviewService(options = {}) {
         throw serviceError(`${label} no longer exists.`, 'TOPVIEW_REFERENCE_UNAVAILABLE', 404, cause);
       });
       const format = inferImageFormat(filePath);
-      if (!stats.isFile() || !format) throw serviceError(`${label} must be a supported image file.`, 'TOPVIEW_REFERENCE_UNSUPPORTED', 422);
+      if (!stats.isFile() || !format) throw serviceError(`${label} must be a supported image or audio file.`, 'TOPVIEW_REFERENCE_UNSUPPORTED', 422);
       if (stats.size > MAX_REFERENCE_BYTES) throw serviceError(`${label} exceeds CineGen's 45 MB Topview upload safety limit.`, 'TOPVIEW_REFERENCE_TOO_LARGE', 413);
       return { bytes: await fs.readFile(filePath), format, contentType: MIME_BY_EXTENSION.get(format) };
     }
@@ -1079,6 +1084,17 @@ export function createTopviewService(options = {}) {
       throw serviceError('Topview could not verify an uploaded reference.', 'TOPVIEW_UPLOAD_FAILED', 502);
     }
     return fileId;
+  }
+
+  async function reusableGeneratedImageReference(session, url) {
+    try {
+      return `topview-file:${await uploadReference(session, url, 0)}`;
+    } catch (error) {
+      // Do not discard a completed image if its delivery URL cannot be promoted.
+      // The client will stop the sheet before creating unanchored follow-up views.
+      console.warn('Could not prepare the generated Topview image as a reusable reference.', error);
+      return undefined;
+    }
   }
 
   async function generate(params) {
@@ -1150,6 +1166,64 @@ export function createTopviewService(options = {}) {
     };
   }
 
+  async function generateAudio(params) {
+    if (!isRecord(params) || typeof params.prompt !== 'string' || !params.prompt.trim()) {
+      throw serviceError('Topview audio generation requires text or a prompt.', 'INVALID_INPUT');
+    }
+    const session = await createMcpSession();
+    const boardId = await chooseBoard(session);
+    const model = typeof params.model === 'string' ? params.model.trim() : '';
+    const kind = params.kind === 'music' || params.kind === 'voice' ? params.kind : 'audio';
+    let referenceAudioFileId;
+    if (typeof params.referenceAudio === 'string' && params.referenceAudio.trim()) {
+      referenceAudioFileId = await uploadReference(session, params.referenceAudio, 0);
+    }
+    let toolName;
+    let taskType;
+    let req;
+    if (kind === 'music') {
+      toolName = 'topview_generate_music';
+      taskType = 'ai_music';
+      req = {
+        model,
+        lyrics: params.prompt.trim(),
+        styles: params.styles,
+        instrumental: params.instrumental,
+        ...(referenceAudioFileId ? { referenceAudio: { fileId: referenceAudioFileId } } : {}),
+        boardId,
+      };
+    } else if (kind === 'voice') {
+      if (typeof params.voiceId !== 'string' || !params.voiceId.trim()) {
+        throw serviceError('Choose a Topview voice ID for text-to-speech.', 'INVALID_INPUT');
+      }
+      toolName = 'topview_generate_voice';
+      taskType = 'text_to_speech';
+      req = {
+        voiceId: params.voiceId.trim(), voiceText: params.prompt.trim(), voiceSpeed: params.voiceSpeed,
+        emotionName: params.emotion, boardId,
+      };
+    } else {
+      if (!referenceAudioFileId) throw serviceError('Seed Audio requires a reference audio clip.', 'INVALID_INPUT');
+      toolName = 'topview_generate_audio';
+      taskType = 'audio_design';
+      req = { model, text: params.prompt.trim(), referenceAudioFileId, emotionText: params.emotionText, boardId };
+    }
+    let parsed = parseTopviewMcpResult(await callTool(session, toolName, req));
+    const taskId = parsed.taskId;
+    if (parsed.url) return { url: parsed.url, mediaType: 'audio', taskId, model, boardUrl: `https://www.topview.ai/board/${encodeURIComponent(boardId)}` };
+    if (!taskId) throw serviceError('Topview did not return a task ID for this audio generation.', 'TOPVIEW_BAD_RESPONSE', 502);
+    const deadline = now() + generationTimeoutMs;
+    while (!parsed.url) {
+      if (/^(fail|failed|error|cancel|cancelled|canceled)$/i.test(parsed.status)) {
+        throw serviceError(parsed.error || 'Topview could not complete this audio generation.', 'TOPVIEW_GENERATION_FAILED', 422);
+      }
+      if (now() >= deadline) throw serviceError(`Topview is still processing audio task ${taskId}. Check your Topview board for the result.`, 'TOPVIEW_GENERATION_PENDING', 504);
+      await sleep(pollIntervalMs);
+      parsed = parseTopviewMcpResult(await callTool(session, 'topview_query_task', { taskType, taskId, needCloudFrontUrl: true }));
+    }
+    return { url: parsed.url, mediaType: 'audio', taskId, model, boardUrl: `https://www.topview.ai/board/${encodeURIComponent(boardId)}` };
+  }
+
   async function generateImage(params) {
     if (!isRecord(params) || typeof params.prompt !== 'string' || !params.prompt.trim()) {
       throw serviceError('Topview image generation requires a prompt.', 'INVALID_INPUT');
@@ -1204,9 +1278,13 @@ export function createTopviewService(options = {}) {
       parsed = parseTopviewMcpResult(result);
       boardTaskId = parsed.boardTaskId || boardTaskId;
     }
+    const referenceValue = parsed.fileId
+      ? `topview-file:${parsed.fileId}`
+      : await reusableGeneratedImageReference(session, parsed.url);
     return {
       url: parsed.url,
       mediaType: 'image',
+      ...(referenceValue ? { referenceValue } : {}),
       ...(taskId ? { taskId } : {}),
       model: built.model,
       ...(boardId ? {
@@ -1216,6 +1294,45 @@ export function createTopviewService(options = {}) {
   }
 
   const handlers = {
+    async modelCatalog() {
+      const session = await createMcpSession();
+      if (!session.tools.some((tool) => tool.name === 'topview_get_generation_config')) {
+        throw serviceError('Your Topview account does not currently expose its model catalog.', 'TOPVIEW_TOOL_UNAVAILABLE', 422);
+      }
+      const requests = [
+        { outputType: 'image', taskType: 'text_to_image' },
+        { outputType: 'image', taskType: 'image_edit' },
+        { outputType: 'video', taskType: 'text_to_video' },
+        { outputType: 'video', taskType: 'image_to_video' },
+        { outputType: 'video', taskType: 'omni_reference' },
+        { outputType: 'audio', taskType: 'music', catalogType: 'music' },
+        { outputType: 'audio', taskType: 'voice', catalogType: 'voice' },
+        { outputType: 'audio', taskType: 'audio', catalogType: 'audio' },
+      ];
+      const configs = [];
+      for (const request of requests) {
+        try {
+          const config = parseTopviewToolDocuments(await callTool(session, 'topview_get_generation_config', {
+            type: request.catalogType ?? request.outputType,
+            ...(request.catalogType ? {} : { taskType: request.taskType }),
+            refresh: true,
+          }));
+          configs.push({ ...request, config });
+        } catch {
+          // Keep the generation modes that this account actually exposes.
+        }
+      }
+      if (!configs.length) throw serviceError('Topview returned an empty model catalog.', 'TOPVIEW_MODEL_UNAVAILABLE', 422);
+      return {
+        configs,
+        tools: session.tools.map((tool) => tool.name),
+        toolSchemas: Object.fromEntries(session.tools
+          .filter((tool) => ['topview_get_generation_config', 'topview_generate_audio', 'topview_generate_music', 'topview_generate_voice', 'topview_clone_voice', 'topview_query_task'].includes(tool.name))
+          .map((tool) => [tool.name, tool.inputSchema])),
+        fetchedAt: new Date(now()).toISOString(),
+      };
+    },
+
     async accountStatus() {
       const token = await store.read('token');
       if (!token?.access_token) return { connected: false, configured: true };
@@ -1272,6 +1389,7 @@ export function createTopviewService(options = {}) {
 
     generate,
     generateImage,
+    generateAudio,
   };
 
   async function handleCallback(url, response) {

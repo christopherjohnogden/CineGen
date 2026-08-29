@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import type { Element, ElementType, ElementImage } from '@/types/elements';
 import { ElementImageUpload } from './element-image-upload';
 import { ElementGenerate } from './element-generate';
+import { ElementDescriptionAssistant } from './element-description-assistant';
 
 const ELEMENT_TYPES: { id: ElementType; label: string }[] = [
   { id: 'character', label: 'Character' },
@@ -39,6 +40,9 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
   const [type, setType] = useState<ElementType>(element?.type ?? defaults?.type ?? 'character');
   const [description, setDescription] = useState(element?.description ?? defaults?.description ?? '');
   const [images, setImages] = useState<ElementImage[]>(element?.images ?? []);
+  const [pendingGeneratedImages, setPendingGeneratedImages] = useState<ElementImage[]>([]);
+  const [generationBusy, setGenerationBusy] = useState(false);
+  const [characterWorkflowState, setCharacterWorkflowState] = useState<'idle' | 'in-progress' | 'ready'>('idle');
   const [activeImageTab, setActiveImageTab] = useState<'upload' | 'generate'>('upload');
 
   const handleAddImages = useCallback((newImages: ElementImage[]) => {
@@ -51,7 +55,10 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
 
   const handleSave = () => {
     if (!name.trim()) return;
-    onSave({ name: name.trim(), type, description: description.trim(), images });
+    const mergedImages = [...images, ...pendingGeneratedImages].filter((image, index, all) => (
+      all.findIndex((candidate) => candidate.id === image.id || candidate.url === image.url) === index
+    ));
+    onSave({ name: name.trim(), type, description: description.trim(), images: mergedImages });
   };
 
   return (
@@ -95,13 +102,21 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
           </div>
 
           <div className="element-modal__field">
-            <label className="element-modal__label">Description</label>
+            <label className="element-modal__label">{type === 'character' ? 'Casting brief' : 'Description'}</label>
             <textarea
               className="element-modal__textarea"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe this element in detail..."
+              placeholder={type === 'character'
+                ? 'Describe the person you want to cast: age, appearance, build, presence, and defining features...'
+                : 'Describe this element in detail...'}
               rows={3}
+            />
+            <ElementDescriptionAssistant
+              name={name}
+              type={type}
+              description={description}
+              onApply={setDescription}
             />
           </div>
 
@@ -133,6 +148,9 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
                 elementType={type}
                 description={description}
                 onGenerated={handleAddImages}
+                onPendingGeneratedChange={setPendingGeneratedImages}
+                onBusyChange={setGenerationBusy}
+                onCharacterWorkflowStateChange={setCharacterWorkflowState}
                 referenceImages={images}
               />
             )}
@@ -165,8 +183,17 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
           )}
           <div className="element-modal__footer-right">
             <button type="button" className="element-modal__cancel-btn" onClick={onClose}>Cancel</button>
-            <button type="button" className="element-modal__save-btn" onClick={handleSave} disabled={!name.trim()}>
-              {element ? 'Save' : 'Create'}
+            <button
+              type="button"
+              className="element-modal__save-btn"
+              onClick={handleSave}
+              disabled={!name.trim() || generationBusy || (type === 'character' && activeImageTab === 'generate' && characterWorkflowState === 'in-progress')}
+            >
+              {generationBusy
+                ? 'Generating…'
+                : type === 'character' && activeImageTab === 'generate' && characterWorkflowState === 'in-progress'
+                  ? 'Finish character sheet'
+                  : element ? 'Save' : 'Create'}
             </button>
           </div>
         </div>

@@ -99,6 +99,49 @@ describe('browser Electron adapter installation', () => {
     });
   });
 
+  it('routes computer-installed CLI detection through the localhost companion', async () => {
+    const providers = [
+      { id: 'claude-code', installed: true, path: '/Users/artist/.local/bin/claude' },
+      { id: 'codex', installed: true, path: '/Users/artist/.local/bin/codex' },
+      { id: 'gemini', installed: true, path: '/Users/artist/.local/bin/gemini' },
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ ok: true, result: { providers } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { browserElectronAPI } = await import('../src/platform/install');
+    await expect(browserElectronAPI.llm.cliDetect()).resolves.toEqual({ providers });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://127.0.0.1:8787/api/rpc/llm/cliDetect');
+  });
+
+  it('falls back to the page server when the localhost companion is not running', async () => {
+    const unavailable = {
+      providers: [
+        { id: 'claude-code', installed: false },
+        { id: 'codex', installed: false },
+        { id: 'gemini', installed: false },
+      ],
+    };
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Connection refused'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({ ok: true, result: unavailable }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { browserElectronAPI } = await import('../src/platform/install');
+    await expect(browserElectronAPI.llm.cliDetect()).resolves.toEqual(unavailable);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/rpc/llm/cliDetect');
+  });
+
   it('puts an outer deadline around a stalled RunPod session status check', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {

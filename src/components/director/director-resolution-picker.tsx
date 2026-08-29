@@ -1,4 +1,4 @@
-const RESOLUTIONS = ['720p', '1080p'] as const;
+const RESOLUTIONS = ['480p', '720p', '1080p'] as const;
 
 interface DirectorResolutionPickerProps {
   value: string;
@@ -18,7 +18,7 @@ export function DirectorResolutionPicker({
   return (
     <div
       className={`dresolution${compact ? ' dresolution--compact' : ''}`}
-      title={`Resolution for the next video generated${provider}. 1080p takes longer and uses more GPU time.`}
+      title={`Resolution for the next video generated${provider}. 480p is fastest; 1080p takes longer and uses more GPU time.`}
     >
       <span className={compact ? 'dresolution__label' : 'director-tab__label'}>
         {compact ? 'Output' : 'Output resolution'}

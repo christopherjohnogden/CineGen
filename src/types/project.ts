@@ -4,6 +4,7 @@ import type { ExportJob } from './export';
 import type { WorkflowNodeData } from './workflow';
 import type { Element } from './elements';
 import type { DirectorShow } from './director';
+import type { ProjectProviderUsage } from '@/lib/providers/project-usage';
 
 export interface Asset {
   id: string;
@@ -68,4 +69,5 @@ export interface ProjectSnapshot {
   exports?: ExportJob[];
   elements?: Element[];
   director?: DirectorShow;
+  providerUsage?: ProjectProviderUsage;
 }

@@ -58,23 +58,23 @@ describe('Director generation resolution', () => {
     ['Topview AI · Auto', 'topview-auto'],
     ['Higgsfield · Seedance 2.5', 'seedance-2.5'],
     ['RunPod · LTX-2.5', 'runpod-ltx-2.5'],
-  ])('offers 720p and 1080p for %s and preserves the selected provider', (_label, adapterId) => {
+  ])('offers 480p, 720p, and 1080p for %s and preserves the selected provider', (_label, adapterId) => {
     const show = { ...createEmptyDirectorShow(), adapterId, resolution: '720p' };
     const onChange = vi.fn();
 
     render(<DirectorSetupDrawer show={show} onChange={onChange} />);
 
     const resolution = screen.getByRole('group', { name: 'Output resolution' });
+    expect(resolution).toHaveTextContent('480p');
     expect(resolution).toHaveTextContent('720p');
     expect(resolution).toHaveTextContent('1080p');
-    expect(screen.queryByRole('button', { name: '480p' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '720p' })).toHaveAttribute('aria-pressed', 'true');
 
-    fireEvent.click(screen.getByRole('button', { name: '1080p' }));
+    fireEvent.click(screen.getByRole('button', { name: '480p' }));
 
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       adapterId,
-      resolution: '1080p',
+      resolution: '480p',
     }));
   });
 
@@ -84,6 +84,15 @@ describe('Director generation resolution', () => {
     render(<DirectorSetupDrawer show={show} onChange={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: '1080p' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '720p' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('reflects a persisted 480p selection when the Director project is reopened', () => {
+    const show = { ...createEmptyDirectorShow(), resolution: '480p' };
+
+    render(<DirectorSetupDrawer show={show} onChange={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: '480p' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: '720p' })).toHaveAttribute('aria-pressed', 'false');
   });
 

@@ -228,6 +228,34 @@ export function invokeRpc<T>(
   );
 }
 
+/** Call a trusted CineGen companion server at an explicit origin. This is used
+ * only from a localhost browser page so a local UI can reach the local CLI
+ * service even when the page itself is served by the hosted-site dev runtime. */
+export function invokeRpcAt<T>(
+  origin: string,
+  namespace: string,
+  method: string,
+  args: readonly unknown[] = [],
+  options: RpcRequestOptions = {},
+): Promise<T> {
+  const encodedNamespace = encodeURIComponent(namespace);
+  const encodedMethod = encodeURIComponent(method);
+  const root = origin.replace(/\/+$/, '');
+  return post<T>(
+    `${root}${RPC_ROOT}/${encodedNamespace}/${encodedMethod}`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ args: prepareRpcArguments(args) }),
+    },
+    `${namespace}.${method}`,
+    options,
+  );
+}
+
 export async function uploadFile(
   file: Blob,
   options: {

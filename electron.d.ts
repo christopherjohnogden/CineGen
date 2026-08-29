@@ -415,6 +415,7 @@ export interface ElectronAPI {
       credits?: number;
       error?: string;
     }>;
+    modelCatalog: () => Promise<import('./src/lib/topview/model-catalog').TopviewGenerationCatalog>;
     authLogin: () => Promise<{
       connected: boolean;
       configured: boolean;
@@ -481,6 +482,25 @@ export interface ElectronAPI {
     }) => Promise<{
       url: string;
       mediaType: 'image';
+      referenceValue?: string;
+      taskId?: string;
+      boardUrl?: string;
+      model?: string;
+    }>;
+    generateAudio: (params: {
+      prompt: string;
+      model: string;
+      kind: 'music' | 'voice' | 'audio';
+      styles?: string;
+      instrumental?: boolean;
+      voiceId?: string;
+      voiceSpeed?: number;
+      emotion?: string;
+      emotionText?: string;
+      referenceAudio?: string;
+    }) => Promise<{
+      url: string;
+      mediaType: 'audio';
       taskId?: string;
       boardUrl?: string;
       model?: string;

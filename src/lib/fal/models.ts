@@ -6,6 +6,7 @@ import {
   LTX23_QUALITY_OPTS,
   SORA2_QUALITY_OPTS,
 } from '@/lib/fal/video-model-routing';
+import { buildTopviewModelRegistry, type TopviewGenerationCatalog } from '@/lib/topview/model-catalog';
 
 export {
   isKlingV3NodeType,
@@ -1183,9 +1184,9 @@ export const POD_MODEL_REGISTRY: Record<string, ModelDefinition> = {
   },
 };
 
-const TOPVIEW_MODEL_REGISTRY: Record<string, ModelDefinition> = {
+const TOPVIEW_LEGACY_MODEL_REGISTRY: Record<string, ModelDefinition> = {
   'topview-image-auto': {
-    id: 'topview/image/auto', nodeType: 'topview-image-auto', name: 'Image · Auto (live catalog)',
+    id: 'topview/image/auto', nodeType: 'topview-image-auto', name: 'Recommended · Automatic',
     category: 'image', description: 'Topview image generation or editing using the live recommended model', outputType: 'image',
     provider: 'topview', responseMapping: { path: 'url' },
     inputs: [
@@ -1199,7 +1200,7 @@ const TOPVIEW_MODEL_REGISTRY: Record<string, ModelDefinition> = {
     ],
   },
   'topview-video-auto': {
-    id: 'topview/video/auto', nodeType: 'topview-video-auto', name: 'Video · Auto (live catalog)',
+    id: 'topview/video/auto', nodeType: 'topview-video-auto', name: 'Recommended · Automatic',
     category: 'video', description: 'Topview video generation using the live recommended model', outputType: 'video',
     provider: 'topview', responseMapping: { path: 'url' },
     inputs: [
@@ -1217,7 +1218,14 @@ const TOPVIEW_MODEL_REGISTRY: Record<string, ModelDefinition> = {
 };
 
 /** Combined registry of all model definitions. Topview comes first because it is CineGen's default cloud provider. */
-export const ALL_MODELS: Record<string, ModelDefinition> = { ...TOPVIEW_MODEL_REGISTRY, ...HIGGSFIELD_MODEL_REGISTRY, ...MODEL_REGISTRY, ...KIE_MODEL_REGISTRY, ...LOCAL_MODEL_REGISTRY, ...RUNPOD_MODEL_REGISTRY, ...POD_MODEL_REGISTRY };
+export const ALL_MODELS: Record<string, ModelDefinition> = { ...buildTopviewModelRegistry(), ...TOPVIEW_LEGACY_MODEL_REGISTRY, ...HIGGSFIELD_MODEL_REGISTRY, ...MODEL_REGISTRY, ...KIE_MODEL_REGISTRY, ...LOCAL_MODEL_REGISTRY, ...RUNPOD_MODEL_REGISTRY, ...POD_MODEL_REGISTRY };
+
+export function installTopviewModelCatalog(catalog: TopviewGenerationCatalog): void {
+  for (const [key, model] of Object.entries(ALL_MODELS)) {
+    if (model.provider === 'topview' && !key.endsWith('-auto')) delete ALL_MODELS[key];
+  }
+  Object.assign(ALL_MODELS, buildTopviewModelRegistry(catalog));
+}
 
 export function getModelDefinition(nodeType: string): ModelDefinition | undefined {
   return ALL_MODELS[nodeType];

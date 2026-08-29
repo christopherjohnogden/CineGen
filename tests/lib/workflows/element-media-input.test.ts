@@ -63,7 +63,7 @@ describe('stacked Element media inputs', () => {
     run.mockReset().mockResolvedValue({ url: 'https://cdn.example/generated.png' });
     Object.defineProperty(window, 'electronAPI', {
       configurable: true,
-      value: { workflow: { run } },
+      value: { higgsfield: { generate: run } },
     });
   });
 
@@ -77,14 +77,21 @@ describe('stacked Element media inputs', () => {
     });
 
     expect(run).toHaveBeenCalledWith(expect.objectContaining({
-      nodeType: 'hf-gpt-image-2',
-      inputs: expect.objectContaining({
+      model: 'gpt_image_2',
+      outputType: 'image',
+      medias: [
+        { value: 'local-media://peter-front.png', role: 'image' },
+        { value: 'local-media://peter-profile.png', role: 'image' },
+        { value: 'local-media://jordan-front.png', role: 'image' },
+      ],
+      params: expect.objectContaining({
         higgsfield_media_inputs: [
           { value: 'local-media://peter-front.png', role: 'image' },
           { value: 'local-media://peter-profile.png', role: 'image' },
           { value: 'local-media://jordan-front.png', role: 'image' },
         ],
       }),
+      wait: true,
     }));
   });
 
@@ -108,14 +115,21 @@ describe('stacked Element media inputs', () => {
     });
 
     expect(run).toHaveBeenCalledWith(expect.objectContaining({
-      nodeType: 'hf-seedance-2-5',
-      inputs: expect.objectContaining({
+      model: 'seedance_2_5',
+      outputType: 'video',
+      medias: [
+        { value: 'local-media://peter-front.png', role: 'image' },
+        { value: 'local-media://peter-profile.png', role: 'image' },
+        { value: 'local-media://jordan-front.png', role: 'image' },
+      ],
+      params: expect.objectContaining({
         medias: [
           'local-media://peter-front.png',
           'local-media://peter-profile.png',
           'local-media://jordan-front.png',
         ],
       }),
+      wait: true,
     }));
   });
 

@@ -39,12 +39,16 @@ export function modelProviderLabel(model: ModelDefinition): string {
   return MODEL_PROVIDER_LABELS[modelProvider(model)];
 }
 
+export function isLegacyTopviewAutomaticModel(model: ModelDefinition): boolean {
+  return model.provider === 'topview' && model.nodeType.endsWith('-auto');
+}
+
 export function providerModelOptions(
   categories: Array<ModelDefinition['category']>,
 ): ProviderModelOption[] {
   const allowed = new Set(categories);
   return Object.entries(ALL_MODELS)
-    .filter(([, model]) => allowed.has(model.category))
+    .filter(([, model]) => allowed.has(model.category) && !isLegacyTopviewAutomaticModel(model))
     .map(([key, model]) => {
       const provider = modelProvider(model);
       const providerLabel = MODEL_PROVIDER_LABELS[provider];

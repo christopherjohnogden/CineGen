@@ -771,6 +771,38 @@ describe('shared RunPod LTX-2.5 service', () => {
     expect(workflow['398:360'].inputs.value).toBe(height);
   });
 
+  it.each([
+    ['16:9', 864, 480],
+    ['9:16', 480, 864],
+    ['1:1', 480, 480],
+  ])('maps a Director 480p %s request to model-safe LTX workflow dimensions', async (aspectRatio, width, height) => {
+    let submittedBody: Record<string, unknown> | undefined;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/health')) {
+        return jsonResponse({ ready: true, apiVersion: 2, capabilities: { artifactChunks: true } });
+      }
+      submittedBody = requestBody(init);
+      return jsonResponse({ id: 'job-480', status: 'IN_QUEUE' }, 202);
+    }) as unknown as typeof fetch;
+
+    await runRunpodLtx25Job({
+      podId: 'pod-123',
+      podUrl: 'https://pod-123-8000.proxy.runpod.net',
+      podAuthToken: 'pod-session-token',
+      input: {
+        prompt: 'A cinematic frame rendered quickly at the selected output size.',
+        aspectRatio,
+        resolution: '480p',
+      },
+    }, fetchImpl);
+
+    const workflow = (submittedBody?.input as {
+      workflow: Record<string, { inputs: Record<string, unknown> }>;
+    }).workflow;
+    expect(workflow['398:372'].inputs.value).toBe(width);
+    expect(workflow['398:360'].inputs.value).toBe(height);
+  });
+
   it('allows a generation upload acknowledgement to take longer than the short status deadline', async () => {
     vi.useFakeTimers();
     let submissionSignal: AbortSignal | undefined;

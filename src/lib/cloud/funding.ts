@@ -2,6 +2,9 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { cloudDb, cloudFunctions } from './firebase';
 import { getModelDefinition } from '@/lib/fal/models';
+import { topviewRequestedModel } from '@/lib/topview/model-catalog';
+import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
+import { isVideoGenerationProvider } from '@/lib/utils/video-generation-provider';
 
 export type FundedProvider = 'fal' | 'higgsfield';
 
@@ -28,7 +31,7 @@ export interface WorkflowRunParams {
   inputs: Record<string, unknown>;
 }
 
-function topviewMediaInputs(inputs: Record<string, unknown>, outputType: string): Array<{ value: string; role: string }> {
+function workflowMediaInputs(inputs: Record<string, unknown>, outputType: string): Array<{ value: string; role: string }> {
   const media: Array<{ value: string; role: string }> = [];
   const add = (value: unknown, role: string) => {
     if (typeof value === 'string' && value.trim()) media.push({ value: value.trim(), role });
@@ -38,6 +41,7 @@ function topviewMediaInputs(inputs: Record<string, unknown>, outputType: string)
       if (typeof record.value === 'string') add(record.value, typeof record.role === 'string' ? record.role : role);
     }
   };
+  add(inputs.higgsfield_media_inputs, 'image');
   add(inputs.medias, 'image');
   add(inputs.image_urls, 'image');
   add(inputs.input_image_urls, 'image');
@@ -45,6 +49,8 @@ function topviewMediaInputs(inputs: Record<string, unknown>, outputType: string)
   add(inputs.image_url, outputType === 'video' ? 'start_image' : 'image');
   add(inputs.first_frame, 'start_image');
   add(inputs.first_frame_url, 'start_image');
+  add(inputs.reference_audio, 'audio');
+  add(inputs.audio_url, 'audio');
   add(inputs.end_frame, 'end_image');
   add(inputs.end_frame_url, 'end_image');
   return media.filter((entry, index, all) => all.findIndex((candidate) => (
@@ -57,8 +63,8 @@ async function runTopviewWorkflow(params: WorkflowRunParams): Promise<unknown> {
   if (!model || model.provider !== 'topview') throw new Error('Topview model configuration is unavailable.');
   const prompt = String(params.inputs.prompt ?? '').trim();
   if (!prompt) throw new Error('Connect a prompt before running this Topview model.');
-  const medias = topviewMediaInputs(params.inputs, model.outputType);
-  const requestedModel = typeof params.inputs.model === 'string' ? params.inputs.model : 'auto';
+  const medias = workflowMediaInputs(params.inputs, model.outputType);
+  const requestedModel = topviewRequestedModel(model, params.inputs.model);
   if (model.outputType === 'image') {
     return window.electronAPI.topview.generateImage({
       prompt,
@@ -81,7 +87,46 @@ async function runTopviewWorkflow(params: WorkflowRunParams): Promise<unknown> {
       medias,
     });
   }
-  throw new Error('Topview currently supports image and video nodes, not this node type.');
+  if (model.outputType === 'audio') {
+    const audioReference = medias.find((entry) => entry.role === 'audio')?.value;
+    const kind = model.inputs.some((field) => field.id === 'styles')
+      ? 'music'
+      : model.inputs.some((field) => field.id === 'voice_id') ? 'voice' : 'audio';
+    return window.electronAPI.topview.generateAudio({
+      prompt,
+      model: requestedModel,
+      kind,
+      styles: typeof params.inputs.styles === 'string' ? params.inputs.styles : undefined,
+      instrumental: params.inputs.instrumental === undefined ? undefined : Boolean(params.inputs.instrumental),
+      voiceId: typeof params.inputs.voice_id === 'string' ? params.inputs.voice_id : undefined,
+      voiceSpeed: typeof params.inputs.voice_speed === 'number' ? params.inputs.voice_speed : undefined,
+      emotion: typeof params.inputs.emotion === 'string' ? params.inputs.emotion : undefined,
+      emotionText: typeof params.inputs.emotion_text === 'string' ? params.inputs.emotion_text : undefined,
+      referenceAudio: audioReference,
+    });
+  }
+  throw new Error('This Topview node type is not supported.');
+}
+
+async function runHiggsfieldWorkflow(params: WorkflowRunParams): Promise<unknown> {
+  const model = getModelDefinition(params.nodeType);
+  if (!model || model.provider !== 'higgsfield') throw new Error('Higgsfield model configuration is unavailable.');
+  const prompt = typeof params.inputs.prompt === 'string' ? params.inputs.prompt.trim() : undefined;
+  const medias = workflowMediaInputs(params.inputs, model.outputType);
+  const outputType = model.outputType === 'model3d' ? '3d' : model.outputType;
+  const result = await window.electronAPI.higgsfield.generate({
+    prompt,
+    model: model.id,
+    outputType,
+    medias,
+    params: params.inputs,
+    wait: true,
+  });
+  // Direct MCP calls return the URL at the root; workflow nodes expect the
+  // provider's conventional output mapping. Expose both shapes to keep every
+  // Higgsfield consumer compatible.
+  if (result.url) return { ...result, output: { url: result.url } };
+  return result;
 }
 
 let activeProjectId = '';
@@ -168,16 +213,29 @@ async function runFunded(projectId: string, provider: FundedProvider, params: Wo
 }
 
 export async function runWorkflow(params: WorkflowRunParams): Promise<unknown> {
-  if (getModelDefinition(params.nodeType)?.provider === 'topview') {
-    return runTopviewWorkflow(params);
+  const modelProvider = getModelDefinition(params.nodeType)?.provider;
+  if (modelProvider === 'topview') {
+    const result = await runTopviewWorkflow(params);
+    requestProviderUsageRefresh('topview');
+    return result;
+  }
+  if (modelProvider === 'higgsfield') {
+    const result = await runHiggsfieldWorkflow(params);
+    requestProviderUsageRefresh('higgsfield');
+    return result;
   }
   try {
-    return await window.electronAPI.workflow.run(params);
+    const result = await window.electronAPI.workflow.run(params);
+    if (isVideoGenerationProvider(modelProvider)) requestProviderUsageRefresh(modelProvider);
+    else if (params.nodeType.startsWith('hf-')) requestProviderUsageRefresh('higgsfield');
+    return result;
   } catch (localError) {
     const provider = fundedProviderForFailure(params, localError);
     if (!activeProjectId || !provider) throw localError;
     try {
-      return await runFunded(activeProjectId, provider, params);
+      const result = await runFunded(activeProjectId, provider, params);
+      if (provider === 'higgsfield') requestProviderUsageRefresh(provider);
+      return result;
     } catch (fundedError) {
       throw new Error(callableErrorMessage(fundedError), { cause: fundedError });
     }

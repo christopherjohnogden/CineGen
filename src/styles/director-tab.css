@@ -504,7 +504,7 @@
 .dresolution { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .dresolution > .director-tab__label { margin-bottom:0; }
 .dresolution__options {
-  display:inline-grid; grid-template-columns:repeat(2, minmax(58px, 1fr));
+  display:inline-grid; grid-template-columns:repeat(3, minmax(58px, 1fr));
   align-self:flex-start; overflow:hidden;
   border:1px solid var(--border-medium); border-radius:9px;
   background:var(--bg-input);
@@ -526,7 +526,7 @@
   font-family:'Space Mono',monospace; font-size:9px; font-weight:700;
   letter-spacing:.08em; text-transform:uppercase; color:var(--text-tertiary);
 }
-.dresolution--compact .dresolution__options { grid-template-columns:repeat(2, minmax(50px, 1fr)); }
+.dresolution--compact .dresolution__options { grid-template-columns:repeat(3, minmax(50px, 1fr)); }
 .dresolution--compact .dresolution__option { min-height:30px; padding:5px 9px; font-size:11px; }
 .dsetup .dgen-seg { align-self:stretch; }
 .dsetup .dgen-seg-btn { padding:6px 11px; font-size:12px; }

@@ -1,6 +1,6 @@
 import type { ElectronAPI } from '../../../electron';
 import { browserEvents } from './events';
-import { getUploadReference, invokeRpc, uploadFile } from './rpc';
+import { getUploadReference, invokeRpc, invokeRpcAt, uploadFile } from './rpc';
 
 type DialogOpenOptions = Parameters<ElectronAPI['dialog']['showOpen']>[0];
 type DialogSaveOptions = Parameters<ElectronAPI['dialog']['showSave']>[0];
@@ -16,9 +16,27 @@ export type BrowserElectronAPI = ElectronAPI & { sync: WebSyncAPI };
 
 const browserObjectUrls = new WeakMap<File, string>();
 const RUNPOD_STATUS_RPC_TIMEOUT_MS = 30_000;
+const LOCAL_COMPANION_ORIGIN = 'http://127.0.0.1:8787';
 
 function rpc<T>(namespace: string, method: string, ...args: unknown[]): Promise<T> {
   return invokeRpc<T>(namespace, method, args);
+}
+
+function isLocalBrowserPage(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.location.protocol === 'http:'
+    && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+}
+
+async function localCliRpc<T>(method: string, ...args: unknown[]): Promise<T> {
+  if (!isLocalBrowserPage()) return rpc<T>('llm', method, ...args);
+  try {
+    return await invokeRpcAt<T>(LOCAL_COMPANION_ORIGIN, 'llm', method, args);
+  } catch {
+    // Keep localhost usable when the optional companion is not running. The
+    // page's own server will return its normal unavailable state or error.
+    return rpc<T>('llm', method, ...args);
+  }
 }
 
 type ArtlistStatus = Awaited<ReturnType<ElectronAPI['artlist']['accountStatus']>>;
@@ -440,15 +458,15 @@ export const browserElectronAPI: BrowserElectronAPI = {
     onLocalStream: (callback) => subscribe('llm:local-stream', callback),
     runCutWorkflow: (params) => rpc('llm', 'runCutWorkflow', params),
     claudeCodeDetect: () => rpc('llm', 'claudeCodeDetect'),
-    cliDetect: () => rpc('llm', 'cliDetect'),
-    claudeCodeChat: (params) => rpc('llm', 'claudeCodeChat', params),
-    codexChat: (params) => rpc('llm', 'codexChat', params),
-    geminiChat: (params) => rpc('llm', 'geminiChat', params),
+    cliDetect: () => localCliRpc('cliDetect'),
+    claudeCodeChat: (params) => localCliRpc('claudeCodeChat', params),
+    codexChat: (params) => localCliRpc('codexChat', params),
+    geminiChat: (params) => localCliRpc('geminiChat', params),
     openaiChat: (params) => rpc('llm', 'openaiChat', params),
     openaiRealtimeSession: (params) => rpc('llm', 'openaiRealtimeSession', params),
-    claudeCodeCancel: (requestId) => rpc('llm', 'claudeCodeCancel', requestId),
-    codexCancel: (requestId) => rpc('llm', 'codexCancel', requestId),
-    geminiCancel: (requestId) => rpc('llm', 'geminiCancel', requestId),
+    claudeCodeCancel: (requestId) => localCliRpc('claudeCodeCancel', requestId),
+    codexCancel: (requestId) => localCliRpc('codexCancel', requestId),
+    geminiCancel: (requestId) => localCliRpc('geminiCancel', requestId),
     onClaudeCodeStream: (callback) => subscribe('llm:claude-code-stream', callback),
     onCodexStream: (callback) => subscribe('llm:codex-stream', callback),
     onGeminiStream: (callback) => subscribe('llm:gemini-stream', callback),
@@ -476,10 +494,19 @@ export const browserElectronAPI: BrowserElectronAPI = {
   },
   topview: {
     accountStatus: () => rpc('topview', 'accountStatus'),
+    modelCatalog: () => rpc('topview', 'modelCatalog'),
     authLogin: connectTopviewInBrowser,
     authLogout: () => rpc('topview', 'authLogout'),
     generate: (params) => rpc('topview', 'generate', params),
     generateImage: (params) => rpc('topview', 'generateImage', params),
+    generateAudio: (params) => rpc('topview', 'generateAudio', params),
+  },
+  teamProviders: {
+    status: async () => { throw new Error('Browser workspaces access team providers directly.'); },
+    connect: async () => { throw new Error('Browser workspaces access team providers directly.'); },
+    disconnect: async () => { throw new Error('Browser workspaces access team providers directly.'); },
+    save: async () => { throw new Error('Browser workspaces access team providers directly.'); },
+    remove: async () => { throw new Error('Browser workspaces access team providers directly.'); },
   },
   copilot: {
     analyzeVisualRefs: (params) => rpc('copilot', 'analyzeVisualRefs', params),

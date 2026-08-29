@@ -9,8 +9,104 @@ import type { WorkflowSpace } from '@/types/workspace';
 import { WorkflowsPanel } from './toolbar/workflows-panel';
 import { ModelsPanel } from './toolbar/models-panel';
 import { HistoryPanel } from './toolbar/history-panel';
+import {
+  getVideoGenerationProvider,
+  type VideoGenerationProvider,
+} from '@/lib/utils/video-generation-provider';
+import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
 
 type SidebarPanel = 'workflows' | 'models' | 'history' | null;
+
+const PROVIDER_LABELS: Record<VideoGenerationProvider, string> = {
+  topview: 'Topview AI',
+  higgsfield: 'Higgsfield',
+  artlist: 'Artlist',
+  runpod: 'RunPod',
+};
+
+function formatCredits(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: value > 0 && value < 1 ? 2 : 0,
+  }).format(value);
+}
+
+function ProviderBudgetCard() {
+  const { state } = useWorkspace();
+  const [provider, setProvider] = useState<VideoGenerationProvider>(() => getVideoGenerationProvider());
+  const [refreshing, setRefreshing] = useState(false);
+  const usage = state.providerUsage[provider];
+  const hasCreditBalance = provider === 'topview' || provider === 'higgsfield';
+  const generatedAssets = state.assets.filter((asset) => asset.metadata?.generationProvider === provider).length;
+
+  useEffect(() => {
+    const syncProvider = () => setProvider(getVideoGenerationProvider());
+    window.addEventListener('cinegen:settings-changed', syncProvider);
+    return () => window.removeEventListener('cinegen:settings-changed', syncProvider);
+  }, []);
+
+  useEffect(() => {
+    if (!refreshing) return;
+    const timeout = window.setTimeout(() => setRefreshing(false), 900);
+    return () => window.clearTimeout(timeout);
+  }, [refreshing, usage?.updatedAt]);
+
+  const refresh = () => {
+    setRefreshing(true);
+    requestProviderUsageRefresh(provider);
+  };
+
+  const remaining = hasCreditBalance
+    ? usage?.connected === false
+      ? 'Not connected'
+      : typeof usage?.creditsRemaining === 'number'
+        ? formatCredits(usage.creditsRemaining)
+        : 'Checking…'
+    : provider === 'runpod' ? 'Hourly billing' : 'Not reported';
+  const used = hasCreditBalance
+    ? typeof usage?.lastObservedCredits === 'number'
+      ? formatCredits(usage.creditsUsed)
+      : 'Tracking now'
+    : `${generatedAssets} generation${generatedAssets === 1 ? '' : 's'}`;
+
+  return (
+    <section className="cs-provider-budget" aria-label={`${PROVIDER_LABELS[provider]} project usage`}>
+      <div className="cs-provider-budget__head">
+        <div className="cs-provider-budget__identity">
+          <span className={`cs-provider-budget__status${usage?.connected === false ? ' is-offline' : usage?.connected === undefined ? ' is-unknown' : ''}`} aria-hidden="true" />
+          <div>
+            <span>Current provider</span>
+            <strong>{PROVIDER_LABELS[provider]}</strong>
+          </div>
+        </div>
+        <button
+          type="button"
+          className={`cs-provider-budget__refresh${refreshing ? ' is-refreshing' : ''}`}
+          onClick={refresh}
+          title="Refresh provider balance"
+          aria-label={`Refresh ${PROVIDER_LABELS[provider]} balance`}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+        </button>
+      </div>
+      <div className="cs-provider-budget__metrics">
+        <div>
+          <span>{hasCreditBalance ? 'Credits left' : 'Billing'}</span>
+          <strong>{remaining}</strong>
+        </div>
+        <div>
+          <span>{hasCreditBalance ? 'Used in project' : 'Project activity'}</span>
+          <strong>{used}</strong>
+        </div>
+      </div>
+      <p>{hasCreditBalance ? 'Based on actual provider balance changes.' : 'This provider does not expose a credit balance.'}</p>
+    </section>
+  );
+}
 
 export function CreateTab() {
   const { state, dispatch } = useWorkspace();
@@ -255,6 +351,7 @@ export function CreateTab() {
                     );
                   })}
                 </nav>
+                <ProviderBudgetCard />
               </>
             )}
 

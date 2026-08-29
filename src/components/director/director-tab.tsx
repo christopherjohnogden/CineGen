@@ -37,7 +37,7 @@ import {
   getRunpodSessionImageModels,
   isRunpodGenerationSessionReady,
 } from '@/lib/utils/api-key';
-import { adapterIdForVideoProvider, getVideoGenerationProvider } from '@/lib/utils/video-generation-provider';
+import { adapterIdForVideoProvider, getVideoGenerationProvider, isVideoGenerationProvider } from '@/lib/utils/video-generation-provider';
 import { runDirectorJsonJob } from '@/lib/director/run-llm';
 import { runDirectorShotlist } from '@/lib/director/run-shotlist';
 import { cancelCliCopilotChat } from '@/lib/llm/cli-copilot-client';
@@ -73,6 +73,7 @@ import { generateId, timestamp } from '@/lib/utils/ids';
 import { defaultFolderForNewElement, projectFolderId } from '@/lib/elements/library';
 import { HIGGSFIELD_MODELS } from '@/lib/higgsfield/higgsfield-models';
 import { runWorkflow } from '@/lib/cloud/funding';
+import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
 import {
   storyboardPlan,
   storyboardGenerationErrorMessage,
@@ -1163,6 +1164,9 @@ export function DirectorTab() {
         status: 'done',
         jobId: ('jobId' in result ? result.jobId : undefined) ?? jobId,
       }));
+      if (isVideoGenerationProvider(prepared.request.provider)) {
+        requestProviderUsageRefresh(prepared.request.provider);
+      }
       return null;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed';

@@ -92,7 +92,7 @@ const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
     ],
     outputs: [],
     defaultData: {
-      selectedModel: 'topview-image-auto',
+      selectedModel: 'topview-image-gpt-image-2',
       shots: [
         { prompt: 'Establishing wide shot - full scene, character in context', url: null, status: 'idle' },
         { prompt: 'Full body shot, straight-on', url: null, status: 'idle' },
@@ -111,14 +111,16 @@ const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
     label: 'Storyboarder',
     category: 'utility',
     inputs: [
-      { id: 'image', type: 'image', label: 'Image' },
+      { id: 'image', type: 'image', label: 'References', multiple: true },
+      { id: 'style', type: 'image', label: 'Style', multiple: true },
       { id: 'text', type: 'text', label: 'Scene' },
     ],
     outputs: [],
     defaultData: {
-      selectedModel: 'topview-image-auto',
-      selectedVideoModel: 'topview-video-auto',
+      selectedModel: 'topview-image-gpt-image-2',
+      selectedVideoModel: 'topview-video-seedance-2-5',
       selectedLlm: 'claude-code',
+      stylePrompt: '',
       shotCount: 9,
       shots: [],
     },
@@ -175,6 +177,15 @@ export const NODE_REGISTRY: Record<string, NodeTypeDefinition> = {
   ...UTILITY_NODES,
   ...buildModelNodeDefinitions(),
 };
+
+export function refreshTopviewNodeDefinitions(): void {
+  for (const [key, definition] of Object.entries(NODE_REGISTRY)) {
+    if (definition.isModel && key.startsWith('topview-') && !key.endsWith('-auto')) {
+      delete NODE_REGISTRY[key];
+    }
+  }
+  Object.assign(NODE_REGISTRY, buildModelNodeDefinitions());
+}
 
 export const CATEGORY_COLORS: Record<string, string> = {
   utility: 'var(--port-number)',

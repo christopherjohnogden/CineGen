@@ -2,7 +2,12 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { NODE_REGISTRY } from '@/lib/workflows/node-registry';
 import { ALL_MODELS } from '@/lib/fal/models';
 import { areWorkflowPortsCompatible } from '@/lib/workflows/port-compatibility';
-import { compareModelsByProvider, MODEL_PROVIDER_LABELS } from '@/lib/workflows/provider-model-options';
+import {
+  compareModelsByProvider,
+  isLegacyTopviewAutomaticModel,
+  MODEL_PROVIDER_LABELS,
+} from '@/lib/workflows/provider-model-options';
+import { useTopviewModelCatalogVersion } from '@/components/create/use-topview-model-catalog';
 import type { NodeCategory, PortType } from '@/types/workflow';
 
 interface NodePaletteProps {
@@ -47,6 +52,7 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<Tab>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const topviewCatalogVersion = useTopviewModelCatalogVersion();
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -60,6 +66,7 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
       }
       const modelDef = ALL_MODELS[n.type];
       const provider = modelDef ? (modelDef.provider ?? 'fal') : null;
+      if (modelDef && isLegacyTopviewAutomaticModel(modelDef)) return false;
 
       if (tab === 'cloud') {
         if (!n.isModel) return false;
@@ -106,7 +113,7 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
         nodes: filtered.filter((n) => n.category === cat).sort(compareModelsByProvider),
       }))
       .filter((g) => g.nodes.length > 0);
-  }, [search, sourcePortType, tab]);
+  }, [search, sourcePortType, tab, topviewCatalogVersion]);
 
   const flatList = useMemo(
     () => filteredGroups.flatMap((g) => g.nodes),

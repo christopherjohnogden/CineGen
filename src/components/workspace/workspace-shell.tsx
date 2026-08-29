@@ -49,6 +49,16 @@ import { loadAvailableProject, saveAvailableProject } from '@/lib/cloud/projects
 import { setActiveFundingProject } from '@/lib/cloud/funding';
 import { startOwnerFundingRelay } from '@/lib/cloud/funding-relay';
 import {
+  normalizeProjectProviderUsage,
+  observeProviderBalance,
+  type ProviderBalanceObservation,
+} from '@/lib/providers/project-usage';
+import {
+  getVideoGenerationProvider,
+  isVideoGenerationProvider,
+  type VideoGenerationProvider,
+} from '@/lib/utils/video-generation-provider';
+import {
   getApiKey,
   getAutoVisualIndexingEnabled,
   getBackgroundVisionModel,
@@ -97,6 +107,7 @@ type WorkspaceAction =
   | { type: 'UPDATE_ELEMENT_FOLDER'; folderId: string; updates: Partial<ElementFolder> }
   | { type: 'REMOVE_ELEMENT_FOLDER'; folderId: string }
   | { type: 'SET_DIRECTOR'; director: DirectorShow }
+  | { type: 'OBSERVE_PROVIDER_USAGE'; observation: ProviderBalanceObservation }
   | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
   | { type: 'APPLY_ELEMENT_MENTION'; nodeId: string; elementId: string; config: Record<string, unknown> }
   | { type: 'HYDRATE'; payload: HydratePayload }
@@ -117,6 +128,7 @@ interface HydratePayload {
   elements: Element[];
   elementFolders: ElementFolder[];
   director: DirectorShow;
+  providerUsage: WorkspaceState['providerUsage'];
 }
 
 interface LlmJumpRequest {
@@ -360,6 +372,7 @@ const initialState: WorkspaceState = {
   elements: [],
   elementFolders: [],
   director: createEmptyDirectorShow(),
+  providerUsage: {},
 };
 
 function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
@@ -709,6 +722,11 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     case 'SET_DIRECTOR':
       return { ...state, director: action.director };
 
+    case 'OBSERVE_PROVIDER_USAGE': {
+      const providerUsage = observeProviderBalance(state.providerUsage, action.observation);
+      return providerUsage === state.providerUsage ? state : { ...state, providerUsage };
+    }
+
     case 'HYDRATE': {
       const hydratedTimelines = action.payload.timelines;
       const hydratedSpaces = normalizeWorkflowSpaces(action.payload.spaces, action.payload.nodes, action.payload.edges);
@@ -735,6 +753,7 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         elements: action.payload.elements,
         elementFolders: action.payload.elementFolders ?? [],
         director: action.payload.director,
+        providerUsage: action.payload.providerUsage,
       };
     }
 
@@ -862,7 +881,7 @@ const PERSIST_ACTIONS: WorkspaceAction['type'][] = [
   'ADD_FOLDER', 'UPDATE_FOLDER', 'REMOVE_FOLDER',
   'SET_TIMELINE', 'ADD_TIMELINE', 'REMOVE_TIMELINE', 'CLOSE_TIMELINE', 'OPEN_TIMELINE', 'SET_ACTIVE_TIMELINE',
   'SET_NODE_RESULT', 'ADD_GENERATION', 'ADD_EXPORT', 'UPDATE_EXPORT',
-  'SET_DIRECTOR',
+  'SET_DIRECTOR', 'OBSERVE_PROVIDER_USAGE',
   'UNDO', 'REDO',
 ];
 
@@ -893,6 +912,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const deriveRetryCountsRef = useRef(new Map<string, number>());
   const deriveInFlightRef = useRef(new Set<string>());
   const persistInFlightRef = useRef(new Set<string>());
+  const providerRefreshInFlightRef = useRef(new Set<VideoGenerationProvider>());
   const [llmJumpRequest, setLlmJumpRequest] = useState<LlmJumpRequest | null>(null);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [hydrationComplete, setHydrationComplete] = useState(false);
@@ -1008,6 +1028,61 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     window.addEventListener('cinegen:settings-changed', handleSettingsChanged);
     return () => window.removeEventListener('cinegen:settings-changed', handleSettingsChanged);
   }, []);
+
+  useEffect(() => {
+    if (!hydrationComplete) return;
+    let disposed = false;
+
+    const refreshProvider = async (provider: VideoGenerationProvider) => {
+      if (providerRefreshInFlightRef.current.has(provider)) return;
+      providerRefreshInFlightRef.current.add(provider);
+      try {
+        let observation: ProviderBalanceObservation = { provider };
+        if (provider === 'topview') {
+          const status = await window.electronAPI.topview.accountStatus();
+          observation = { provider, connected: status.connected, credits: status.credits };
+        } else if (provider === 'higgsfield') {
+          const status = await window.electronAPI.higgsfield.accountStatus();
+          observation = { provider, connected: status.connected, credits: status.credits };
+        } else if (provider === 'artlist') {
+          const status = await window.electronAPI.artlist.accountStatus();
+          observation = { provider, connected: status.connected };
+        }
+        if (!disposed) wrappedDispatch({ type: 'OBSERVE_PROVIDER_USAGE', observation });
+      } catch {
+        if (!disposed) {
+          wrappedDispatch({
+            type: 'OBSERVE_PROVIDER_USAGE',
+            observation: { provider, connected: false },
+          });
+        }
+      } finally {
+        providerRefreshInFlightRef.current.delete(provider);
+      }
+    };
+
+    const refreshCurrentProvider = () => void refreshProvider(getVideoGenerationProvider());
+    const handleRefreshRequest = (event: Event) => {
+      const requested = (event as CustomEvent<{ provider?: unknown }>).detail?.provider;
+      void refreshProvider(isVideoGenerationProvider(requested) ? requested : getVideoGenerationProvider());
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshCurrentProvider();
+    };
+
+    refreshCurrentProvider();
+    const interval = window.setInterval(refreshCurrentProvider, 60_000);
+    window.addEventListener('cinegen:provider-usage-refresh', handleRefreshRequest);
+    window.addEventListener('focus', refreshCurrentProvider);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener('cinegen:provider-usage-refresh', handleRefreshRequest);
+      window.removeEventListener('focus', refreshCurrentProvider);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [hydrationComplete, projectId, settingsVersion, wrappedDispatch]);
 
   const handleCreateTimelineFromLlm = useCallback((timeline: Timeline) => {
     wrappedDispatch({ type: 'ADD_TIMELINE', timeline });
@@ -1690,6 +1765,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const openSpaceIds = Array.isArray(workflowState.openSpaceIds)
             ? workflowState.openSpaceIds.filter((value): value is string => typeof value === 'string')
             : [];
+          const providerUsage = normalizeProjectProviderUsage(workflowState.providerUsage);
           const assets = (dbState.assets as Record<string, unknown>[]).map(assetFromRow);
           const mediaFolders = (dbState.mediaFolders as Record<string, unknown>[]).map(folderFromRow);
 
@@ -1719,6 +1795,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
               elements: library.elements,
               elementFolders: library.folders,
               director,
+              providerUsage,
             },
           });
           elementsLibraryReadyRef.current = true;
@@ -1745,6 +1822,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const openSpaceIds = Array.isArray(snapshot.openSpaceIds)
             ? snapshot.openSpaceIds.filter((value): value is string => typeof value === 'string')
             : [];
+          const providerUsage = normalizeProjectProviderUsage(snapshot.providerUsage);
           const AUDIO_EXTS = /\.(mp3|wav|ogg|aac|m4a|flac|webm)(\?|$)/i;
           const rawAssets = (snapshot.assets ?? []) as Asset[];
           // Migrate: fix audio assets that were saved as 'image' before audio type support
@@ -1769,6 +1847,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
               elements: library.elements,
               elementFolders: library.folders,
               director,
+              providerUsage,
             },
           });
           elementsLibraryReadyRef.current = true;
@@ -1838,6 +1917,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             activeSpaceId: state.activeSpaceId,
             openSpaceIds: [...state.openSpaceIds],
             director: state.director,
+            providerUsage: state.providerUsage,
           },
           elements: [],
           exports: state.exports.map((ex) => ({
@@ -1872,6 +1952,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           exports: state.exports,
           elements: [],
           director: state.director,
+          providerUsage: state.providerUsage,
         }, false).catch((err) => {
           console.error('[workspace] Failed to save project:', err);
         });
@@ -1893,6 +1974,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     state.activeTimelineId,
     state.exports,
     state.director,
+    state.providerUsage,
   ]);
 
   const librarySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

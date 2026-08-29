@@ -1375,6 +1375,13 @@ export async function terminateRunpodLtx25(params, fetchImpl = fetch) {
         : { ok: true };
 }
 function dimensions(aspectRatio, resolution) {
+    if (resolution === '480p') {
+        if (aspectRatio === '9:16')
+            return { width: 480, height: 864 };
+        if (aspectRatio === '1:1')
+            return { width: 480, height: 480 };
+        return { width: 864, height: 480 };
+    }
     if (aspectRatio === '9:16')
         return resolution === '1080p' ? { width: 1080, height: 1920 } : { width: 720, height: 1280 };
     if (aspectRatio === '1:1')
@@ -1394,7 +1401,9 @@ function buildWorkflow(input) {
     }
     const durationSec = Math.min(20, Math.max(1, Math.round(Number(input.durationSec) || 5)));
     const aspectRatio = ['16:9', '9:16', '1:1'].includes(input.aspectRatio ?? '') ? input.aspectRatio : '16:9';
-    const resolution = input.resolution === '1080p' ? '1080p' : '720p';
+    const resolution = input.resolution === '480p' || input.resolution === '1080p'
+        ? input.resolution
+        : '720p';
     const size = dimensions(aspectRatio, resolution);
     workflow['398:376'].inputs.value = prompt;
     workflow['395'].inputs.image = 'cinegen-source.png';

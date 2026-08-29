@@ -5,6 +5,12 @@ import { CATEGORY_COLORS, PORT_COLORS } from '@/lib/workflows/node-registry';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
 import { runWorkflow } from '@/lib/cloud/funding';
 import { providerModelOptions } from '@/lib/workflows/provider-model-options';
+import { useTopviewModelCatalogVersion } from '@/components/create/use-topview-model-catalog';
+import {
+  imageResolutionOptions,
+  preferredImageResolution,
+  topviewImageCreditEstimate,
+} from '@/lib/topview/image-pricing';
 import { runDirectorJsonJob } from '@/lib/director/run-llm';
 import {
   isDirectorLlmProvider,
@@ -18,6 +24,13 @@ import { clipEffectiveDuration } from '@/types/timeline';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import type { WorkflowNodeData } from '@/types/workflow';
 import type { Asset } from '@/types/project';
+import {
+  collectStoryboarderReferences,
+  selectStoryboarderReferences,
+  storyboarderImagePrompt,
+  storyboarderReferenceLimit,
+  type StoryboarderReferenceKind,
+} from '@/lib/workflows/storyboarder-references';
 
 type StoryboarderNodeProps = NodeProps & { data: WorkflowNodeData };
 
@@ -59,9 +72,9 @@ function parseStoryboardLlm(value: unknown): DirectorLlmProvider {
 }
 
 const HEADER_HEIGHT = 52;
-const PORT_SPACING = 24;
+const PORT_SPACING = 32;
 
-const STORYBOARD_SYSTEM_PROMPT = `You are a cinematic storyboard director. Given a reference image and a scene description, break the scene into a sequence of cinematic shots that tell the story visually.
+const STORYBOARD_SYSTEM_PROMPT = `You are a cinematic storyboard director. Given a scene description, a set of continuity references, and optional style direction, break the scene into a sequence of cinematic shots that tell the story visually.
 
 For each shot, write a concise image generation prompt that describes:
 - The camera angle and shot type (wide, medium, close-up, etc.)
@@ -72,6 +85,7 @@ For each shot, write a concise image generation prompt that describes:
 IMPORTANT RULES:
 - Each shot description must describe a SINGLE STATIC FRAME — one moment frozen in time, one camera angle, one composition. Never describe camera movement, transitions, or sequences within a single shot. No "starting on X then widening to Y" or "pull-back revealing Z". Just describe what the camera sees in that one frozen instant.
 - Maintain the SAME character appearance (face, clothing, body type) across ALL shots
+- Treat every named character, location, prop, and vehicle reference as a continuity lock
 - Keep the same environment and art style throughout
 - Each shot should progress the story forward
 - Think like a film director — vary camera angles for visual interest
@@ -102,12 +116,13 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const [cliAvailability, setCliAvailability] = useState<Record<string, boolean>>({});
   const [cliDetectionComplete, setCliDetectionComplete] = useState(false);
+  useTopviewModelCatalogVersion();
   const settingsRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
 
   const mode = (data.config?.mode as StoryboardMode) ?? 'image';
-  const selectedModel = (data.config?.selectedModel as string) ?? 'topview-image-auto';
-  const selectedVideoModel = (data.config?.selectedVideoModel as string) ?? 'topview-video-auto';
+  const selectedModel = (data.config?.selectedModel as string) ?? 'topview-image-gpt-image-2';
+  const selectedVideoModel = (data.config?.selectedVideoModel as string) ?? 'topview-video-seedance-2-5';
   const selectedLlm = parseStoryboardLlm(data.config?.selectedLlm);
   const shotCount = (data.config?.shotCount as number) ?? 9;
   const rawShots = (data.config?.shots as ShotEntry[]) ?? [];
@@ -117,6 +132,18 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
 
   const imageModels = providerModelOptions(['image', 'image-edit']);
   const videoModels = providerModelOptions(['video']);
+  const selectedImageModelDefinition = getModelDefinition(selectedModel);
+  const imageResolutions = imageResolutionOptions(selectedImageModelDefinition);
+  const selectedImageResolution = preferredImageResolution(
+    selectedImageModelDefinition,
+    data.config?.imageResolution,
+  );
+  const imageCreditEstimate = topviewImageCreditEstimate({
+    model: selectedImageModelDefinition,
+    resolution: selectedImageResolution,
+    count: shotCount,
+  });
+  const selectedImageProvider = selectedImageModelDefinition?.provider;
   const llmOptions = LLM_OPTIONS.map((option) => ({
     ...option,
     disabled: option.value === 'claude-code' || option.value === 'codex' || option.value === 'gemini'
@@ -161,13 +188,12 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [settingsOpen]);
 
-  const findConnectedImageUrl = (): string | undefined => {
-    const edges = getEdges();
-    const edge = edges.find((e) => e.target === id && e.targetHandle === 'image');
-    if (!edge) return undefined;
-    const sourceNode = getNode(edge.source) as Node<WorkflowNodeData> | undefined;
-    return sourceNode?.data?.result?.url
-      ?? (sourceNode?.data?.config as Record<string, unknown>)?.fileUrl as string | undefined;
+  const findConnectedReferences = (targetHandle: 'image' | 'style', kind: StoryboarderReferenceKind) => {
+    const sources = getEdges()
+      .filter((edge) => edge.target === id && edge.targetHandle === targetHandle)
+      .map((edge) => getNode(edge.source) as Node<WorkflowNodeData> | undefined)
+      .flatMap((node) => node ? [node.data] : []);
+    return collectStoryboarderReferences(sources, state.elements, kind);
   };
 
   const findConnectedText = (): string | undefined => {
@@ -195,7 +221,8 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
   // ─── Image Generation ───
 
   const generateImage = useCallback(async (index: number) => {
-    const imageUrl = findConnectedImageUrl();
+    const contentReferences = findConnectedReferences('image', 'content');
+    const styleReferences = findConnectedReferences('style', 'style');
     const modelDef = getModelDefinition(selectedModel);
     if (!modelDef) { updateShot(index, { status: 'error', error: 'Model not found' }); return; }
 
@@ -208,19 +235,46 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
     try {
       const currentShots = (latestConfigRef.current?.shots as ShotEntry[]) ?? [];
       const shotPrompt = currentShots[index]?.prompt ?? '';
-      const inputs: Record<string, unknown> = { aspect_ratio: '16:9', resolution: '1K' };
-      let effectiveModelId: string;
-
-      if (imageUrl) {
-        inputs.prompt = `Recreate the exact same person from the reference image — same face, hair, skin tone, body type, clothing, and accessories. Keep the same environment and atmosphere. ${shotPrompt}`;
-        const imageField = modelDef.inputs.find((f) => f.portType === 'image' && f.fieldType === 'port');
-        const imageParam = imageField?.falParam ?? 'image_urls';
-        inputs[imageParam] = imageParam.endsWith('s') ? [imageUrl] : imageUrl;
-        effectiveModelId = modelDef.altId ?? modelDef.id;
-      } else {
-        inputs.prompt = shotPrompt;
-        effectiveModelId = modelDef.id;
+      const resolution = preferredImageResolution(modelDef, latestConfigRef.current?.imageResolution);
+      const inputs: Record<string, unknown> = {
+        aspect_ratio: '16:9',
+        ...(resolution ? { resolution } : {}),
+      };
+      const referenceLimit = storyboarderReferenceLimit(modelDef);
+      const allReferences = [...contentReferences, ...styleReferences];
+      if (allReferences.length > 0 && referenceLimit === 0) {
+        updateShot(index, { status: 'error', error: 'The selected image model cannot use references. Choose an image-edit model in Storyboard settings.' });
+        return;
       }
+      if (contentReferences.length > 0 && styleReferences.length > 0 && referenceLimit < 2) {
+        updateShot(index, { status: 'error', error: 'The selected image model accepts only one reference. Choose a multi-reference model such as Topview GPT Image 2.' });
+        return;
+      }
+
+      const selectedReferences = selectStoryboarderReferences(contentReferences, styleReferences, referenceLimit);
+      const referenceUrls = selectedReferences.map((reference) => reference.url);
+      const stylePrompt = typeof latestConfigRef.current?.stylePrompt === 'string'
+        ? latestConfigRef.current.stylePrompt
+        : '';
+      inputs.prompt = storyboarderImagePrompt(shotPrompt, selectedReferences, stylePrompt);
+
+      if (referenceUrls.length > 0) {
+        if (provider === 'topview') {
+          inputs.image_urls = referenceUrls;
+        } else {
+          const imageField = modelDef.inputs.find((field) => field.portType === 'image' && field.fieldType === 'port');
+          const extraField = modelDef.inputs.find((field) => field.portType === 'image' && field.fieldType === 'element-list');
+          if (imageField) {
+            inputs[imageField.falParam] = imageField.multiple || imageField.falParam.endsWith('s')
+              ? referenceUrls
+              : referenceUrls[0];
+          }
+          if (extraField && !(imageField?.multiple || imageField?.falParam.endsWith('s'))) {
+            inputs[extraField.falParam] = referenceUrls.slice(1);
+          }
+        }
+      }
+      const effectiveModelId = referenceUrls.length > 0 ? modelDef.altId ?? modelDef.id : modelDef.id;
 
       const result = await runWorkflow({
         apiKey: getApiKey(), kieKey: getKieApiKey(), runpodKey: getRunpodApiKey(),
@@ -234,7 +288,7 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
     } catch (err) {
       updateShot(index, { status: 'error', error: err instanceof Error ? err.message : 'Generation failed' });
     }
-  }, [id, selectedModel, updateShot, getEdges, getNode]);
+  }, [id, selectedModel, updateShot, getEdges, getNode, state.elements]);
 
   // ─── Video Generation ───
 
@@ -327,7 +381,22 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
 
     setPlanningStatus('planning');
     try {
-      const planPrompt = `Scene description: "${scenePrompt}"\n\nGenerate exactly ${shotCount} sequential cinematic shot descriptions for this scene. Each shot should progress the story.`;
+      const contentReferences = findConnectedReferences('image', 'content');
+      const styleReferences = findConnectedReferences('style', 'style');
+      const stylePrompt = typeof latestConfigRef.current?.stylePrompt === 'string'
+        ? latestConfigRef.current.stylePrompt.trim()
+        : '';
+      const continuity = [...new Map(contentReferences.map((reference) => [
+        `${reference.elementType ?? 'visual'}:${reference.label}`,
+        `${reference.elementType ?? 'visual reference'}: ${reference.label}`,
+      ])).values()];
+      const planPrompt = [
+        `Scene description: "${scenePrompt}"`,
+        continuity.length ? `Continuity locks shared by every shot:\n- ${continuity.join('\n- ')}` : '',
+        stylePrompt ? `Written style direction shared by every shot: ${stylePrompt}` : '',
+        styleReferences.length ? `${styleReferences.length} connected style reference image${styleReferences.length === 1 ? '' : 's'} define the shared lighting, color, lens, texture, and atmosphere.` : '',
+        `Generate exactly ${shotCount} sequential cinematic shot descriptions for this scene. Each shot should progress the story.`,
+      ].filter(Boolean).join('\n\n');
       const llmResult = await runDirectorJsonJob(
         STORYBOARD_SYSTEM_PROMPT,
         planPrompt,
@@ -367,7 +436,7 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
       console.error('Storyboarder planning failed:', err);
       setPlanningStatus('idle');
     }
-  }, [id, shotCount, selectedModel, selectedLlm, generateImage, updateNodeData, getEdges, getNode]);
+  }, [id, shotCount, selectedModel, selectedLlm, generateImage, updateNodeData, getEdges, getNode, state.elements]);
 
   const clearAll = useCallback(() => {
     updateNodeData(id, { config: { ...data.config, shots: [] } });
@@ -464,6 +533,21 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
   const accentColor = CATEGORY_COLORS['utility'];
   const cols = 3;
   const hasAnyImages = shots.some((s) => s.url);
+  const connectedSourceData = (targetHandle: 'image' | 'style') => state.edges
+    .filter((edge) => edge.target === id && edge.targetHandle === targetHandle)
+    .map((edge) => state.nodes.find((node) => node.id === edge.source)?.data)
+    .flatMap((source) => source ? [source] : []);
+  const connectedContentReferences = collectStoryboarderReferences(
+    connectedSourceData('image'),
+    state.elements,
+    'content',
+  );
+  const connectedStyleReferences = collectStoryboarderReferences(
+    connectedSourceData('style'),
+    state.elements,
+    'style',
+  );
+  const stylePrompt = typeof data.config?.stylePrompt === 'string' ? data.config.stylePrompt : '';
 
   return (
     <div className={`cinegen-node cinegen-node--semantic storyboarder-node${selected ? ' cinegen-node--selected' : ''}`}>
@@ -501,10 +585,84 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
                 <div className="storyboarder-node__settings-popover nodrag">
                   <div className="storyboarder-node__setting">
                     <label>Image Model</label>
-                    <select value={selectedModel} onChange={(e) => updateNodeData(id, { config: { ...data.config, selectedModel: e.target.value } })}>
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => {
+                        const nextModel = getModelDefinition(e.target.value);
+                        const nextResolution = preferredImageResolution(nextModel);
+                        const nextConfig: Record<string, unknown> = {
+                          ...data.config,
+                          selectedModel: e.target.value,
+                        };
+                        if (nextResolution) nextConfig.imageResolution = nextResolution;
+                        else delete nextConfig.imageResolution;
+                        updateNodeData(id, { config: nextConfig });
+                      }}
+                    >
                       {imageModels.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                     </select>
                   </div>
+                  {imageResolutions.length > 0 ? (
+                    <div className="storyboarder-node__setting">
+                      <label>Image Resolution</label>
+                      <select
+                        value={selectedImageResolution ?? imageResolutions[0]}
+                        onChange={(e) => updateNodeData(id, {
+                          config: { ...data.config, imageResolution: e.target.value },
+                        })}
+                      >
+                        {imageResolutions.map((resolution) => {
+                          const estimate = topviewImageCreditEstimate({
+                            model: selectedImageModelDefinition,
+                            resolution,
+                            count: 1,
+                          });
+                          return (
+                            <option key={resolution} value={resolution}>
+                              {resolution}{estimate ? ` · ${estimate.unitCredits.toFixed(2)} credits/image` : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <small className="storyboarder-node__resolution-hint">
+                        Higher resolution gives more detail and may use more credits.
+                      </small>
+                    </div>
+                  ) : (
+                    <div className="storyboarder-node__resolution-hint storyboarder-node__resolution-hint--fixed">
+                      Resolution is fixed by this image model.
+                    </div>
+                  )}
+                  {imageCreditEstimate ? (
+                    <div className="storyboarder-node__cost-card">
+                      <div className="storyboarder-node__cost-heading">
+                        <span>Estimated Topview cost</span>
+                        <small>{imageCreditEstimate.model}{imageCreditEstimate.resolution ? ` · ${imageCreditEstimate.resolution}` : ''}</small>
+                      </div>
+                      <div className="storyboarder-node__cost-grid">
+                        <div>
+                          <span>Per image</span>
+                          <strong>{imageCreditEstimate.unitCredits.toFixed(2)} credits</strong>
+                        </div>
+                        <div>
+                          <span>{imageCreditEstimate.count} images</span>
+                          <strong>{imageCreditEstimate.totalCredits.toFixed(2)} credits</strong>
+                        </div>
+                      </div>
+                      <p>
+                        {imageCreditEstimate.usesAutomaticDefault
+                          ? 'Auto currently estimates with GPT Image 2. '
+                          : ''}
+                        Final usage is confirmed by Topview when each image is submitted.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="storyboarder-node__cost-unavailable">
+                      {selectedImageProvider === 'topview'
+                        ? 'Topview has not published a credit estimate for this model yet.'
+                        : 'Credit pricing is not available from this provider in Storyboarder yet.'}
+                    </div>
+                  )}
                   {mode === 'video' && (
                     <div className="storyboarder-node__setting">
                       <label>Video Model</label>
@@ -543,6 +701,35 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
           {planningStatus === 'generating' && (
             <div className="storyboarder-node__status"><span className="storyboarder-node__spinner storyboarder-node__spinner--inline" /> Generating images...</div>
           )}
+
+          <div className="storyboarder-node__context nodrag nowheel">
+            <div className={`storyboarder-node__context-block${connectedContentReferences.length ? ' storyboarder-node__context-block--ready' : ''}`}>
+              <span className="storyboarder-node__context-label">Continuity references</span>
+              <strong>
+                {connectedContentReferences.length
+                  ? `${connectedContentReferences.length} image${connectedContentReferences.length === 1 ? '' : 's'} connected`
+                  : 'Connect images or Elements'}
+              </strong>
+              <small>Characters, locations, props, and vehicles stay locked across every frame.</small>
+            </div>
+            <label className={`storyboarder-node__context-block storyboarder-node__context-block--style${stylePrompt.trim() || connectedStyleReferences.length ? ' storyboarder-node__context-block--ready' : ''}`}>
+              <span className="storyboarder-node__context-label">Style lock</span>
+              <input
+                type="text"
+                value={stylePrompt}
+                onChange={(event) => updateNodeData(id, {
+                  config: { ...data.config, stylePrompt: event.target.value },
+                })}
+                placeholder="Type a film, era, lighting, lens, or visual style"
+                aria-label="Storyboard style direction"
+              />
+              <small>
+                {connectedStyleReferences.length
+                  ? `${connectedStyleReferences.length} style image${connectedStyleReferences.length === 1 ? '' : 's'} connected · images guide the look only`
+                  : 'Optional: connect movie stills or other style images to the Style input.'}
+              </small>
+            </label>
+          </div>
 
           {/* Grid */}
           <div className="storyboarder-node__grid nodrag" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
@@ -703,9 +890,11 @@ function StoryboarderNodeInner({ id, data, selected }: StoryboarderNodeProps) {
 
       {/* Input handles */}
       <Handle type="target" position={Position.Left} id="image" style={{ background: PORT_COLORS['image'], width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--bg-raised)', top: HEADER_HEIGHT + PORT_SPACING / 2 }} />
-      <Handle type="target" position={Position.Left} id="text" style={{ background: PORT_COLORS['text'], width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--bg-raised)', top: HEADER_HEIGHT + PORT_SPACING + PORT_SPACING / 2 }} />
-      <span className="base-node__port-label base-node__port-label--left" style={{ top: HEADER_HEIGHT + PORT_SPACING / 2 }}>Image</span>
-      <span className="base-node__port-label base-node__port-label--left" style={{ top: HEADER_HEIGHT + PORT_SPACING + PORT_SPACING / 2 }}>Scene</span>
+      <Handle type="target" position={Position.Left} id="style" style={{ background: PORT_COLORS['image'], width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--bg-raised)', top: HEADER_HEIGHT + PORT_SPACING + PORT_SPACING / 2 }} />
+      <Handle type="target" position={Position.Left} id="text" style={{ background: PORT_COLORS['text'], width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--bg-raised)', top: HEADER_HEIGHT + PORT_SPACING * 2 + PORT_SPACING / 2 }} />
+      <span className="base-node__port-label base-node__port-label--left" style={{ top: HEADER_HEIGHT + PORT_SPACING / 2 }}>References</span>
+      <span className="base-node__port-label base-node__port-label--left" style={{ top: HEADER_HEIGHT + PORT_SPACING + PORT_SPACING / 2 }}>Style</span>
+      <span className="base-node__port-label base-node__port-label--left" style={{ top: HEADER_HEIGHT + PORT_SPACING * 2 + PORT_SPACING / 2 }}>Scene</span>
     </div>
   );
 }

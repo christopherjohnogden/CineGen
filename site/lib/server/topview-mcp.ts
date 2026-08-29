@@ -519,7 +519,7 @@ function findArrayByKey(value: unknown, keyPattern: RegExp): unknown[] | undefin
   return undefined;
 }
 
-function resultUrls(value: unknown, outputType: "image" | "video"): string[] {
+function resultUrls(value: unknown, outputType: "image" | "video" | "audio"): string[] {
   const keyed = new Set<string>();
   for (const record of collectRecords(value)) {
     for (const [key, nested] of Object.entries(record)) {
@@ -534,6 +534,7 @@ function resultUrls(value: unknown, outputType: "image" | "video"): string[] {
     if (!/^https:\/\//i.test(entry)) continue;
     if (outputType === "image" && /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)/i.test(entry)) keyed.add(entry);
     if (outputType === "video" && /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(entry)) keyed.add(entry);
+    if (outputType === "audio" && /\.(?:mp3|wav|m4a|aac|ogg)(?:[?#]|$)/i.test(entry)) keyed.add(entry);
   }
   return [...keyed];
 }
@@ -685,8 +686,25 @@ async function loadMedia(
   if (url.protocol !== "https:") {
     throw new SiteHttpError(400, "Topview media references must use CineGen media or public HTTPS.", "INVALID_INPUT");
   }
-  let response: Response;
-  try { response = await fetch(url, { redirect: "follow" }); } catch {
+  let response: Response | undefined;
+  let remoteUrl = url;
+  for (let redirect = 0; redirect <= 5; redirect += 1) {
+    try {
+      response = await fetch(remoteUrl, {
+        redirect: "manual",
+        headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.9,*/*;q=0.5" },
+      });
+    } catch {
+      throw new SiteHttpError(502, "CineGen could not download a Topview media reference.", "MEDIA_UNREACHABLE");
+    }
+    if (![301, 302, 303, 307, 308].includes(response.status)) break;
+    const location = response.headers.get("location");
+    if (!location || redirect === 5) {
+      throw new SiteHttpError(502, "A Topview media reference redirected too many times.", "MEDIA_UNREACHABLE");
+    }
+    remoteUrl = new URL(location, remoteUrl);
+  }
+  if (!response) {
     throw new SiteHttpError(502, "CineGen could not download a Topview media reference.", "MEDIA_UNREACHABLE");
   }
   if (!response.ok) {
@@ -704,8 +722,8 @@ async function loadMedia(
       bytes.length ? "REFERENCE_TOO_LARGE" : "MEDIA_UNREACHABLE",
     );
   }
-  const mime = response.headers.get("content-type")?.split(";", 1)[0] || contentTypeForName(url.pathname);
-  const format = extensionFrom(url.pathname, mime);
+  const mime = response.headers.get("content-type")?.split(";", 1)[0] || contentTypeForName(remoteUrl.pathname);
+  const format = extensionFrom(remoteUrl.pathname, mime);
   return { bytes, format, mime, kind: mediaKind(format, mime) };
 }
 
@@ -1153,8 +1171,144 @@ function generationResult(args: {
   };
 }
 
+async function generationResultWithReference(
+  args: Parameters<typeof generationResult>[0],
+  session: McpSession,
+  env: RuntimeEnv,
+  workspaceId: string,
+) {
+  const result = generationResult(args);
+  if (args.outputType !== "image" || !result.url) return result;
+  const existingFileId = findStringByKeys(args.documents, [
+    "fileId", "file_id", "outputFileId", "output_file_id", "mediaFileId", "media_file_id",
+  ]);
+  if (existingFileId) return { ...result, referenceValue: `topview-file:${existingFileId}` };
+  try {
+    const uploaded = await uploadMedia(session, { value: result.url, role: "image" }, env, workspaceId);
+    return { ...result, referenceValue: `topview-file:${uploaded.fileId}` };
+  } catch (error) {
+    // Preserve the completed image. The client deliberately stops a reference
+    // sheet before generating unanchored follow-up views if this is absent.
+    console.warn("Could not prepare the generated Topview image as a reusable reference.", error);
+    return result;
+  }
+}
+
 export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOrigin: string) {
   return {
+    async modelCatalog() {
+      const token = await accessToken(env, workspaceId);
+      const session = await mcpSession(token);
+      if (!session.tools.some((tool) => tool.name === "topview_get_generation_config")) {
+        throw new SiteHttpError(422, "Your Topview account does not currently expose its model catalog.", "TOPVIEW_TOOL_UNAVAILABLE");
+      }
+      const requests = [
+        { outputType: "image" as const, taskType: "text_to_image" },
+        { outputType: "image" as const, taskType: "image_edit" },
+        { outputType: "video" as const, taskType: "text_to_video" },
+        { outputType: "video" as const, taskType: "image_to_video" },
+        { outputType: "video" as const, taskType: "omni_reference" },
+        { outputType: "audio" as const, taskType: "music", catalogType: "music" },
+        { outputType: "audio" as const, taskType: "voice", catalogType: "voice" },
+        { outputType: "audio" as const, taskType: "audio", catalogType: "audio" },
+      ];
+      const configs: Array<{ outputType: "image" | "video" | "audio"; taskType: string; catalogType?: string; config: unknown }> = [];
+      for (const request of requests) {
+        try {
+          const config = parseToolDocuments(await callTool(session, "topview_get_generation_config", {
+            type: request.catalogType ?? request.outputType,
+            ...(request.catalogType ? {} : { taskType: request.taskType }),
+            refresh: true,
+          }));
+          configs.push({ ...request, config });
+        } catch {
+          // Keep the generation modes that this account actually exposes.
+        }
+      }
+      if (!configs.length) {
+        throw new SiteHttpError(422, "Topview returned an empty model catalog.", "TOPVIEW_MODEL_UNAVAILABLE");
+      }
+      return {
+        configs,
+        tools: session.tools.map((tool) => tool.name),
+        toolSchemas: Object.fromEntries(session.tools
+          .filter((tool) => ["topview_get_generation_config", "topview_generate_audio", "topview_generate_music", "topview_generate_voice", "topview_clone_voice", "topview_query_task"].includes(tool.name))
+          .map((tool) => [tool.name, tool.inputSchema])),
+        fetchedAt: new Date().toISOString(),
+      };
+    },
+
+    async generateAudio(value: unknown) {
+      const params = requireRecord(value, "Topview audio parameters");
+      if (typeof params.prompt !== "string" || !params.prompt.trim()) {
+        throw new SiteHttpError(400, "Topview audio generation requires text or a prompt.", "TOPVIEW_PARAMETERS_INVALID");
+      }
+      const token = await accessToken(env, workspaceId);
+      const session = await mcpSession(token);
+      const boardId = await chooseBoard(session) ?? "";
+      const model = typeof params.model === "string" ? params.model.trim() : "";
+      const kind = params.kind === "music" || params.kind === "voice" ? params.kind : "audio";
+      let referenceAudioFileId = "";
+      if (typeof params.referenceAudio === "string" && params.referenceAudio.trim()) {
+        const uploaded = await uploadMedia(session, { value: params.referenceAudio.trim(), role: "audio" }, env, workspaceId);
+        referenceAudioFileId = uploaded.fileId;
+      }
+      let toolName: string;
+      let taskType: string;
+      let request: JsonRecord;
+      if (kind === "music") {
+        toolName = "topview_generate_music";
+        taskType = "ai_music";
+        request = {
+          model, lyrics: params.prompt.trim(), styles: params.styles, instrumental: params.instrumental,
+          ...(referenceAudioFileId ? { referenceAudio: { fileId: referenceAudioFileId } } : {}),
+          ...(boardId ? { boardId } : {}),
+        };
+      } else if (kind === "voice") {
+        if (typeof params.voiceId !== "string" || !params.voiceId.trim()) {
+          throw new SiteHttpError(400, "Choose a Topview voice ID for text-to-speech.", "TOPVIEW_PARAMETERS_INVALID");
+        }
+        toolName = "topview_generate_voice";
+        taskType = "text_to_speech";
+        request = {
+          voiceId: params.voiceId.trim(), voiceText: params.prompt.trim(), voiceSpeed: params.voiceSpeed,
+          emotionName: params.emotion, ...(boardId ? { boardId } : {}),
+        };
+      } else {
+        if (!referenceAudioFileId) {
+          throw new SiteHttpError(400, "Seed Audio requires a reference audio clip.", "TOPVIEW_PARAMETERS_INVALID");
+        }
+        toolName = "topview_generate_audio";
+        taskType = "audio_design";
+        request = {
+          model, text: params.prompt.trim(), referenceAudioFileId, emotionText: params.emotionText,
+          ...(boardId ? { boardId } : {}),
+        };
+      }
+      let documents = parseToolDocuments(await callTool(session, toolName, request));
+      const taskId = findStringByKeys(documents, ["taskId", "task_id", "generationId", "generation_id"]) ?? "";
+      let urls = resultUrls(documents, "audio");
+      if (!urls.length && !taskId) {
+        throw new SiteHttpError(502, "Topview did not return a task ID for this audio generation.", "TOPVIEW_RESULT_INVALID");
+      }
+      const deadline = Date.now() + VIDEO_TIMEOUT_MS;
+      while (!urls.length) {
+        if (/fail|error|cancel/.test(taskStatus(documents))) {
+          throw new SiteHttpError(502, taskError(documents, "Topview could not complete this audio generation."), "TOPVIEW_GENERATION_FAILED");
+        }
+        if (Date.now() >= deadline) {
+          throw new SiteHttpError(504, `Topview is still processing audio task ${taskId}. Check your Topview board for the result.`, "TOPVIEW_GENERATION_PENDING");
+        }
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        documents = parseToolDocuments(await callTool(session, "topview_query_task", { taskType, taskId, needCloudFrontUrl: true }));
+        urls = resultUrls(documents, "audio");
+      }
+      return {
+        url: urls[0], urls, mediaType: "audio", taskId, model,
+        ...(boardId ? { boardUrl: `https://www.topview.ai/board/${encodeURIComponent(boardId)}` } : {}),
+      };
+    },
+
     async accountStatus() {
       try {
         const token = await accessToken(env, workspaceId);
@@ -1279,7 +1433,12 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
 
       const immediate = resultUrls(documents, outputType);
       if (immediate.length) {
-        return generationResult({ documents, taskId, outputType, taskType, model, durationSec, boardId: boardId || undefined });
+        return generationResultWithReference(
+          { documents, taskId, outputType, taskType, model, durationSec, boardId: boardId || undefined },
+          session,
+          env,
+          workspaceId,
+        );
       }
       if (params.waitForCompletion === false) {
         return generationResult({
@@ -1312,7 +1471,12 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         });
         documents = parseToolDocuments(polled);
         if (resultUrls(documents, outputType).length) {
-          return generationResult({ documents, taskId, outputType, taskType, model, durationSec, boardId: boardId || undefined });
+          return generationResultWithReference(
+            { documents, taskId, outputType, taskType, model, durationSec, boardId: boardId || undefined },
+            session,
+            env,
+            workspaceId,
+          );
         }
         if (/fail|error|cancel/.test(taskStatus(documents))) {
           throw new SiteHttpError(502, taskError(documents, `Topview could not complete task ${taskId}.`), "TOPVIEW_GENERATION_FAILED");

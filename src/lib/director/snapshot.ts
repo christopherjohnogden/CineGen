@@ -32,7 +32,9 @@ export function normalizeDirectorShow(value: DirectorShow): DirectorShow {
     lookBible: lookBibleFrom(value.lookBible),
     stylePrefix: typeof value.stylePrefix === 'string' ? value.stylePrefix : '',
     genre: typeof value.genre === 'string' && value.genre.trim() ? value.genre : 'auto',
-    resolution: value.resolution === '1080p' ? '1080p' : '720p',
+    resolution: value.resolution === '480p' || value.resolution === '1080p'
+      ? value.resolution
+      : '720p',
     llmProvider: parseDirectorLlmProvider(value.llmProvider),
     llmSpend: directorLlmSpendFrom(value.llmSpend),
     sourceFileName: typeof value.sourceFileName === 'string' ? value.sourceFileName : undefined,

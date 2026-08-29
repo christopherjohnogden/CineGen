@@ -264,9 +264,10 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
   const database = new FakeD1Database();
   const toolCalls = [];
   const uploadedBodies = [];
+  let topviewUploadCount = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
-    const url = typeof input === "string" ? input : input.url;
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url === "https://www.topview.ai/mcp_oauth/oauth/register") {
       const registration = JSON.parse(String(init.body));
       assert.deepEqual(registration.redirect_uris, ["http://localhost/api/topview/oauth/callback"]);
@@ -317,9 +318,13 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
         } else if (name === "topview_get_credit") {
           payload = { code: "200", result: { remainCredit: 69.53 } };
         } else if (name === "ta_upload_credential") {
+          topviewUploadCount += 1;
           payload = {
             code: "200",
-            result: { fileId: "topview-file-1", uploadUrl: "https://uploads.example.com/topview-file-1" },
+            result: {
+              fileId: `topview-file-${topviewUploadCount}`,
+              uploadUrl: `https://uploads.example.com/topview-file-${topviewUploadCount}`,
+            },
           };
         } else if (name === "ta_upload_check_file") {
           payload = { code: "200", result: true };
@@ -403,7 +408,13 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
         });
       }
     }
-    if (url === "https://uploads.example.com/topview-file-1") {
+    if (url === "https://cdn.example.com/topview-image-task-1.png") {
+      return new Response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }
+    if (/^https:\/\/uploads\.example\.com\/topview-file-\d+$/.test(url)) {
       assert.equal(init.method, "PUT");
       assert.equal(new Headers(init.headers).get("content-type"), "image/png");
       uploadedBodies.push(new Uint8Array(await new Response(init.body).arrayBuffer()));
@@ -511,8 +522,10 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     assert.equal(image.mediaType, "image");
     assert.equal(image.taskType, "image_edit");
     assert.equal(image.model, "gpt-image-2");
-    assert.equal(uploadedBodies.length, 1);
+    assert.equal(image.referenceValue, "topview-file:topview-file-2");
+    assert.equal(uploadedBodies.length, 2);
     assert.deepEqual([...uploadedBodies[0]], [137, 80, 78, 71]);
+    assert.deepEqual([...uploadedBodies[1]], [137, 80, 78, 71, 13, 10, 26, 10]);
 
     const imageConfigCall = toolCalls.find((entry) => (
       entry.name === "topview_get_generation_config" && entry.arguments.req.type === "image"

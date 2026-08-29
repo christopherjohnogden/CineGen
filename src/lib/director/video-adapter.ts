@@ -172,7 +172,7 @@ export const topviewAutoAdapter: DirectorVideoAdapter = {
   modelId: 'auto',
   capabilities: {
     multiPrompt: true,
-    resolutions: ['720p', '1080p'],
+    resolutions: ['480p', '720p', '1080p'],
     aspectRatios: ['16:9', '9:16', '1:1', '3:4', '4:3', '21:9'],
     referenceInputs: true,
     generateAudio: true,
@@ -212,7 +212,7 @@ export const runpodLtx25Adapter: DirectorVideoAdapter = {
   capabilities: {
     multiPrompt: true,
     maxDurationSec: 20,
-    resolutions: ['720p', '1080p'],
+    resolutions: ['480p', '720p', '1080p'],
     aspectRatios: ['16:9', '9:16', '1:1'],
     referenceInputs: true,
     generateAudio: true,

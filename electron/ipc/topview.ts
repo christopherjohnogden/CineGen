@@ -6,6 +6,7 @@ import { request as httpsRequest } from 'node:https';
 import fs from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
+import type { TopviewGenerationCatalog, TopviewGenerationCatalogConfig } from '@/lib/topview/model-catalog';
 
 export const TOPVIEW_MCP_URL = 'https://mcp.topview.ai/mcp';
 const TOPVIEW_RESOURCE = 'https://mcp.topview.ai';
@@ -53,6 +54,29 @@ export interface TopviewImageGenerateParams {
 export interface TopviewImageGenerateResult {
   url: string;
   mediaType: 'image';
+  /** Stable Topview upload that can be passed into a later image-edit request. */
+  referenceValue?: string;
+  taskId?: string;
+  boardUrl?: string;
+  model?: string;
+}
+
+export interface TopviewAudioGenerateParams {
+  prompt: string;
+  model: string;
+  kind: 'music' | 'voice' | 'audio';
+  styles?: string;
+  instrumental?: boolean;
+  voiceId?: string;
+  voiceSpeed?: number;
+  emotion?: string;
+  emotionText?: string;
+  referenceAudio?: string;
+}
+
+export interface TopviewAudioGenerateResult {
+  url: string;
+  mediaType: 'audio';
   taskId?: string;
   boardUrl?: string;
   model?: string;
@@ -343,6 +367,13 @@ function findResultUrl(value: unknown): string | undefined {
     /^https?:\/\//i.test(entry)
     && (/\.(?:mp4|mov|webm|png|jpe?g|webp|avif)(?:[?#]|$)/i.test(entry) || /cloudfront|cdn|output|result/i.test(entry))
   ));
+}
+
+function generatedImageFileReference(value: unknown): string | undefined {
+  const fileId = findStringByKeys(value, [
+    'fileId', 'file_id', 'outputFileId', 'output_file_id', 'mediaFileId', 'media_file_id',
+  ]);
+  return fileId ? `topview-file:${fileId}` : undefined;
 }
 
 function taskStatus(value: unknown): string {
@@ -1212,6 +1243,19 @@ class TopviewMcpService {
     return { ...reference, fileId };
   }
 
+  private async reusableGeneratedImageReference(session: McpSession, url: string): Promise<string | undefined> {
+    try {
+      const uploaded = await this.uploadReference(session, { value: url, role: 'image' });
+      return `topview-file:${uploaded.fileId}`;
+    } catch (error) {
+      // Keep the completed image usable even when Topview's delivery URL cannot be
+      // promoted to a stable reference. The sheet UI will stop before producing
+      // unanchored follow-up views and surface a focused continuity error.
+      console.warn('Could not prepare the generated Topview image as a reusable reference.', error);
+      return undefined;
+    }
+  }
+
   async accountStatus(): Promise<{ connected: boolean; configured: boolean; email?: string; credits?: number; error?: string }> {
     const storageError = this.store.availabilityError();
     if (storageError) return { connected: false, configured: false, error: storageError };
@@ -1248,6 +1292,46 @@ class TopviewMcpService {
     } catch (error) {
       return { connected: false, configured: true, error: safeMessage(error, 'Topview connection expired.') };
     }
+  }
+
+  async modelCatalog(): Promise<TopviewGenerationCatalog> {
+    const session = await this.session();
+    if (!session.tools.some((tool) => tool.name === 'topview_get_generation_config')) {
+      throw new Error('Your Topview account does not currently expose its model catalog.');
+    }
+    const requests: Array<Omit<TopviewGenerationCatalogConfig, 'config'>> = [
+      { outputType: 'image', taskType: 'text_to_image' },
+      { outputType: 'image', taskType: 'image_edit' },
+      { outputType: 'video', taskType: 'text_to_video' },
+      { outputType: 'video', taskType: 'image_to_video' },
+      { outputType: 'video', taskType: 'omni_reference' },
+      { outputType: 'audio', taskType: 'music', catalogType: 'music' },
+      { outputType: 'audio', taskType: 'voice', catalogType: 'voice' },
+      { outputType: 'audio', taskType: 'audio', catalogType: 'audio' },
+    ];
+    const configs: TopviewGenerationCatalogConfig[] = [];
+    for (const request of requests) {
+      try {
+        const config = parseToolDocuments(await this.callTool(session, 'topview_get_generation_config', {
+          type: request.catalogType ?? request.outputType,
+          ...(request.catalogType ? {} : { taskType: request.taskType }),
+          refresh: true,
+        }));
+        configs.push({ ...request, config });
+      } catch {
+        // Some accounts do not expose every generation mode. Keep the modes
+        // that are actually available instead of failing the whole catalog.
+      }
+    }
+    if (!configs.length) throw new Error('Topview returned an empty model catalog.');
+    return {
+      configs,
+      tools: session.tools.map((tool) => tool.name),
+      toolSchemas: Object.fromEntries(session.tools
+        .filter((tool) => ['topview_get_generation_config', 'topview_generate_audio', 'topview_generate_music', 'topview_generate_voice', 'topview_clone_voice', 'topview_query_task'].includes(tool.name))
+        .map((tool) => [tool.name, tool.inputSchema])),
+      fetchedAt: new Date().toISOString(),
+    };
   }
 
   async authLogin(): Promise<{ connected: boolean; configured: boolean; email?: string; credits?: number; error?: string }> {
@@ -1515,6 +1599,8 @@ class TopviewMcpService {
     if (initialUrl) {
       return {
         url: initialUrl, mediaType: 'image', taskId, model: built.model,
+        referenceValue: generatedImageFileReference(documents)
+          ?? await this.reusableGeneratedImageReference(session, initialUrl),
         boardUrl: `https://www.topview.ai/board/${encodeURIComponent(boardId)}`,
       };
     }
@@ -1537,6 +1623,8 @@ class TopviewMcpService {
         const boardTaskId = findStringByKeys(polledDocuments, ['boardTaskId', 'board_task_id']);
         return {
           url, mediaType: 'image', taskId, model: built.model,
+          referenceValue: generatedImageFileReference(polledDocuments)
+            ?? await this.reusableGeneratedImageReference(session, url),
           boardUrl: `https://www.topview.ai/board/${encodeURIComponent(boardId)}${boardTaskId ? `?boardResultId=${encodeURIComponent(boardTaskId)}` : ''}`,
         };
       }
@@ -1547,15 +1635,84 @@ class TopviewMcpService {
     }
     throw new Error(`Topview is still processing image task ${taskId}. Open your Topview board to check it; do not submit the same render again.`);
   }
+
+  async generateAudio(params: TopviewAudioGenerateParams): Promise<TopviewAudioGenerateResult> {
+    if (!params || typeof params.prompt !== 'string' || !params.prompt.trim()) {
+      throw new Error('Topview audio generation requires text or a prompt.');
+    }
+    const session = await this.session();
+    const boardId = await this.chooseBoard(session);
+    let uploaded: UploadedTopviewReference | undefined;
+    if (params.referenceAudio) {
+      uploaded = await this.uploadReference(session, { value: params.referenceAudio, role: 'audio' });
+    }
+    let toolName: string;
+    let taskType: string;
+    let request: JsonRecord;
+    if (params.kind === 'music') {
+      toolName = 'topview_generate_music';
+      taskType = 'ai_music';
+      request = {
+        model: params.model,
+        lyrics: params.prompt.trim(),
+        styles: params.styles,
+        instrumental: params.instrumental,
+        ...(uploaded ? { referenceAudio: { fileId: uploaded.fileId } } : {}),
+        boardId,
+      };
+    } else if (params.kind === 'voice') {
+      if (!params.voiceId?.trim()) throw new Error('Choose a Topview voice ID for text-to-speech.');
+      toolName = 'topview_generate_voice';
+      taskType = 'text_to_speech';
+      request = {
+        voiceId: params.voiceId.trim(),
+        voiceText: params.prompt.trim(),
+        voiceSpeed: params.voiceSpeed,
+        emotionName: params.emotion,
+        boardId,
+      };
+    } else {
+      if (!uploaded) throw new Error('Seed Audio requires a reference audio clip.');
+      toolName = 'topview_generate_audio';
+      taskType = 'audio_design';
+      request = {
+        model: params.model,
+        text: params.prompt.trim(),
+        referenceAudioFileId: uploaded.fileId,
+        emotionText: params.emotionText,
+        boardId,
+      };
+    }
+    let documents = parseToolDocuments(await this.callTool(session, toolName, request));
+    const taskId = findStringByKeys(documents, ['taskId', 'task_id', 'generationId', 'generation_id']);
+    const immediate = findResultUrl(documents);
+    if (immediate) return { url: immediate, mediaType: 'audio', taskId, model: params.model, boardUrl: `https://www.topview.ai/board/${encodeURIComponent(boardId)}` };
+    if (!taskId) throw new Error('Topview did not return a task ID for this audio generation.');
+    const deadline = Date.now() + GENERATION_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      documents = parseToolDocuments(await this.callTool(session, 'topview_query_task', {
+        taskType, taskId, needCloudFrontUrl: true,
+      }));
+      const url = findResultUrl(documents);
+      if (url) return { url, mediaType: 'audio', taskId, model: params.model, boardUrl: `https://www.topview.ai/board/${encodeURIComponent(boardId)}` };
+      if (/fail|error|cancel/.test(taskStatus(documents))) {
+        throw new Error(findStringByKeys(documents, ['errorMsg', 'error_msg', 'errorMessage', 'error_message']) ?? 'Topview could not complete this audio generation.');
+      }
+    }
+    throw new Error(`Topview is still processing audio task ${taskId}. Open your Topview board to check it; do not submit the same task again.`);
+  }
 }
 
 export function registerTopviewHandlers(): void {
   const service = new TopviewMcpService();
   ipcMain.handle('topview:account-status', () => service.accountStatus());
+  ipcMain.handle('topview:model-catalog', () => service.modelCatalog());
   ipcMain.handle('topview:auth-login', () => service.authLogin());
   ipcMain.handle('topview:auth-logout', () => service.authLogout());
   ipcMain.handle('topview:submit', (_event, params: TopviewGenerateParams) => service.submit(params));
   ipcMain.handle('topview:query', (_event, params: TopviewQueryParams) => service.query(params));
   ipcMain.handle('topview:generate', (_event, params: TopviewGenerateParams) => service.generate(params));
   ipcMain.handle('topview:generate-image', (_event, params: TopviewImageGenerateParams) => service.generateImage(params));
+  ipcMain.handle('topview:generate-audio', (_event, params: TopviewAudioGenerateParams) => service.generateAudio(params));
 }
