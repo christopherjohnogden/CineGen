@@ -1268,7 +1268,13 @@ input[type='range']::-moz-range-track {
   .workspace-loading__rail { display: none; }
   .workspace-loading__stage { height: 100%; padding: 22px 0; }
   .workspace-loading__error-panel { grid-template-columns: 38px minmax(0, 1fr); }
-  .workspace-loading__error-panel button { grid-column: 2; justify-self: start; }
+  .workspace-loading__error-actions { grid-column: 2; width: 100%; }
+  .workspace-loading__error-panel button {
+    grid-column: auto;
+    flex: 1 1 120px;
+    justify-self: stretch;
+    white-space: nowrap;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

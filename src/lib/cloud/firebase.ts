@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth';
 import {
   initializeFirestore,
+  memoryLocalCache,
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
@@ -30,8 +31,26 @@ void setPersistence(cloudAuth, browserLocalPersistence).catch((error) => {
   console.warn('[cloud] Firebase auth persistence could not be enabled:', error);
 });
 
+function needsMobileSafeFirestore(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent;
+  const iOSDevice = /iPad|iPhone|iPod/i.test(userAgent)
+    || (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1);
+  const embeddedBrowser = /FBAN|FBAV|Instagram|Line\//i.test(userAgent)
+    || (/AppleWebKit/i.test(userAgent) && !/Safari/i.test(userAgent));
+  return iOSDevice || embeddedBrowser;
+}
+
 export const cloudDb = initializeFirestore(firebaseApp, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  // IndexedDB multi-tab persistence can deadlock in iOS link previews and
+  // embedded browsers. The cloud remains the source of truth, so use memory
+  // caching there and keep durable multi-tab caching on full desktop browsers.
+  localCache: needsMobileSafeFirestore()
+    ? memoryLocalCache()
+    : persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  // Mobile privacy relays and embedded browsers can block Firestore's normal
+  // streaming transport. Auto-detect and fall back to long polling.
+  experimentalAutoDetectLongPolling: true,
 });
 export const cloudStorage = getStorage(firebaseApp);
 export const cloudFunctions = getFunctions(firebaseApp, 'us-central1');
