@@ -129,12 +129,15 @@ async function connectTopviewInBrowser(): Promise<TopviewStatus> {
     if (!started.authorizationUrl) throw new Error(started.error || 'Topview did not return an authorization link.');
     popup.location.replace(started.authorizationUrl);
 
-    const deadline = Date.now() + 3 * 60 * 1000;
+    const deadline = Date.now() + 10 * 60 * 1000;
     let closedAt = 0;
     while (Date.now() < deadline) {
       await new Promise((resolve) => window.setTimeout(resolve, 1000));
       const status = await rpc<TopviewStatus>('topview', 'accountStatus');
-      if (status.connected) return status;
+      if (status.connected) {
+        if (!popup.closed) popup.close();
+        return status;
+      }
       if (popup.closed) {
         if (!closedAt) closedAt = Date.now();
         if (Date.now() - closedAt > 5000) {

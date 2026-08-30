@@ -612,3 +612,103 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     globalThis.fetch = originalFetch;
   }
 });
+
+test("connects hosted Topview with device sign-in and API-key MCP authentication", async () => {
+  const worker = await loadWorker();
+  const database = new FakeD1Database();
+  const originalFetch = globalThis.fetch;
+  let approvalChecks = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url === "https://www.topview.ai/oauth/api/device/init") {
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        client_id: "topview-skill",
+        scope: "read:profile read:billing read:apikey",
+      });
+      return Response.json({
+        device_code: "device-code-1",
+        verification_uri_complete: "https://www.topview.ai/oauth/authorize?token=device-code-1",
+        token_endpoint: "https://www.topview.ai/oauth/api/device/authorization_status?token=device-code-1",
+        interval: 2,
+        expires_in: 600,
+      });
+    }
+    if (url.startsWith("https://www.topview.ai/oauth/api/device/authorization_status")) {
+      approvalChecks += 1;
+      return Response.json(approvalChecks === 1
+        ? { status: "INITIATED", interval: 2 }
+        : {
+          status: "APPROVED",
+          uid: "topview-user-1",
+          email: "owner@example.com",
+          api_keys: ["topview-api-key-1"],
+        });
+    }
+    if (url === "https://mcp.topview.ai/mcp") {
+      const headers = new Headers(init.headers);
+      assert.equal(headers.get("authorization"), "Bearer topview-api-key-1");
+      assert.equal(headers.get("topview-uid"), "topview-user-1");
+      const message = JSON.parse(String(init.body));
+      if (message.method === "initialize") {
+        return Response.json({ jsonrpc: "2.0", id: message.id, result: {} }, {
+          headers: { "mcp-session-id": "device-session" },
+        });
+      }
+      if (message.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (message.method === "tools/list") {
+        return Response.json({
+          jsonrpc: "2.0",
+          id: message.id,
+          result: { tools: [{ name: "topview_get_credit", inputSchema: { type: "object" } }] },
+        });
+      }
+      if (message.method === "tools/call") {
+        return Response.json({
+          jsonrpc: "2.0",
+          id: message.id,
+          result: { content: [{ type: "text", text: JSON.stringify({ result: { remainCredit: 2473.33 } }) }] },
+        });
+      }
+    }
+    throw new Error(`Unexpected external request: ${url}`);
+  };
+  const environment = testEnvironment({
+    DB: database,
+    MEDIA: {},
+    CINEGEN_TOPVIEW_TOKEN_SECRET: "hosted-topview-test-secret",
+  });
+  const rpc = (method, args = []) => worker.fetch(
+    new Request(`https://cinegen-cloud-studio.cogden.chatgpt.site/api/rpc/topview/${method}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "oai-authenticated-user-id": "owner-1",
+      },
+      body: JSON.stringify({ args }),
+    }),
+    environment,
+    executionContext,
+  );
+  try {
+    const loginResponse = await rpc("authLogin", ["https://cinegen-cloud-studio.cogden.chatgpt.site"]);
+    assert.equal(loginResponse.status, 200);
+    const login = (await loginResponse.json()).result;
+    assert.equal(login.deviceFlow, true);
+    assert.equal(login.authorizationUrl, "https://www.topview.ai/oauth/authorize?token=device-code-1");
+
+    const pendingStatus = await rpc("accountStatus");
+    assert.deepEqual((await pendingStatus.json()).result, { connected: false, configured: true });
+
+    const connectedStatus = await rpc("accountStatus");
+    assert.deepEqual((await connectedStatus.json()).result, {
+      connected: true,
+      configured: true,
+      credits: 2473.33,
+    });
+    const connection = database.providerConnections.get("cinegen-shared-v1:topview");
+    assert.equal(connection.pending_ciphertext, null);
+    assert.doesNotMatch(connection.token_ciphertext, /topview-api-key-1/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

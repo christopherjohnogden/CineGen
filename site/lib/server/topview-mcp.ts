@@ -11,6 +11,9 @@ const MCP_RESOURCE = "https://mcp.topview.ai";
 const AUTHORIZE_URL = "https://www.topview.ai/mcp_oauth/oauth/authorize";
 const TOKEN_URL = "https://www.topview.ai/mcp_oauth/oauth/token";
 const REGISTER_URL = "https://www.topview.ai/mcp_oauth/oauth/register";
+const DEVICE_INIT_URL = "https://www.topview.ai/oauth/api/device/init";
+const DEVICE_CLIENT_ID = "topview-skill";
+const DEVICE_SCOPE = "read:profile read:billing read:apikey";
 const TOKEN_SKEW_MS = 60_000;
 const MAX_REFERENCE_BYTES = 45 * 1024 * 1024;
 const VIDEO_TIMEOUT_MS = 20 * 60 * 1000;
@@ -38,6 +41,9 @@ type OAuthClient = {
   client_secret?: string;
   token_endpoint_auth_method?: string;
   redirect_uri: string;
+  auth_mode?: "oauth" | "api_key";
+  topview_uid?: string;
+  topview_email?: string;
 };
 
 type OAuthToken = {
@@ -57,8 +63,22 @@ type McpTool = {
 
 type McpSession = {
   token: string;
+  uid?: string;
   sessionId?: string;
   tools: McpTool[];
+};
+
+type AuthContext = {
+  token: string;
+  uid?: string;
+};
+
+type PendingDeviceAuthorization = {
+  flow: "device";
+  deviceCode: string;
+  tokenEndpoint: string;
+  createdAt: number;
+  expiresAt: number;
 };
 
 type MediaInput = {
@@ -262,6 +282,113 @@ async function fetchJson(
   return isRecord(payload) ? payload : {};
 }
 
+function trustedDeviceEndpoint(value: unknown): URL {
+  let url: URL;
+  try {
+    url = new URL(String(value));
+  } catch {
+    throw new SiteHttpError(502, "Topview returned an invalid device sign-in endpoint.", "TOPVIEW_DEVICE_INVALID");
+  }
+  if (
+    url.protocol !== "https:"
+    || url.hostname !== "www.topview.ai"
+    || !url.pathname.startsWith("/oauth/api/device/")
+  ) {
+    throw new SiteHttpError(502, "Topview returned an untrusted device sign-in endpoint.", "TOPVIEW_DEVICE_INVALID");
+  }
+  return url;
+}
+
+async function beginDeviceAuthorization(
+  env: RuntimeEnv,
+  workspaceId: string,
+): Promise<string> {
+  const payload = await fetchJson(DEVICE_INIT_URL, {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ client_id: DEVICE_CLIENT_ID, scope: DEVICE_SCOPE }),
+  }, "Topview could not start device sign-in.");
+  const deviceCode = typeof payload.device_code === "string" ? payload.device_code.trim() : "";
+  const authorizationUrl = typeof payload.verification_uri_complete === "string"
+    ? payload.verification_uri_complete.trim()
+    : "";
+  const tokenEndpoint = trustedDeviceEndpoint(payload.token_endpoint).href;
+  if (!deviceCode || !authorizationUrl) {
+    throw new SiteHttpError(502, "Topview did not return a complete device sign-in session.", "TOPVIEW_DEVICE_INVALID");
+  }
+  const authorization = new URL(authorizationUrl);
+  if (authorization.protocol !== "https:" || authorization.hostname !== "www.topview.ai") {
+    throw new SiteHttpError(502, "Topview returned an untrusted sign-in page.", "TOPVIEW_DEVICE_INVALID");
+  }
+  const expiresIn = Math.max(60, Number(payload.expires_in ?? 600));
+  const pending: PendingDeviceAuthorization = {
+    flow: "device",
+    deviceCode,
+    tokenEndpoint,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + (Number.isFinite(expiresIn) ? expiresIn : 600) * 1000,
+  };
+  await saveConnection(env.DB, workspaceId, {
+    client_json: null,
+    pending_ciphertext: await seal(pending, ensureSecret(env, workspaceId)),
+    token_ciphertext: null,
+  });
+  return authorization.href;
+}
+
+async function completeDeviceAuthorization(
+  env: RuntimeEnv,
+  workspaceId: string,
+): Promise<boolean> {
+  const secret = ensureSecret(env, workspaceId);
+  const row = await loadConnection(env.DB, workspaceId);
+  const pending = await unseal<PendingDeviceAuthorization>(row?.pending_ciphertext ?? null, secret);
+  if (!pending || pending.flow !== "device") return false;
+  if (pending.expiresAt <= Date.now()) {
+    await saveConnection(env.DB, workspaceId, { pending_ciphertext: null });
+    return false;
+  }
+  const endpoint = trustedDeviceEndpoint(pending.tokenEndpoint);
+  endpoint.searchParams.set("token", pending.deviceCode);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, { headers: { accept: "application/json" } });
+  } catch {
+    return false;
+  }
+  const payload = await responsePayload(response);
+  if (response.status === 403 || response.status === 404 || response.status === 410) {
+    await saveConnection(env.DB, workspaceId, { pending_ciphertext: null });
+    return false;
+  }
+  if (!response.ok || !isRecord(payload)) return false;
+  const status = typeof payload.status === "string" ? payload.status.toUpperCase() : "";
+  if (status !== "APPROVED") return false;
+  const apiKeys = Array.isArray(payload.api_keys) ? payload.api_keys : [];
+  const apiKey = apiKeys.find((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)?.trim() ?? "";
+  const uid = typeof payload.uid === "string" ? payload.uid.trim() : "";
+  if (!apiKey || !uid) {
+    throw new SiteHttpError(502, "Topview approved sign-in without returning the team credentials.", "TOPVIEW_DEVICE_INVALID");
+  }
+  const client: OAuthClient = {
+    client_id: DEVICE_CLIENT_ID,
+    token_endpoint_auth_method: "none",
+    redirect_uri: "",
+    auth_mode: "api_key",
+    topview_uid: uid,
+    ...(typeof payload.email === "string" && payload.email.trim()
+      ? { topview_email: payload.email.trim() }
+      : {}),
+  };
+  const token: OAuthToken = { access_token: apiKey, token_type: "Bearer" };
+  await saveConnection(env.DB, workspaceId, {
+    client_json: JSON.stringify(client),
+    pending_ciphertext: null,
+    token_ciphertext: await seal(token, secret),
+  });
+  return true;
+}
+
 async function registerClient(redirectUri: string): Promise<OAuthClient> {
   const payload = await fetchJson(REGISTER_URL, {
     method: "POST",
@@ -316,31 +443,36 @@ async function exchangeToken(
   };
 }
 
-async function accessToken(env: RuntimeEnv, workspaceId: string): Promise<string> {
+async function authContext(env: RuntimeEnv, workspaceId: string): Promise<AuthContext> {
   const secret = ensureSecret(env, workspaceId);
   const row = await loadConnection(env.DB, workspaceId);
   let token = await unseal<OAuthToken>(row?.token_ciphertext ?? null, secret);
   if (!token?.access_token) {
     throw new SiteHttpError(401, "Connect Topview in Settings before generating.", "TOPVIEW_NOT_CONNECTED");
   }
-  if (!token.expires_at || token.expires_at - TOKEN_SKEW_MS > Date.now()) return token.access_token;
-  if (!token.refresh_token || !row?.client_json) {
+  const client = row?.client_json ? JSON.parse(row.client_json) as OAuthClient : null;
+  const context = () => ({
+    token: token!.access_token,
+    ...(client?.auth_mode === "api_key" && client.topview_uid ? { uid: client.topview_uid } : {}),
+  });
+  if (!token.expires_at || token.expires_at - TOKEN_SKEW_MS > Date.now()) return context();
+  if (!token.refresh_token || !client) {
     throw new SiteHttpError(401, "Topview sign-in expired. Reconnect it in Settings.", "TOPVIEW_AUTH_EXPIRED");
   }
-  const client = JSON.parse(row.client_json) as OAuthClient;
   token = await exchangeToken(new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: token.refresh_token,
     resource: MCP_RESOURCE,
   }), client, token);
   await saveConnection(env.DB, workspaceId, { token_ciphertext: await seal(token, secret) });
-  return token.access_token;
+  return context();
 }
 
 async function mcpRequest(
   token: string,
   message: JsonRecord,
   sessionId?: string,
+  uid?: string,
 ): Promise<{ payload: JsonRecord; sessionId?: string }> {
   let response: Response;
   try {
@@ -348,6 +480,7 @@ async function mcpRequest(
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
+        ...(uid ? { "topview-uid": uid } : {}),
         accept: "application/json, text/event-stream",
         "content-type": "application/json",
         "mcp-protocol-version": "2025-06-18",
@@ -373,7 +506,8 @@ async function mcpRequest(
   return { payload: row, sessionId: response.headers.get("mcp-session-id") ?? sessionId };
 }
 
-async function mcpSession(token: string): Promise<McpSession> {
+async function mcpSession(auth: AuthContext): Promise<McpSession> {
+  const { token, uid } = auth;
   const initialized = await mcpRequest(token, {
     jsonrpc: "2.0",
     id: `init-${crypto.randomUUID()}`,
@@ -383,12 +517,12 @@ async function mcpSession(token: string): Promise<McpSession> {
       capabilities: {},
       clientInfo: { name: "CineGen Cloud", version: "1.0.0" },
     },
-  });
+  }, undefined, uid);
   await mcpRequest(token, {
     jsonrpc: "2.0",
     method: "notifications/initialized",
     params: {},
-  }, initialized.sessionId);
+  }, initialized.sessionId, uid);
   let sessionId = initialized.sessionId;
   let cursor: string | undefined;
   const tools: McpTool[] = [];
@@ -398,7 +532,7 @@ async function mcpSession(token: string): Promise<McpSession> {
       id: `tools-${crypto.randomUUID()}`,
       method: "tools/list",
       params: cursor ? { cursor } : {},
-    }, sessionId);
+    }, sessionId, uid);
     sessionId = listed.sessionId ?? sessionId;
     const result = isRecord(listed.payload.result) ? listed.payload.result : {};
     if (Array.isArray(result.tools)) {
@@ -407,7 +541,7 @@ async function mcpSession(token: string): Promise<McpSession> {
     cursor = typeof result.nextCursor === "string" && result.nextCursor ? result.nextCursor : undefined;
     if (!cursor) break;
   }
-  return { token, sessionId, tools };
+  return { token, uid, sessionId, tools };
 }
 
 function normalizeSchemaValue(value: unknown, schema: unknown): unknown {
@@ -562,7 +696,7 @@ async function callTool(session: McpSession, name: string, req: JsonRecord): Pro
     id: `call-${crypto.randomUUID()}`,
     method: "tools/call",
     params: { name, arguments: wrappedToolArguments(tool, req) },
-  }, session.sessionId);
+  }, session.sessionId, session.uid);
   session.sessionId = called.sessionId ?? session.sessionId;
   const result = called.payload.result ?? called.payload;
   if (isRecord(result) && result.isError === true) {
@@ -1205,6 +1339,31 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
 
     async importTeamConnection(value: unknown) {
       const input = requireRecord(value, "Topview team connection");
+      if (
+        typeof input.apiKey === "string"
+        && input.apiKey.trim()
+        && typeof input.uid === "string"
+        && input.uid.trim()
+      ) {
+        const client: OAuthClient = {
+          client_id: DEVICE_CLIENT_ID,
+          token_endpoint_auth_method: "none",
+          redirect_uri: "",
+          auth_mode: "api_key",
+          topview_uid: input.uid.trim(),
+          ...(typeof input.email === "string" && input.email.trim()
+            ? { topview_email: input.email.trim() }
+            : {}),
+        };
+        const token: OAuthToken = { access_token: input.apiKey.trim(), token_type: "Bearer" };
+        const secret = ensureSecret(env, workspaceId);
+        await saveConnection(env.DB, workspaceId, {
+          client_json: JSON.stringify(client),
+          pending_ciphertext: null,
+          token_ciphertext: await seal(token, secret),
+        });
+        return { connected: true, configured: true, shared: true };
+      }
       const rawClient = requireRecord(input.client, "Topview OAuth client");
       const rawToken = requireRecord(input.token, "Topview OAuth token");
       if (typeof rawClient.client_id !== "string" || !rawClient.client_id.trim()) {
@@ -1245,8 +1404,8 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
     },
 
     async modelCatalog() {
-      const token = await accessToken(env, workspaceId);
-      const session = await mcpSession(token);
+      const auth = await authContext(env, workspaceId);
+      const session = await mcpSession(auth);
       if (!session.tools.some((tool) => tool.name === "topview_get_generation_config")) {
         throw new SiteHttpError(422, "Your Topview account does not currently expose its model catalog.", "TOPVIEW_TOOL_UNAVAILABLE");
       }
@@ -1291,8 +1450,8 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       if (typeof params.prompt !== "string" || !params.prompt.trim()) {
         throw new SiteHttpError(400, "Topview audio generation requires text or a prompt.", "TOPVIEW_PARAMETERS_INVALID");
       }
-      const token = await accessToken(env, workspaceId);
-      const session = await mcpSession(token);
+      const auth = await authContext(env, workspaceId);
+      const session = await mcpSession(auth);
       const boardId = await chooseBoard(session) ?? "";
       const model = typeof params.model === "string" ? params.model.trim() : "";
       const kind = params.kind === "music" || params.kind === "voice" ? params.kind : "audio";
@@ -1359,16 +1518,17 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
 
     async accountStatus() {
       try {
-        const token = await accessToken(env, workspaceId);
+        await completeDeviceAuthorization(env, workspaceId);
+        const auth = await authContext(env, workspaceId);
         let credits: number | undefined;
         try {
-          const session = await mcpSession(token);
+          const session = await mcpSession(auth);
           if (session.tools.some((tool) => tool.name === "topview_get_credit")) {
             credits = topviewCreditBalance(parseToolDocuments(await callTool(session, "topview_get_credit", {})));
           }
         } catch { /* Credit display is optional; keep the account connected. */ }
         return {
-          connected: Boolean(token),
+          connected: Boolean(auth.token),
           configured: true,
           ...(credits !== undefined ? { credits } : {}),
         };
@@ -1391,6 +1551,10 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
     async authLogin(originValue: unknown) {
       const secret = ensureSecret(env, workspaceId);
       const origin = normalizeOrigin(originValue, requestOrigin);
+      if (!/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)) {
+        const authorizationUrl = await beginDeviceAuthorization(env, workspaceId);
+        return { connected: false, configured: true, authorizationUrl, deviceFlow: true };
+      }
       const redirectUri = `${origin}/api/topview/oauth/callback`;
       const row = await loadConnection(env.DB, workspaceId);
       const savedClient = row?.client_json ? JSON.parse(row.client_json) as OAuthClient : null;
@@ -1447,8 +1611,8 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       if ((taskType === "image_edit" || taskType === "image_to_video" || taskType === "omni_reference") && !inputs.length && !existingTaskId) {
         throw new SiteHttpError(400, `Topview ${taskType} requires at least one media reference.`, "TOPVIEW_PARAMETERS_INVALID");
       }
-      const token = await accessToken(env, workspaceId);
-      const session = await mcpSession(token);
+      const auth = await authContext(env, workspaceId);
+      const session = await mcpSession(auth);
       let boardId = typeof params.boardId === "string" ? params.boardId.trim() : "";
       let model = typeof params.model === "string" && params.model.trim() ? params.model.trim() : "auto";
       let durationSec = typeof params.durationSec === "number" ? params.durationSec : undefined;
