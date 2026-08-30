@@ -901,50 +901,70 @@ async function uploadMedia(
     return { ...input, fileId, kind: /video/i.test(input.role) ? "video" : /audio/i.test(input.role) ? "audio" : "image" };
   }
   const source = await loadMedia(input.value, env, workspaceId);
-  const credential = await callTool(session, "ta_upload_credential", {
-    format: source.format,
-    needAccelerateUrl: false,
-  });
-  const documents = parseToolDocuments(credential);
-  const fileId = findStringByKeys(documents, ["fileId", "file_id"]);
-  const uploadUrl = findStringByKeys(documents, [
-    "uploadUrl",
-    "upload_url",
-    "accelerateUrl",
-    "accelerate_url",
-    "presignedUrl",
-    "presigned_url",
-    "signedUrl",
-    "signed_url",
-  ]);
-  if (!fileId || !uploadUrl || !/^https:\/\//i.test(uploadUrl)) {
-    throw new SiteHttpError(502, "Topview did not return a usable upload destination.", "TOPVIEW_UPLOAD_ERROR");
-  }
-  const method = (findStringByKeys(documents, ["method", "httpMethod", "http_method"]) || "PUT").toUpperCase();
-  if (!new Set(["PUT", "POST"]).has(method)) {
-    throw new SiteHttpError(502, "Topview returned an unsupported upload method.", "TOPVIEW_UPLOAD_ERROR");
-  }
-  const headers = uploadHeaders(documents);
-  if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) headers["content-type"] = source.mime;
-  let response: Response;
-  try {
-    response = await fetch(uploadUrl, {
-      method,
-      headers,
-      body: source.bytes as unknown as BodyInit,
-      redirect: "error",
+  let lastStatus: number | undefined;
+
+  // Cloudflare's route to Topview's regional S3 endpoint can occasionally fail
+  // before S3 returns an HTTP response. Prefer Topview's accelerated destination,
+  // then request a fresh standard destination if that edge route is unavailable.
+  for (const accelerated of [true, false]) {
+    const credential = await callTool(session, "ta_upload_credential", {
+      format: source.format,
+      needAccelerateUrl: accelerated,
     });
-  } catch {
-    throw new SiteHttpError(502, "Topview could not upload a media reference.", "TOPVIEW_UPLOAD_ERROR");
+    const documents = parseToolDocuments(credential);
+    const fileId = findStringByKeys(documents, ["fileId", "file_id"]);
+    const uploadUrl = findStringByKeys(documents, [
+      "uploadUrl",
+      "upload_url",
+      "accelerateUrl",
+      "accelerate_url",
+      "presignedUrl",
+      "presigned_url",
+      "signedUrl",
+      "signed_url",
+    ]);
+    if (!fileId || !uploadUrl || !/^https:\/\//i.test(uploadUrl)) {
+      if (accelerated) continue;
+      throw new SiteHttpError(502, "Topview did not return a usable upload destination.", "TOPVIEW_UPLOAD_ERROR");
+    }
+    const method = (findStringByKeys(documents, ["method", "httpMethod", "http_method"]) || "PUT").toUpperCase();
+    if (!new Set(["PUT", "POST"]).has(method)) {
+      if (accelerated) continue;
+      throw new SiteHttpError(502, "Topview returned an unsupported upload method.", "TOPVIEW_UPLOAD_ERROR");
+    }
+    const headers = uploadHeaders(documents);
+    if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) headers["content-type"] = source.mime;
+    let response: Response;
+    try {
+      response = await fetch(uploadUrl, {
+        method,
+        headers,
+        body: new Blob([source.bytes], { type: source.mime }),
+        redirect: "follow",
+      });
+    } catch {
+      if (accelerated) continue;
+      throw new SiteHttpError(502, "Topview could not upload a media reference.", "TOPVIEW_UPLOAD_ERROR");
+    }
+    if (!response.ok) {
+      lastStatus = response.status;
+      if (accelerated) continue;
+      throw new SiteHttpError(502, `Topview could not upload a media reference (${response.status}).`, "TOPVIEW_UPLOAD_ERROR");
+    }
+    const checked = await callTool(session, "ta_upload_check_file", { fileId });
+    if (uploadCheckPassed(checked)) return { ...input, fileId, kind: source.kind };
+    if (!accelerated) {
+      throw new SiteHttpError(502, "Topview could not verify an uploaded media reference.", "TOPVIEW_UPLOAD_ERROR");
+    }
   }
-  if (!response.ok) {
-    throw new SiteHttpError(502, `Topview could not upload a media reference (${response.status}).`, "TOPVIEW_UPLOAD_ERROR");
-  }
-  const checked = await callTool(session, "ta_upload_check_file", { fileId });
-  if (!uploadCheckPassed(checked)) {
-    throw new SiteHttpError(502, "Topview could not verify an uploaded media reference.", "TOPVIEW_UPLOAD_ERROR");
-  }
-  return { ...input, fileId, kind: source.kind };
+
+  throw new SiteHttpError(
+    502,
+    lastStatus
+      ? `Topview could not upload a media reference (${lastStatus}).`
+      : "Topview could not upload a media reference.",
+    "TOPVIEW_UPLOAD_ERROR",
+  );
 }
 
 function configModels(value: unknown): JsonRecord[] {

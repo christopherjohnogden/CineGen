@@ -308,6 +308,7 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
   const toolCalls = [];
   const uploadedBodies = [];
   let topviewUploadCount = 0;
+  let failNextAcceleratedUpload = true;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -362,11 +363,12 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
           payload = { code: "200", result: { remainCredit: 69.53 } };
         } else if (name === "ta_upload_credential") {
           topviewUploadCount += 1;
+          const accelerated = argumentsValue.req.needAccelerateUrl === true;
           payload = {
             code: "200",
             result: {
               fileId: `topview-file-${topviewUploadCount}`,
-              uploadUrl: `https://uploads.example.com/topview-file-${topviewUploadCount}`,
+              uploadUrl: `https://uploads.example.com/${accelerated ? "accelerated-" : "standard-"}topview-file-${topviewUploadCount}`,
             },
           };
         } else if (name === "ta_upload_check_file") {
@@ -457,9 +459,13 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
         headers: { "content-type": "image/png" },
       });
     }
-    if (/^https:\/\/uploads\.example\.com\/topview-file-\d+$/.test(url)) {
+    if (/^https:\/\/uploads\.example\.com\/(?:accelerated-|standard-)topview-file-\d+$/.test(url)) {
       assert.equal(init.method, "PUT");
       assert.equal(new Headers(init.headers).get("content-type"), "image/png");
+      if (url.includes("/accelerated-") && failNextAcceleratedUpload) {
+        failNextAcceleratedUpload = false;
+        throw new TypeError("Simulated accelerated upload edge failure");
+      }
       uploadedBodies.push(new Uint8Array(await new Response(init.body).arrayBuffer()));
       return new Response(null, { status: 200 });
     }
@@ -584,7 +590,7 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     assert.equal(image.mediaType, "image");
     assert.equal(image.taskType, "image_edit");
     assert.equal(image.model, "gpt-image-2");
-    assert.equal(image.referenceValue, "topview-file:topview-file-2");
+    assert.equal(image.referenceValue, "topview-file:topview-file-3");
     assert.equal(uploadedBodies.length, 2);
     assert.deepEqual([...uploadedBodies[0]], [137, 80, 78, 71]);
     assert.deepEqual([...uploadedBodies[1]], [137, 80, 78, 71, 13, 10, 26, 10]);
@@ -593,13 +599,15 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
       entry.name === "topview_get_generation_config" && entry.arguments.req.type === "image"
     ));
     assert.deepEqual(imageConfigCall.arguments, { req: { type: "image", taskType: "image_edit" } });
-    const credentialCall = toolCalls.find((entry) => entry.name === "ta_upload_credential");
-    assert.deepEqual(credentialCall.arguments, {
-      req: { format: "png", needAccelerateUrl: false },
-    });
+    const credentialCalls = toolCalls.filter((entry) => entry.name === "ta_upload_credential");
+    assert.deepEqual(credentialCalls.map((entry) => entry.arguments), [
+      { req: { format: "png", needAccelerateUrl: true } },
+      { req: { format: "png", needAccelerateUrl: false } },
+      { req: { format: "png", needAccelerateUrl: true } },
+    ]);
     const imageSubmitCall = toolCalls.find((entry) => entry.name === "topview_generate_image");
     assert.equal(imageSubmitCall.arguments.req.taskType, "image_edit");
-    assert.deepEqual(imageSubmitCall.arguments.req.inputImageFileIds, ["topview-file-1"]);
+    assert.deepEqual(imageSubmitCall.arguments.req.inputImageFileIds, ["topview-file-2"]);
     assert.equal(imageSubmitCall.arguments.req.model, "gpt-image-2");
     assert.equal(imageSubmitCall.arguments.req.aspectRatio, "16:9");
     assert.equal(imageSubmitCall.arguments.req.generateCount, 1);
