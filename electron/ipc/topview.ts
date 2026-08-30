@@ -792,11 +792,11 @@ export function buildTopviewVideoRequest(args: {
       if (reference.role === 'video') {
         const name = `Video${++videoIndex}`;
         inputVideos.push({ fileId: reference.fileId, name });
-        instructions.push(`<<<${name}>>> is an authoritative motion and timing reference.`);
+        instructions.push(`<${name.toUpperCase()}> is an authoritative motion and timing reference.`);
       } else if (reference.role === 'audio') {
         const name = `Audio${++audioIndex}`;
         inputAudios.push({ fileId: reference.fileId, name });
-        instructions.push(`<<<${name}>>> is an authoritative audio reference.`);
+        instructions.push(`<${name.toUpperCase()}> is an authoritative audio reference.`);
       } else {
         const name = `Image${++imageIndex}`;
         inputImages.push({ fileId: reference.fileId, name });
@@ -805,7 +805,7 @@ export function buildTopviewVideoRequest(args: {
           : reference.role === 'end_image'
             ? 'the requested closing-frame visual reference'
             : 'an authoritative visual reference';
-        instructions.push(`<<<${name}>>> is ${meaning}.`);
+        instructions.push(`<${name.toUpperCase()}> is ${meaning}.`);
       }
     }
     if (inputAudios.length && !advertisesField(model, 'inputAudios')) {

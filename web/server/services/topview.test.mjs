@@ -157,7 +157,7 @@ test('builds an exact live-config Topview request and parses a completed result'
   assert.equal(built.req.resolution, 1080);
   assert.equal(built.req.aspectRatio, '16:9');
   assert.equal(built.req.sound, 'on');
-  assert.match(built.req.prompt, /<<<Image1>>>, <<<Image2>>>/);
+  assert.match(built.req.prompt, /<IMAGE1>, <IMAGE2>/);
   assert.doesNotMatch(built.req.prompt, /@Hero-One/);
   assert.match(sanitizeTopviewPrompt('A clean frame'), /Do not render labels/);
 
@@ -232,6 +232,33 @@ test('routes a single CineGen element through omni reference, not first-frame vi
   assert.equal(topviewVideoReferences([
     { value: '/media/opening.png', role: 'start_image' },
   ]).taskType, 'image_to_video');
+  assert.equal(topviewVideoReferences([
+    { value: '/media/opening.png', role: 'start_image' },
+    { value: '/media/closing.png', role: 'end_image' },
+  ]).taskType, 'image_to_video');
+
+  const framed = buildTopviewVideoRequest({
+    config: {
+      ...LIVE_CONFIG,
+      models: [{
+        ...LIVE_CONFIG.models[0],
+        requiredSubmitFields: ['model', 'prompt', 'duration', 'resolution'],
+      }],
+    },
+    generateTool: wrappedTool('topview_generate_video', {
+      firstFrameFileId: { type: 'string' },
+      endFrameFileId: { type: 'string' },
+    }),
+    taskType: 'image_to_video',
+    params: { prompt: 'Move between the approved frames.' },
+    references: [
+      { value: '/media/opening.png', role: 'start_image' },
+      { value: '/media/closing.png', role: 'end_image' },
+    ],
+    fileIds: ['file-open', 'file-close'],
+  });
+  assert.equal(framed.req.firstFrameFileId, 'file-open');
+  assert.equal(framed.req.endFrameFileId, 'file-close');
 });
 
 test('completes DCR + PKCE, encrypts tokens, uploads local references, and generates through exact MCP tools', async (t) => {

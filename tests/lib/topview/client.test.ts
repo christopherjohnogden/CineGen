@@ -109,7 +109,7 @@ describe('Topview MCP video adapter', () => {
     });
     expect(built.req).not.toHaveProperty('generateAudio');
     expect(built.req).not.toHaveProperty('firstFrameFileId');
-    expect(String(built.req.prompt)).toContain('<<<Image1>>>');
+    expect(String(built.req.prompt)).toContain('<IMAGE1>');
   });
 
   it('does not mistake missing optional sound metadata for an unsupported model', () => {

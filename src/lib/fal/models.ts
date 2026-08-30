@@ -1205,8 +1205,12 @@ const TOPVIEW_LEGACY_MODEL_REGISTRY: Record<string, ModelDefinition> = {
     provider: 'topview', responseMapping: { path: 'url' },
     inputs: [
       { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-      { id: 'image_url', portType: 'image', label: 'First Frame', required: false, falParam: 'image_url', fieldType: 'port', mediaRole: 'start_image' },
-      { id: 'extra_images', portType: 'image', label: 'Reference', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 8 },
+      // image_url is the historical connection handle. Treat it as references so
+      // existing Element edges use Topview omni-reference instead of start frames.
+      { id: 'image_url', portType: 'image', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image' },
+      { id: 'extra_images', portType: 'image', label: 'More References', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 30, mediaRole: 'image' },
+      { id: 'start_frame', portType: 'image', label: 'Start Frame', required: false, falParam: 'image_url', fieldType: 'port', mediaRole: 'start_image' },
+      { id: 'end_frame', portType: 'image', label: 'End Frame', required: false, falParam: 'end_frame_url', fieldType: 'port', mediaRole: 'end_image' },
       { id: 'duration', portType: 'number', label: 'Duration', required: false, falParam: 'duration', fieldType: 'select', default: 5, options: Array.from({ length: 27 }, (_, index) => ({ value: String(index + 4), label: `${index + 4}s` })) },
       { id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false, falParam: 'aspect_ratio', fieldType: 'select', default: '16:9', options: NANO_BANANA_ASPECT_OPTS },
       { id: 'resolution', portType: 'text', label: 'Resolution', required: false, falParam: 'resolution', fieldType: 'select', default: '720p', options: [
