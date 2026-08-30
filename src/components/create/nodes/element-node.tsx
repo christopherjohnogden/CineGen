@@ -4,7 +4,8 @@ import { memo, useCallback } from 'react';
 import { type NodeProps, useReactFlow } from '@xyflow/react';
 import { BaseNode } from './base-node';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
-import { resolveElementNodeIds } from '@/lib/workflows/node-registry';
+import { resolveElementNodeIds, resolveElementNodeVariationIds } from '@/lib/workflows/node-registry';
+import { elementImagesForVariation, elementVariationLabel } from '@/lib/elements/variations';
 import type { WorkflowNodeData } from '@/types/workflow';
 import type { ElementType } from '@/types/elements';
 
@@ -23,20 +24,43 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
   const { state } = useWorkspace();
 
   const elementIds = resolveElementNodeIds(data.config);
+  const variationIds = resolveElementNodeVariationIds(data.config);
   const byId = new Map(state.elements.map((el) => [el.id, el]));
   const available = state.elements.filter((el) => !elementIds.includes(el.id));
   const stacked = elementIds
     .map((elementId) => byId.get(elementId))
     .filter((el): el is NonNullable<typeof el> => Boolean(el));
-  const imageCount = stacked.reduce((sum, el) => sum + el.images.length, 0);
+  const imageCount = stacked.reduce((sum, el) => sum + elementImagesForVariation(el, variationIds[el.id]).length, 0);
   const singleElement = elementIds.length === 1 && stacked.length === 1;
 
   const commit = useCallback(
     (next: string[]) => {
       // Clear the legacy single-id field so removals don't resurrect it
-      updateNodeData(id, { config: { ...data.config, elementIds: next, elementId: '' } });
+      const retainedVariationIds = Object.fromEntries(
+        Object.entries(variationIds).filter(([elementId]) => next.includes(elementId)),
+      );
+      updateNodeData(id, {
+        config: {
+          ...data.config,
+          elementIds: next,
+          elementId: '',
+          elementVariationIds: retainedVariationIds,
+        },
+      });
     },
-    [id, data.config, updateNodeData],
+    [id, data.config, updateNodeData, variationIds],
+  );
+
+  const handleVariation = useCallback(
+    (elementId: string, variationId: string) => {
+      updateNodeData(id, {
+        config: {
+          ...data.config,
+          elementVariationIds: { ...variationIds, [elementId]: variationId },
+        },
+      });
+    },
+    [data.config, id, updateNodeData, variationIds],
   );
 
   const handleAdd = useCallback(
@@ -80,7 +104,11 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
 
         {elementIds.map((elementId, index) => {
           const el = byId.get(elementId);
-          const thumbnail = el?.images[0]?.url;
+          const selectedVariationId = el
+            ? variationIds[el.id] ?? el.activeVariationId ?? el.variations?.[0]?.id
+            : undefined;
+          const activeImages = el ? elementImagesForVariation(el, selectedVariationId) : [];
+          const thumbnail = activeImages[0]?.url;
           return (
             <div
               key={elementId}
@@ -133,10 +161,28 @@ function ElementNodeInner({ id, data, selected }: ElementNodeProps) {
                   )}
                   <span>
                     {el
-                      ? `${el.images.length} img${el.images.length === 1 ? '' : 's'}`
+                      ? `${activeImages.length} img${activeImages.length === 1 ? '' : 's'}`
                       : 'removed from library'}
                   </span>
                 </span>
+                {el && (el.variations?.length ?? 0) > 1 && (
+                  <label className="element-node__look nodrag">
+                    <span>Continuity look</span>
+                    <select
+                      className="nodrag nowheel"
+                      value={selectedVariationId}
+                      onChange={(event) => handleVariation(el.id, event.target.value)}
+                      aria-label={`Continuity look for ${el.name}`}
+                    >
+                      {el.variations?.map((variation) => (
+                        <option key={variation.id} value={variation.id}>{variation.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {el && (el.variations?.length ?? 0) <= 1 && (
+                  <span className="element-node__look-label">{elementVariationLabel(el, selectedVariationId)}</span>
+                )}
               </div>
               <span className="element-node__swap-hint" aria-hidden="true">Swap</span>
               <button

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { DirectorClip, DirectorScene, DirectorShow, IsolateVariant } from '@/types/director';
 import type { Element } from '@/types/elements';
+import { elementImagesForVariation } from '@/lib/elements/variations';
 import { clipDisplayLabels } from '@/lib/director/shotlist';
 import { padTimecode, validateClipTimings } from '@/lib/director/prompt-compiler';
 import { directorRunningLabel, setClipVariant, updateDirectorClip } from '@/lib/director/director-state';
@@ -408,7 +409,7 @@ function AssetRegistry({ breakdown, elements }: { breakdown: DirectorShow; eleme
       <div className="dsl-assets">
         {items.map((item) => {
           const element = elements.find((entry) => entry.id === item.elementId);
-          const thumb = element?.images[0]?.url;
+          const thumb = element ? elementImagesForVariation(element)[0]?.url : undefined;
           const blurb = item.blurb?.trim() || item.description.trim();
           return (
             <div key={item.id} className="dsl-asset">

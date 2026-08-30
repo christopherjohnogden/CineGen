@@ -13,7 +13,7 @@ import {
   filterElements,
   projectFolderId,
 } from '@/lib/elements/library';
-import type { Element, ElementFolderFilter, ElementType, ElementImage } from '@/types/elements';
+import type { Element, ElementFolderFilter, ElementType, ElementImage, ElementVariation } from '@/types/elements';
 
 const FILTERS: { id: ElementType | 'all'; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -70,7 +70,14 @@ export function ElementsTab() {
     setModalOpen(true);
   }, []);
 
-  const handleSave = useCallback((data: { name: string; type: ElementType; description: string; images: ElementImage[] }) => {
+  const handleSave = useCallback((data: {
+    name: string;
+    type: ElementType;
+    description: string;
+    images: ElementImage[];
+    variations: ElementVariation[];
+    activeVariationId: string;
+  }) => {
     if (editingElement) {
       dispatch({ type: 'UPDATE_ELEMENT', elementId: editingElement.id, updates: { ...data } });
     } else {

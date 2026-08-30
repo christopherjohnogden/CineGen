@@ -133,6 +133,67 @@ describe('stacked Element media inputs', () => {
     }));
   });
 
+  it('passes only the continuity look selected on the Spaces Element node', async () => {
+    const continuityElements: Element[] = [{
+      ...elements[0],
+      activeVariationId: 'look-clean',
+      variations: [
+        {
+          id: 'look-clean',
+          name: 'Hero / Clean',
+          kind: 'baseline',
+          description: 'Clean wardrobe before the fight.',
+          images: elements[0].images,
+          createdAt: '',
+          updatedAt: '',
+        },
+        {
+          id: 'look-fight',
+          name: 'After the alley fight',
+          kind: 'condition',
+          description: 'Ripped shirt and scratches.',
+          images: [
+            { id: 'fight-1', url: 'local-media://peter-ripped-front.png', createdAt: '', source: 'generated' },
+            { id: 'fight-2', url: 'local-media://peter-ripped-profile.png', createdAt: '', source: 'generated' },
+          ],
+          sourceVariationId: 'look-clean',
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+    }];
+    const continuityNodes = nodes.map((node) => node.id === 'elements-1'
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            config: {
+              elementIds: ['el-peter'],
+              elementVariationIds: { 'el-peter': 'look-fight' },
+            },
+          },
+        }
+      : node);
+
+    await executeFromNode('model-1', continuityNodes, edges, {
+      setNodeRunning: vi.fn(),
+      setNodeResult: vi.fn(),
+      addGeneration: vi.fn(),
+      addAsset: vi.fn(),
+      getElements: () => continuityElements,
+    });
+
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({
+      medias: [
+        { value: 'local-media://peter-ripped-front.png', role: 'image' },
+        { value: 'local-media://peter-ripped-profile.png', role: 'image' },
+      ],
+    }));
+    expect(run.mock.calls[0][0].medias).not.toContainEqual(
+      expect.objectContaining({ value: 'local-media://peter-front.png' }),
+    );
+  });
+
   it('coalesces repeated clicks while the same node is already running', async () => {
     let finish: ((value: { url: string }) => void) | undefined;
     run.mockImplementationOnce(() => new Promise((resolve) => {

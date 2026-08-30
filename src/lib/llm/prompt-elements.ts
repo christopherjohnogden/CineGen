@@ -5,6 +5,7 @@ import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
 import { generateId } from '@/lib/utils/ids';
 import { NODE_REGISTRY, resolveElementNodeIds } from '@/lib/workflows/node-registry';
+import { elementImagesForVariation } from '@/lib/elements/variations';
 
 const TAG_PATTERN = /@([A-Za-z0-9][\w-]*)/g;
 const ELEMENT_Y_OFFSET = 72;
@@ -42,7 +43,7 @@ export function resolveElementsForPrompt(
       ?? (item ? byKey.get(mentionKey(item.name)) : undefined);
     const element = linked ?? named;
     if (!element || seen.has(element.id)) continue;
-    if (requireStill && element.images.length === 0) continue;
+    if (requireStill && elementImagesForVariation(element).length === 0) continue;
     seen.add(element.id);
     found.push(element);
   }

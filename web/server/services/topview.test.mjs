@@ -307,7 +307,13 @@ test('completes DCR + PKCE, encrypts tokens, uploads local references, and gener
         assert.ok(args.req, `${name} should use the MCP tool's req wrapper`);
         if (name === 'topview_list_boards') {
           return jsonResponse({ jsonrpc: '2.0', id: message.id, result: {
-            structuredContent: { boards: [{ boardId: 'board-default', isSystemDefault: true }] },
+            // Match Topview's live response shape. Prefer the established
+            // CineGen board with the most tasks instead of creating another.
+            structuredContent: { data: [
+              { boardId: 'board-default', name: 'My First Board', isSystemDefault: true, taskCount: 20 },
+              { boardId: 'board-cinegen-new', name: 'CineGen', taskCount: 1 },
+              { boardId: 'board-cinegen-shared', name: 'CineGen', taskCount: 12 },
+            ] },
           } });
         }
         if (name === 'topview_get_credit') {
@@ -334,6 +340,7 @@ test('completes DCR + PKCE, encrypts tokens, uploads local references, and gener
         }
         if (name === 'topview_generate_video') {
           assert.equal(args.req.taskType, 'omni_reference');
+          assert.equal(args.req.boardId, 'board-cinegen-shared');
           assert.equal(args.req.model, 'seedance-2-5-live');
           assert.equal(args.req.duration, 15);
           assert.equal(args.req.resolution, 1080);
@@ -353,7 +360,7 @@ test('completes DCR + PKCE, encrypts tokens, uploads local references, and gener
           return jsonResponse({ jsonrpc: '2.0', id: message.id, result: {
             structuredContent: {
               status: 'success',
-              boardId: 'board-default',
+              boardId: 'board-cinegen-shared',
               videos: [{
                 status: 'success',
                 filePath: 'https://cdn.topview.example/video-42.mp4',
@@ -432,7 +439,7 @@ test('completes DCR + PKCE, encrypts tokens, uploads local references, and gener
     durationSec: 15,
     taskId: 'task-42',
     model: 'seedance-2-5-live',
-    boardUrl: 'https://www.topview.ai/board/board-default?boardResultId=board-task-42',
+    boardUrl: 'https://www.topview.ai/board/board-cinegen-shared?boardResultId=board-task-42',
   });
   assert.deepEqual(uploadedBodies, ['reference-one', 'reference-two']);
   for (const credentialCall of toolCalls.filter((entry) => entry.name === 'ta_upload_credential')) {
@@ -449,6 +456,7 @@ test('completes DCR + PKCE, encrypts tokens, uploads local references, and gener
     'topview_generate_video',
     'topview_query_task',
   ]);
+  assert.equal(toolCalls.some((entry) => entry.name === 'topview_create_board'), false);
 
   await service.handlers.authLogout();
   assert.deepEqual(await service.handlers.accountStatus(), { connected: false, configured: true });

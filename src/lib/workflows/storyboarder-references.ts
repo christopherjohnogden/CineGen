@@ -1,6 +1,7 @@
 import type { Element } from '@/types/elements';
 import type { ModelDefinition, WorkflowNodeData } from '@/types/workflow';
 import { resolveElementNodeIds } from './node-registry';
+import { elementImagesForVariation } from '@/lib/elements/variations';
 
 export type StoryboarderReferenceKind = 'content' | 'style';
 
@@ -56,7 +57,7 @@ export function collectStoryboarderReferences(
     if (source.type === 'element') {
       for (const elementId of resolveElementNodeIds(source.config)) {
         const element = byId.get(elementId);
-        if (element?.images.length) connectedElements.push(element);
+        if (element && elementImagesForVariation(element).length) connectedElements.push(element);
       }
       continue;
     }
@@ -73,12 +74,12 @@ export function collectStoryboarderReferences(
   const orderedElements = [...new Map(connectedElements.map((element) => [element.id, element])).values()]
     .sort((left, right) => ELEMENT_PRIORITY[left.type] - ELEMENT_PRIORITY[right.type]);
   const elementReferences: StoryboarderReference[] = [];
-  const maxViews = Math.max(0, ...orderedElements.map((element) => element.images.length));
+  const maxViews = Math.max(0, ...orderedElements.map((element) => elementImagesForVariation(element).length));
   // One image from every connected Element is emitted before alternate views,
   // so a character cannot crowd a location or prop out of the reference set.
   for (let imageIndex = 0; imageIndex < maxViews; imageIndex += 1) {
     for (const element of orderedElements) {
-      const image = element.images[imageIndex];
+      const image = elementImagesForVariation(element)[imageIndex];
       if (!image) continue;
       elementReferences.push({
         url: image.url,

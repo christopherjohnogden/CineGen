@@ -390,6 +390,8 @@ export function DirectorTab() {
     type: Element['type'];
     description: string;
     images: Element['images'];
+    variations: NonNullable<Element['variations']>;
+    activeVariationId: string;
   }) => {
     const element: Element = {
       id: generateId(),

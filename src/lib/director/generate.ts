@@ -1,6 +1,7 @@
 import type { Asset, MediaFolder } from '@/types/project';
 import type { DirectorBreakdownItem, DirectorClip, DirectorScene, DirectorShow, DirectorTake, IsolateMode, IsolateVariant } from '@/types/director';
 import type { Element } from '@/types/elements';
+import { elementImagesForVariation } from '@/lib/elements/variations';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { nextTakeNumber, parseVariantKey, takeDisplayName, variantKey, variantTakeLabel } from './slate';
 import { planDirectorFolders } from './folders';
@@ -155,7 +156,8 @@ export function collectClipElementRefs(
 
   const stillFor = (tag: string) => {
     const item = breakdown.find((entry) => entry.tag === tag);
-    return elementForTag(tag, item, elements)?.images.find((image) => image.url.trim())?.url.trim();
+    const element = elementForTag(tag, item, elements);
+    return element ? elementImagesForVariation(element).find((image) => image.url.trim())?.url.trim() : undefined;
   };
 
   const urls: string[] = [];

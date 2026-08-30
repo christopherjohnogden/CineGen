@@ -28,6 +28,8 @@ interface ElementGenerateProps {
   onBusyChange?: (busy: boolean) => void;
   onCharacterWorkflowStateChange?: (state: 'idle' | 'in-progress' | 'ready') => void;
   referenceImages?: ElementImage[];
+  /** Skip re-casting and derive a new story state from the locked reference pack. */
+  continuityMode?: boolean;
 }
 
 type Phase = 'idle' | 'generating' | 'review';
@@ -267,6 +269,7 @@ export function ElementGenerate({
   onBusyChange,
   onCharacterWorkflowStateChange,
   referenceImages,
+  continuityMode = false,
 }: ElementGenerateProps) {
   const topviewCatalogVersion = useTopviewModelCatalogVersion();
   const modelOptions = useMemo(
@@ -636,7 +639,7 @@ export function ElementGenerate({
   return (
     <div className="element-generate">
       {/* Input row — visible in idle */}
-      {phase === 'idle' && elementType !== 'character' && (
+      {phase === 'idle' && (elementType !== 'character' || continuityMode) && (
         <>
           <div className="element-generate__model-controls">
             <label>
@@ -683,7 +686,7 @@ export function ElementGenerate({
         </>
       )}
 
-      {elementType === 'character' && (
+      {elementType === 'character' && !continuityMode && (
         <div className="character-casting">
           <div className="character-casting__steps" aria-label="Character creation progress">
             {(['casting', 'wardrobe', 'sheet'] as CharacterStage[]).map((stage, index) => {

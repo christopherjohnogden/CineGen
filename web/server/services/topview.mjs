@@ -370,13 +370,20 @@ function toolExposesField(tool, field) {
 }
 
 function topviewBoard(result) {
-  const boards = findArrayByKey(result, /boards|list|items|records/i) ?? [];
+  // Topview's current list response stores boards in `data`. Recognize both
+  // current and legacy response shapes so one CineGen board is always reused.
+  const boards = findArrayByKey(result, /^(?:boards|list|items|records|data|rows)$/i) ?? [];
   const candidates = boards.filter(isRecord).map((entry) => ({
     boardId: String(entry.boardId ?? entry.board_id ?? entry.id ?? '').trim(),
     name: typeof entry.name === 'string' ? entry.name : typeof entry.boardName === 'string' ? entry.boardName : undefined,
     isSystemDefault: entry.isSystemDefault === true || entry.is_system_default === true,
+    taskCount: Number(entry.taskCount ?? entry.task_count ?? 0) || 0,
   })).filter((entry) => entry.boardId);
-  return candidates.find((entry) => entry.isSystemDefault)
+  const cinegenBoards = candidates
+    .filter((entry) => entry.name?.trim().toLowerCase() === 'cinegen')
+    .sort((left, right) => right.taskCount - left.taskCount);
+  return cinegenBoards[0]
+    ?? candidates.find((entry) => entry.isSystemDefault)
     ?? candidates.find((entry) => entry.name === 'My First Board')
     ?? candidates[0];
 }
@@ -960,7 +967,7 @@ export function createTopviewService(options = {}) {
   async function chooseBoard(session) {
     if (!session.tools.some((tool) => tool.name === 'topview_list_boards')) return undefined;
     const listed = await callTool(session, 'topview_list_boards', {
-      pageNo: 1, pageSize: 20, mode: 'editable-by-me',
+      pageNo: 1, pageSize: 100, mode: 'editable-by-me',
     });
     const existing = topviewBoard(parseTopviewToolDocuments(listed));
     if (existing) return existing.boardId;

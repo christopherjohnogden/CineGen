@@ -431,13 +431,20 @@ function findArrayByKey(value: unknown, keyPattern: RegExp): unknown[] | undefin
 }
 
 function topviewBoard(result: unknown): { boardId: string; name?: string } | undefined {
-  const boards = findArrayByKey(result, /boards|list|items|records/i) ?? [];
+  // The live Topview board API uses `data`; older MCP versions used `boards`.
+  // Missing `data` here caused CineGen to create a new board for every render.
+  const boards = findArrayByKey(result, /^(?:boards|list|items|records|data|rows)$/i) ?? [];
   const candidates = boards.filter(isRecord).map((entry) => ({
     boardId: String(entry.boardId ?? entry.board_id ?? entry.id ?? '').trim(),
     name: typeof entry.name === 'string' ? entry.name : typeof entry.boardName === 'string' ? entry.boardName : undefined,
     isSystemDefault: entry.isSystemDefault === true || entry.is_system_default === true,
+    taskCount: Number(entry.taskCount ?? entry.task_count ?? 0) || 0,
   })).filter((entry) => entry.boardId);
-  return candidates.find((entry) => entry.isSystemDefault)
+  const cinegenBoards = candidates
+    .filter((entry) => entry.name?.trim().toLowerCase() === 'cinegen')
+    .sort((left, right) => right.taskCount - left.taskCount);
+  return cinegenBoards[0]
+    ?? candidates.find((entry) => entry.isSystemDefault)
     ?? candidates.find((entry) => entry.name === 'My First Board')
     ?? candidates[0];
 }
@@ -1206,7 +1213,7 @@ class TopviewMcpService {
 
   private async chooseBoard(session: McpSession): Promise<string> {
     const listed = await this.callTool(session, 'topview_list_boards', {
-      pageNo: 1, pageSize: 20, mode: 'editable-by-me',
+      pageNo: 1, pageSize: 100, mode: 'editable-by-me',
     });
     const existing = topviewBoard(parseToolDocuments(listed));
     if (existing) return existing.boardId;

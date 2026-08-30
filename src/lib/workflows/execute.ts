@@ -1,6 +1,7 @@
 import type { Node, Edge } from '@xyflow/react';
 import { topologicalSort } from './topo-sort';
-import { NODE_REGISTRY, resolveElementNodeIds } from './node-registry';
+import { NODE_REGISTRY, resolveElementNodeIds, resolveElementNodeVariationIds } from './node-registry';
+import { elementImagesForVariation } from '@/lib/elements/variations';
 import {
   getLayerDecomposeAutoPrompts,
   getLayerDecomposeStageLabel,
@@ -759,19 +760,22 @@ function resolveUtilityOutputs(
       }
       case 'element': {
         const elementIds = resolveElementNodeIds(data.config);
+        const variationIds = resolveElementNodeVariationIds(data.config);
         const elements = dispatch.getElements();
         const stack: ElementData[] = [];
         for (const elementId of elementIds) {
           const el = elements.find((e) => e.id === elementId);
-          if (!el || el.images.length === 0) continue;
+          if (!el) continue;
+          const images = elementImagesForVariation(el, variationIds[elementId]);
+          if (images.length === 0) continue;
           // Pick best references: 0=frontal, 1=full body front, 5=left portrait, 6=right portrait
           const refIndices = [1, 5, 6];
           stack.push({
-            frontalImageUrl: el.images[0].url,
+            frontalImageUrl: images[0].url,
             referenceImageUrls: refIndices
-              .filter((idx) => idx < el.images.length)
-              .map((idx) => el.images[idx].url),
-            allUrls: el.images.map((img) => img.url),
+              .filter((idx) => idx < images.length)
+              .map((idx) => images[idx].url),
+            allUrls: images.map((img) => img.url),
             name: el.name,
             type: el.type,
           });

@@ -1,4 +1,5 @@
 import type { Element } from '@/types/elements';
+import { elementImagesForVariation } from '@/lib/elements/variations';
 import type {
   DirectorBeat,
   DirectorClip,
@@ -247,7 +248,7 @@ export function storyboardReferences(
     const breakdown = breakdownByTag.get(tagName);
     const element = (breakdown?.elementId ? byId.get(breakdown.elementId) : undefined)
       ?? elements.find((entry) => referenceTagKey(entry.name) === tagName);
-    const url = element?.images[0]?.url?.trim();
+    const url = element ? elementImagesForVariation(element)[0]?.url?.trim() : undefined;
     if (element && url && !references.some((reference) => reference.url === url)) {
       references.push({
         id: element.id,

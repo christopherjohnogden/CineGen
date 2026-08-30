@@ -208,6 +208,19 @@ export function resolveElementNodeIds(config: Record<string, unknown> | undefine
   return typeof legacy === 'string' && legacy ? [legacy] : [];
 }
 
+/** Spaces nodes can pin one continuity look per element without changing the library default. */
+export function resolveElementNodeVariationIds(
+  config: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const raw = config?.elementVariationIds;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).filter((entry): entry is [string, string] => (
+      Boolean(entry[0]) && typeof entry[1] === 'string' && Boolean(entry[1])
+    )),
+  );
+}
+
 export const PORT_COLORS: Record<string, string> = {
   text: 'var(--port-text)',
   image: 'var(--port-image)',
