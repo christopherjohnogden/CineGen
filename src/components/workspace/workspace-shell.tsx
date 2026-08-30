@@ -107,6 +107,7 @@ type WorkspaceAction =
   | { type: 'ADD_ELEMENT_FOLDER'; folder: ElementFolder }
   | { type: 'UPDATE_ELEMENT_FOLDER'; folderId: string; updates: Partial<ElementFolder> }
   | { type: 'REMOVE_ELEMENT_FOLDER'; folderId: string }
+  | { type: 'SET_ELEMENTS_LIBRARY'; elements: Element[]; elementFolders: ElementFolder[] }
   | { type: 'SET_DIRECTOR'; director: DirectorShow }
   | { type: 'OBSERVE_PROVIDER_USAGE'; observation: ProviderBalanceObservation }
   | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
@@ -720,6 +721,13 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
         )),
       };
 
+    case 'SET_ELEMENTS_LIBRARY':
+      return {
+        ...state,
+        elements: action.elements,
+        elementFolders: action.elementFolders,
+      };
+
     case 'SET_DIRECTOR':
       return { ...state, director: action.director };
 
@@ -875,6 +883,7 @@ export function useWorkspace() {
 
 const SAVE_DEBOUNCE_MS = 500;
 const STALE_DERIVE_JOB_MS = 15000;
+const PROJECT_LOAD_TIMEOUT_MS = 30_000;
 const DERIVE_JOB_TYPES = ['generate_thumbnail', 'compute_waveform', 'generate_filmstrip', 'generate_proxy'] as const;
 const PERSIST_ACTIONS: WorkspaceAction['type'][] = [
   'SET_NODES', 'SET_EDGES', 'UPDATE_NODE_CONFIG', 'APPLY_ELEMENT_MENTION', 'ADD_SPACE', 'RENAME_SPACE', 'REMOVE_SPACE', 'CLOSE_SPACE', 'OPEN_SPACE', 'SET_ACTIVE_SPACE',
@@ -1734,11 +1743,55 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
       setHydrationError(error instanceof Error ? error.message : 'The project data could not be restored.');
     };
 
+    const loadProjectWithDeadline = <T,>(sqlite: boolean): Promise<T> => {
+      const projectLoad = loadAvailableProject<T>(projectId, sqlite);
+      return new Promise<T>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          reject(new Error('The cloud project took too long to respond. Check your connection or go back and sign in again.'));
+        }, PROJECT_LOAD_TIMEOUT_MS);
+        projectLoad.then(
+          (value) => {
+            window.clearTimeout(timeoutId);
+            resolve(value);
+          },
+          (error) => {
+            window.clearTimeout(timeoutId);
+            reject(error);
+          },
+        );
+      });
+    };
+
+    const loadElementsLibraryAfterProject = () => {
+      // The shared Elements library is useful across the whole team, but it is
+      // not required to render the project. Loading it independently prevents
+      // slow auth/storage initialization in mobile webviews from trapping the
+      // entire workspace behind the project skeleton.
+      void loadAvailableElementsLibrary({
+        projectId,
+        projectName: projectNameRef.current,
+      }).then((library) => {
+        historyDispatch({
+          type: 'SET_ELEMENTS_LIBRARY',
+          elements: library.elements,
+          elementFolders: library.folders,
+        });
+        elementsLibraryReadyRef.current = true;
+      }).catch((error) => {
+        console.warn('[workspace] Elements library will retry on the next project open:', error);
+        setAppToast({
+          id: crypto.randomUUID(),
+          title: 'Elements are still syncing',
+          message: 'The project is ready. Reopen it to retry the shared Elements library.',
+        });
+      });
+    };
+
     if (useSqlite) {
       // ---------- SQLite hydration path ----------
-      loadAvailableProject(projectId, true)
+      loadProjectWithDeadline<Record<string, unknown>>(true)
         .then(async (raw) => {
-          const dbState = raw as Record<string, unknown>;
+          const dbState = raw;
           // Capture project name for save path
           const projectRow = dbState.project as Record<string, unknown> | undefined;
           if (projectRow?.name) projectNameRef.current = projectRow.name as string;
@@ -1784,28 +1837,23 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const activeTimelineId = (dbState.activeTimelineId as string) ?? timelines[0]?.id ?? '';
           const exports = (dbState.exports as Record<string, unknown>[]).map(exportFromRow);
           const director = directorFromWorkflow(workflowState);
-          const library = await loadAvailableElementsLibrary({
-            projectId,
-            projectName: projectNameRef.current,
-          });
-
           historyDispatch({
             type: 'HYDRATE',
             payload: {
               nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports,
-              elements: library.elements,
-              elementFolders: library.folders,
+              elements: [],
+              elementFolders: [],
               director,
               providerUsage,
             },
           });
-          elementsLibraryReadyRef.current = true;
+          loadElementsLibraryAfterProject();
         })
         .catch(handleHydrationError)
         .finally(() => setHydrationComplete(true));
     } else {
       // ---------- JSON file hydration path ----------
-      loadAvailableProject<ProjectSnapshot>(projectId, false)
+      loadProjectWithDeadline<ProjectSnapshot>(false)
         .then(async (snapshot) => {
           if (snapshot.project?.name) projectNameRef.current = snapshot.project.name;
           const nodes = (snapshot.workflow?.nodes ?? []) as Node<WorkflowNodeData>[];
@@ -1836,22 +1884,17 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const exports = (snapshot.exports ?? []) as ExportJob[];
           const mediaFolders = (snapshot.mediaFolders ?? []) as MediaFolder[];
           const director = directorFromSnapshot(snapshot);
-          const library = await loadAvailableElementsLibrary({
-            projectId,
-            projectName: projectNameRef.current,
-          });
-
           historyDispatch({
             type: 'HYDRATE',
             payload: {
               nodes, edges, spaces, activeSpaceId, openSpaceIds, assets, mediaFolders, timelines, activeTimelineId, exports,
-              elements: library.elements,
-              elementFolders: library.folders,
+              elements: [],
+              elementFolders: [],
               director,
               providerUsage,
             },
           });
-          elementsLibraryReadyRef.current = true;
+          loadElementsLibraryAfterProject();
         })
         .catch(handleHydrationError)
         .finally(() => setHydrationComplete(true));
@@ -2019,7 +2062,11 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
       />
       <main className="workspace-content" aria-busy={!hydrationComplete}>
         {hydrationError ? (
-          <WorkspaceLoadingState error={hydrationError} onRetry={() => window.location.reload()} />
+          <WorkspaceLoadingState
+            error={hydrationError}
+            onRetry={() => window.location.reload()}
+            onBack={onBackToHome}
+          />
         ) : !hydrationComplete ? (
           <WorkspaceLoadingState />
         ) : (

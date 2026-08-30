@@ -1,13 +1,14 @@
 interface WorkspaceLoadingStateProps {
   error?: string | null;
   onRetry?: () => void;
+  onBack?: () => void;
 }
 
 function LoadingBlock({ className = '' }: { className?: string }) {
   return <span className={`workspace-loading__block ${className}`} />;
 }
 
-export function WorkspaceLoadingState({ error, onRetry }: WorkspaceLoadingStateProps) {
+export function WorkspaceLoadingState({ error, onRetry, onBack }: WorkspaceLoadingStateProps) {
   if (error) {
     return (
       <section className="workspace-loading workspace-loading--error" role="alert">
@@ -23,9 +24,10 @@ export function WorkspaceLoadingState({ error, onRetry }: WorkspaceLoadingStateP
             <h2>Project couldn&rsquo;t load</h2>
             <p>{error}</p>
           </div>
-          {onRetry && (
-            <button type="button" onClick={onRetry}>Try again</button>
-          )}
+          <div className="workspace-loading__error-actions">
+            {onRetry && <button type="button" onClick={onRetry}>Try again</button>}
+            {onBack && <button type="button" onClick={onBack}>Back to projects</button>}
+          </div>
         </div>
       </section>
     );

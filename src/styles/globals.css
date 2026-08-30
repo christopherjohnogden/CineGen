@@ -1241,6 +1241,12 @@ input[type='range']::-moz-range-track {
 }
 .workspace-loading__error-panel button:hover { border-color: var(--border-strong); }
 .workspace-loading__error-panel button:active { transform: translateY(1px) scale(0.98); }
+.workspace-loading__error-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 @keyframes workspace-loading-sweep {
   to { transform: translate3d(110%, 0, 0); }

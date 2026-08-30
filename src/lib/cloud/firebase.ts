@@ -36,12 +36,25 @@ export const cloudDb = initializeFirestore(firebaseApp, {
 export const cloudStorage = getStorage(firebaseApp);
 export const cloudFunctions = getFunctions(firebaseApp, 'us-central1');
 
+const AUTH_READY_TIMEOUT_MS = 12_000;
+
 export function waitForCloudAuth(): Promise<User | null> {
   if (cloudAuth.currentUser) return Promise.resolve(cloudAuth.currentUser);
   return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(cloudAuth, (user) => {
+    let settled = false;
+    let timeoutId: number | undefined;
+    let unsubscribe = () => {};
+    const finish = (user: User | null) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
       unsubscribe();
       resolve(user);
-    });
+    };
+    unsubscribe = onAuthStateChanged(cloudAuth, finish);
+    // Some iOS in-app browsers can leave Firebase persistence initialization
+    // pending indefinitely. Treat that as signed out so the UI can offer a
+    // recovery path instead of showing a permanent loading screen.
+    timeoutId = window.setTimeout(() => finish(cloudAuth.currentUser), AUTH_READY_TIMEOUT_MS);
   });
 }
