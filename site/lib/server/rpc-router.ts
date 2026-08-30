@@ -197,6 +197,12 @@ export async function handleRpc(
       case "topview.accountStatus":
         result = await topview.accountStatus();
         break;
+      case "topview.connectionStatus":
+        result = await topview.connectionStatus();
+        break;
+      case "topview.importTeamConnection":
+        result = await topview.importTeamConnection(args[0]);
+        break;
       case "topview.modelCatalog":
         result = await topview.modelCatalog();
         break;

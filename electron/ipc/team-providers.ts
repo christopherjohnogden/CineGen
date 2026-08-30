@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, session } from 'electron';
+import { exportTopviewTeamConnection } from './topview.js';
 
 const LOCAL_WORKSPACE_ORIGIN = 'http://localhost:3000';
 const HOSTED_WORKSPACE_ORIGIN = 'https://cinegen-cloud-studio.cogden.chatgpt.site';
@@ -34,6 +35,24 @@ type RpcTarget = {
 
 let activeTarget: RpcTarget | null = null;
 let authWindow: BrowserWindow | null = null;
+let lastTopviewSyncAttempt = 0;
+
+async function synchronizeTopviewConnection(target: RpcTarget): Promise<void> {
+  if (target.source !== 'hosted' || Date.now() - lastTopviewSyncAttempt < 5_000) return;
+  lastTopviewSyncAttempt = Date.now();
+  try {
+    const connection = await exportTopviewTeamConnection();
+    if (!connection) return;
+    const current = await rpcFetch<{ connected: boolean }>(target, 'topview', 'connectionStatus', []);
+    if (current.response.ok && current.payload?.ok && current.payload.result?.connected) return;
+    const imported = await rpcFetch<{ connected: boolean }>(target, 'topview', 'importTeamConnection', [connection]);
+    if (!imported.response.ok || !imported.payload?.ok || !imported.payload.result?.connected) {
+      throw new Error(imported.payload?.error?.message || 'The hosted workspace rejected the Topview connection.');
+    }
+  } catch (error) {
+    console.warn('Could not share the desktop Topview connection with the team workspace.', error);
+  }
+}
 
 function emptyStatus(): ProviderStatus {
   return {
@@ -116,7 +135,10 @@ async function resolveTarget(): Promise<{ target: RpcTarget; status: ProviderSta
 
   if (activeTarget) {
     const status = await statusFor(activeTarget);
-    if (status) return { target: activeTarget, status };
+    if (status) {
+      await synchronizeTopviewConnection(activeTarget);
+      return { target: activeTarget, status };
+    }
     activeTarget = null;
   }
 
@@ -126,6 +148,7 @@ async function resolveTarget(): Promise<{ target: RpcTarget; status: ProviderSta
   const hostedStatus = await statusFor(hosted);
   if (hostedStatus) {
     activeTarget = hosted;
+    await synchronizeTopviewConnection(hosted);
     return { target: hosted, status: hostedStatus };
   }
   const localStatus = await statusFor(local);
@@ -168,6 +191,7 @@ async function connectHostedWorkspace(): Promise<ProviderStatus> {
   const existing = await statusFor({ origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' });
   if (existing) {
     activeTarget = { origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' };
+    await synchronizeTopviewConnection(activeTarget);
     return existing;
   }
 
@@ -204,6 +228,7 @@ async function connectHostedWorkspace(): Promise<ProviderStatus> {
       const next = await statusFor({ origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' });
       if (!next) return;
       activeTarget = { origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' };
+      await synchronizeTopviewConnection(activeTarget);
       finish(next);
       if (authWindow && !authWindow.isDestroyed()) authWindow.close();
     };
@@ -226,6 +251,7 @@ export function registerTeamProviderHandlers(): void {
   ipcMain.handle('team-providers:disconnect', async () => {
     await session.fromPartition(TEAM_SESSION_PARTITION).clearStorageData({ storages: ['cookies'] });
     activeTarget = null;
+    lastTopviewSyncAttempt = 0;
     return emptyStatus();
   });
   ipcMain.handle('team-providers:save', async (_event, value: unknown) => {

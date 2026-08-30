@@ -125,6 +125,11 @@ interface StoredToken extends JsonRecord {
   expires_at: number;
 }
 
+export interface TopviewTeamConnection {
+  client: StoredClient;
+  token: StoredToken;
+}
+
 interface McpTool {
   name: string;
   description?: string;
@@ -1123,6 +1128,16 @@ class TopviewMcpService {
     }
   }
 
+  async teamConnection(): Promise<TopviewTeamConnection | null> {
+    const client = await this.store.read<StoredClient>('client');
+    const token = await this.store.read<StoredToken>('token');
+    if (!client?.client_id || !token?.access_token) return null;
+    await this.accessToken();
+    const refreshed = await this.store.read<StoredToken>('token');
+    if (!refreshed?.access_token) return null;
+    return { client, token: refreshed };
+  }
+
   private async mcpRequest(token: string, message: JsonRecord, sessionId?: string): Promise<{ payload: JsonRecord; sessionId?: string }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), MCP_REQUEST_TIMEOUT_MS);
@@ -1711,8 +1726,14 @@ class TopviewMcpService {
   }
 }
 
+const topviewMcpService = new TopviewMcpService();
+
+export function exportTopviewTeamConnection(): Promise<TopviewTeamConnection | null> {
+  return topviewMcpService.teamConnection();
+}
+
 export function registerTopviewHandlers(): void {
-  const service = new TopviewMcpService();
+  const service = topviewMcpService;
   ipcMain.handle('topview:account-status', () => service.accountStatus());
   ipcMain.handle('topview:model-catalog', () => service.modelCatalog());
   ipcMain.handle('topview:auth-login', () => service.authLogin());

@@ -1196,6 +1196,54 @@ async function generationResultWithReference(
 
 export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOrigin: string) {
   return {
+    async connectionStatus() {
+      const secret = ensureSecret(env, workspaceId);
+      const row = await loadConnection(env.DB, workspaceId);
+      const token = await unseal<OAuthToken>(row?.token_ciphertext ?? null, secret);
+      return { connected: Boolean(token?.access_token), configured: true };
+    },
+
+    async importTeamConnection(value: unknown) {
+      const input = requireRecord(value, "Topview team connection");
+      const rawClient = requireRecord(input.client, "Topview OAuth client");
+      const rawToken = requireRecord(input.token, "Topview OAuth token");
+      if (typeof rawClient.client_id !== "string" || !rawClient.client_id.trim()) {
+        throw new SiteHttpError(400, "The desktop Topview client is invalid.", "TOPVIEW_CLIENT_INVALID");
+      }
+      if (typeof rawToken.access_token !== "string" || !rawToken.access_token.trim()) {
+        throw new SiteHttpError(400, "The desktop Topview token is invalid.", "TOPVIEW_TOKEN_INVALID");
+      }
+      const client: OAuthClient = {
+        client_id: rawClient.client_id.trim(),
+        ...(typeof rawClient.client_secret === "string" && rawClient.client_secret
+          ? { client_secret: rawClient.client_secret }
+          : {}),
+        token_endpoint_auth_method: typeof rawClient.token_endpoint_auth_method === "string"
+          ? rawClient.token_endpoint_auth_method
+          : "none",
+        redirect_uri: typeof rawClient.redirect_uri === "string" ? rawClient.redirect_uri : "",
+      };
+      const token: OAuthToken = {
+        access_token: rawToken.access_token.trim(),
+        ...(typeof rawToken.refresh_token === "string" && rawToken.refresh_token
+          ? { refresh_token: rawToken.refresh_token }
+          : {}),
+        token_type: typeof rawToken.token_type === "string" ? rawToken.token_type : "Bearer",
+        ...(typeof rawToken.scope === "string" ? { scope: rawToken.scope } : {}),
+        ...(typeof rawToken.expires_in === "number" ? { expires_in: rawToken.expires_in } : {}),
+        expires_at: typeof rawToken.expires_at === "number" && Number.isFinite(rawToken.expires_at)
+          ? rawToken.expires_at
+          : Date.now() + 60 * 60 * 1000,
+      };
+      const secret = ensureSecret(env, workspaceId);
+      await saveConnection(env.DB, workspaceId, {
+        client_json: JSON.stringify(client),
+        pending_ciphertext: null,
+        token_ciphertext: await seal(token, secret),
+      });
+      return { connected: true, configured: true, shared: true };
+    },
+
     async modelCatalog() {
       const token = await accessToken(env, workspaceId);
       const session = await mcpSession(token);

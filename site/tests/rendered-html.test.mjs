@@ -506,12 +506,31 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     const connection = database.providerConnections.get("cinegen-local-v1:topview");
     assert.ok(connection.pending_ciphertext);
     assert.doesNotMatch(connection.pending_ciphertext, new RegExp(authorization.searchParams.get("state")));
-    connection.pending_ciphertext = null;
-    connection.token_ciphertext = await sealProviderToken({
-      access_token: "topview-access-token",
-      refresh_token: "topview-refresh-token",
-      expires_at: Date.now() + 60 * 60 * 1000,
-    }, "cinegen-local-development-workspace-provider-vault-v1");
+    const importResponse = await rpc("importTeamConnection", [{
+      client: {
+        client_id: "topview-desktop-client",
+        client_secret: "topview-desktop-secret",
+        token_endpoint_auth_method: "client_secret_post",
+        redirect_uri: "http://127.0.0.1:53682/oauth/callback",
+      },
+      token: {
+        access_token: "topview-access-token",
+        refresh_token: "topview-refresh-token",
+        expires_at: Date.now() + 60 * 60 * 1000,
+      },
+    }]);
+    assert.equal(importResponse.status, 200);
+    assert.deepEqual((await importResponse.json()).result, {
+      connected: true,
+      configured: true,
+      shared: true,
+    });
+    const importedConnection = database.providerConnections.get("cinegen-local-v1:topview");
+    assert.equal(importedConnection.pending_ciphertext, null);
+    assert.doesNotMatch(importedConnection.token_ciphertext, /topview-access-token|topview-refresh-token/);
+
+    const sharedStatusResponse = await rpc("connectionStatus");
+    assert.deepEqual((await sharedStatusResponse.json()).result, { connected: true, configured: true });
 
     const connectedResponse = await rpc("accountStatus");
     assert.deepEqual((await connectedResponse.json()).result, { connected: true, configured: true, credits: 69.53 });
