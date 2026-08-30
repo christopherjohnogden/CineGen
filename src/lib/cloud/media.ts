@@ -6,6 +6,7 @@ import {
 } from 'firebase/storage';
 import { toFileUrl } from '@/lib/utils/file-url';
 import { cloudStorage } from './firebase';
+import type { ElementsLibrary, ElementImage } from '@/types/elements';
 
 const STORAGE_HOST = 'firebasestorage.googleapis.com';
 const RETRY_DELAY_MS = 5 * 60 * 1000;
@@ -212,5 +213,71 @@ export async function prepareStateForCloudMedia(
   emitStatus(failed > 0
     ? { status: 'waiting', completed, total: assets.length, error: `${failed} media file${failed === 1 ? '' : 's'} still need to upload.` }
     : { status: 'ready', completed, total: assets.length });
+  return cloned;
+}
+
+/**
+ * Upload every Elements-library reference that only exists on the current
+ * device/server. The returned library contains durable Firebase URLs, so the
+ * same character sheet can render on desktop, localhost, and hosted web.
+ */
+export async function prepareElementsLibraryForCloudMedia(
+  library: ElementsLibrary,
+  uid: string,
+  projectId: string,
+): Promise<ElementsLibrary> {
+  const cloned = JSON.parse(JSON.stringify(library)) as ElementsLibrary;
+  const references: Array<{
+    image: ElementImage;
+    elementId: string;
+    elementName: string;
+    variationId?: string;
+  }> = [];
+  for (const element of cloned.elements) {
+    for (const image of element.images) {
+      references.push({ image, elementId: element.id, elementName: element.name });
+    }
+    for (const variation of element.variations ?? []) {
+      for (const image of variation.images) {
+        references.push({
+          image,
+          elementId: element.id,
+          elementName: element.name,
+          variationId: variation.id,
+        });
+      }
+    }
+  }
+  if (!references.length) return cloned;
+
+  emitStatus({ status: 'uploading', completed: 0, total: references.length });
+  let completed = 0;
+  const remoteBySource = new Map<string, string>();
+  for (const reference of references) {
+    if (!isFirebaseMediaUrl(reference.image.url)) {
+      const source = reference.image.url;
+      const alreadyUploaded = remoteBySource.get(source);
+      if (alreadyUploaded) {
+        reference.image.url = alreadyUploaded;
+      } else {
+        const role = reference.variationId ? `look-${reference.variationId}` : 'reference';
+        reference.image.url = await uploadSource({
+          uid,
+          projectId,
+          asset: {
+            id: `${reference.elementId}-${role}-${reference.image.id}`,
+            name: `${reference.elementName}-${reference.image.id}`,
+            createdAt: reference.image.createdAt,
+          },
+          source,
+          role: 'original',
+        });
+        remoteBySource.set(source, reference.image.url);
+      }
+    }
+    completed += 1;
+    emitStatus({ status: 'uploading', completed, total: references.length });
+  }
+  emitStatus({ status: 'ready', completed, total: references.length });
   return cloned;
 }

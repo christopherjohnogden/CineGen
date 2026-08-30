@@ -46,6 +46,7 @@ import {
 import { mediaDebug, mediaDebugError } from '@/lib/debug/media-debug';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { loadAvailableProject, saveAvailableProject } from '@/lib/cloud/projects';
+import { loadAvailableElementsLibrary, saveAvailableElementsLibrary } from '@/lib/cloud/elements';
 import { setActiveFundingProject } from '@/lib/cloud/funding';
 import { startOwnerFundingRelay } from '@/lib/cloud/funding-relay';
 import {
@@ -1783,7 +1784,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const activeTimelineId = (dbState.activeTimelineId as string) ?? timelines[0]?.id ?? '';
           const exports = (dbState.exports as Record<string, unknown>[]).map(exportFromRow);
           const director = directorFromWorkflow(workflowState);
-          const library = await window.electronAPI.elements.loadLibrary({
+          const library = await loadAvailableElementsLibrary({
             projectId,
             projectName: projectNameRef.current,
           });
@@ -1835,7 +1836,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           const exports = (snapshot.exports ?? []) as ExportJob[];
           const mediaFolders = (snapshot.mediaFolders ?? []) as MediaFolder[];
           const director = directorFromSnapshot(snapshot);
-          const library = await window.electronAPI.elements.loadLibrary({
+          const library = await loadAvailableElementsLibrary({
             projectId,
             projectName: projectNameRef.current,
           });
@@ -1982,10 +1983,13 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     if (!hydrationComplete || !elementsLibraryReadyRef.current) return;
     if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
     librarySaveTimerRef.current = setTimeout(() => {
-      window.electronAPI.elements.saveLibrary({
+      saveAvailableElementsLibrary({
         version: 1,
         folders: state.elementFolders,
         elements: state.elements,
+      }, {
+        projectId,
+        projectName: projectNameRef.current,
       }).catch((err) => {
         console.error('[workspace] Failed to save elements library:', err);
       });

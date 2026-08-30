@@ -79,8 +79,18 @@ service cloud.firestore {
         && request.resource.data.members.get(request.auth.uid, '') == 'owner'
         && request.auth.uid in request.resource.data.memberIds;
       allow update: if signedIn()
-        && resource.data.members.get(request.auth.uid, '') == 'owner'
-        && request.resource.data.ownerId == resource.data.ownerId;
+        && request.resource.data.ownerId == resource.data.ownerId
+        && (
+          resource.data.members.get(request.auth.uid, '') == 'owner'
+          || (
+            resource.data.members.get(request.auth.uid, '') == 'editor'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'elementsLibraryJson',
+              'elementsLibraryRevision',
+              'elementsLibraryUpdatedAt'
+            ])
+          )
+        );
       allow delete: if signedIn()
         && resource.data.members.get(request.auth.uid, '') == 'owner';
     }

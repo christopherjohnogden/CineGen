@@ -42,6 +42,28 @@ describe('normalizeElement', () => {
   it('returns null without an id', () => {
     expect(normalizeElement({ name: 'Nope' })).toBeNull();
   });
+
+  it('preserves continuity variations and their active selection', () => {
+    const parsed = normalizeElement({
+      ...el({ id: 'e1', name: 'Maya' }),
+      activeVariationId: 'damaged',
+      variations: [{
+        id: 'damaged',
+        name: 'After the fight',
+        kind: 'condition',
+        description: 'Ripped sleeve and scratches',
+        images: [{ id: 'i1', url: 'https://example.com/damaged.png', createdAt: 't', source: 'generated' }],
+        createdAt: 'a',
+        updatedAt: 'b',
+      }],
+    });
+    expect(parsed?.activeVariationId).toBe('damaged');
+    expect(parsed?.variations?.[0]).toMatchObject({
+      id: 'damaged',
+      kind: 'condition',
+      images: [{ id: 'i1', url: 'https://example.com/damaged.png' }],
+    });
+  });
 });
 
 describe('migrateProjectsIntoLibrary', () => {

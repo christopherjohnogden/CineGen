@@ -79,7 +79,7 @@ function CloudAuthDialog({ onClose }: { onClose: () => void }) {
         {user ? (
           <div className="cloud-auth__signed-in">
             <span className="cloud-auth__status-dot" />
-            <div><strong>Cloud sync is connected</strong><span>{user.email}</span></div>
+            <div><strong>Cloud account connected</strong><span>{user.email}</span></div>
             <button type="button" className="sp-btn sp-btn--muted" onClick={() => void signOut(cloudAuth)}>Sign out</button>
           </div>
         ) : (
@@ -113,7 +113,7 @@ export function CloudAccountButton({ onAccountChange }: { onAccountChange?: () =
     <>
       <button type="button" className={`pm-cloud-btn${user ? ' pm-cloud-btn--connected' : ''}`} onClick={() => setOpen(true)}>
         <span className="pm-cloud-btn__dot" />
-        {user ? 'Cloud synced' : 'Cloud sign in'}
+        {user ? 'Cloud connected' : 'Cloud sign in'}
       </button>
       {open && <CloudAuthDialog onClose={() => setOpen(false)} />}
     </>

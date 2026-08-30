@@ -4,6 +4,8 @@ import type {
   ElementFolderFilter,
   ElementImage,
   ElementType,
+  ElementVariation,
+  ElementVariationKind,
   ElementsLibrary,
 } from '../../types/elements';
 
@@ -24,16 +26,51 @@ export function normalizeElement(raw: unknown): Element | null {
     : typeof row.folder_id === 'string' && row.folder_id
       ? row.folder_id
       : undefined;
+  const variations = normalizeVariations(row.variations);
+  const activeVariationId = typeof row.activeVariationId === 'string'
+    && variations.some((variation) => variation.id === row.activeVariationId)
+    ? row.activeVariationId
+    : variations[0]?.id;
   return {
     id,
     name: typeof row.name === 'string' ? row.name : 'Untitled',
     type,
     description: typeof row.description === 'string' ? row.description : '',
     images: normalizeImages(row.images),
+    variations: variations.length ? variations : undefined,
+    activeVariationId,
     createdAt: typeof row.createdAt === 'string' ? row.createdAt : (typeof row.created_at === 'string' ? row.created_at : ''),
     updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : (typeof row.updated_at === 'string' ? row.updated_at : ''),
     folderId,
   };
+}
+
+function normalizeVariationKind(value: unknown): ElementVariationKind {
+  return value === 'baseline' || value === 'wardrobe' || value === 'condition' || value === 'time' || value === 'custom'
+    ? value
+    : 'custom';
+}
+
+function normalizeVariations(raw: unknown): ElementVariation[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const id = typeof row.id === 'string' ? row.id.trim() : '';
+    if (!id) return [];
+    return [{
+      id,
+      name: typeof row.name === 'string' && row.name.trim() ? row.name.trim() : 'Untitled look',
+      kind: normalizeVariationKind(row.kind),
+      description: typeof row.description === 'string' ? row.description : '',
+      images: normalizeImages(row.images),
+      sourceVariationId: typeof row.sourceVariationId === 'string' && row.sourceVariationId
+        ? row.sourceVariationId
+        : undefined,
+      createdAt: typeof row.createdAt === 'string' ? row.createdAt : '',
+      updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : '',
+    }];
+  });
 }
 
 function normalizeImages(raw: unknown): ElementImage[] {

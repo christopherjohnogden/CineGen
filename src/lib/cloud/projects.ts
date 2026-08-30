@@ -16,6 +16,7 @@ import { cloudDb, waitForCloudAuth } from './firebase';
 import { prepareStateForCloudMedia } from './media';
 import {
   ensureProjectAccess,
+  getProjectCollaboration,
   listSharedProjectAccess,
   registerCloudIdentity,
   type ProjectRole,
@@ -382,11 +383,46 @@ export async function promoteLocalProject(projectId: string, useSqlite: boolean)
   rememberCloudProject(projectId);
 }
 
+async function hasAccessibleCloudProject(projectId: string): Promise<boolean> {
+  if (isCloudProjectId(projectId)) return true;
+  const user = await waitForCloudAuth();
+  if (!user) return false;
+  try {
+    const access = await getProjectCollaboration(projectId);
+    if (!access?.members[user.uid]) return false;
+    rememberCloudProject(projectId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function reportCloudSyncError(error: unknown): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('cinegen:cloud-sync-error', { detail: error }));
+  }
+}
+
 export async function loadAvailableProject<T = unknown>(projectId: string, useSqlite: boolean): Promise<T> {
-  if (isCloudProjectId(projectId)) return loadCloudProject<T>(projectId);
-  return (useSqlite
+  if (await hasAccessibleCloudProject(projectId)) return loadCloudProject<T>(projectId);
+  const local = await (useSqlite
     ? window.electronAPI.db.loadProject(projectId)
-    : window.electronAPI.project.load(projectId)) as Promise<T>;
+    : window.electronAPI.project.load(projectId)) as T;
+
+  // Signing in opts this device into cloud continuity. Existing local
+  // projects are promoted on first open so the same ID appears everywhere.
+  const user = await waitForCloudAuth();
+  if (user) {
+    try {
+      await seedOwnedCloudProject(projectId, local, useSqlite);
+      await saveCloudProject(projectId, local, useSqlite);
+      rememberCloudProject(projectId);
+    } catch (error) {
+      console.warn('[cloud] Existing project could not be promoted automatically:', error);
+      reportCloudSyncError(error);
+    }
+  }
+  return local;
 }
 
 export async function saveAvailableProject(
@@ -394,8 +430,14 @@ export async function saveAvailableProject(
   state: unknown,
   useSqlite: boolean,
 ): Promise<unknown> {
-  if (isCloudProjectId(projectId)) return saveCloudProject(projectId, state, useSqlite);
-  return useSqlite
+  if (await hasAccessibleCloudProject(projectId)) return saveCloudProject(projectId, state, useSqlite);
+  const localResult = await (useSqlite
     ? window.electronAPI.db.saveProject(projectId, state)
-    : window.electronAPI.project.save(projectId, state as never);
+    : window.electronAPI.project.save(projectId, state as never));
+  const user = await waitForCloudAuth();
+  if (!user) return localResult;
+  await seedOwnedCloudProject(projectId, state, useSqlite);
+  await saveCloudProject(projectId, state, useSqlite);
+  rememberCloudProject(projectId);
+  return localResult;
 }
