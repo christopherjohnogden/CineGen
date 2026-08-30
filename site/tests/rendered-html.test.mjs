@@ -124,7 +124,9 @@ async function sealProviderToken(value, secret) {
 test("server-renders the CineGen client boundary", async () => {
   const worker = await loadWorker();
   const response = await worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request("http://localhost/", {
+      headers: { accept: "text/html", host: "localhost" },
+    }),
     testEnvironment(),
     executionContext,
   );
@@ -135,6 +137,47 @@ test("server-renders the CineGen client boundary", async () => {
   assert.match(html, /<title>CineGen Cloud<\/title>/i);
   assert.match(html, /Loading CineGen/i);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/i);
+});
+
+test("sends anonymous hosted visitors through ChatGPT sign-in and preserves the project link", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(
+    new Request("https://cinegen-cloud-studio.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
+      headers: {
+        accept: "text/html",
+        host: "cinegen-cloud-studio.cogden.chatgpt.site",
+      },
+      redirect: "manual",
+    }),
+    testEnvironment(),
+    executionContext,
+  );
+
+  assert.equal(response.status, 307);
+  assert.equal(
+    response.headers.get("location"),
+    "/signin-with-chatgpt?return_to=%2F%3Fproject%3Dcloud_demo%26storage%3Ddb",
+  );
+});
+
+test("opens the hosted app when Sites supplies the signed-in ChatGPT identity", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(
+    new Request("https://cinegen-cloud-studio.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
+      headers: {
+        accept: "text/html",
+        host: "cinegen-cloud-studio.cogden.chatgpt.site",
+        "oai-authenticated-user-id": "site-user-1",
+        "oai-authenticated-user-email": "director@example.com",
+      },
+    }),
+    testEnvironment(),
+    executionContext,
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+  assert.match(await response.text(), /Loading CineGen/i);
 });
 
 test("exposes a lightweight health route", async () => {
