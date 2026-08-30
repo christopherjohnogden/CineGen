@@ -645,7 +645,7 @@ export function buildTopviewVideoRequest({ config, generateTool, taskType, param
   }
   if (taskType === 'omni_reference') {
     const inputImages = fileIds.map((fileId, index) => ({ fileId, name: `Image${index + 1}` }));
-    prompt = `${inputImages.map((entry) => `<${entry.name.toUpperCase()}>`).join(', ')} are authoritative visual references. Match every supplied subject, setting, prop, wardrobe, silhouette, material, color, and design detail.\n\n${prompt}`;
+    prompt = `${inputImages.map((entry) => `<<<${entry.name}>>>`).join(', ')} are authoritative visual references. Match every supplied subject, setting, prop, wardrobe, silhouette, material, color, and design detail.\n\n${prompt}`;
     req.prompt = prompt;
     req.inputImages = inputImages;
   }

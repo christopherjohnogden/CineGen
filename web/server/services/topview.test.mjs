@@ -157,7 +157,7 @@ test('builds an exact live-config Topview request and parses a completed result'
   assert.equal(built.req.resolution, 1080);
   assert.equal(built.req.aspectRatio, '16:9');
   assert.equal(built.req.sound, 'on');
-  assert.match(built.req.prompt, /<IMAGE1>, <IMAGE2>/);
+  assert.match(built.req.prompt, /<<<Image1>>>, <<<Image2>>>/);
   assert.doesNotMatch(built.req.prompt, /@Hero-One/);
   assert.match(sanitizeTopviewPrompt('A clean frame'), /Do not render labels/);
 

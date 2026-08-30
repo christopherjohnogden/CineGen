@@ -576,6 +576,25 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
       req: { taskType: "text_to_video", taskId: "topview-task-1", needCloudFrontUrl: true },
     });
 
+    const omniResponse = await rpc("generate", [{
+      prompt: "The actor walks through the room",
+      outputType: "video",
+      taskType: "omni_reference",
+      model: "Standard",
+      durationSec: 5,
+      resolution: 720,
+      medias: [{ value: "topview-file:identity-reference-1", role: "image" }],
+    }]);
+    assert.equal(omniResponse.status, 200);
+    const omniSubmitCall = toolCalls.find((entry) => (
+      entry.name === "topview_generate_video" && entry.arguments.req.taskType === "omni_reference"
+    ));
+    assert.deepEqual(omniSubmitCall.arguments.req.inputImages, [
+      { fileId: "identity-reference-1", name: "Image1" },
+    ]);
+    assert.match(omniSubmitCall.arguments.req.prompt, /<<<Image1>>> is an authoritative visual identity and appearance reference\./);
+    assert.match(omniSubmitCall.arguments.req.prompt, /The actor walks through the room/);
+
     const imageResponse = await rpc("generate", [{
       prompt: "Place the subject in a moonlit forest",
       outputType: "image",

@@ -1283,9 +1283,20 @@ function buildRequest(args: {
     const images = args.media.filter((entry) => entry.kind === "image");
     const videos = args.media.filter((entry) => entry.kind === "video");
     const audios = args.media.filter((entry) => entry.kind === "audio");
-    if (images.length) request.inputImages = images.map((entry, index) => ({ fileId: entry.fileId, name: `Image${index + 1}` }));
-    if (videos.length) request.inputVideos = videos.map((entry, index) => ({ fileId: entry.fileId, name: `Video${index + 1}` }));
-    if (audios.length) request.inputAudios = audios.map((entry, index) => ({ fileId: entry.fileId, name: `Audio${index + 1}` }));
+    const inputImages = images.map((entry, index) => ({ fileId: entry.fileId, name: `Image${index + 1}` }));
+    const inputVideos = videos.map((entry, index) => ({ fileId: entry.fileId, name: `Video${index + 1}` }));
+    const inputAudios = audios.map((entry, index) => ({ fileId: entry.fileId, name: `Audio${index + 1}` }));
+    const referenceInstructions = [
+      ...inputImages.map((entry) => `<<<${entry.name}>>> is an authoritative visual identity and appearance reference.`),
+      ...inputVideos.map((entry) => `<<<${entry.name}>>> is an authoritative motion and timing reference.`),
+      ...inputAudios.map((entry) => `<<<${entry.name}>>> is an authoritative audio reference.`),
+    ];
+    if (referenceInstructions.length) {
+      request.prompt = `${referenceInstructions.join("\n")} Match the supplied references while following the requested scene and action.\n\n${String(request.prompt)}`;
+    }
+    if (inputImages.length) request.inputImages = inputImages;
+    if (inputVideos.length) request.inputVideos = inputVideos;
+    if (inputAudios.length) request.inputAudios = inputAudios;
   }
   validateModelArgs(model, request);
   return {
