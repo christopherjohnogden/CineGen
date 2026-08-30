@@ -41,6 +41,152 @@ interface CharacterOption {
   castingProfileIndex?: number;
 }
 
+interface SavedWardrobeOption {
+  actorImageId: string;
+  option: CharacterOption;
+}
+
+interface CharacterRegenerationEditor {
+  stage: 'casting' | 'wardrobe';
+  index: number;
+  note: string;
+}
+
+interface SavedOptionTrayProps {
+  title: string;
+  description: string;
+  itemLabel: string;
+  options: CharacterOption[];
+  selectedImageId?: string;
+  onUse: (option: CharacterOption) => void;
+  onRemove: (imageId: string) => void;
+}
+
+function SavedOptionTray({
+  title,
+  description,
+  itemLabel,
+  options,
+  selectedImageId,
+  onUse,
+  onRemove,
+}: SavedOptionTrayProps) {
+  if (options.length === 0) return null;
+
+  return (
+    <aside className="character-casting__saved" aria-label={title}>
+      <div className="character-casting__saved-heading">
+        <div>
+          <span>{title}</span>
+          <small>{description}</small>
+        </div>
+        <strong>{options.length}</strong>
+      </div>
+      <div className="character-casting__saved-rail">
+        {options.map((option, index) => (
+          <article
+            key={option.image.id}
+            className={`character-casting__saved-card ${selectedImageId === option.image.id ? 'character-casting__saved-card--active' : ''}`}
+          >
+            <button
+              type="button"
+              className="character-casting__saved-use"
+              onClick={() => onUse(option)}
+              title={`Use saved ${itemLabel.toLowerCase()} ${index + 1}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={option.image.url} alt={`Saved ${itemLabel.toLowerCase()} ${index + 1}`} />
+              <span>Saved {itemLabel} {index + 1}</span>
+            </button>
+            <button
+              type="button"
+              className="character-casting__saved-remove"
+              onClick={() => onRemove(option.image.id)}
+              aria-label={`Remove saved ${itemLabel.toLowerCase()} ${index + 1}`}
+              title="Remove backup"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </article>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+interface RegenerationNotesPanelProps {
+  targetLabel: string;
+  note: string;
+  suggestions: string[];
+  busy: boolean;
+  onNoteChange: (note: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}
+
+function RegenerationNotesPanel({
+  targetLabel,
+  note,
+  suggestions,
+  busy,
+  onNoteChange,
+  onClose,
+  onSubmit,
+}: RegenerationNotesPanelProps) {
+  return (
+    <form
+      className="character-casting__regen-notes"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="character-casting__regen-notes-heading">
+        <div>
+          <span>Regenerate with notes</span>
+          <strong>{targetLabel}</strong>
+        </div>
+        <button type="button" onClick={onClose} disabled={busy} aria-label="Close regeneration notes">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <label className="character-casting__regen-notes-field">
+        <span>What was wrong, and what must change?</span>
+        <textarea
+          value={note}
+          onChange={(event) => onNoteChange(event.target.value)}
+          placeholder="e.g. Do not show any hands. Keep the same actor, face, wardrobe, lighting, and background."
+          rows={3}
+          autoFocus
+          disabled={busy}
+        />
+      </label>
+      <div className="character-casting__regen-suggestions" aria-label="Common regeneration notes">
+        {suggestions.map((suggestion) => (
+          <button
+            key={suggestion}
+            type="button"
+            onClick={() => onNoteChange(note.trim() ? `${note.trim()} ${suggestion}` : suggestion)}
+            disabled={busy}
+          >
+            {suggestion}
+          </button>
+        ))}
+      </div>
+      <div className="character-casting__regen-notes-footer">
+        <small>Add a note or choose a quick direction. Only this result is replaced; saved backups are never overwritten.</small>
+        <button type="submit" className="element-generate__btn" disabled={busy || !note.trim()}>
+          {busy ? 'Regenerating…' : 'Regenerate this image'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 const COMMON_SUFFIX = 'Use a clean, neutral plain background. Photographic style with even, consistent lighting, natural controlled shadows, and sharp details.';
 
 const REFERENCE_LOCK_INSTRUCTION = [
@@ -79,6 +225,32 @@ function characterWardrobePrompt(description: string, wardrobe: string, optionIn
     `Keep their identity, face, hair, age, body, proportions, and skin completely unchanged. Dress them in: ${wardrobe}.`,
     `The role brief is: ${description}. Show a professional full-body front wardrobe fitting on a plain warm-gray studio background.`,
     'The clothing must fit naturally and be fully visible. Do not change the actor, add another person, add text, or create a collage.',
+  ].join(' ');
+}
+
+function characterCastingCorrectionPrompt(description: string, correction: string): string {
+  return [
+    `Create a corrected replacement casting image for this role: ${description}.`,
+    'Use the provided rejected image as the authoritative source. Preserve the exact same actor identity, face, hair, age, body proportions, clothing, background, lighting, and photographic treatment unless the correction explicitly asks to change one of them.',
+    `The previous result was rejected for this reason. Mandatory correction: ${correction}.`,
+    'Make the requested correction clearly visible. Do not repeat the rejected detail. Treat negative directions such as do not show, remove, hide, or exclude as strict constraints.',
+    'The correction is production direction, not visible content. Do not add the note as text, a label, caption, sign, or watermark in the image.',
+    CHARACTER_CASTING_SUFFIX,
+  ].join(' ');
+}
+
+function characterWardrobeCorrectionPrompt(
+  description: string,
+  wardrobe: string,
+  optionIndex: number,
+  correction: string,
+): string {
+  return [
+    characterWardrobePrompt(description, wardrobe, optionIndex),
+    'Use the provided rejected wardrobe image as the primary visual source and the actor reference as the identity source. Preserve everything that is not explicitly named below.',
+    `The previous result was rejected for this reason. Mandatory correction: ${correction}.`,
+    'Make the requested correction clearly visible. Do not repeat the rejected detail. Treat negative directions such as do not show, remove, hide, or exclude as strict constraints.',
+    'The correction is production direction, not visible content. Do not render it as text, a label, caption, sign, or watermark.',
   ].join(' ');
 }
 
@@ -291,10 +463,13 @@ export function ElementGenerate({
   const [castingCount, setCastingCount] = useState(3);
   const [castingOptions, setCastingOptions] = useState<(CharacterOption | null)[]>([]);
   const [selectedCastingIndex, setSelectedCastingIndex] = useState<number | null>(null);
+  const [savedCastingOptions, setSavedCastingOptions] = useState<CharacterOption[]>([]);
   const [wardrobeDescription, setWardrobeDescription] = useState('');
   const [wardrobeCount, setWardrobeCount] = useState(1);
   const [wardrobeOptions, setWardrobeOptions] = useState<(CharacterOption | null)[]>([]);
   const [selectedWardrobeIndex, setSelectedWardrobeIndex] = useState<number | null>(null);
+  const [savedWardrobeOptions, setSavedWardrobeOptions] = useState<SavedWardrobeOption[]>([]);
+  const [regenerationEditor, setRegenerationEditor] = useState<CharacterRegenerationEditor | null>(null);
   const [characterBusy, setCharacterBusy] = useState(false);
   const [characterProgress, setCharacterProgress] = useState({ done: 0, total: 0, label: '' });
   const [characterError, setCharacterError] = useState<string | null>(null);
@@ -353,8 +528,68 @@ export function ElementGenerate({
     [referenceImages],
   );
 
-  const handleGenerateCasting = useCallback(async (regenerateIndex?: number) => {
+  const selectedActor = selectedCastingIndex === null ? null : castingOptions[selectedCastingIndex];
+  const visibleSavedWardrobeOptions = useMemo(
+    () => selectedActor
+      ? savedWardrobeOptions
+        .filter((saved) => saved.actorImageId === selectedActor.image.id)
+        .map((saved) => saved.option)
+      : [],
+    [savedWardrobeOptions, selectedActor],
+  );
+
+  const selectCastingOption = useCallback((index: number) => {
+    setRegenerationEditor(null);
+    if (selectedCastingIndex !== index) {
+      setWardrobeOptions([]);
+      setSelectedWardrobeIndex(null);
+    }
+    setSelectedCastingIndex(index);
+  }, [selectedCastingIndex]);
+
+  const toggleSavedCastingOption = useCallback((option: CharacterOption) => {
+    setSavedCastingOptions((current) => current.some((saved) => saved.image.id === option.image.id)
+      ? current.filter((saved) => saved.image.id !== option.image.id)
+      : [...current, option]);
+  }, []);
+
+  const restoreSavedCastingOption = useCallback((option: CharacterOption) => {
+    setRegenerationEditor(null);
+    const existingIndex = castingOptions.findIndex((candidate) => candidate?.image.id === option.image.id);
+    setWardrobeOptions([]);
+    setSelectedWardrobeIndex(null);
+    if (existingIndex >= 0) {
+      setSelectedCastingIndex(existingIndex);
+      return;
+    }
+    setCastingOptions([option, ...castingOptions]);
+    setSelectedCastingIndex(0);
+  }, [castingOptions]);
+
+  const toggleSavedWardrobeOption = useCallback((option: CharacterOption) => {
+    if (!selectedActor) return;
+    setSavedWardrobeOptions((current) => {
+      const isSaved = current.some((saved) => saved.option.image.id === option.image.id);
+      if (isSaved) return current.filter((saved) => saved.option.image.id !== option.image.id);
+      return [...current, { actorImageId: selectedActor.image.id, option }];
+    });
+  }, [selectedActor]);
+
+  const restoreSavedWardrobeOption = useCallback((option: CharacterOption) => {
+    setRegenerationEditor(null);
+    const existingIndex = wardrobeOptions.findIndex((candidate) => candidate?.image.id === option.image.id);
+    if (existingIndex >= 0) {
+      setSelectedWardrobeIndex(existingIndex);
+      return;
+    }
+    setWardrobeOptions([option, ...wardrobeOptions]);
+    setSelectedWardrobeIndex(0);
+  }, [wardrobeOptions]);
+
+  const handleGenerateCasting = useCallback(async (regenerateIndex?: number, correctionNote?: string) => {
     if (!desc || !selectedModelOption) return;
+    const correction = correctionNote?.trim();
+    if (regenerateIndex === undefined) setRegenerationEditor(null);
     const total = regenerateIndex === undefined ? castingCount : Math.max(castingOptions.length, castingCount);
     const next = regenerateIndex === undefined
       ? new Array<CharacterOption | null>(total).fill(null)
@@ -362,12 +597,12 @@ export function ElementGenerate({
     const targets = regenerateIndex === undefined
       ? Array.from({ length: total }, (_, index) => index)
       : [regenerateIndex];
-    if (regenerateIndex !== undefined) next[regenerateIndex] = null;
+    if (regenerateIndex !== undefined && !correction) next[regenerateIndex] = null;
 
     setCharacterBusy(true);
     setCharacterError(null);
     setCastingOptions([...next]);
-    if (regenerateIndex === undefined || selectedCastingIndex === regenerateIndex) setSelectedCastingIndex(null);
+    if (!correction && (regenerateIndex === undefined || selectedCastingIndex === regenerateIndex)) setSelectedCastingIndex(null);
     setCharacterProgress({ done: 0, total: targets.length, label: 'Auditioning actors' });
 
     let failures = 0;
@@ -378,9 +613,19 @@ export function ElementGenerate({
         ? ((previousProfileIndex ?? index) + (castingOptions.some(Boolean) ? 1 : 0)) % CASTING_IDENTITY_PROFILES.length
         : ((previousProfileIndex ?? index) + 1) % CASTING_IDENTITY_PROFILES.length;
       try {
+        const rejectedOption = correction ? castingOptions[index] : null;
+        const castingReferences = rejectedOption
+          ? [rejectedOption.referenceValue ?? rejectedOption.image.url, ...uploadedRefUrls]
+          : uploadedRefUrls;
+        const castingPrompt = correction
+          ? characterCastingCorrectionPrompt(desc, correction)
+          : characterCastingPrompt(desc, index, profileIndex);
         const generated = await generateSingleImage(
-          characterCastingPrompt(desc, index, profileIndex),
+          uploadedRefUrls.length > 0
+            ? `${castingPrompt} Use the attached images as visual casting inspiration for the requested identity, silhouette, features, palette, and production design. Do not reproduce captions, logos, watermarks, or text from the references.`
+            : castingPrompt,
           selectedModel,
+          castingReferences.length > 0 ? [...new Set(castingReferences)] : undefined,
         );
         next[index] = {
           image: {
@@ -401,12 +646,15 @@ export function ElementGenerate({
     }
     if (failures === targets.length) setCharacterError('No casting options were returned. Try again or choose another image model.');
     setCharacterBusy(false);
-  }, [castingCount, castingOptions, desc, selectedCastingIndex, selectedModel, selectedModelOption]);
+    return failures < targets.length;
+  }, [castingCount, castingOptions, desc, selectedCastingIndex, selectedModel, selectedModelOption, uploadedRefUrls]);
 
-  const handleGenerateWardrobe = useCallback(async (regenerateIndex?: number) => {
+  const handleGenerateWardrobe = useCallback(async (regenerateIndex?: number, correctionNote?: string) => {
     const actor = selectedCastingIndex === null ? null : castingOptions[selectedCastingIndex];
     const wardrobe = wardrobeDescription.trim();
     if (!actor || !wardrobe || !selectedModelOption) return;
+    const correction = correctionNote?.trim();
+    if (regenerateIndex === undefined) setRegenerationEditor(null);
     const total = regenerateIndex === undefined ? wardrobeCount : Math.max(wardrobeOptions.length, wardrobeCount);
     const next = regenerateIndex === undefined
       ? new Array<CharacterOption | null>(total).fill(null)
@@ -414,12 +662,12 @@ export function ElementGenerate({
     const targets = regenerateIndex === undefined
       ? Array.from({ length: total }, (_, index) => index)
       : [regenerateIndex];
-    if (regenerateIndex !== undefined) next[regenerateIndex] = null;
+    if (regenerateIndex !== undefined && !correction) next[regenerateIndex] = null;
 
     setCharacterBusy(true);
     setCharacterError(null);
     setWardrobeOptions([...next]);
-    if (regenerateIndex === undefined || selectedWardrobeIndex === regenerateIndex) setSelectedWardrobeIndex(null);
+    if (!correction && (regenerateIndex === undefined || selectedWardrobeIndex === regenerateIndex)) setSelectedWardrobeIndex(null);
     setCharacterProgress({ done: 0, total: targets.length, label: 'Fitting wardrobe' });
     const actorReference = actor.referenceValue ?? actor.image.url;
 
@@ -427,10 +675,16 @@ export function ElementGenerate({
     for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
       const index = targets[targetIndex];
       try {
+        const rejectedOption = correction ? wardrobeOptions[index] : null;
+        const references = rejectedOption
+          ? [rejectedOption.referenceValue ?? rejectedOption.image.url, actorReference, ...uploadedRefUrls]
+          : [actorReference, ...uploadedRefUrls];
         const generated = await generateSingleImage(
-          characterWardrobePrompt(desc, wardrobe, index),
+          correction
+            ? characterWardrobeCorrectionPrompt(desc, wardrobe, index, correction)
+            : characterWardrobePrompt(desc, wardrobe, index),
           selectedModel,
-          [actorReference],
+          [...new Set(references)],
         );
         next[index] = {
           image: {
@@ -450,7 +704,17 @@ export function ElementGenerate({
     }
     if (failures === targets.length) setCharacterError('No wardrobe options were returned. Try again or choose another image model.');
     setCharacterBusy(false);
-  }, [castingOptions, desc, selectedCastingIndex, selectedModel, selectedModelOption, selectedWardrobeIndex, wardrobeCount, wardrobeDescription, wardrobeOptions]);
+    return failures < targets.length;
+  }, [castingOptions, desc, selectedCastingIndex, selectedModel, selectedModelOption, selectedWardrobeIndex, uploadedRefUrls, wardrobeCount, wardrobeDescription, wardrobeOptions]);
+
+  const submitCharacterRegeneration = useCallback(async () => {
+    if (!regenerationEditor || characterBusy || !regenerationEditor.note.trim()) return;
+    const { stage, index, note } = regenerationEditor;
+    const succeeded = stage === 'casting'
+      ? await handleGenerateCasting(index, note)
+      : await handleGenerateWardrobe(index, note);
+    if (succeeded) setRegenerationEditor(null);
+  }, [characterBusy, handleGenerateCasting, handleGenerateWardrobe, regenerationEditor]);
 
   const handleGenerate = useCallback(async (
     preserveCompleted = false,
@@ -543,6 +807,7 @@ export function ElementGenerate({
     const wardrobe = selectedWardrobeIndex === null ? null : wardrobeOptions[selectedWardrobeIndex];
     const chosen = useWardrobe ? wardrobe : actor;
     if (!chosen) return;
+    setRegenerationEditor(null);
 
     const seededPanels: (ElementImage | null)[] = [chosen.image, null, null, null, null, null, null];
     const seededReferences: (string | null)[] = [chosen.referenceValue ?? chosen.image.url, null, null, null, null, null, null];
@@ -630,8 +895,11 @@ export function ElementGenerate({
       setCharacterStage('casting');
       setCastingOptions([]);
       setSelectedCastingIndex(null);
+      setSavedCastingOptions([]);
       setWardrobeOptions([]);
       setSelectedWardrobeIndex(null);
+      setSavedWardrobeOptions([]);
+      setRegenerationEditor(null);
       setWardrobeDescription('');
     }
   };
@@ -703,6 +971,7 @@ export function ElementGenerate({
                   className={`character-casting__step ${characterStage === stage ? 'character-casting__step--active' : ''} ${index < stageOrder ? 'character-casting__step--done' : ''}`}
                   onClick={() => {
                     if (characterBusy || phase === 'generating') return;
+                    setRegenerationEditor(null);
                     if (stage === 'casting') {
                       setPhase('idle');
                       setCharacterStage('casting');
@@ -803,36 +1072,84 @@ export function ElementGenerate({
 
               {castingOptions.length > 0 && (
                 <div className="character-casting__options">
-                  {castingOptions.map((option, index) => (
-                    <div key={option?.image.id ?? index} className={`character-casting__option ${selectedCastingIndex === index ? 'character-casting__option--selected' : ''}`}>
-                      {option ? (
-                        <>
-                          <button type="button" className="character-casting__option-select" onClick={() => setSelectedCastingIndex(index)}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={option.image.url} alt={`Casting option ${index + 1}`} />
-                            <span>Option {index + 1}</span>
+                  {castingOptions.map((option, index) => {
+                    const isSaved = !!option && savedCastingOptions.some((saved) => saved.image.id === option.image.id);
+                    return (
+                      <div key={option?.image.id ?? index} className={`character-casting__option ${selectedCastingIndex === index ? 'character-casting__option--selected' : ''}`}>
+                        {option ? (
+                          <>
+                            <button type="button" className="character-casting__option-select" onClick={() => selectCastingOption(index)}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={option.image.url} alt={`Casting option ${index + 1}`} />
+                              <span>Option {index + 1}</span>
+                            </button>
+                            <div className="character-casting__option-actions">
+                              <button
+                                type="button"
+                                className={`character-casting__option-save ${isSaved ? 'character-casting__option-save--active' : ''}`}
+                                onClick={() => toggleSavedCastingOption(option)}
+                                aria-pressed={isSaved}
+                                title={isSaved ? 'Saved as a backup' : 'Save as a backup'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" /></svg>
+                              </button>
+                              <button
+                                type="button"
+                                className="character-casting__option-regen"
+                                onClick={() => setRegenerationEditor({ stage: 'casting', index, note: '' })}
+                                disabled={isBusy}
+                                title={`Regenerate casting option ${index + 1} with notes`}
+                                aria-label={`Regenerate casting option ${index + 1} with notes`}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                              </button>
+                            </div>
+                          </>
+                        ) : characterBusy ? (
+                          <div className="character-casting__skeleton"><span /></div>
+                        ) : (
+                          <button type="button" className="character-casting__retry" onClick={() => void handleGenerateCasting(index)}>
+                            <strong>Not generated</strong>
+                            <span>Retry this option</span>
                           </button>
-                          <button type="button" className="character-casting__option-regen" onClick={() => void handleGenerateCasting(index)} disabled={isBusy} title={`Regenerate casting option ${index + 1}`}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-                          </button>
-                        </>
-                      ) : characterBusy ? (
-                        <div className="character-casting__skeleton"><span /></div>
-                      ) : (
-                        <button type="button" className="character-casting__retry" onClick={() => void handleGenerateCasting(index)}>
-                          <strong>Not generated</strong>
-                          <span>Retry this option</span>
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+
+              {regenerationEditor?.stage === 'casting' && castingOptions[regenerationEditor.index] && (
+                <RegenerationNotesPanel
+                  targetLabel={`Casting option ${regenerationEditor.index + 1}`}
+                  note={regenerationEditor.note}
+                  suggestions={[
+                    'Do not show any hands.',
+                    'Keep the same face and body.',
+                    'Use a neutral expression.',
+                    'Remove all text and logos.',
+                  ]}
+                  busy={characterBusy}
+                  onNoteChange={(note) => setRegenerationEditor((current) => current ? { ...current, note } : current)}
+                  onClose={() => setRegenerationEditor(null)}
+                  onSubmit={() => void submitCharacterRegeneration()}
+                />
+              )}
+
+              <SavedOptionTray
+                title="Saved actors"
+                description="Backups stay here while you audition new batches."
+                itemLabel="Actor"
+                options={savedCastingOptions}
+                selectedImageId={selectedCastingIndex === null ? undefined : castingOptions[selectedCastingIndex]?.image.id}
+                onUse={restoreSavedCastingOption}
+                onRemove={(imageId) => setSavedCastingOptions((current) => current.filter((option) => option.image.id !== imageId))}
+              />
 
               {selectedCastingIndex !== null && castingOptions[selectedCastingIndex] && (
                 <div className="character-casting__approval">
                   <div><strong>Actor selected</strong><span>Next, design this actor’s wardrobe without changing their identity.</span></div>
-                  <button type="button" className="element-generate__btn" onClick={() => { setCharacterStage('wardrobe'); setCharacterError(null); }}>
+                  <button type="button" className="element-generate__btn" onClick={() => { setRegenerationEditor(null); setCharacterStage('wardrobe'); setCharacterError(null); }}>
                     Continue to wardrobe
                   </button>
                 </div>
@@ -870,7 +1187,7 @@ export function ElementGenerate({
                     rows={3}
                   />
                   <div className="character-casting__wardrobe-actions">
-                    <button type="button" className="element-generate__regen-all-btn" onClick={() => { setCharacterStage('casting'); setCharacterError(null); }} disabled={isBusy}>Choose a different actor</button>
+                    <button type="button" className="element-generate__regen-all-btn" onClick={() => { setRegenerationEditor(null); setCharacterStage('casting'); setCharacterError(null); }} disabled={isBusy}>Choose a different actor</button>
                     <button type="button" className="element-generate__regen-all-btn" onClick={() => handleBuildCharacterSheet(false)} disabled={isBusy}>Use current look</button>
                     <button type="button" className="element-generate__btn" onClick={() => void handleGenerateWardrobe()} disabled={!wardrobeDescription.trim() || isBusy}>
                       Generate {wardrobeCount} {wardrobeCount === 1 ? 'look' : 'looks'}
@@ -881,31 +1198,79 @@ export function ElementGenerate({
 
               {wardrobeOptions.length > 0 && (
                 <div className="character-casting__options character-casting__options--wardrobe">
-                  {wardrobeOptions.map((option, index) => (
-                    <div key={option?.image.id ?? index} className={`character-casting__option ${selectedWardrobeIndex === index ? 'character-casting__option--selected' : ''}`}>
-                      {option ? (
-                        <>
-                          <button type="button" className="character-casting__option-select" onClick={() => setSelectedWardrobeIndex(index)}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={option.image.url} alt={`Wardrobe look ${index + 1}`} />
-                            <span>Look {index + 1}</span>
+                  {wardrobeOptions.map((option, index) => {
+                    const isSaved = !!option && visibleSavedWardrobeOptions.some((saved) => saved.image.id === option.image.id);
+                    return (
+                      <div key={option?.image.id ?? index} className={`character-casting__option ${selectedWardrobeIndex === index ? 'character-casting__option--selected' : ''}`}>
+                        {option ? (
+                          <>
+                            <button type="button" className="character-casting__option-select" onClick={() => { setRegenerationEditor(null); setSelectedWardrobeIndex(index); }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={option.image.url} alt={`Wardrobe look ${index + 1}`} />
+                              <span>Look {index + 1}</span>
+                            </button>
+                            <div className="character-casting__option-actions">
+                              <button
+                                type="button"
+                                className={`character-casting__option-save ${isSaved ? 'character-casting__option-save--active' : ''}`}
+                                onClick={() => toggleSavedWardrobeOption(option)}
+                                aria-pressed={isSaved}
+                                title={isSaved ? 'Saved as a backup' : 'Save as a backup'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" /></svg>
+                              </button>
+                              <button
+                                type="button"
+                                className="character-casting__option-regen"
+                                onClick={() => setRegenerationEditor({ stage: 'wardrobe', index, note: '' })}
+                                disabled={isBusy}
+                                title={`Regenerate wardrobe look ${index + 1} with notes`}
+                                aria-label={`Regenerate wardrobe look ${index + 1} with notes`}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                              </button>
+                            </div>
+                          </>
+                        ) : characterBusy ? (
+                          <div className="character-casting__skeleton"><span /></div>
+                        ) : (
+                          <button type="button" className="character-casting__retry" onClick={() => void handleGenerateWardrobe(index)}>
+                            <strong>Not generated</strong>
+                            <span>Retry this look</span>
                           </button>
-                          <button type="button" className="character-casting__option-regen" onClick={() => void handleGenerateWardrobe(index)} disabled={isBusy} title={`Regenerate wardrobe look ${index + 1}`}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-                          </button>
-                        </>
-                      ) : characterBusy ? (
-                        <div className="character-casting__skeleton"><span /></div>
-                      ) : (
-                        <button type="button" className="character-casting__retry" onClick={() => void handleGenerateWardrobe(index)}>
-                          <strong>Not generated</strong>
-                          <span>Retry this look</span>
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+
+              {regenerationEditor?.stage === 'wardrobe' && wardrobeOptions[regenerationEditor.index] && (
+                <RegenerationNotesPanel
+                  targetLabel={`Wardrobe look ${regenerationEditor.index + 1}`}
+                  note={regenerationEditor.note}
+                  suggestions={[
+                    'Do not show any hands.',
+                    'Keep the actor’s face unchanged.',
+                    'Keep the same outfit and colors.',
+                    'Remove all text and logos.',
+                  ]}
+                  busy={characterBusy}
+                  onNoteChange={(note) => setRegenerationEditor((current) => current ? { ...current, note } : current)}
+                  onClose={() => setRegenerationEditor(null)}
+                  onSubmit={() => void submitCharacterRegeneration()}
+                />
+              )}
+
+              <SavedOptionTray
+                title="Saved wardrobe looks"
+                description="These backups belong to the selected actor and survive new fittings."
+                itemLabel="Look"
+                options={visibleSavedWardrobeOptions}
+                selectedImageId={selectedWardrobeIndex === null ? undefined : wardrobeOptions[selectedWardrobeIndex]?.image.id}
+                onUse={restoreSavedWardrobeOption}
+                onRemove={(imageId) => setSavedWardrobeOptions((current) => current.filter((saved) => saved.option.image.id !== imageId))}
+              />
 
               {selectedWardrobeIndex !== null && wardrobeOptions[selectedWardrobeIndex] && (
                 <div className="character-casting__approval">

@@ -6,9 +6,11 @@ import { getApiKey } from '@/lib/utils/api-key';
 
 interface ElementImageUploadProps {
   onUpload: (images: ElementImage[]) => void;
+  title?: string;
+  hint?: string;
 }
 
-async function uploadToFal(file: File): Promise<string> {
+async function uploadElementFile(file: File): Promise<string> {
   const apiKey = getApiKey();
   const buffer = await file.arrayBuffer();
   const { url } = await window.electronAPI.elements.upload(
@@ -18,22 +20,32 @@ async function uploadToFal(file: File): Promise<string> {
   return url;
 }
 
-export function ElementImageUpload({ onUpload }: ElementImageUploadProps) {
+export function ElementImageUpload({
+  onUpload,
+  title = 'Drop images here or click to browse',
+  hint = 'JPG, PNG or WebP · Select one image or a complete reference set',
+}: ElementImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const processFiles = useCallback(async (files: FileList | null) => {
     if (!files) return;
     const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    if (imageFiles.length === 0) return;
+    if (imageFiles.length === 0) {
+      setError('Choose an image file such as JPG, PNG or WebP.');
+      return;
+    }
 
+    setError(null);
     setUploading(imageFiles.length);
 
     const uploaded: ElementImage[] = [];
+    const failed: string[] = [];
     for (const file of imageFiles) {
       try {
-        const url = await uploadToFal(file);
+        const url = await uploadElementFile(file);
         uploaded.push({
           id: crypto.randomUUID(),
           url,
@@ -42,11 +54,17 @@ export function ElementImageUpload({ onUpload }: ElementImageUploadProps) {
         });
       } catch (err) {
         console.error('[element-upload] Failed to upload:', file.name, err);
+        failed.push(file.name);
       }
       setUploading((prev) => prev - 1);
     }
 
     if (uploaded.length > 0) onUpload(uploaded);
+    if (failed.length > 0) {
+      setError(failed.length === imageFiles.length
+        ? 'CineGen could not upload these images. Check your connection and try again.'
+        : `${failed.length} image${failed.length === 1 ? '' : 's'} could not be uploaded. The other files were added.`);
+    }
     setUploading(0);
   }, [onUpload]);
 
@@ -59,10 +77,19 @@ export function ElementImageUpload({ onUpload }: ElementImageUploadProps) {
   return (
     <div
       className={`element-upload ${isDragging ? 'element-upload--dragging' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-busy={uploading > 0}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
       onClick={() => !uploading && inputRef.current?.click()}
+      onKeyDown={(event) => {
+        if (!uploading && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          inputRef.current?.click();
+        }
+      }}
     >
       <input
         ref={inputRef}
@@ -70,12 +97,16 @@ export function ElementImageUpload({ onUpload }: ElementImageUploadProps) {
         accept="image/*"
         multiple
         className="element-upload__input"
-        onChange={(e) => processFiles(e.target.files)}
+        onChange={(e) => {
+          void processFiles(e.target.files);
+          e.target.value = '';
+        }}
       />
       {uploading > 0 ? (
         <>
           <div className="element-upload__spinner" />
-          <span className="element-upload__text">Uploading {uploading} image{uploading > 1 ? 's' : ''}...</span>
+          <span className="element-upload__text">Preparing {uploading} image{uploading > 1 ? 's' : ''}…</span>
+          <span className="element-upload__hint">Keep this window open while the files are added.</span>
         </>
       ) : (
         <>
@@ -84,9 +115,11 @@ export function ElementImageUpload({ onUpload }: ElementImageUploadProps) {
             <polyline points="17 8 12 3 7 8" />
             <line x1="12" y1="3" x2="12" y2="15" />
           </svg>
-          <span className="element-upload__text">Drop images here or click to browse</span>
+          <span className="element-upload__text">{title}</span>
+          <span className="element-upload__hint">{hint}</span>
         </>
       )}
+      {error && <span className="element-upload__error" role="alert">{error}</span>}
     </div>
   );
 }

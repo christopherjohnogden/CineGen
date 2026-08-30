@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { fal } from '@fal-ai/client';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -38,6 +38,12 @@ function toFsPathFromLocalMediaUrl(rawUrl: string): string | null {
   } catch {
     return null;
   }
+}
+
+function safeElementFileName(rawName: string): string {
+  const extension = path.extname(rawName).toLowerCase().replace(/[^a-z0-9.]/g, '');
+  const base = path.basename(rawName, path.extname(rawName)).replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'reference';
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${base}${extension}`;
 }
 
 async function extractAudioForTranscription(inputPath: string): Promise<string> {
@@ -82,7 +88,16 @@ export function registerElementHandlers(): void {
   ipcMain.handle(
     'elements:upload',
     async (_event, fileData: { buffer: ArrayBuffer; name: string; type: string }, apiKey?: string) => {
-      if (!apiKey) throw new Error('No API key provided');
+      // Approved element art belongs to the project even when no cloud image
+      // provider is configured. Keep a durable local copy on desktop; provider
+      // adapters can stage the local-media URL later when it is used as a ref.
+      if (!apiKey) {
+        const directory = path.join(app.getPath('userData'), 'media', 'elements');
+        await fs.mkdir(directory, { recursive: true });
+        const filePath = path.join(directory, safeElementFileName(fileData.name));
+        await fs.writeFile(filePath, Buffer.from(fileData.buffer));
+        return { url: `local-media://file${filePath}` };
+      }
 
       fal.config({ credentials: apiKey });
 

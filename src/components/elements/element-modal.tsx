@@ -29,6 +29,7 @@ const VARIATION_KINDS: Array<{ id: ElementVariationKind; label: string; hint: st
 ];
 
 type ElementModalStep = 'brief' | 'reference' | 'continuity' | 'review';
+type ReferenceSourceMode = 'generate' | 'inspiration' | 'approved';
 
 const MODAL_STEPS: Array<{ id: ElementModalStep; number: string; label: string }> = [
   { id: 'brief', number: '01', label: 'Creative brief' },
@@ -86,7 +87,8 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
   const [pendingGeneratedImages, setPendingGeneratedImages] = useState<ElementImage[]>([]);
   const [generationBusy, setGenerationBusy] = useState(false);
   const [characterWorkflowState, setCharacterWorkflowState] = useState<'idle' | 'in-progress' | 'ready'>('idle');
-  const [activeImageTab, setActiveImageTab] = useState<'upload' | 'generate'>('generate');
+  const [activeImageTab, setActiveImageTab] = useState<ReferenceSourceMode>('generate');
+  const [inspirationByVariation, setInspirationByVariation] = useState<Record<string, ElementImage[]>>({});
   const [newVariationOpen, setNewVariationOpen] = useState(false);
   const [newVariationName, setNewVariationName] = useState('');
   const [newVariationKind, setNewVariationKind] = useState<ElementVariationKind>('condition');
@@ -99,6 +101,7 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
   const generationReferences = selectedVariation.images.length > 0
     ? selectedVariation.images
     : selectedSource?.images ?? [];
+  const inspirationImages = inspirationByVariation[selectedVariationId] ?? [];
   const selectedType = ELEMENT_TYPES.find((entry) => entry.id === type) ?? ELEMENT_TYPES[0];
   const isContinuityVariation = selectedVariation.kind !== 'baseline';
 
@@ -123,6 +126,23 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
     setVariations((current) => current.map((variation) => variation.id === selectedVariationId
       ? { ...variation, images: variation.images.filter((image) => image.id !== imageId), updatedAt: new Date().toISOString() }
       : variation));
+  }, [selectedVariationId]);
+
+  const handleAddInspirationImages = useCallback((newImages: ElementImage[]) => {
+    setInspirationByVariation((current) => {
+      const existing = current[selectedVariationId] ?? [];
+      const images = [...existing, ...newImages].filter((image, index, all) => (
+        all.findIndex((candidate) => candidate.id === image.id || candidate.url === image.url) === index
+      ));
+      return { ...current, [selectedVariationId]: images };
+    });
+  }, [selectedVariationId]);
+
+  const handleRemoveInspirationImage = useCallback((imageId: string) => {
+    setInspirationByVariation((current) => ({
+      ...current,
+      [selectedVariationId]: (current[selectedVariationId] ?? []).filter((image) => image.id !== imageId),
+    }));
   }, [selectedVariationId]);
 
   const createVariation = useCallback(() => {
@@ -184,7 +204,7 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
   const previousStep = () => setStep(MODAL_STEPS[Math.max(stepIndex - 1, 0)].id);
   const primaryDisabled = !name.trim()
     || generationBusy
-    || (type === 'character' && step === 'reference' && !isContinuityVariation && activeImageTab === 'generate' && characterWorkflowState === 'in-progress');
+    || (type === 'character' && step === 'reference' && !isContinuityVariation && activeImageTab !== 'approved' && characterWorkflowState === 'in-progress');
 
   return (
     <div className="element-modal__backdrop" onClick={onClose}>
@@ -267,7 +287,7 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
                   <div>
                     <span>02 / Build reference</span>
                     <h4>{isContinuityVariation ? `Build “${selectedVariation.name}”` : type === 'character' ? 'Cast, fit and photograph the role' : 'Build the approved reference sheet'}</h4>
-                    <p>{isContinuityVariation ? 'Use the source look as an identity lock and change only the scripted state below.' : 'Upload approved art or generate a controlled multi-view sheet.'}</p>
+                    <p>{isContinuityVariation ? 'Use the source look as an identity lock and change only the scripted state below.' : 'Use finished artwork directly, or guide a controlled multi-view sheet with your own visual references.'}</p>
                   </div>
                   <div className="element-studio__look-switcher">
                     <label htmlFor="element-current-look">Working look</label>
@@ -287,13 +307,66 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
                 )}
 
                 <div className="element-modal__image-tabs element-studio__source-tabs">
-                  <button type="button" className={`element-modal__image-tab ${activeImageTab === 'generate' ? 'element-modal__image-tab--active' : ''}`} onClick={() => setActiveImageTab('generate')}>Generate reference</button>
-                  <button type="button" className={`element-modal__image-tab ${activeImageTab === 'upload' ? 'element-modal__image-tab--active' : ''}`} onClick={() => setActiveImageTab('upload')}>Upload approved art</button>
+                  <button type="button" className={`element-modal__image-tab ${activeImageTab === 'generate' ? 'element-modal__image-tab--active' : ''}`} onClick={() => setActiveImageTab('generate')}>
+                    <strong>Generate</strong><small>From the creative brief</small>
+                  </button>
+                  <button type="button" className={`element-modal__image-tab ${activeImageTab === 'inspiration' ? 'element-modal__image-tab--active' : ''}`} onClick={() => setActiveImageTab('inspiration')}>
+                    <strong>Guide with images</strong><small>Generate from visual inspiration</small>
+                  </button>
+                  <button type="button" className={`element-modal__image-tab ${activeImageTab === 'approved' ? 'element-modal__image-tab--active' : ''}`} onClick={() => setActiveImageTab('approved')}>
+                    <strong>Use my images</strong><small>Save uploads as the element</small>
+                  </button>
                 </div>
 
-                {activeImageTab === 'upload' ? (
-                  <ElementImageUpload onUpload={handleAddImages} />
-                ) : (
+                {activeImageTab === 'approved' && (
+                  <div className="element-studio__upload-path">
+                    <div className="element-studio__upload-path-copy">
+                      <span>Approved artwork</span>
+                      <strong>These files become the element reference</strong>
+                      <p>Use this for finished character art, location photography, prop turnarounds or vehicle views. No new image is generated.</p>
+                    </div>
+                    <ElementImageUpload
+                      onUpload={handleAddImages}
+                      title="Add the images you want CineGen to use"
+                      hint="Every uploaded image is saved in the approved reference pack below"
+                    />
+                  </div>
+                )}
+
+                {activeImageTab === 'inspiration' && (
+                  <div className="element-studio__inspiration-path">
+                    <div className="element-studio__upload-path-copy">
+                      <span>Visual direction</span>
+                      <strong>Upload inspiration, then generate the final sheet</strong>
+                      <p>These images guide identity, shape, materials, palette and mood. They are not saved as the finished element unless you choose the generated results.</p>
+                    </div>
+                    <ElementImageUpload
+                      onUpload={handleAddInspirationImages}
+                      title="Add inspiration or identity references"
+                      hint="You can add one image or combine several references"
+                    />
+                    {inspirationImages.length > 0 && (
+                      <div className="element-studio__inspiration-tray">
+                        <div className="element-studio__reference-pack-head">
+                          <strong>Generation guidance</strong>
+                          <span>{inspirationImages.length} {inspirationImages.length === 1 ? 'image' : 'images'} attached</span>
+                        </div>
+                        <div className="element-modal__image-grid">
+                          {inspirationImages.map((image) => (
+                            <div key={image.id} className="element-modal__image-item">
+                              <img src={image.url} alt="Generation inspiration" className="element-modal__image-thumb" />
+                              <button type="button" className="element-modal__image-remove" onClick={() => handleRemoveInspirationImage(image.id)} aria-label="Remove inspiration image">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeImageTab !== 'approved' && (
                   <ElementGenerate
                     elementType={type}
                     description={isContinuityVariation
@@ -303,7 +376,9 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
                     onPendingGeneratedChange={setPendingGeneratedImages}
                     onBusyChange={setGenerationBusy}
                     onCharacterWorkflowStateChange={setCharacterWorkflowState}
-                    referenceImages={generationReferences}
+                    referenceImages={activeImageTab === 'inspiration'
+                      ? [...generationReferences, ...inspirationImages]
+                      : generationReferences}
                     continuityMode={isContinuityVariation}
                   />
                 )}
