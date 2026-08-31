@@ -1365,7 +1365,9 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       const secret = ensureSecret(env, workspaceId);
       const row = await loadConnection(env.DB, workspaceId);
       const token = await unseal<OAuthToken>(row?.token_ciphertext ?? null, secret);
-      return { connected: Boolean(token?.access_token), configured: true };
+      const client = row?.client_json ? JSON.parse(row.client_json) as OAuthClient : null;
+      const authMode = client?.auth_mode === "api_key" ? "api_key" : "oauth";
+      return { connected: Boolean(token?.access_token), configured: true, authMode };
     },
 
     async importTeamConnection(value: unknown) {

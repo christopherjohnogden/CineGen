@@ -536,7 +536,11 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     assert.doesNotMatch(importedConnection.token_ciphertext, /topview-access-token|topview-refresh-token/);
 
     const sharedStatusResponse = await rpc("connectionStatus");
-    assert.deepEqual((await sharedStatusResponse.json()).result, { connected: true, configured: true });
+    assert.deepEqual((await sharedStatusResponse.json()).result, {
+      connected: true,
+      configured: true,
+      authMode: "oauth",
+    });
 
     const connectedResponse = await rpc("accountStatus");
     assert.deepEqual((await connectedResponse.json()).result, { connected: true, configured: true, credits: 69.53 });
@@ -731,6 +735,12 @@ test("connects hosted Topview with device sign-in and API-key MCP authentication
       connected: true,
       configured: true,
       credits: 2473.33,
+    });
+    const connectionStatus = await rpc("connectionStatus");
+    assert.deepEqual((await connectionStatus.json()).result, {
+      connected: true,
+      configured: true,
+      authMode: "api_key",
     });
     const connection = database.providerConnections.get("cinegen-shared-v1:topview");
     assert.equal(connection.pending_ciphertext, null);
