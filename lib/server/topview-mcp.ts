@@ -1600,8 +1600,11 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       const secret = ensureSecret(env, workspaceId);
       const origin = normalizeOrigin(originValue, requestOrigin);
       if (!/^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)) {
-        const authorizationUrl = await beginDeviceAuthorization(env, workspaceId);
-        return { connected: false, configured: true, authorizationUrl, deviceFlow: true };
+        throw new SiteHttpError(
+          409,
+          "Topview MCP is shared from CineGen Desktop for this hosted workspace. On the owner's Mac, open Settings → Provider and choose Share MCP with team, then refresh this page.",
+          "TOPVIEW_TEAM_MCP_REQUIRED",
+        );
       }
       const redirectUri = `${origin}/api/topview/oauth/callback`;
       const row = await loadConnection(env.DB, workspaceId);
