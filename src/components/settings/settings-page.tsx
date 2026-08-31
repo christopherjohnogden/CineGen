@@ -674,6 +674,8 @@ type TopviewState = {
   configured: boolean;
   email?: string;
   credits?: number;
+  authMode?: 'oauth' | 'api_key';
+  creditType?: 'api';
   error?: string;
 };
 
@@ -681,7 +683,7 @@ function friendlyTopviewError(cause: unknown): string {
   const message = cause instanceof Error ? cause.message : String(cause ?? '');
   if (/pop-?ups?/i.test(message)) return 'Allow pop-ups for CineGen, then try connecting Topview again.';
   if (/timed out/i.test(message)) return 'Topview sign-in timed out. Try connecting again.';
-  if (/credit|balance|billing/i.test(message)) return 'Topview needs more credits for this generation. Check your Topview account balance.';
+  if (/credit|balance|billing/i.test(message)) return 'Topview needs more API-eligible credits for this generation. Ultra monthly credits cannot be used through API or MCP.';
   const remoteMessage = message.split(/Error:\s*/).filter(Boolean).pop()?.trim();
   return remoteMessage && remoteMessage.length < 260
     ? remoteMessage
@@ -740,7 +742,7 @@ function TopviewConnect() {
           <>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
               Connected to Topview{status.email ? ` · ${status.email}` : ''}
-              {typeof status.credits === 'number' ? ` · ${status.credits} credits` : ''}
+              {typeof status.credits === 'number' ? ` · ${status.credits} API credits` : ''}
             </span>
             <button className="sp-field__eye-btn" type="button" onClick={() => void disconnect()} disabled={busy} style={{ width: 'auto', padding: '4px 10px' }}>
               Disconnect
@@ -757,6 +759,12 @@ function TopviewConnect() {
       </div>
       {(error || status?.error) && (
         <p className="sp-card__desc" style={{ marginTop: 4, color: 'var(--danger, #d66)' }}>{error || status?.error}</p>
+      )}
+      {status?.connected && (
+        <p className="sp-topview-credit-note">
+          <strong>API balance:</strong> Topview&apos;s Ultra monthly credits are separate and cannot fund API/MCP generations.
+          {' '}<a href="https://docs.topview.ai/docs/billing-rules" target="_blank" rel="noreferrer">View Topview billing rules</a>.
+        </p>
       )}
       <p className="sp-card__desc" style={{ marginTop: 4 }}>
         Signs in directly through Topview&apos;s official MCP. On the hosted workspace, one connection works for the whole team. CineGen selects a compatible live model, uploads selected elements as references, and saves results to your Topview board.

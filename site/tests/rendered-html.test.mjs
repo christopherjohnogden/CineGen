@@ -543,7 +543,13 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     });
 
     const connectedResponse = await rpc("accountStatus");
-    assert.deepEqual((await connectedResponse.json()).result, { connected: true, configured: true, credits: 69.53 });
+    assert.deepEqual((await connectedResponse.json()).result, {
+      connected: true,
+      configured: true,
+      authMode: "oauth",
+      creditType: "api",
+      credits: 69.53,
+    });
 
     const generationResponse = await rpc("generate", [{
       prompt: "A cinematic sunrise over a city",
@@ -734,6 +740,8 @@ test("connects hosted Topview with device sign-in and API-key MCP authentication
     assert.deepEqual((await connectedStatus.json()).result, {
       connected: true,
       configured: true,
+      authMode: "api_key",
+      creditType: "api",
       credits: 2473.33,
     });
     const connectionStatus = await rpc("connectionStatus");

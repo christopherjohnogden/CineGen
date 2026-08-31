@@ -12099,6 +12099,22 @@ input[type='range']::-moz-range-track {
   line-height: 1.4;
 }
 
+.sp-topview-credit-note {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-subtle));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-input));
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sp-topview-credit-note strong,
+.sp-topview-credit-note a {
+  color: var(--text-secondary);
+}
+
 .sp-team-provider-note {
   padding: 10px 12px;
   margin: 0;
@@ -12160,6 +12176,88 @@ input[type='range']::-moz-range-track {
 }
 
 @media (max-width: 760px) {
+  .settings-page {
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .sp-sidebar,
+  .sp-sidebar--collapsed {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    flex: 0 0 auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .sp-sidebar__header,
+  .sp-sidebar__footer,
+  .sp-sidebar__expand {
+    display: none;
+  }
+
+  .sp-sidebar__nav {
+    overflow-x: auto;
+    flex: 0 0 auto;
+    flex-direction: row;
+    padding: 6px 10px;
+    scrollbar-width: none;
+  }
+
+  .sp-sidebar__nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sp-sidebar__nav-item {
+    min-height: 32px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .sp-sidebar__nav-item--active {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  .sp-main {
+    min-width: 0;
+  }
+
+  .sp-tabs {
+    padding: 0 10px;
+  }
+
+  .sp-tabs__tab {
+    min-height: 44px;
+    flex: 1;
+    padding: 10px 8px;
+  }
+
+  .sp-content {
+    padding: 16px 12px 96px;
+  }
+
+  .sp-card {
+    min-width: 0;
+    padding: 16px;
+  }
+
+  .sp-field__key-row {
+    min-width: 0;
+    align-items: stretch !important;
+    flex-wrap: wrap;
+  }
+
+  .sp-field__key-row > span {
+    min-width: 0;
+    flex: 1 1 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .sp-field__eye-btn {
+    min-height: 40px;
+  }
+
   .sp-team-provider__desktop-connect {
     align-items: stretch;
     flex-direction: column;

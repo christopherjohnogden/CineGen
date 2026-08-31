@@ -413,6 +413,8 @@ export interface ElectronAPI {
       configured: boolean;
       email?: string;
       credits?: number;
+      authMode?: 'oauth' | 'api_key';
+      creditType?: 'api';
       error?: string;
     }>;
     modelCatalog: () => Promise<import('./src/lib/topview/model-catalog').TopviewGenerationCatalog>;
@@ -421,6 +423,8 @@ export interface ElectronAPI {
       configured: boolean;
       email?: string;
       credits?: number;
+      authMode?: 'oauth' | 'api_key';
+      creditType?: 'api';
       error?: string;
     }>;
     authLogout: () => Promise<void>;

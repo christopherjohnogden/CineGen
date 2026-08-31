@@ -682,6 +682,14 @@ function taskError(value: unknown, fallback: string): string {
   return message?.slice(0, 700) || fallback;
 }
 
+function friendlyToolError(value: unknown, fallback: string): string {
+  const message = taskError(value, fallback);
+  if (/credit\s*(?:is\s*)?(?:not\s+enough|insufficient)|not\s+enough\s+credit|insufficient\s+credit/i.test(message)) {
+    return "Topview API credits are insufficient for this generation. Ultra monthly credits shown on Topview cannot be used through API or MCP.";
+  }
+  return message;
+}
+
 async function callTool(session: McpSession, name: string, req: JsonRecord): Promise<unknown> {
   const tool = session.tools.find((entry) => entry.name === name);
   if (!tool) {
@@ -702,7 +710,7 @@ async function callTool(session: McpSession, name: string, req: JsonRecord): Pro
   if (isRecord(result) && result.isError === true) {
     throw new SiteHttpError(
       502,
-      taskError(parseToolDocuments(result), `Topview could not run ${name}.`),
+      friendlyToolError(parseToolDocuments(result), `Topview could not run ${name}.`),
       "TOPVIEW_TOOL_ERROR",
     );
   }
@@ -710,7 +718,7 @@ async function callTool(session: McpSession, name: string, req: JsonRecord): Pro
   const coded = collectRecords(documents).find((record) => Object.hasOwn(record, "code"));
   const responseCode = coded?.code;
   if (responseCode !== undefined && String(responseCode) !== "200") {
-    throw new SiteHttpError(502, taskError(documents, `Topview could not run ${name}.`), "TOPVIEW_TOOL_ERROR");
+    throw new SiteHttpError(502, friendlyToolError(documents, `Topview could not run ${name}.`), "TOPVIEW_TOOL_ERROR");
   }
   return result;
 }
@@ -1553,6 +1561,9 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       try {
         await completeDeviceAuthorization(env, workspaceId);
         const auth = await authContext(env, workspaceId);
+        const row = await loadConnection(env.DB, workspaceId);
+        const client = row?.client_json ? JSON.parse(row.client_json) as OAuthClient : null;
+        const authMode = client?.auth_mode === "api_key" ? "api_key" : "oauth";
         let credits: number | undefined;
         try {
           const session = await mcpSession(auth);
@@ -1563,6 +1574,8 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         return {
           connected: Boolean(auth.token),
           configured: true,
+          authMode,
+          creditType: "api" as const,
           ...(credits !== undefined ? { credits } : {}),
         };
       } catch (error) {
