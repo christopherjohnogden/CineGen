@@ -436,11 +436,13 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
               result: {
                 taskId: "topview-task-1",
                 status: "success",
-                videos: [{
-                  status: "success",
-                  filePath: "https://cdn.example.com/topview-task-1.mp4",
-                  boardTaskId: "board-task-1",
-                }],
+                boardTaskId: "board-task-1",
+                originVideo: {
+                  type: "video",
+                  format: "mp4",
+                  url: "https://api.topview.ai/s/3LHi5jFg",
+                  coverUrl: "https://api.topview.ai/s/7PgToOSB",
+                },
               },
             };
         } else {
@@ -551,22 +553,32 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
       credits: 69.53,
     });
 
-    const generationResponse = await rpc("generate", [{
+    const submissionResponse = await rpc("submit", [{
       prompt: "A cinematic sunrise over a city",
-      outputType: "video",
       model: "Standard",
       durationSec: 10,
       aspectRatio: "9:16",
       resolution: 720,
       generateAudio: true,
     }]);
+    assert.equal(submissionResponse.status, 200);
+    const submission = (await submissionResponse.json()).result;
+    assert.equal(submission.taskId, "topview-task-1");
+    assert.equal(submission.taskType, "text_to_video");
+    assert.equal(submission.boardId, "board-1");
+    assert.equal(submission.status, "init");
+    assert.equal(submission.pending, true);
+
+    const generationResponse = await rpc("query", [submission]);
     assert.equal(generationResponse.status, 200);
     const generation = (await generationResponse.json()).result;
-    assert.equal(generation.url, "https://cdn.example.com/topview-task-1.mp4");
+    assert.equal(generation.url, "https://api.topview.ai/s/3LHi5jFg");
+    assert.deepEqual(generation.urls, ["https://api.topview.ai/s/3LHi5jFg"]);
     assert.equal(generation.mediaType, "video");
     assert.equal(generation.taskId, "topview-task-1");
     assert.equal(generation.model, "standard-v2");
     assert.equal(generation.durationSec, 10);
+    assert.equal(generation.status, "success");
     assert.equal(generation.pending, false);
     assert.equal(generation.boardUrl, "https://www.topview.ai/board/board-1?boardResultId=board-task-1");
 

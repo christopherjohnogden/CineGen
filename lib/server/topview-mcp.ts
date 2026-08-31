@@ -657,8 +657,19 @@ function resultUrls(value: unknown, outputType: "image" | "video" | "audio"): st
   const keyed = new Set<string>();
   for (const record of collectRecords(value)) {
     for (const [key, nested] of Object.entries(record)) {
+      const recordType = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+      const recordFormat = typeof record.format === "string" ? record.format.trim().toLowerCase() : "";
+      const typedShortUrl = /^url$/i.test(key) && (
+        recordType === outputType
+        || (outputType === "image" && /^(?:png|jpe?g|webp|gif|avif)$/.test(recordFormat))
+        || (outputType === "video" && /^(?:mp4|mov|webm|mkv)$/.test(recordFormat))
+        || (outputType === "audio" && /^(?:mp3|wav|m4a|aac|ogg)$/.test(recordFormat))
+      );
       if (
-        /^(cloudFrontUrl|cloudfront_url|downloadUrl|download_url|videoUrl|video_url|imageUrl|image_url|resultUrl|result_url|outputUrl|output_url|mediaUrl|media_url|filePath|file_path)$/i.test(key)
+        (
+          /^(cloudFrontUrl|cloudfront_url|downloadUrl|download_url|videoUrl|video_url|finishedVideoUrl|finished_video_url|outputVideoUrl|output_video_url|imageUrl|image_url|resultUrl|result_url|outputUrl|output_url|mediaUrl|media_url|filePath|file_path)$/i.test(key)
+          || typedShortUrl
+        )
         && typeof nested === "string"
         && /^https:\/\//i.test(nested)
       ) keyed.add(nested);
@@ -678,7 +689,10 @@ function taskStatus(value: unknown): string {
 }
 
 function taskError(value: unknown, fallback: string): string {
-  const message = findStringByKeys(value, ["errorMsg", "error_message", "error", "message"]);
+  const message = findStringByKeys(value, [
+    "errorMsg", "error_msg", "errorMessage", "error_message",
+    "failureReason", "failure_reason", "error", "message",
+  ]);
   return message?.slice(0, 700) || fallback;
 }
 
@@ -1328,7 +1342,15 @@ function generationResult(args: {
 }) {
   const urls = resultUrls(args.documents, args.outputType);
   const boardTaskId = findStringByKeys(args.documents, ["boardTaskId", "board_task_id"]);
-  const status = taskStatus(args.documents) || (args.pending ? "running" : "success");
+  const remoteStatus = taskStatus(args.documents);
+  const failed = /fail|error|cancel/.test(remoteStatus);
+  const status = urls.length
+    ? "success"
+    : failed
+      ? "fail"
+      : /^(?:init|created|queued)$/.test(remoteStatus)
+        ? "init"
+        : "running";
   return {
     ...(urls[0] ? { url: urls[0] } : {}),
     ...(urls.length ? { urls } : {}),
@@ -1337,10 +1359,12 @@ function generationResult(args: {
     jobId: args.taskId,
     taskType: args.taskType,
     status,
-    pending: Boolean(args.pending && !urls.length),
+    pending: Boolean(!urls.length && status !== "fail"),
+    ...(status === "fail" ? { error: taskError(args.documents, `Topview could not complete task ${args.taskId}.`) } : {}),
     model: args.model,
     ...(args.durationSec ? { durationSec: args.durationSec } : {}),
     ...(args.boardId ? {
+      boardId: args.boardId,
       boardUrl: `https://www.topview.ai/board/${encodeURIComponent(args.boardId)}${boardTaskId ? `?boardResultId=${encodeURIComponent(boardTaskId)}` : ""}`,
     } : {}),
   };
@@ -1704,6 +1728,17 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         );
       }
       if (params.waitForCompletion === false) {
+        // A submitted task returns immediately. A resumed task performs one
+        // fresh query so the browser can poll with short independent requests
+        // and survive navigation, mobile suspension, or a long Topview render.
+        if (existingTaskId) {
+          const polled = await callTool(session, "topview_query_task", {
+            taskType,
+            taskId,
+            needCloudFrontUrl: true,
+          });
+          documents = parseToolDocuments(polled);
+        }
         return generationResult({
           documents,
           taskId,
@@ -1757,6 +1792,19 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         boardId: boardId || undefined,
         pending: true,
       });
+    },
+
+    async submit(value: unknown) {
+      const params = requireRecord(value, "Topview video parameters");
+      return this.generate({ ...params, outputType: "video", waitForCompletion: false });
+    },
+
+    async query(value: unknown) {
+      const params = requireRecord(value, "Topview video task");
+      if (typeof params.taskId !== "string" || !params.taskId.trim()) {
+        throw new SiteHttpError(400, "Topview task query requires a task ID.", "TOPVIEW_PARAMETERS_INVALID");
+      }
+      return this.generate({ ...params, outputType: "video", waitForCompletion: false });
     },
   };
 }

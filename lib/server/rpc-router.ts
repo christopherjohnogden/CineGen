@@ -288,6 +288,12 @@ export async function handleRpc(
       case "topview.generate":
         result = await topview.generate(args[0]);
         break;
+      case "topview.submit":
+        result = await topview.submit(args[0]);
+        break;
+      case "topview.query":
+        result = await topview.query(args[0]);
+        break;
       case "topview.generateImage":
         result = await topview.generate({ ...requireRecord(args[0] ?? {}, "Topview image parameters"), outputType: "image" });
         break;
