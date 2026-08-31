@@ -1,6 +1,7 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { WorkflowCanvas } from './workflow-canvas';
+import { SpaceStudio } from './space-studio';
 import { CreateTimeline } from './create-timeline';
 import type { PreviewMode } from './timeline-preview';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
@@ -16,6 +17,20 @@ import {
 import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
 
 type SidebarPanel = 'workflows' | 'models' | 'history' | null;
+type SpaceViewMode = 'canvas' | 'studio';
+
+const SPACE_VIEW_STORAGE_KEY = 'cinegen_spaces_view_mode';
+
+function getInitialSpaceViewMode(): SpaceViewMode {
+  if (typeof window === 'undefined') return 'canvas';
+
+  try {
+    const storedMode = window.localStorage.getItem(SPACE_VIEW_STORAGE_KEY);
+    return storedMode === 'studio' ? 'studio' : 'canvas';
+  } catch {
+    return 'canvas';
+  }
+}
 
 const PROVIDER_LABELS: Record<VideoGenerationProvider, string> = {
   topview: 'Topview AI',
@@ -114,6 +129,7 @@ export function CreateTab() {
   const [previewMode, setPreviewMode] = useState<PreviewMode>('pip');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [viewMode, setViewMode] = useState<SpaceViewMode>(getInitialSpaceViewMode);
   const [activePanel, setActivePanel] = useState<SidebarPanel>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -135,6 +151,20 @@ export function CreateTab() {
 
   const handlePreviewModeChange = useCallback((mode: PreviewMode) => {
     setPreviewMode(mode);
+  }, []);
+
+  const handleViewModeChange = useCallback((mode: SpaceViewMode) => {
+    setViewMode(mode);
+    try {
+      window.localStorage.setItem(SPACE_VIEW_STORAGE_KEY, mode);
+    } catch {
+      // The view still switches when storage is unavailable.
+    }
+
+    if (mode === 'studio') {
+      setTimelineOpen(false);
+      setPreviewMode('pip');
+    }
   }, []);
 
   const openSpaces = useMemo(
@@ -403,21 +433,23 @@ export function CreateTab() {
               <span>Space</span>
               <strong>{activeSpace?.name ?? 'Untitled'}</strong>
             </div>
-            <button
-              type="button"
-              className="cs-mobile-bar__models"
-              onClick={() => {
-                setActivePanel(null);
-                setSidebarOpen(false);
-                window.dispatchEvent(new Event('cinegen:open-node-palette'));
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Add node
-            </button>
+            {viewMode === 'canvas' && (
+              <button
+                type="button"
+                className="cs-mobile-bar__models"
+                onClick={() => {
+                  setActivePanel(null);
+                  setSidebarOpen(false);
+                  window.dispatchEvent(new Event('cinegen:open-node-palette'));
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Add node
+              </button>
+            )}
           </div>
         )}
         {openSpaces.length > 1 && (
@@ -470,23 +502,55 @@ export function CreateTab() {
           </div>
         )}
 
-        <div className={`create-tab__canvas ${isFullscreen ? 'create-tab__canvas--blurred' : ''}`}>
-          <WorkflowCanvas key={state.activeSpaceId} />
-          {isFullscreen && (
-            <div
-              className="create-tab__fullscreen-overlay"
-              onClick={() => setPreviewMode('pip')}
-            />
+        <div className="cs-view-switch" role="group" aria-label="Space view">
+          <button
+            type="button"
+            aria-pressed={viewMode === 'canvas'}
+            className={viewMode === 'canvas' ? 'is-active' : undefined}
+            onClick={() => handleViewModeChange('canvas')}
+          >
+            Canvas
+          </button>
+          <button
+            type="button"
+            aria-pressed={viewMode === 'studio'}
+            className={viewMode === 'studio' ? 'is-active' : undefined}
+            onClick={() => handleViewModeChange('studio')}
+          >
+            Studio
+          </button>
+        </div>
+
+        <div className="create-tab__view-host">
+          <div
+            className={`create-tab__canvas${isFullscreen ? ' create-tab__canvas--blurred' : ''}${viewMode === 'studio' ? ' create-tab__canvas--studio-hidden' : ''}`}
+            aria-hidden={viewMode === 'studio'}
+            inert={viewMode === 'studio'}
+          >
+            <WorkflowCanvas key={state.activeSpaceId} />
+            {isFullscreen && (
+              <div
+                className="create-tab__fullscreen-overlay"
+                onClick={() => setPreviewMode('pip')}
+              />
+            )}
+          </div>
+          {viewMode === 'studio' && (
+            <div className="create-tab__studio">
+              <SpaceStudio />
+            </div>
           )}
         </div>
       </div>
 
-      <CreateTimeline
-        open={timelineOpen}
-        onToggle={() => setTimelineOpen((v) => !v)}
-        previewMode={previewMode}
-        onPreviewModeChange={handlePreviewModeChange}
-      />
+      {viewMode === 'canvas' && (
+        <CreateTimeline
+          open={timelineOpen}
+          onToggle={() => setTimelineOpen((v) => !v)}
+          previewMode={previewMode}
+          onPreviewModeChange={handlePreviewModeChange}
+        />
+      )}
 
       {/* ── Context menu ── */}
       {ctxMenu && (
