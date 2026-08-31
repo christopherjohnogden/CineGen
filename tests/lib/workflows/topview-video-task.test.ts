@@ -7,6 +7,7 @@ import {
   TopviewVideoTaskPendingError,
 } from '@/lib/topview/video-task';
 import { executeWorkflow } from '@/lib/workflows/execute';
+import { resumePersistedTopviewVideoTasks } from '@/lib/topview/video-task-recovery';
 
 const task: TopviewVideoTaskState = {
   taskId: 'topview-task-1',
@@ -199,5 +200,43 @@ describe('Spaces Topview video recovery', () => {
       status: 'complete',
       url: 'https://cdn.example/recovered.mp4',
     });
+  });
+
+  it('automatically restarts a restored running task once without submitting a duplicate', async () => {
+    const submit = vi.fn();
+    const query = vi.fn().mockResolvedValue(queryResult('success', {
+      url: 'https://cdn.example/recovered-after-refresh.mp4',
+    }));
+    installTopviewBridge(submit, query);
+    const dispatch = workflowDispatch();
+    const restoredNode = workflowNode({
+      status: 'running',
+      progressStartedAt: Date.now() - 60_000,
+      topviewTask: task,
+    });
+    const attemptedTasks = new Set<string>();
+
+    await Promise.all(resumePersistedTopviewVideoTasks(
+      [restoredNode],
+      [],
+      dispatch,
+      attemptedTasks,
+    ));
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(task);
+    expect(dispatch.setNodeResult).toHaveBeenCalledWith('topview-video-1', {
+      status: 'complete',
+      url: 'https://cdn.example/recovered-after-refresh.mp4',
+    });
+
+    await Promise.all(resumePersistedTopviewVideoTasks(
+      [restoredNode],
+      [],
+      dispatch,
+      attemptedTasks,
+    ));
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

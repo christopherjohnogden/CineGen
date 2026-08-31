@@ -45,7 +45,7 @@ import {
   normalizeTopviewVideoTask,
 } from '@/lib/topview/video-task';
 
-interface WorkflowDispatch {
+export interface WorkflowDispatch {
   setNodeRunning: (nodeId: string, running: boolean) => void;
   setNodeResult: (nodeId: string, result: WorkflowNodeData['result']) => void;
   addGeneration: (nodeId: string, url: string) => void;

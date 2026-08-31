@@ -31,6 +31,7 @@ import { useWorkspace } from '@/components/workspace/workspace-shell';
 import { generateId } from '@/lib/utils/ids';
 import { getMediaTypeForFile, isMediaDragEvent, resolveMediaFileUrl } from '@/lib/utils/media-file';
 import { executeFromNode } from '@/lib/workflows/execute';
+import { resumePersistedTopviewVideoTasks } from '@/lib/topview/video-task-recovery';
 import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
 import { reconcilePromptMentionConnections } from '@/lib/llm/prompt-elements';
@@ -70,6 +71,7 @@ function WorkflowCanvasInner() {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const resumedTopviewTasksRef = useRef(new Set<string>());
 
   const nodesRef = useRef(state.nodes);
   nodesRef.current = state.nodes;
@@ -606,6 +608,20 @@ function WorkflowCanvasInner() {
       await executeFromNode(nodeId, state.nodes, state.edges, workflowDispatch());
     } catch (err) {
       console.error('Run failed:', err);
+    }
+  }, [state.nodes, state.edges, workflowDispatch]);
+
+  useEffect(() => {
+    const recoveries = resumePersistedTopviewVideoTasks(
+      state.nodes,
+      state.edges,
+      workflowDispatch(),
+      resumedTopviewTasksRef.current,
+    );
+    for (const recovery of recoveries) {
+      void recovery.catch((error) => {
+        console.error('Topview task recovery failed:', error);
+      });
     }
   }, [state.nodes, state.edges, workflowDispatch]);
 
