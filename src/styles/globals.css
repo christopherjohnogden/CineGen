@@ -10612,6 +10612,7 @@ input[type='range']::-moz-range-track {
   width: 100%;
   height: 100%;
   border: 0;
+  background: #101114;
   object-fit: cover;
 }
 
@@ -10699,6 +10700,7 @@ input[type='range']::-moz-range-track {
   bottom: 8px;
   z-index: 4;
   display: flex;
+  max-width: calc(100% - 18px);
   align-items: center;
   gap: 3px;
   padding: 3px;
@@ -10708,6 +10710,7 @@ input[type='range']::-moz-range-track {
   color: rgba(255, 255, 255, 0.78);
   font-family: var(--font-mono);
   font-size: 9px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .model-node__media-surface[data-output-type='video'] .model-node__media-generations {
@@ -10715,22 +10718,59 @@ input[type='range']::-moz-range-track {
   bottom: auto;
 }
 
-.model-node__media-generations button {
+.model-node__media-generation-arrow,
+.model-node__media-generation-tab {
   display: grid;
+  flex: 0 0 auto;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  height: 26px;
   padding: 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: inherit;
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+.model-node__media-generation-arrow {
+  width: 26px;
   font-size: 15px;
 }
 
-.model-node__media-generations button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); color: #fff; }
-.model-node__media-generations button:disabled { opacity: 0.28; cursor: default; }
+.model-node__media-generation-tabs {
+  display: flex;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.model-node__media-generation-tabs::-webkit-scrollbar { display: none; }
+
+.model-node__media-generation-tab {
+  min-width: 27px;
+  padding: 0 5px;
+  font: 600 9px/1 var(--font-mono);
+}
+
+.model-node__media-generation-arrow:hover:not(:disabled),
+.model-node__media-generation-tab:hover,
+.model-node__media-generation-tab--active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.model-node__media-generation-tab--active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 72%, transparent);
+  color: var(--accent);
+}
+
+.model-node__media-generation-arrow:active:not(:disabled),
+.model-node__media-generation-tab:active { transform: translateY(1px) scale(0.97); }
+.model-node__media-generation-arrow:disabled { opacity: 0.28; cursor: default; }
 
 .model-node__media-state {
   position: absolute;

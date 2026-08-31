@@ -66,11 +66,14 @@ function WorkflowCanvasInner() {
   const [mobileMultiSelect, setMobileMultiSelect] = useState(false);
   const [mobileGuideOpen, setMobileGuideOpen] = useState(false);
   const [confirmMobileDelete, setConfirmMobileDelete] = useState(false);
+  const [inspectorNodeId, setInspectorNodeId] = useState<string | null>(null);
   const mouseRef = useRef({ x: 0, y: 0 });
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const draggedNodeIdRef = useRef<string | null>(null);
+  const dragClickResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumedTopviewTasksRef = useRef(new Set<string>());
 
   const nodesRef = useRef(state.nodes);
@@ -137,8 +140,31 @@ function WorkflowCanvasInner() {
     [dispatch],
   );
 
+  const onNodeDragStart = useCallback((_: React.MouseEvent, node: Node) => {
+    if (dragClickResetTimerRef.current) clearTimeout(dragClickResetTimerRef.current);
+    draggedNodeIdRef.current = node.id;
+    setInspectorNodeId(null);
+  }, []);
+
   const onNodeDragStop = useCallback(() => {
     setHelperLines({ horizontal: null, vertical: null });
+    // Keep the drag marker through the browser's click event, then clear it if
+    // React Flow correctly suppressed that click for a completed drag.
+    if (dragClickResetTimerRef.current) clearTimeout(dragClickResetTimerRef.current);
+    dragClickResetTimerRef.current = setTimeout(() => {
+      draggedNodeIdRef.current = null;
+      dragClickResetTimerRef.current = null;
+    }, 350);
+  }, []);
+
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node<WorkflowNodeData>) => {
+    // Some touch browsers still synthesize a click after pointer movement. Do
+    // not let that compatibility click reopen the inspector after a drag.
+    if (draggedNodeIdRef.current === node.id) {
+      draggedNodeIdRef.current = null;
+      return;
+    }
+    setInspectorNodeId(getModelDefinition(node.data.type) ? node.id : null);
   }, []);
 
   const onEdgesChange = useCallback(
@@ -420,6 +446,7 @@ function WorkflowCanvasInner() {
     });
     setMobileMultiSelect(false);
     setConfirmMobileDelete(false);
+    setInspectorNodeId(null);
     setContextMenu(null);
   }, [state.nodes, state.edges, dispatch]);
 
@@ -433,6 +460,7 @@ function WorkflowCanvasInner() {
     dispatch({ type: 'SET_EDGES', edges: remainingEdges });
     setMobileMultiSelect(false);
     setConfirmMobileDelete(false);
+    setInspectorNodeId(null);
     setContextMenu(null);
   }, [state.nodes, state.edges, dispatch]);
 
@@ -477,7 +505,10 @@ function WorkflowCanvasInner() {
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 9) cancelLongPress();
   }, [cancelLongPress]);
 
-  useEffect(() => cancelLongPress, [cancelLongPress]);
+  useEffect(() => () => {
+    cancelLongPress();
+    if (dragClickResetTimerRef.current) clearTimeout(dragClickResetTimerRef.current);
+  }, [cancelLongPress]);
 
   const addNodeToCenter = useCallback(
     (nodeType: string) => {
@@ -737,8 +768,10 @@ function WorkflowCanvasInner() {
   const selectedEdges = state.edges.filter((edge) => edge.selected);
   const selectedCount = selectedNodes.length + selectedEdges.length;
   const selectedSignature = `${selectedNodes.map((node) => node.id).join(',')}|${selectedEdges.map((edge) => edge.id).join(',')}`;
-  const selectedNode = selectedNodes[0];
-  const showInspector = selectedNode && getModelDefinition(selectedNode.data.type);
+  const inspectorNode = inspectorNodeId
+    ? state.nodes.find((node) => node.id === inspectorNodeId)
+    : undefined;
+  const showInspector = inspectorNode && getModelDefinition(inspectorNode.data.type);
 
   useEffect(() => {
     setConfirmMobileDelete(false);
@@ -785,6 +818,8 @@ function WorkflowCanvasInner() {
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
         onConnectEnd={handleConnectEnd}
+        onNodeClick={handleNodeClick}
+        onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={handleContextMenu}
@@ -794,6 +829,7 @@ function WorkflowCanvasInner() {
             setPaletteOpen(false);
             setPendingPaletteConnection(null);
           }
+          setInspectorNodeId(null);
           setContextMenu(null);
           setConfirmMobileDelete(false);
         }}
@@ -895,8 +931,8 @@ function WorkflowCanvasInner() {
         </button>
       )}
 
-      {showInspector && selectedNode && (
-        <NodeInspector nodeId={selectedNode.id} data={selectedNode.data} />
+      {showInspector && inspectorNode && (
+        <NodeInspector nodeId={inspectorNode.id} data={inspectorNode.data} />
       )}
 
       {isMobileCanvas && selectedCount > 0 && (

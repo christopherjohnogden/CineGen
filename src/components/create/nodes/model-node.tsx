@@ -11,6 +11,7 @@ import { ImageCompare } from '@/components/create/image-compare';
 import { Sam3Modal } from '@/components/create/sam3-modal';
 import { Sam3CloudModal } from '@/components/create/sam3-cloud-modal';
 import { FullscreenModal } from '@/components/create/fullscreen-modal';
+import { VideoNodePreview } from '@/components/create/nodes/video-node-preview';
 import { addClipToTrack } from '@/lib/editor/timeline-operations';
 import { clipEffectiveDuration } from '@/types/timeline';
 import { generateId, timestamp } from '@/lib/utils/ids';
@@ -42,6 +43,101 @@ interface PortEntry {
   portType: string;
   label: string;
   required: boolean;
+}
+
+interface GenerationTabsProps {
+  activeIndex: number;
+  count: number;
+  label: string;
+  onSelect: (index: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+}
+
+export function GenerationTabs({
+  activeIndex,
+  count,
+  label,
+  onSelect,
+  onPrevious,
+  onNext,
+}: GenerationTabsProps) {
+  const tabListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const tabList = tabListRef.current;
+    const activeTab = tabList?.querySelector<HTMLElement>(`[data-generation-index="${activeIndex}"]`);
+    if (!tabList || !activeTab) return;
+
+    const tabLeft = activeTab.offsetLeft;
+    const tabRight = tabLeft + activeTab.offsetWidth;
+    if (tabLeft < tabList.scrollLeft) {
+      tabList.scrollTo({ left: tabLeft, behavior: 'smooth' });
+    } else if (tabRight > tabList.scrollLeft + tabList.clientWidth) {
+      tabList.scrollTo({ left: tabRight - tabList.clientWidth, behavior: 'smooth' });
+    }
+  }, [activeIndex]);
+
+  const selectFromKeyboard = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | undefined;
+    if (event.key === 'ArrowLeft') nextIndex = Math.max(0, index - 1);
+    if (event.key === 'ArrowRight') nextIndex = Math.min(count - 1, index + 1);
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = count - 1;
+    if (nextIndex === undefined) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(nextIndex);
+    tabListRef.current
+      ?.querySelector<HTMLElement>(`[data-generation-index="${nextIndex}"]`)
+      ?.focus();
+  };
+
+  return (
+    <div
+      className="model-node__media-generations nodrag nowheel"
+      aria-label={`${label} version navigation`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="model-node__media-generation-arrow"
+        onClick={onPrevious}
+        disabled={activeIndex <= 0}
+        aria-label="Previous version"
+      >
+        &lsaquo;
+      </button>
+      <div ref={tabListRef} className="model-node__media-generation-tabs" role="tablist" aria-label={`${label} versions`}>
+        {Array.from({ length: count }, (_, index) => (
+          <button
+            key={index}
+            type="button"
+            role="tab"
+            className={`model-node__media-generation-tab${index === activeIndex ? ' model-node__media-generation-tab--active' : ''}`}
+            aria-selected={index === activeIndex}
+            aria-label={`Version ${index + 1} of ${count}`}
+            tabIndex={index === activeIndex ? 0 : -1}
+            data-generation-index={index}
+            onClick={() => onSelect(index)}
+            onKeyDown={(event) => selectFromKeyboard(event, index)}
+          >
+            V{index + 1}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="model-node__media-generation-arrow"
+        onClick={onNext}
+        disabled={activeIndex >= count - 1}
+        aria-label="Next version"
+      >
+        &rsaquo;
+      </button>
+    </div>
+  );
 }
 
 function modelOutputBadge(outputType: string): string {
@@ -166,9 +262,15 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
   }, [data.result?.progressStartedAt, isRunning, isRunpodLtxSession]);
 
   const generations = (data.generations as string[]) ?? [];
-  const activeIdx = (data.activeGeneration as number) ?? generations.length - 1;
+  const storedActiveIdx = typeof data.activeGeneration === 'number' && Number.isFinite(data.activeGeneration)
+    ? Math.trunc(data.activeGeneration)
+    : generations.length - 1;
+  const activeIdx = generations.length > 0
+    ? Math.max(0, Math.min(generations.length - 1, storedActiveIdx))
+    : -1;
   // When layers exist, use result.url directly (updated by layer selection)
-  const activeUrl = data.result?.layers?.length ? url : (generations[activeIdx] ?? url);
+  const activeUrl = data.result?.layers?.length ? url : ((activeIdx >= 0 ? generations[activeIdx] : undefined) ?? url);
+  const activeVersionNumber = activeIdx >= 0 ? activeIdx + 1 : 1;
   const hasMultiple = generations.length > 1;
   const selectedLayerIndex = data.result?.selectedLayerIndex ?? 0;
   const selectedLayer = data.result?.layers?.[selectedLayerIndex];
@@ -275,12 +377,20 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
 
   const canCompare = !!inputImageUrl;
 
-  const navigateGen = useCallback(
-    (dir: -1 | 1) => {
-      const next = Math.max(0, Math.min(generations.length - 1, activeIdx + dir));
-      updateNodeData(id, { activeGeneration: next, result: { ...data.result, url: generations[next] } });
+  const selectGeneration = useCallback(
+    (next: number) => {
+      const nextUrl = generations[next];
+      if (!nextUrl || next === activeIdx) return;
+      updateNodeData(id, { activeGeneration: next, result: { ...data.result, url: nextUrl } });
     },
     [id, data.result, generations, activeIdx, updateNodeData],
+  );
+
+  const navigateGen = useCallback(
+    (dir: -1 | 1) => {
+      selectGeneration(Math.max(0, Math.min(generations.length - 1, activeIdx + dir)));
+    },
+    [activeIdx, generations.length, selectGeneration],
   );
 
   const handleAddToTimeline = useCallback(() => {
@@ -463,14 +573,11 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
       {isFullBleedVisual ? (
         <div className="model-node__media-surface" data-output-type={modelDef.outputType}>
           {activeUrl && modelDef.outputType === 'video' ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
-            <video
-              key={activeUrl}
-              src={activeUrl}
+            <VideoNodePreview
+              sourceUrl={activeUrl}
+              fallbackPosterUrl={inputImageUrl}
               className="model-node__media-output nodrag nowheel"
-              controls
-              playsInline
-              preload="metadata"
+              ariaLabel={`Play ${modelDef.name} version ${activeVersionNumber}`}
               onError={() => setVisualMediaError(true)}
             />
           ) : activeUrl ? (
@@ -570,11 +677,14 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
           </div>
 
           {hasMultiple && (
-            <div className="model-node__media-generations nodrag">
-              <button type="button" onClick={() => navigateGen(-1)} disabled={activeIdx <= 0} aria-label="Previous result">&lsaquo;</button>
-              <span>{activeIdx + 1} / {generations.length}</span>
-              <button type="button" onClick={() => navigateGen(1)} disabled={activeIdx >= generations.length - 1} aria-label="Next result">&rsaquo;</button>
-            </div>
+            <GenerationTabs
+              activeIndex={activeIdx}
+              count={generations.length}
+              label={modelOutputLabel(modelDef.outputType)}
+              onSelect={selectGeneration}
+              onPrevious={() => navigateGen(-1)}
+              onNext={() => navigateGen(1)}
+            />
           )}
 
           {isRunning ? (
@@ -891,8 +1001,12 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
                   </div>
 
                   {modelDef.outputType === 'video' ? (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
-                    <video src={activeUrl} className="model-node__preview-media" controls />
+                    <VideoNodePreview
+                      sourceUrl={activeUrl}
+                      fallbackPosterUrl={inputImageUrl}
+                      className="model-node__preview-media"
+                      ariaLabel={`Play ${modelDef.name} version ${activeVersionNumber}`}
+                    />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={activeUrl || (isSam3ImageNode ? inputImageUrl : undefined)} alt="Result" className="model-node__preview-media" />
