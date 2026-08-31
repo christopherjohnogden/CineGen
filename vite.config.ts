@@ -1,123 +1,81 @@
-/// <reference types="vitest/config" />
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import electron from 'vite-plugin-electron';
-import renderer from 'vite-plugin-electron-renderer';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
-import { execFileSync } from 'child_process';
+import vinext from "vinext";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vite";
+import hostingConfig from "./.openai/hosting.json";
+import { sites } from "./build/sites-vite-plugin";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
+  "00000000-0000-4000-8000-000000000000";
 
-// Plugin to copy static files (e.g., splash.html) to dist-electron
-function copyElectronStaticFiles() {
+const SITE_ROOT = fileURLToPath(new URL(".", import.meta.url));
+const REPOSITORY_ROOT = fileURLToPath(new URL("..", import.meta.url));
+const SHARED_SOURCE_ROOT = fileURLToPath(new URL("../src", import.meta.url));
+
+const { d1, r2 } = hostingConfig;
+
+// macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
+const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
+
+const localBindingConfig = {
+  main: "./worker/index.ts",
+  compatibility_flags: ["nodejs_compat"],
+  d1_databases: d1
+    ? [
+        {
+          binding: d1,
+          database_name: "site-creator-d1",
+          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+        },
+      ]
+    : [],
+  r2_buckets: r2
+    ? [
+        {
+          binding: r2,
+          bucket_name: "site-creator-r2",
+        },
+      ]
+    : [],
+};
+
+export default defineConfig(async () => {
+  // Keep Wrangler and Miniflare state project-local. These are non-secret tool
+  // settings; application environment belongs in ignored `.env*` files.
+  process.env.WRANGLER_WRITE_LOGS ??= "false";
+  process.env.WRANGLER_LOG_PATH ??= ".wrangler/logs";
+  process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
+
+  // Wrangler snapshots its log path while the Cloudflare plugin is imported.
+  const { cloudflare } = await import("@cloudflare/vite-plugin");
+
   return {
-    name: 'copy-electron-static',
-    writeBundle() {
-      const staticFiles = ['splash.html', 'splash-bg.png', 'Outfit-Variable.woff2'];
-      for (const file of staticFiles) {
-        const src = path.resolve(__dirname, `electron/${file}`);
-        const dest = path.resolve(__dirname, `dist-electron/${file}`);
-        if (fs.existsSync(src)) {
-          fs.copyFileSync(src, dest);
+    resolve: {
+      alias: {
+        "@": SHARED_SOURCE_ROOT,
+        "~": SITE_ROOT,
+      },
+      dedupe: [
+        "@xyflow/react",
+        "react",
+        "react-dom",
+        "react-markdown",
+        "remark-gfm",
+        "zod",
+      ],
+    },
+    server: isCodexSeatbeltSandbox
+      ? {
+          fs: { allow: [REPOSITORY_ROOT] },
+          watch: { useFsEvents: false, usePolling: true },
         }
-      }
-    },
-  };
-}
-
-// Plugin to force-rebuild preload as CJS after vite-plugin-electron writes ESM
-// (vite-plugin-electron forces ESM when package.json has "type": "module")
-function forcePreloadCJS() {
-  return {
-    name: 'force-preload-cjs',
-    writeBundle() {
-      const preloadPath = path.resolve(__dirname, 'dist-electron/preload.js');
-      if (!fs.existsSync(preloadPath)) return;
-      const content = fs.readFileSync(preloadPath, 'utf-8');
-      if (!content.startsWith('import ')) return; // already CJS
-      execFileSync('npx', [
-        'esbuild', 'electron/preload.ts',
-        '--bundle', '--platform=node', '--format=cjs',
-        '--external:electron',
-        `--outfile=dist-electron/preload.js`,
-      ], { cwd: __dirname, stdio: 'pipe' });
-    },
-  };
-}
-
-const isTest = !!process.env.VITEST;
-
-export default defineConfig({
-  plugins: [
-    react(),
-    electron([
-      {
-        entry: 'electron/main.ts',
-        vite: {
-          build: {
-            outDir: 'dist-electron',
-            rollupOptions: {
-              external: ['electron', 'better-sqlite3', 'ffmpeg-static', 'ffprobe-static'],
-            },
-          },
-          resolve: {
-            alias: {
-              '@': path.resolve(__dirname, 'src'),
-            },
-          },
-          plugins: [copyElectronStaticFiles()],
-        },
-      },
-      {
-        entry: 'electron/preload.ts',
-        onstart({ reload }) {
-          reload();
-        },
-        vite: {
-          build: {
-            outDir: 'dist-electron',
-            lib: {
-              entry: 'electron/preload.ts',
-              formats: ['cjs'],
-            },
-            rollupOptions: {
-              external: ['electron'],
-              output: {
-                format: 'cjs',
-                entryFileNames: 'preload.js',
-              },
-            },
-          },
-          plugins: [forcePreloadCJS()],
-        },
-      },
-      {
-        entry: 'electron/workers/media-worker.ts',
-        vite: {
-          build: {
-            outDir: 'dist-electron/workers',
-            rollupOptions: {
-              external: ['electron', 'better-sqlite3', 'ffmpeg-static', 'ffprobe-static'],
-            },
-          },
-        },
-      },
-    ]),
-    ...(isTest ? [] : [renderer()]),
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-    },
-  },
-  base: './',
-  test: {
-    environment: 'jsdom',
-    setupFiles: ['./tests/setup.ts'],
-    environmentMatchGlobs: [
-      ['tests/electron/**', 'node'],
+      : { fs: { allow: [REPOSITORY_ROOT] } },
+    plugins: [
+      vinext(),
+      sites(),
+      cloudflare({
+        viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+        config: localBindingConfig,
+      }),
     ],
-  },
+  };
 });

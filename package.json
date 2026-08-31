@@ -1,73 +1,51 @@
 {
-  "name": "cinegen-desktop",
-  "productName": "CineGen",
-  "version": "1.0.0",
-  "description": "AI Film Production Studio — Desktop Application",
+  "name": "cinegen-site",
+  "version": "0.1.0",
   "private": true,
-  "main": "dist-electron/main.js",
-  "type": "module",
-  "scripts": {
-    "build:native": "node scripts/build-native-avf.mjs",
-    "higgsfield:catalog": "node scripts/higgsfield/update-model-catalog.mjs",
-    "higgsfield:catalog:check": "node scripts/higgsfield/update-model-catalog.mjs --check",
-    "dev": "npm run build:native && vite",
-    "build": "npm run build:native && vite build",
-    "preview": "npm run build && electron .",
-    "package": "npm run build && electron-builder",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:funding": "node scripts/cloud/owner-funding-smoke.mjs",
-    "screenshots": "npm run build && node scripts/take-screenshots.mjs"
+  "engines": {
+    "node": ">=22.13.0"
   },
-  "build": {
-    "appId": "com.cinegen.desktop",
-    "productName": "CineGen",
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*",
-      "build/**/*",
-      "electron/**/*",
-      "native/**/*",
-      "package.json"
-    ],
-    "directories": {
-      "buildResources": "build"
-    },
-    "mac": {
-      "icon": "build/CineGen.icns",
-      "category": "public.app-category.video"
-    }
+  "scripts": {
+    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
+    "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
+    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@fal-ai/client": "^1.9.4",
-    "@xyflow/react": "^12.10.1",
-    "better-sqlite3": "^12.6.2",
-    "ffmpeg-static": "^5.3.0",
-    "ffprobe-static": "^3.1.0",
-    "firebase": "^12.18.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "zod": "^4.3.6"
+    "@xyflow/react": "12.10.1",
+    "drizzle-orm": "0.45.2",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-loading-skeleton": "3.5.0",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "zod": "4.3.6"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.3.5",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.4",
-    "electron": "^35.0.0",
-    "electron-builder": "^26.0.0",
-    "jsdom": "^28.1.0",
-    "playwright": "^1.58.2",
-    "typescript": "^5.9.3",
-    "vite": "^6.3.0",
-    "vite-plugin-electron": "^0.29.0",
-    "vite-plugin-electron-renderer": "^0.14.6",
-    "vitest": "^4.0.18"
-  }
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@eslint/js": "9.39.4",
+    "@next/eslint-plugin-next": "16.2.6",
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "16.4.0",
+    "react-server-dom-webpack": "19.2.6",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.59.3",
+    "vinext": "1.0.0-beta.2",
+    "vite": "8.0.13",
+    "wrangler": "4.92.0"
+  },
+  "type": "module"
 }

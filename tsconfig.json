@@ -14,9 +14,17 @@
     "jsx": "react-jsx",
     "incremental": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["../src/*"],
+      "~/*": ["./*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "electron.d.ts"],
-  "exclude": ["node_modules", "dist", "dist-electron"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
 }
