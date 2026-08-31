@@ -422,29 +422,59 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
         } else if (name === "topview_generate_video") {
           payload = { code: "200", result: { taskId: "topview-task-1", status: "init" } };
         } else if (name === "topview_query_task") {
-          payload = argumentsValue.req.taskId === "topview-image-task-1"
-            ? {
+          if (argumentsValue.req.taskId === "topview-image-task-1") {
+            payload = {
               code: "200",
               result: {
                 taskId: "topview-image-task-1",
                 status: "success",
                 images: [{ status: "success", filePath: "https://cdn.example.com/topview-image-task-1.png" }],
               },
-            }
-            : {
+            };
+          } else if (argumentsValue.req.taskId === "topview-no-url-task") {
+            payload = {
+              code: "200",
+              result: {
+                taskId: "topview-no-url-task",
+                status: "success",
+              },
+            };
+          } else if (argumentsValue.req.taskId === "topview-array-url-task") {
+            payload = {
+              code: "200",
+              result: {
+                taskId: "topview-array-url-task",
+                status: "success",
+                board: { url: "https://www.topview.ai/board/board-1" },
+                videos: [{
+                  status: "success",
+                  url: "https://api.topview.ai/s/arrayVideo",
+                  coverUrl: "https://api.topview.ai/s/arrayCover",
+                }],
+              },
+            };
+          } else if (argumentsValue.req.taskId === "topview-task-1") {
+            payload = {
               code: "200",
               result: {
                 taskId: "topview-task-1",
                 status: "success",
                 boardTaskId: "board-task-1",
                 originVideo: {
-                  type: "video",
-                  format: "mp4",
                   url: "https://api.topview.ai/s/3LHi5jFg",
                   coverUrl: "https://api.topview.ai/s/7PgToOSB",
                 },
               },
             };
+          } else {
+            payload = {
+              code: "200",
+              result: {
+                taskId: argumentsValue.req.taskId,
+                status: "running",
+              },
+            };
+          }
         } else {
           throw new Error(`Unexpected Topview tool call: ${name}`);
         }
@@ -581,6 +611,33 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     assert.equal(generation.status, "success");
     assert.equal(generation.pending, false);
     assert.equal(generation.boardUrl, "https://www.topview.ai/board/board-1?boardResultId=board-task-1");
+
+    const arrayUrlResponse = await rpc("query", [{
+      taskId: "topview-array-url-task",
+      taskType: "text_to_video",
+      model: "standard-v2",
+      durationSec: 10,
+      boardId: "board-1",
+    }]);
+    assert.equal(arrayUrlResponse.status, 200);
+    const arrayUrlGeneration = (await arrayUrlResponse.json()).result;
+    assert.equal(arrayUrlGeneration.url, "https://api.topview.ai/s/arrayVideo");
+    assert.deepEqual(arrayUrlGeneration.urls, ["https://api.topview.ai/s/arrayVideo"]);
+    assert.equal(arrayUrlGeneration.status, "success");
+    assert.equal(arrayUrlGeneration.pending, false);
+
+    const missingUrlResponse = await rpc("query", [{
+      taskId: "topview-no-url-task",
+      taskType: "text_to_video",
+      model: "standard-v2",
+      durationSec: 10,
+      boardId: "board-1",
+    }]);
+    assert.equal(missingUrlResponse.status, 200);
+    const missingUrl = (await missingUrlResponse.json()).result;
+    assert.equal(missingUrl.status, "running");
+    assert.equal(missingUrl.pending, true);
+    assert.equal(missingUrl.error, undefined);
 
     const configCall = toolCalls.find((entry) => entry.name === "topview_get_generation_config");
     assert.deepEqual(configCall.arguments, { req: { type: "video", taskType: "text_to_video" } });

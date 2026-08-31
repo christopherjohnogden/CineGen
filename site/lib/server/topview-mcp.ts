@@ -653,34 +653,76 @@ function findArrayByKey(value: unknown, keyPattern: RegExp): unknown[] | undefin
   return undefined;
 }
 
+function mediaContextMatches(key: string, outputType: "image" | "video" | "audio"): boolean {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const contexts = outputType === "image"
+    ? ["image", "images", "originimage", "outputimage", "resultimage", "generatedimage", "finishedimage"]
+    : outputType === "video"
+      ? ["video", "videos", "originvideo", "outputvideo", "resultvideo", "generatedvideo", "finishedvideo"]
+      : ["audio", "audios", "originaudio", "outputaudio", "resultaudio", "generatedaudio", "finishedaudio"];
+  return contexts.includes(normalized);
+}
+
+function recordMediaMatches(record: JsonRecord, outputType: "image" | "video" | "audio"): boolean {
+  const hints = [record.type, record.mediaType, record.media_type, record.mimeType, record.mime_type, record.contentType, record.content_type]
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim().toLowerCase());
+  if (hints.some((entry) => entry === outputType || entry.startsWith(`${outputType}/`))) return true;
+  const format = typeof record.format === "string" ? record.format.trim().toLowerCase() : "";
+  if (outputType === "image") return /^(?:png|jpe?g|webp|gif|avif)$/.test(format);
+  if (outputType === "video") return /^(?:mp4|mov|webm|mkv)$/.test(format);
+  return /^(?:mp3|wav|m4a|aac|ogg)$/.test(format);
+}
+
+function mediaUrlExtensionMatches(url: string, outputType: "image" | "video" | "audio"): boolean {
+  if (outputType === "image") return /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)/i.test(url);
+  if (outputType === "video") return /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(url);
+  return /\.(?:mp3|wav|m4a|aac|ogg)(?:[?#]|$)/i.test(url);
+}
+
 function resultUrls(value: unknown, outputType: "image" | "video" | "audio"): string[] {
   const keyed = new Set<string>();
-  for (const record of collectRecords(value)) {
-    for (const [key, nested] of Object.entries(record)) {
-      const recordType = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
-      const recordFormat = typeof record.format === "string" ? record.format.trim().toLowerCase() : "";
-      const typedShortUrl = /^url$/i.test(key) && (
-        recordType === outputType
-        || (outputType === "image" && /^(?:png|jpe?g|webp|gif|avif)$/.test(recordFormat))
-        || (outputType === "video" && /^(?:mp4|mov|webm|mkv)$/.test(recordFormat))
-        || (outputType === "audio" && /^(?:mp3|wav|m4a|aac|ogg)$/.test(recordFormat))
-      );
+  const visit = (nested: unknown, path: string[] = [], depth = 0): void => {
+    if (depth > 14 || nested === null || nested === undefined) return;
+    if (typeof nested === "string") {
+      const key = path.at(-1) ?? "";
       if (
-        (
-          /^(cloudFrontUrl|cloudfront_url|downloadUrl|download_url|videoUrl|video_url|finishedVideoUrl|finished_video_url|outputVideoUrl|output_video_url|imageUrl|image_url|resultUrl|result_url|outputUrl|output_url|mediaUrl|media_url|filePath|file_path)$/i.test(key)
-          || typedShortUrl
-        )
-        && typeof nested === "string"
-        && /^https:\/\//i.test(nested)
+        /^https:\/\//i.test(nested)
+        && !/(?:cover|thumbnail|thumb|poster|preview|avatar|board|account|project|workspace|edit|share|page|website)/i.test(key)
+        && mediaUrlExtensionMatches(nested, outputType)
       ) keyed.add(nested);
+      return;
     }
-  }
-  for (const entry of collectStrings(value)) {
-    if (!/^https:\/\//i.test(entry)) continue;
-    if (outputType === "image" && /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)/i.test(entry)) keyed.add(entry);
-    if (outputType === "video" && /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(entry)) keyed.add(entry);
-    if (outputType === "audio" && /\.(?:mp3|wav|m4a|aac|ogg)(?:[?#]|$)/i.test(entry)) keyed.add(entry);
-  }
+    if (Array.isArray(nested)) {
+      for (const entry of nested) visit(entry, path, depth + 1);
+      return;
+    }
+    if (!isRecord(nested)) return;
+
+    const typedRecord = recordMediaMatches(nested, outputType);
+    const typedPath = path.some((segment) => mediaContextMatches(segment, outputType));
+    for (const [key, entry] of Object.entries(nested)) {
+      if (typeof entry === "string" && /^https:\/\//i.test(entry)) {
+        const sidecarOrNavigationKey = /(?:cover|thumbnail|thumb|poster|preview|avatar|board|account|project|workspace|edit|share|page|website)/i.test(key);
+        const mediaSpecificKey = outputType === "image"
+          ? /^(?:imageUrl|image_url)$/i.test(key)
+          : outputType === "video"
+            ? /^(?:videoUrl|video_url|finishedVideoUrl|finished_video_url|outputVideoUrl|output_video_url)$/i.test(key)
+            : /^(?:audioUrl|audio_url)$/i.test(key);
+        const genericResultKey = /^(?:cloudFrontUrl|cloudfront_url|downloadUrl|download_url|resultUrl|result_url|outputUrl|output_url|mediaUrl|media_url|filePath|file_path)$/i.test(key);
+        // Topview's board result uses an extensionless `originVideo.url`, and
+        // some query variants return `videos[].url`. Only accept a bare `url`
+        // when its record or path identifies the requested media type, so a
+        // board/account URL cannot become the rendered asset by accident.
+        const contextualUrl = /^url$/i.test(key) && (typedRecord || typedPath);
+        if (!sidecarOrNavigationKey && (mediaSpecificKey || genericResultKey || contextualUrl || mediaUrlExtensionMatches(entry, outputType))) {
+          keyed.add(entry);
+        }
+      }
+      visit(entry, [...path, key], depth + 1);
+    }
+  };
+  visit(value);
   return [...keyed];
 }
 
@@ -1360,7 +1402,9 @@ function generationResult(args: {
     taskType: args.taskType,
     status,
     pending: Boolean(!urls.length && status !== "fail"),
-    ...(status === "fail" ? { error: taskError(args.documents, `Topview could not complete task ${args.taskId}.`) } : {}),
+    ...(status === "fail" ? {
+      error: taskError(args.documents, `Topview could not complete task ${args.taskId}.`),
+    } : {}),
     model: args.model,
     ...(args.durationSec ? { durationSec: args.durationSec } : {}),
     ...(args.boardId ? {
