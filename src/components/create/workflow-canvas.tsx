@@ -52,7 +52,7 @@ interface PendingPaletteConnection {
 }
 
 function WorkflowCanvasInner() {
-  const { state, dispatch } = useWorkspace();
+  const { state, dispatch, projectId } = useWorkspace();
   const { screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -613,6 +613,7 @@ function WorkflowCanvasInner() {
 
   useEffect(() => {
     const recoveries = resumePersistedTopviewVideoTasks(
+      projectId,
       state.nodes,
       state.edges,
       workflowDispatch(),

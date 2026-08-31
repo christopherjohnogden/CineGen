@@ -30,6 +30,36 @@ export interface ProjectMeta {
   cloudTeamName?: string;
 }
 
+export interface TopviewVideoRecoveryParams {
+  projectId: string;
+  nodeId: string;
+  prompt: string;
+  model?: string;
+  durationSec?: number;
+  resolution?: string;
+  aspectRatio?: string;
+  generateAudio?: boolean;
+  expectedReferenceCount?: number;
+}
+
+export type TopviewVideoRecoveryResult =
+  | {
+      status: 'success';
+      url: string;
+      taskId?: string;
+      taskType?: 'text_to_video' | 'image_to_video' | 'omni_reference';
+      boardId?: string;
+      boardUrl?: string;
+      model?: string;
+      durationSec?: number;
+    }
+  | {
+      status: 'not_found';
+    }
+  | {
+      status: 'ambiguous';
+    };
+
 export interface ElectronAPI {
   project: {
     list: () => Promise<ProjectMeta[]>;
@@ -460,6 +490,7 @@ export interface ElectronAPI {
       boardUrl?: string;
       error?: string;
     }>;
+    recoverVideo?: (params: TopviewVideoRecoveryParams) => Promise<TopviewVideoRecoveryResult>;
     generate: (params: {
       prompt: string;
       model?: string;

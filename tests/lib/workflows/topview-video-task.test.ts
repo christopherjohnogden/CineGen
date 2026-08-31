@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Node } from '@xyflow/react';
+import type { Edge, Node } from '@xyflow/react';
+import type { Element } from '@/types/elements';
 import type { TopviewVideoTaskState, WorkflowNodeData } from '@/types/workflow';
 import {
   runTopviewVideoTask,
@@ -33,6 +34,7 @@ function workflowNode(result?: WorkflowNodeData['result']): Node<WorkflowNodeDat
       label: 'Topview Video',
       config: {
         prompt: 'A detective crosses a rain-lit street.',
+        model: 'Seedance 2.5',
         duration: 8,
         aspect_ratio: '16:9',
         resolution: '720p',
@@ -54,7 +56,11 @@ function workflowDispatch() {
 
 const originalElectronApi = (window as Window & { electronAPI?: unknown }).electronAPI;
 
-function installTopviewBridge(submit: ReturnType<typeof vi.fn>, query: ReturnType<typeof vi.fn>): void {
+function installTopviewBridge(
+  submit: ReturnType<typeof vi.fn>,
+  query: ReturnType<typeof vi.fn>,
+  recoverVideo?: ReturnType<typeof vi.fn>,
+): void {
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     writable: true,
@@ -63,6 +69,7 @@ function installTopviewBridge(submit: ReturnType<typeof vi.fn>, query: ReturnTyp
         submit,
         query,
         generate: vi.fn(),
+        ...(recoverVideo ? { recoverVideo } : {}),
       },
     },
   });
@@ -217,6 +224,7 @@ describe('Spaces Topview video recovery', () => {
     const attemptedTasks = new Set<string>();
 
     await Promise.all(resumePersistedTopviewVideoTasks(
+      'cloud_014b9a8e37424f8d86a03533f10723bf',
       [restoredNode],
       [],
       dispatch,
@@ -232,6 +240,7 @@ describe('Spaces Topview video recovery', () => {
     });
 
     await Promise.all(resumePersistedTopviewVideoTasks(
+      'cloud_014b9a8e37424f8d86a03533f10723bf',
       [restoredNode],
       [],
       dispatch,
@@ -239,4 +248,129 @@ describe('Spaces Topview video recovery', () => {
     ));
     expect(query).toHaveBeenCalledTimes(1);
   });
+
+  it('recovers a legacy completed render by its exact settings without submitting again', async () => {
+    const submit = vi.fn();
+    const query = vi.fn();
+    const recoverVideo = vi.fn().mockResolvedValue({
+      status: 'success',
+      url: 'https://cdn.example/legacy-recovered.mp4',
+      taskId: 'legacy-task-1',
+    });
+    installTopviewBridge(submit, query, recoverVideo);
+    const dispatch = workflowDispatch();
+    const restoredNode = workflowNode({ status: 'error', error: 'Render status was lost.' });
+    restoredNode.data.config.image_url = [
+      'https://cdn.example/reference-a.png',
+      'https://cdn.example/reference-b.png',
+    ];
+    const attemptedTasks = new Set<string>();
+
+    await Promise.all(resumePersistedTopviewVideoTasks(
+      'cloud_014b9a8e37424f8d86a03533f10723bf',
+      [restoredNode],
+      [],
+      dispatch,
+      attemptedTasks,
+    ));
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(recoverVideo).toHaveBeenCalledWith({
+      projectId: 'cloud_014b9a8e37424f8d86a03533f10723bf',
+      nodeId: 'topview-video-1',
+      prompt: 'A detective crosses a rain-lit street.',
+      model: 'Seedance 2.5',
+      durationSec: 8,
+      resolution: '720p',
+      aspectRatio: '16:9',
+      generateAudio: true,
+      expectedReferenceCount: 2,
+    });
+    expect(dispatch.setNodeResult).toHaveBeenCalledWith('topview-video-1', {
+      status: 'complete',
+      url: 'https://cdn.example/legacy-recovered.mp4',
+    });
+    expect(dispatch.addGeneration).toHaveBeenCalledWith(
+      'topview-video-1',
+      'https://cdn.example/legacy-recovered.mp4',
+    );
+    expect(dispatch.setNodeRunning).toHaveBeenLastCalledWith('topview-video-1', false);
+  });
+
+  it('matches every image from a connected Element reference node during legacy recovery', async () => {
+    const recoverVideo = vi.fn().mockResolvedValue({ status: 'not_found' });
+    installTopviewBridge(vi.fn(), vi.fn(), recoverVideo);
+    const dispatch = workflowDispatch();
+    const images = Array.from({ length: 7 }, (_, index) => ({
+      id: `hazmat-${index + 1}`,
+      url: `https://cdn.example/hazmat-${index + 1}.png`,
+      createdAt: '',
+      source: 'generated' as const,
+    }));
+    const elements: Element[] = [{
+      id: 'hazmat',
+      name: 'Hazmat',
+      type: 'character',
+      description: '',
+      images,
+      createdAt: '',
+      updatedAt: '',
+    }];
+    dispatch.getElements.mockReturnValue(elements);
+    const elementNode: Node<WorkflowNodeData> = {
+      id: 'element-references',
+      type: 'element',
+      position: { x: 0, y: 200 },
+      data: {
+        type: 'element',
+        label: 'Element References',
+        config: { elementIds: ['hazmat'] },
+      },
+    };
+    const edge: Edge = {
+      id: 'element-to-topview',
+      source: elementNode.id,
+      sourceHandle: 'element',
+      target: 'topview-video-1',
+      targetHandle: 'image_url',
+    };
+
+    await Promise.all(resumePersistedTopviewVideoTasks(
+      'cloud_014b9a8e37424f8d86a03533f10723bf',
+      [elementNode, workflowNode({ status: 'running' })],
+      [edge],
+      dispatch,
+      new Set<string>(),
+    ));
+
+    expect(recoverVideo).toHaveBeenCalledWith(expect.objectContaining({
+      expectedReferenceCount: 7,
+    }));
+  });
+
+  it.each(['not_found', 'ambiguous'] as const)(
+    'never resubmits a legacy render when recovery is %s',
+    async (status) => {
+      const submit = vi.fn();
+      const query = vi.fn();
+      const recoverVideo = vi.fn().mockResolvedValue({ status });
+      installTopviewBridge(submit, query, recoverVideo);
+      const dispatch = workflowDispatch();
+
+      await Promise.all(resumePersistedTopviewVideoTasks(
+        'cloud_014b9a8e37424f8d86a03533f10723bf',
+        [workflowNode({ status: 'running' })],
+        [],
+        dispatch,
+        new Set<string>(),
+      ));
+
+      expect(submit).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+      expect(dispatch.setNodeResult).not.toHaveBeenCalled();
+      expect(dispatch.addGeneration).not.toHaveBeenCalled();
+      expect(dispatch.setNodeRunning).toHaveBeenLastCalledWith('topview-video-1', false);
+    },
+  );
 });

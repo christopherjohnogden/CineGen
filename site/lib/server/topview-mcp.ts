@@ -19,6 +19,13 @@ const MAX_REFERENCE_BYTES = 45 * 1024 * 1024;
 const VIDEO_TIMEOUT_MS = 20 * 60 * 1000;
 const IMAGE_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_INTERVAL_MS = 5_000;
+// Legacy recovery searches only a bounded recent slice of the user's CineGen
+// boards. It never falls through to a paid generation submission.
+const RECOVERY_BOARD_PAGE_SIZE = 100;
+const RECOVERY_MAX_BOARD_PAGES = 5;
+const RECOVERY_MAX_BOARDS = 50;
+const RECOVERY_TASK_PAGE_SIZE = 50;
+const RECOVERY_MAX_TASKS = 200;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -89,6 +96,33 @@ type MediaInput = {
 type UploadedMedia = MediaInput & {
   fileId: string;
   kind: "image" | "video" | "audio";
+};
+
+type TopviewVideoTaskType = "text_to_video" | "image_to_video" | "omni_reference";
+
+type VideoRecoveryCriteria = {
+  projectId: string;
+  nodeId: string;
+  prompt: string;
+  model: string;
+  durationSec: number;
+  resolution: number;
+  aspectRatio: string;
+  sound: "on" | "off";
+  expectedReferenceCount: number;
+  taskType: TopviewVideoTaskType;
+};
+
+type RecoveryBoard = {
+  boardId: string;
+  name: string;
+  taskCount?: number;
+  gmtCreate?: string;
+};
+
+type RecoveryCandidate = {
+  boardId: string;
+  boardTaskId: string;
 };
 
 const CREATE_CONNECTIONS_TABLE = `
@@ -782,7 +816,7 @@ async function callTool(session: McpSession, name: string, req: JsonRecord): Pro
 }
 
 function topviewBoard(value: unknown): { boardId: string; name?: string } | undefined {
-  const boards = findArrayByKey(value, /boards|list|items|records/i) ?? [];
+  const boards = findArrayByKey(value, /^(?:boards|list|items|records|data|rows)$/i) ?? [];
   const candidates = boards.filter(isRecord).map((entry) => ({
     boardId: String(entry.boardId ?? entry.board_id ?? entry.id ?? "").trim(),
     name: typeof entry.name === "string"
@@ -1307,6 +1341,236 @@ function mediaInputs(params: JsonRecord, outputType: "image" | "video"): MediaIn
     throw new SiteHttpError(400, "Topview accepts only one start frame and one end frame.", "TOPVIEW_PARAMETERS_INVALID");
   }
   return unique;
+}
+
+function toolResultDataRecords(value: unknown): JsonRecord[] {
+  for (const record of collectRecords(value)) {
+    const result = record.result;
+    if (!isRecord(result)) continue;
+    for (const key of ["data", "list", "boards", "items", "records", "rows"]) {
+      if (Array.isArray(result[key])) return result[key].filter(isRecord);
+    }
+  }
+  const fallback = findArrayByKey(value, /^(?:data|list|boards|items|records|rows)$/i) ?? [];
+  return fallback.filter(isRecord);
+}
+
+function toolResultRecord(value: unknown): JsonRecord | undefined {
+  for (const record of collectRecords(value)) {
+    if (String(record.code ?? "") === "200" && isRecord(record.result)) return record.result;
+  }
+  return undefined;
+}
+
+function normalizedNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const match = value.trim().match(/^-?\d+(?:\.\d+)?/);
+  if (!match) return undefined;
+  const number = Number(match[0]);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function canonicalModel(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase()
+    .replace(/^topview(?:\/video\/|-video-)/, "")
+    .match(/[a-z0-9]+/g)?.join("-") ?? "";
+}
+
+function normalizedSound(value: unknown): "on" | "off" | undefined {
+  if (value === true || value === 1 || (typeof value === "string" && /^(?:on|true|1|yes)$/i.test(value.trim()))) return "on";
+  if (value === false || value === 0 || (typeof value === "string" && /^(?:off|false|0|no)$/i.test(value.trim()))) return "off";
+  return undefined;
+}
+
+function canonicalPrompt(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function recoveryReferenceCounts(parameters: JsonRecord): { images: number; videos: number; audios: number; total: number } {
+  const images = Array.isArray(parameters.inputImages) ? parameters.inputImages.length : 0;
+  const videos = Array.isArray(parameters.inputVideos) ? parameters.inputVideos.length : 0;
+  const audios = Array.isArray(parameters.inputAudios) ? parameters.inputAudios.length : 0;
+  return { images, videos, audios, total: images + videos + audios };
+}
+
+function knownRecoveryPrompts(
+  criteria: VideoRecoveryCriteria,
+  counts: ReturnType<typeof recoveryReferenceCounts>,
+): Set<string> {
+  const cleaned = sanitizePrompt(criteria.prompt, false);
+  const hostedSuffix = "Do not render labels, mention tags, captions, subtitles, watermarks, interface text, or other on-screen text.";
+  const desktopSuffix = "Do not render labels, mention tags, captions, subtitles, watermarks, interface text, or any other on-screen text.";
+  const hostedSanitized = `${cleaned}\n\n${hostedSuffix}`;
+  const desktopSanitized = `${cleaned}\n\n${desktopSuffix}`;
+  if (criteria.taskType !== "omni_reference") {
+    return new Set([hostedSanitized, desktopSanitized].map(canonicalPrompt));
+  }
+
+  const hostedInstructions = [
+    ...Array.from({ length: counts.images }, (_, index) => `<<<Image${index + 1}>>> is an authoritative visual identity and appearance reference.`),
+    ...Array.from({ length: counts.videos }, (_, index) => `<<<Video${index + 1}>>> is an authoritative motion and timing reference.`),
+    ...Array.from({ length: counts.audios }, (_, index) => `<<<Audio${index + 1}>>> is an authoritative audio reference.`),
+  ];
+  const desktopInstructions = [
+    ...Array.from({ length: counts.images }, (_, index) => `<<<Image${index + 1}>>> is an authoritative visual reference.`),
+    ...Array.from({ length: counts.videos }, (_, index) => `<<<Video${index + 1}>>> is an authoritative motion and timing reference.`),
+    ...Array.from({ length: counts.audios }, (_, index) => `<<<Audio${index + 1}>>> is an authoritative audio reference.`),
+  ];
+  return new Set([
+    canonicalPrompt(
+      `${hostedInstructions.join("\n")} Match the supplied references while following the requested scene and action.\n\n${hostedSanitized}`,
+    ),
+    canonicalPrompt(
+      `${desktopInstructions.join("\n")} Match every supplied subject, setting, prop, wardrobe, silhouette, material, color, and requested motion.\n\n${desktopSanitized}`,
+    ),
+  ]);
+}
+
+function videoRecoveryCriteria(value: unknown): VideoRecoveryCriteria {
+  const params = requireRecord(value, "Topview video recovery parameters");
+  const projectId = typeof params.projectId === "string" ? params.projectId.trim() : "";
+  const nodeId = typeof params.nodeId === "string" ? params.nodeId.trim() : "";
+  // This endpoint exists only to repair the one legacy render that predates
+  // persisted Topview task IDs. Keeping the target explicit prevents a broad
+  // account search from ever attaching a similarly configured project.
+  if (
+    projectId !== "cloud_014b9a8e37424f8d86a03533f10723bf"
+    || nodeId !== "b09afc84-5252-4793-975a-547bc07733f3"
+  ) {
+    throw new SiteHttpError(404, "No legacy Topview recovery is registered for this node.", "TOPVIEW_RECOVERY_NOT_FOUND");
+  }
+  const extra = isRecord(params.params) ? params.params : {};
+  const prompt = typeof params.prompt === "string" ? params.prompt.trim() : "";
+  const model = typeof params.model === "string" ? params.model.trim() : "";
+  const durationSec = normalizedNumber(params.durationSec ?? extra.duration ?? extra.durationSec);
+  const resolution = normalizedNumber(params.resolution ?? extra.resolution);
+  const aspectRatio = typeof (params.aspectRatio ?? extra.aspectRatio ?? extra.aspect_ratio) === "string"
+    ? String(params.aspectRatio ?? extra.aspectRatio ?? extra.aspect_ratio).trim()
+    : "";
+  const sound = normalizedSound(params.generateAudio ?? extra.generateAudio ?? extra.generate_audio ?? extra.sound);
+  const expectedReferenceCount = normalizedNumber(params.expectedReferenceCount);
+  if (!prompt || prompt.length > 8_000) {
+    throw new SiteHttpError(400, "Topview video recovery requires the original prompt.", "TOPVIEW_PARAMETERS_INVALID");
+  }
+  if (!model || canonicalModel(model) === "auto") {
+    throw new SiteHttpError(400, "Topview video recovery requires the exact model.", "TOPVIEW_PARAMETERS_INVALID");
+  }
+  if (!durationSec || durationSec <= 0 || !resolution || resolution <= 0 || !aspectRatio || !sound) {
+    throw new SiteHttpError(
+      400,
+      "Topview video recovery requires duration, resolution, aspect ratio, and sound settings.",
+      "TOPVIEW_PARAMETERS_INVALID",
+    );
+  }
+  if (
+    expectedReferenceCount === undefined
+    || !Number.isInteger(expectedReferenceCount)
+    || expectedReferenceCount < 0
+    || expectedReferenceCount > 50
+  ) {
+    throw new SiteHttpError(
+      400,
+      "Topview video recovery requires expectedReferenceCount from 0 to 50.",
+      "TOPVIEW_PARAMETERS_INVALID",
+    );
+  }
+  const requestedTaskType = params.taskType ?? extra.taskType ?? extra.task_type;
+  const syntheticMedia = Array.from({ length: expectedReferenceCount }, (_, index) => ({
+    value: `recovery-reference-${index + 1}`,
+    role: "image",
+  }));
+  const taskType = normalizeTaskType(requestedTaskType, "video", syntheticMedia) as TopviewVideoTaskType;
+  return {
+    projectId,
+    nodeId,
+    prompt,
+    model,
+    durationSec,
+    resolution,
+    aspectRatio,
+    sound,
+    expectedReferenceCount,
+    taskType,
+  };
+}
+
+function recoveryTaskMatches(record: JsonRecord, criteria: VideoRecoveryCriteria): boolean {
+  if (String(record.status ?? "").trim().toLowerCase() !== "success") return false;
+  if (String(record.mediaType ?? record.media_type ?? "").trim().toLowerCase() !== "video") return false;
+  const parameters = isRecord(record.parameters) ? record.parameters : null;
+  if (!parameters || String(parameters.source ?? "").trim().toLowerCase() !== "mcp") return false;
+  if (canonicalModel(parameters.modelId ?? parameters.model) !== canonicalModel(criteria.model)) return false;
+  if (normalizedNumber(parameters.duration) !== criteria.durationSec) return false;
+  if (normalizedNumber(parameters.resolution) !== criteria.resolution) return false;
+  if (String(parameters.aspectRatio ?? parameters.aspect_ratio ?? "").trim().toLowerCase() !== criteria.aspectRatio.toLowerCase()) return false;
+  if (normalizedSound(parameters.sound ?? parameters.generateAudio ?? parameters.generate_audio) !== criteria.sound) return false;
+  const counts = recoveryReferenceCounts(parameters);
+  if (counts.total !== criteria.expectedReferenceCount) return false;
+  const positivePrompt = typeof parameters.positivePrompt === "string"
+    ? parameters.positivePrompt
+    : typeof parameters.prompt === "string" ? parameters.prompt : "";
+  if (!positivePrompt) return false;
+  return knownRecoveryPrompts(criteria, counts).has(canonicalPrompt(positivePrompt));
+}
+
+async function listRecoveryBoards(session: McpSession): Promise<RecoveryBoard[]> {
+  const byId = new Map<string, RecoveryBoard>();
+  for (let pageNo = 1; pageNo <= RECOVERY_MAX_BOARD_PAGES; pageNo += 1) {
+    const listed = await callTool(session, "topview_list_boards", {
+      pageNo,
+      pageSize: RECOVERY_BOARD_PAGE_SIZE,
+      mode: "editable-by-me",
+    });
+    const records = toolResultDataRecords(parseToolDocuments(listed));
+    for (const record of records) {
+      const boardId = String(record.boardId ?? record.board_id ?? record.id ?? "").trim();
+      const name = String(record.name ?? record.boardName ?? "").trim();
+      if (!boardId || name.toLowerCase() !== "cinegen") continue;
+      const taskCount = normalizedNumber(record.taskCount ?? record.task_count);
+      if (taskCount === 0) continue;
+      byId.set(boardId, {
+        boardId,
+        name,
+        ...(taskCount !== undefined ? { taskCount } : {}),
+        ...(typeof record.gmtCreate === "string" ? { gmtCreate: record.gmtCreate } : {}),
+      });
+    }
+    if (records.length < RECOVERY_BOARD_PAGE_SIZE) break;
+  }
+  return [...byId.values()]
+    .sort((left, right) => String(right.gmtCreate ?? "").localeCompare(String(left.gmtCreate ?? "")))
+    .slice(0, RECOVERY_MAX_BOARDS);
+}
+
+async function listRecoveryCandidates(
+  session: McpSession,
+  criteria: VideoRecoveryCriteria,
+): Promise<RecoveryCandidate[]> {
+  const candidates = new Map<string, RecoveryCandidate>();
+  let examinedTasks = 0;
+  for (const board of await listRecoveryBoards(session)) {
+    if (examinedTasks >= RECOVERY_MAX_TASKS) break;
+    const listed = await callTool(session, "topview_list_board_tasks", {
+      boardId: board.boardId,
+      pageNo: 1,
+      pageSize: Math.min(RECOVERY_TASK_PAGE_SIZE, RECOVERY_MAX_TASKS - examinedTasks),
+      mediaType: "video",
+      sortField: "gmtCreate",
+      sortOrder: "desc",
+    });
+    const records = toolResultDataRecords(parseToolDocuments(listed));
+    for (const record of records.slice(0, RECOVERY_MAX_TASKS - examinedTasks)) {
+      examinedTasks += 1;
+      if (!recoveryTaskMatches(record, criteria)) continue;
+      const boardTaskId = String(record.boardTaskId ?? record.board_task_id ?? "").trim();
+      const boardId = String(record.boardId ?? record.board_id ?? board.boardId).trim();
+      if (!boardTaskId || boardId !== board.boardId) continue;
+      candidates.set(`${boardId}:${boardTaskId}`, { boardId, boardTaskId });
+    }
+  }
+  return [...candidates.values()];
 }
 
 function buildRequest(args: {
@@ -1836,6 +2100,87 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         boardId: boardId || undefined,
         pending: true,
       });
+    },
+
+    async recoverVideo(value: unknown) {
+      const criteria = videoRecoveryCriteria(value);
+      const auth = await authContext(env, workspaceId);
+      const session = await mcpSession(auth);
+      for (const toolName of [
+        "topview_get_board_task",
+        "topview_query_task",
+      ]) {
+        if (!session.tools.some((tool) => tool.name === toolName)) {
+          throw new SiteHttpError(
+            422,
+            `Your Topview account does not currently expose ${toolName}.`,
+            "TOPVIEW_TOOL_UNAVAILABLE",
+          );
+        }
+      }
+
+      // This is a one-time migration for the exact paid render that completed
+      // before CineGen persisted Topview task IDs. Fetching the known task is
+      // faster and safer than searching the account, and can never submit work.
+      const recovered = {
+        boardId: "08464cb4a7c54c9e91b1aa79332dbd8a",
+        boardTaskId: "77a36164a56a401eb18f151027a58a66",
+        taskId: "978673bb979d4fdea6953b272ebde530",
+      };
+      const detailResult = await callTool(session, "topview_get_board_task", {
+        // The Topview schema calls this taskId, but the board detail endpoint
+        // intentionally expects the boardTaskId rather than mainTaskId.
+        taskId: recovered.boardTaskId,
+      });
+      const detailDocuments = parseToolDocuments(detailResult);
+      const detail = toolResultRecord(detailDocuments);
+      if (!detail || !recoveryTaskMatches(detail, criteria) || !resultUrls(detailDocuments, "video").length) {
+        return { status: "not_found" as const };
+      }
+      const parameters = isRecord(detail.parameters) ? detail.parameters : {};
+      const boardId = String(detail.boardId ?? detail.board_id ?? "").trim();
+      const boardTaskId = String(detail.boardTaskId ?? detail.board_task_id ?? "").trim();
+      const taskId = String(parameters.mainTaskId ?? parameters.main_task_id ?? "").trim();
+      const model = String(parameters.modelId ?? parameters.model ?? "").trim();
+      const durationSec = normalizedNumber(parameters.duration);
+      if (
+        boardId !== recovered.boardId
+        || boardTaskId !== recovered.boardTaskId
+        || taskId !== recovered.taskId
+        || !model
+        || !durationSec
+      ) {
+        return { status: "not_found" as const };
+      }
+
+      const queried = await callTool(session, "topview_query_task", {
+        taskType: criteria.taskType,
+        taskId: recovered.taskId,
+        needCloudFrontUrl: true,
+        shortenUrls: false,
+      });
+      const queryDocuments = parseToolDocuments(queried);
+      const url = resultUrls(queryDocuments, "video")[0];
+      const queriedTaskId = findStringByKeys(queryDocuments, ["taskId", "task_id"]);
+      const queriedBoardTaskId = findStringByKeys(queryDocuments, ["boardTaskId", "board_task_id"]);
+      if (
+        !url
+        || !/^(?:success|complete|done)$/.test(taskStatus(queryDocuments))
+        || queriedTaskId !== recovered.taskId
+        || (queriedBoardTaskId !== undefined && queriedBoardTaskId !== recovered.boardTaskId)
+      ) {
+        return { status: "not_found" as const };
+      }
+      return {
+        status: "success" as const,
+        url,
+        taskId: recovered.taskId,
+        taskType: criteria.taskType,
+        boardId: recovered.boardId,
+        model,
+        durationSec,
+        boardUrl: `https://www.topview.ai/board/${encodeURIComponent(recovered.boardId)}?boardResultId=${encodeURIComponent(recovered.boardTaskId)}`,
+      };
     },
 
     async submit(value: unknown) {

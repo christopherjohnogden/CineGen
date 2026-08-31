@@ -65,6 +65,7 @@ import {
   getBackgroundVisionModel,
   getMaxConcurrentVisionJobs,
 } from '@/lib/utils/api-key';
+import { markWorkspaceSavePending } from './workspace-persistence';
 
 /* ------------------------------------------------------------------
    Actions
@@ -885,16 +886,6 @@ const SAVE_DEBOUNCE_MS = 500;
 const STALE_DERIVE_JOB_MS = 15000;
 const PROJECT_LOAD_TIMEOUT_MS = 30_000;
 const DERIVE_JOB_TYPES = ['generate_thumbnail', 'compute_waveform', 'generate_filmstrip', 'generate_proxy'] as const;
-const PERSIST_ACTIONS: WorkspaceAction['type'][] = [
-  'SET_NODES', 'SET_EDGES', 'UPDATE_NODE_CONFIG', 'APPLY_ELEMENT_MENTION', 'ADD_SPACE', 'RENAME_SPACE', 'REMOVE_SPACE', 'CLOSE_SPACE', 'OPEN_SPACE', 'SET_ACTIVE_SPACE',
-  'ADD_ASSET', 'UPDATE_ASSET', 'REMOVE_ASSET', 'REMOVE_ASSETS',
-  'ADD_FOLDER', 'UPDATE_FOLDER', 'REMOVE_FOLDER',
-  'SET_TIMELINE', 'ADD_TIMELINE', 'REMOVE_TIMELINE', 'CLOSE_TIMELINE', 'OPEN_TIMELINE', 'SET_ACTIVE_TIMELINE',
-  'SET_NODE_RESULT', 'ADD_GENERATION', 'ADD_EXPORT', 'UPDATE_EXPORT',
-  'SET_DIRECTOR', 'OBSERVE_PROVIDER_USAGE',
-  'UNDO', 'REDO',
-];
-
 /* ------------------------------------------------------------------
    Shell Component
    ------------------------------------------------------------------ */
@@ -910,7 +901,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const state = history.current;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
-  const lastActionRef = useRef<WorkspaceAction['type'] | null>(null);
+  const savePendingRef = useRef(false);
   const projectNameRef = useRef('Project');
   const initialAssetIdsRef = useRef<Set<string> | null>(null);
   const visionInFlightRef = useRef<Set<string>>(new Set());
@@ -969,7 +960,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   }, [hydrationComplete, projectId]);
 
   const wrappedDispatch = useCallback((action: WorkspaceAction) => {
-    lastActionRef.current = action.type;
+    savePendingRef.current = markWorkspaceSavePending(savePendingRef.current, action.type);
     historyDispatch(action);
   }, []);
 
@@ -1903,11 +1894,16 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
 
   useEffect(() => {
     if (!loadedRef.current) return;
-    if (!lastActionRef.current || !PERSIST_ACTIONS.includes(lastActionRef.current)) return;
+    if (!savePendingRef.current) return;
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
     saveTimerRef.current = setTimeout(() => {
+      // Consume the pending write only when the debounced save actually runs.
+      // A UI-only state update (for example SET_NODE_RUNNING(false)) may render
+      // before this timer fires; keeping the flag set lets that render reschedule
+      // the same save instead of cancelling the completed generation result.
+      savePendingRef.current = false;
       const serializableNodes = sanitizeWorkflowNodes(state.nodes);
       const serializableSpaces = state.spaces.map((space) => ({
         ...space,

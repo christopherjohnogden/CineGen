@@ -294,6 +294,9 @@ export async function handleRpc(
       case "topview.query":
         result = await topview.query(args[0]);
         break;
+      case "topview.recoverVideo":
+        result = await topview.recoverVideo(args[0]);
+        break;
       case "topview.generateImage":
         result = await topview.generate({ ...requireRecord(args[0] ?? {}, "Topview image parameters"), outputType: "image" });
         break;

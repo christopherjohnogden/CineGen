@@ -508,6 +508,7 @@ export const browserElectronAPI: BrowserElectronAPI = {
     authLogout: () => rpc('topview', 'authLogout'),
     submit: (params) => rpc('topview', 'submit', params),
     query: (params) => rpc('topview', 'query', params),
+    recoverVideo: (params) => rpc('topview', 'recoverVideo', params),
     generate: (params) => rpc('topview', 'generate', params),
     generateImage: (params) => rpc('topview', 'generateImage', params),
     generateAudio: (params) => rpc('topview', 'generateAudio', params),
