@@ -5,6 +5,11 @@ import { getModelDefinition } from '@/lib/fal/models';
 import { topviewRequestedModel } from '@/lib/topview/model-catalog';
 import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
 import { isVideoGenerationProvider } from '@/lib/utils/video-generation-provider';
+import type { TopviewVideoTaskState } from '@/types/workflow';
+import {
+  runTopviewVideoTask,
+  type TopviewVideoTaskQuery,
+} from '@/lib/topview/video-task';
 
 export type FundedProvider = 'fal' | 'higgsfield';
 
@@ -29,6 +34,12 @@ export interface WorkflowRunParams {
   modelId: string;
   outputType?: 'image' | 'video' | 'audio' | 'text' | '3d';
   inputs: Record<string, unknown>;
+}
+
+export interface WorkflowRunOptions {
+  topviewVideoTask?: TopviewVideoTaskState;
+  onTopviewVideoTask?: (task: TopviewVideoTaskState) => void;
+  onTopviewVideoStatus?: (query: TopviewVideoTaskQuery, task: TopviewVideoTaskState) => void;
 }
 
 function workflowMediaInputs(inputs: Record<string, unknown>, outputType: string): Array<{ value: string; role: string }> {
@@ -58,7 +69,7 @@ function workflowMediaInputs(inputs: Record<string, unknown>, outputType: string
   )) === index);
 }
 
-async function runTopviewWorkflow(params: WorkflowRunParams): Promise<unknown> {
+async function runTopviewWorkflow(params: WorkflowRunParams, options: WorkflowRunOptions): Promise<unknown> {
   const model = getModelDefinition(params.nodeType);
   if (!model || model.provider !== 'topview') throw new Error('Topview model configuration is unavailable.');
   const prompt = String(params.inputs.prompt ?? '').trim();
@@ -77,7 +88,7 @@ async function runTopviewWorkflow(params: WorkflowRunParams): Promise<unknown> {
   }
   if (model.outputType === 'video') {
     const duration = Number(params.inputs.duration ?? params.inputs.durationSec ?? 5);
-    return window.electronAPI.topview.generate({
+    const request = {
       prompt,
       model: requestedModel,
       durationSec: Number.isFinite(duration) ? duration : 5,
@@ -85,6 +96,22 @@ async function runTopviewWorkflow(params: WorkflowRunParams): Promise<unknown> {
       resolution: typeof params.inputs.resolution === 'string' ? params.inputs.resolution : undefined,
       generateAudio: params.inputs.generate_audio === undefined ? undefined : Boolean(params.inputs.generate_audio),
       medias,
+    };
+    const submit = window.electronAPI.topview.submit;
+    const query = window.electronAPI.topview.query;
+    if (!submit || !query) {
+      if (options.topviewVideoTask) {
+        throw new Error('Resume this Topview video from CineGen Desktop so the existing render is not submitted twice.');
+      }
+      return window.electronAPI.topview.generate(request);
+    }
+    return runTopviewVideoTask({
+      submit: (value) => submit(value),
+      query: (task) => query(task),
+    }, request, {
+      resumeTask: options.topviewVideoTask,
+      onTask: options.onTopviewVideoTask,
+      onStatus: options.onTopviewVideoStatus,
     });
   }
   if (model.outputType === 'audio') {
@@ -212,10 +239,10 @@ async function runFunded(projectId: string, provider: FundedProvider, params: Wo
   return response.result;
 }
 
-export async function runWorkflow(params: WorkflowRunParams): Promise<unknown> {
+export async function runWorkflow(params: WorkflowRunParams, options: WorkflowRunOptions = {}): Promise<unknown> {
   const modelProvider = getModelDefinition(params.nodeType)?.provider;
   if (modelProvider === 'topview') {
-    const result = await runTopviewWorkflow(params);
+    const result = await runTopviewWorkflow(params, options);
     requestProviderUsageRefresh('topview');
     return result;
   }

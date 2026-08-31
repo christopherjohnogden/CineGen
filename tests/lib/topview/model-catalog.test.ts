@@ -38,6 +38,16 @@ const catalog: TopviewGenerationCatalog = {
       }] } }],
     },
     {
+      outputType: 'video',
+      taskType: 'image_to_video',
+      config: [{ result: { models: [{ displayName: 'Seedance 2.5', submitModel: 'Seedance 2.5' }] } }],
+    },
+    {
+      outputType: 'video',
+      taskType: 'omni_reference',
+      config: [{ result: { models: [{ displayName: 'Seedance 2.5', submitModel: 'Seedance 2.5' }] } }],
+    },
+    {
       outputType: 'audio',
       taskType: 'music',
       catalogType: 'music',
@@ -72,6 +82,22 @@ describe('Topview live model catalog', () => {
         { value: '30', label: '30' },
       ]);
     expect(registry['topview-video-seedance-2-5']?.inputs.some((field) => field.id === 'generate_audio')).toBe(true);
+    expect(registry['topview-video-seedance-2-5']?.inputs.find((field) => field.id === 'image_url')).toMatchObject({
+      label: 'References',
+      falParam: 'reference_images',
+      multiple: true,
+      mediaRole: 'image',
+    });
+    expect(registry['topview-video-seedance-2-5']?.inputs.find((field) => field.id === 'start_frame')).toMatchObject({
+      label: 'Start Frame',
+      falParam: 'image_url',
+      mediaRole: 'start_image',
+    });
+    expect(registry['topview-video-seedance-2-5']?.inputs.find((field) => field.id === 'end_frame')).toMatchObject({
+      label: 'End Frame',
+      falParam: 'end_frame_url',
+      mediaRole: 'end_image',
+    });
     expect(registry['topview-audio-topview-music']?.category).toBe('audio');
     expect(registry['topview-audio-qwen3-tts']?.inputs.some((field) => field.id === 'voice_id')).toBe(true);
     expect(registry['topview-audio-seed-audio-1-0']?.inputs.find((field) => field.id === 'reference_audio')?.required).toBe(true);

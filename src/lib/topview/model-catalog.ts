@@ -245,11 +245,30 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
   const durations = selectOptions(model.options.get('duration') ?? [], DEFAULT_VIDEO_DURATIONS);
   const soundValues = model.options.get('sound') ?? [];
   const supportsAudio = model.nativeAudio === true || soundValues.some((value) => String(value).toLowerCase() === 'on');
+  const supportsOmniReference = model.taskTypes.size === 0 || model.taskTypes.has('omni_reference');
+  const supportsImageToVideo = model.taskTypes.size === 0 || model.taskTypes.has('image_to_video');
   const taskLabels = [...model.taskTypes].map((task) => task.replaceAll('_', ' ')).join(' · ');
   const inputs: ModelInputField[] = [
     { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
-    { id: 'image_url', portType: 'image', label: 'Media', required: false, falParam: 'image_url', fieldType: 'port', multiple: true, mediaRole: 'start_image' },
-    { id: 'extra_images', portType: 'image', label: 'Reference', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 16 },
+  ];
+  if (supportsOmniReference) {
+    inputs.push(
+      // Keep the historical handle ID so existing Spaces connections migrate in place.
+      // Its payload is now explicitly reference media instead of a stack of start frames.
+      { id: 'image_url', portType: 'image', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image' },
+      { id: 'extra_images', portType: 'image', label: 'More References', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 30, mediaRole: 'image' },
+    );
+  } else if (supportsImageToVideo) {
+    // Models without omni-reference retain the legacy image_url handle as their start frame.
+    inputs.push({ id: 'image_url', portType: 'image', label: 'Start Frame', required: false, falParam: 'image_url', fieldType: 'port', mediaRole: 'start_image' });
+  }
+  if (supportsImageToVideo && supportsOmniReference) {
+    inputs.push(
+      { id: 'start_frame', portType: 'image', label: 'Start Frame', required: false, falParam: 'image_url', fieldType: 'port', mediaRole: 'start_image' },
+      { id: 'end_frame', portType: 'image', label: 'End Frame', required: false, falParam: 'end_frame_url', fieldType: 'port', mediaRole: 'end_image' },
+    );
+  }
+  inputs.push(
     {
       id: 'duration', portType: 'number', label: 'Duration', required: false,
       falParam: 'duration', fieldType: 'select',
@@ -265,7 +284,7 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
       falParam: 'resolution', fieldType: 'select',
       default: preferredDefault(resolutions, '720', model.defaults.resolution), options: resolutions,
     },
-  ];
+  );
   if (supportsAudio) inputs.push({
     id: 'generate_audio', portType: 'number', label: 'Generate Audio', required: false,
     falParam: 'generate_audio', fieldType: 'toggle',

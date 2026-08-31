@@ -124,7 +124,9 @@ async function sealProviderToken(value, secret) {
 test("server-renders the CineGen client boundary", async () => {
   const worker = await loadWorker();
   const response = await worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request("http://localhost/", {
+      headers: { accept: "text/html", host: "localhost" },
+    }),
     testEnvironment(),
     executionContext,
   );
@@ -135,6 +137,47 @@ test("server-renders the CineGen client boundary", async () => {
   assert.match(html, /<title>CineGen Cloud<\/title>/i);
   assert.match(html, /Loading CineGen/i);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/i);
+});
+
+test("sends anonymous hosted visitors through ChatGPT sign-in and preserves the project link", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(
+    new Request("https://cinegen-cloud-studio.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
+      headers: {
+        accept: "text/html",
+        host: "cinegen-cloud-studio.cogden.chatgpt.site",
+      },
+      redirect: "manual",
+    }),
+    testEnvironment(),
+    executionContext,
+  );
+
+  assert.equal(response.status, 307);
+  assert.equal(
+    response.headers.get("location"),
+    "/signin-with-chatgpt?return_to=%2F%3Fproject%3Dcloud_demo%26storage%3Ddb",
+  );
+});
+
+test("opens the hosted app when Sites supplies the signed-in ChatGPT identity", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(
+    new Request("https://cinegen-cloud-studio.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
+      headers: {
+        accept: "text/html",
+        host: "cinegen-cloud-studio.cogden.chatgpt.site",
+        "oai-authenticated-user-id": "site-user-1",
+        "oai-authenticated-user-email": "director@example.com",
+      },
+    }),
+    testEnvironment(),
+    executionContext,
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+  assert.match(await response.text(), /Loading CineGen/i);
 });
 
 test("exposes a lightweight health route", async () => {
@@ -265,6 +308,7 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
   const toolCalls = [];
   const uploadedBodies = [];
   let topviewUploadCount = 0;
+  let failNextAcceleratedUpload = true;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init = {}) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -319,11 +363,12 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
           payload = { code: "200", result: { remainCredit: 69.53 } };
         } else if (name === "ta_upload_credential") {
           topviewUploadCount += 1;
+          const accelerated = argumentsValue.req.needAccelerateUrl === true;
           payload = {
             code: "200",
             result: {
               fileId: `topview-file-${topviewUploadCount}`,
-              uploadUrl: `https://uploads.example.com/topview-file-${topviewUploadCount}`,
+              uploadUrl: `https://uploads.example.com/${accelerated ? "accelerated-" : "standard-"}topview-file-${topviewUploadCount}`,
             },
           };
         } else if (name === "ta_upload_check_file") {
@@ -391,11 +436,13 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
               result: {
                 taskId: "topview-task-1",
                 status: "success",
-                videos: [{
-                  status: "success",
-                  filePath: "https://cdn.example.com/topview-task-1.mp4",
-                  boardTaskId: "board-task-1",
-                }],
+                boardTaskId: "board-task-1",
+                originVideo: {
+                  type: "video",
+                  format: "mp4",
+                  url: "https://api.topview.ai/s/3LHi5jFg",
+                  coverUrl: "https://api.topview.ai/s/7PgToOSB",
+                },
               },
             };
         } else {
@@ -414,9 +461,13 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
         headers: { "content-type": "image/png" },
       });
     }
-    if (/^https:\/\/uploads\.example\.com\/topview-file-\d+$/.test(url)) {
+    if (/^https:\/\/uploads\.example\.com\/(?:accelerated-|standard-)topview-file-\d+$/.test(url)) {
       assert.equal(init.method, "PUT");
       assert.equal(new Headers(init.headers).get("content-type"), "image/png");
+      if (url.includes("/accelerated-") && failNextAcceleratedUpload) {
+        failNextAcceleratedUpload = false;
+        throw new TypeError("Simulated accelerated upload edge failure");
+      }
       uploadedBodies.push(new Uint8Array(await new Response(init.body).arrayBuffer()));
       return new Response(null, { status: 200 });
     }
@@ -463,32 +514,71 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     const connection = database.providerConnections.get("cinegen-local-v1:topview");
     assert.ok(connection.pending_ciphertext);
     assert.doesNotMatch(connection.pending_ciphertext, new RegExp(authorization.searchParams.get("state")));
-    connection.pending_ciphertext = null;
-    connection.token_ciphertext = await sealProviderToken({
-      access_token: "topview-access-token",
-      refresh_token: "topview-refresh-token",
-      expires_at: Date.now() + 60 * 60 * 1000,
-    }, "cinegen-local-development-workspace-provider-vault-v1");
+    const importResponse = await rpc("importTeamConnection", [{
+      client: {
+        client_id: "topview-desktop-client",
+        client_secret: "topview-desktop-secret",
+        token_endpoint_auth_method: "client_secret_post",
+        redirect_uri: "http://127.0.0.1:53682/oauth/callback",
+      },
+      token: {
+        access_token: "topview-access-token",
+        refresh_token: "topview-refresh-token",
+        expires_at: Date.now() + 60 * 60 * 1000,
+      },
+    }]);
+    assert.equal(importResponse.status, 200);
+    assert.deepEqual((await importResponse.json()).result, {
+      connected: true,
+      configured: true,
+      shared: true,
+    });
+    const importedConnection = database.providerConnections.get("cinegen-local-v1:topview");
+    assert.equal(importedConnection.pending_ciphertext, null);
+    assert.doesNotMatch(importedConnection.token_ciphertext, /topview-access-token|topview-refresh-token/);
+
+    const sharedStatusResponse = await rpc("connectionStatus");
+    assert.deepEqual((await sharedStatusResponse.json()).result, {
+      connected: true,
+      configured: true,
+      authMode: "oauth",
+    });
 
     const connectedResponse = await rpc("accountStatus");
-    assert.deepEqual((await connectedResponse.json()).result, { connected: true, configured: true, credits: 69.53 });
+    assert.deepEqual((await connectedResponse.json()).result, {
+      connected: true,
+      configured: true,
+      authMode: "oauth",
+      creditType: "mcp",
+      credits: 69.53,
+    });
 
-    const generationResponse = await rpc("generate", [{
+    const submissionResponse = await rpc("submit", [{
       prompt: "A cinematic sunrise over a city",
-      outputType: "video",
       model: "Standard",
       durationSec: 10,
       aspectRatio: "9:16",
       resolution: 720,
       generateAudio: true,
     }]);
+    assert.equal(submissionResponse.status, 200);
+    const submission = (await submissionResponse.json()).result;
+    assert.equal(submission.taskId, "topview-task-1");
+    assert.equal(submission.taskType, "text_to_video");
+    assert.equal(submission.boardId, "board-1");
+    assert.equal(submission.status, "init");
+    assert.equal(submission.pending, true);
+
+    const generationResponse = await rpc("query", [submission]);
     assert.equal(generationResponse.status, 200);
     const generation = (await generationResponse.json()).result;
-    assert.equal(generation.url, "https://cdn.example.com/topview-task-1.mp4");
+    assert.equal(generation.url, "https://api.topview.ai/s/3LHi5jFg");
+    assert.deepEqual(generation.urls, ["https://api.topview.ai/s/3LHi5jFg"]);
     assert.equal(generation.mediaType, "video");
     assert.equal(generation.taskId, "topview-task-1");
     assert.equal(generation.model, "standard-v2");
     assert.equal(generation.durationSec, 10);
+    assert.equal(generation.status, "success");
     assert.equal(generation.pending, false);
     assert.equal(generation.boardUrl, "https://www.topview.ai/board/board-1?boardResultId=board-task-1");
 
@@ -508,6 +598,25 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
       req: { taskType: "text_to_video", taskId: "topview-task-1", needCloudFrontUrl: true },
     });
 
+    const omniResponse = await rpc("generate", [{
+      prompt: "The actor walks through the room",
+      outputType: "video",
+      taskType: "omni_reference",
+      model: "Standard",
+      durationSec: 5,
+      resolution: 720,
+      medias: [{ value: "topview-file:identity-reference-1", role: "image" }],
+    }]);
+    assert.equal(omniResponse.status, 200);
+    const omniSubmitCall = toolCalls.find((entry) => (
+      entry.name === "topview_generate_video" && entry.arguments.req.taskType === "omni_reference"
+    ));
+    assert.deepEqual(omniSubmitCall.arguments.req.inputImages, [
+      { fileId: "identity-reference-1", name: "Image1" },
+    ]);
+    assert.match(omniSubmitCall.arguments.req.prompt, /<<<Image1>>> is an authoritative visual identity and appearance reference\./);
+    assert.match(omniSubmitCall.arguments.req.prompt, /The actor walks through the room/);
+
     const imageResponse = await rpc("generate", [{
       prompt: "Place the subject in a moonlit forest",
       outputType: "image",
@@ -522,7 +631,7 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     assert.equal(image.mediaType, "image");
     assert.equal(image.taskType, "image_edit");
     assert.equal(image.model, "gpt-image-2");
-    assert.equal(image.referenceValue, "topview-file:topview-file-2");
+    assert.equal(image.referenceValue, "topview-file:topview-file-3");
     assert.equal(uploadedBodies.length, 2);
     assert.deepEqual([...uploadedBodies[0]], [137, 80, 78, 71]);
     assert.deepEqual([...uploadedBodies[1]], [137, 80, 78, 71, 13, 10, 26, 10]);
@@ -531,13 +640,15 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
       entry.name === "topview_get_generation_config" && entry.arguments.req.type === "image"
     ));
     assert.deepEqual(imageConfigCall.arguments, { req: { type: "image", taskType: "image_edit" } });
-    const credentialCall = toolCalls.find((entry) => entry.name === "ta_upload_credential");
-    assert.deepEqual(credentialCall.arguments, {
-      req: { format: "png", needAccelerateUrl: false },
-    });
+    const credentialCalls = toolCalls.filter((entry) => entry.name === "ta_upload_credential");
+    assert.deepEqual(credentialCalls.map((entry) => entry.arguments), [
+      { req: { format: "png", needAccelerateUrl: true } },
+      { req: { format: "png", needAccelerateUrl: false } },
+      { req: { format: "png", needAccelerateUrl: true } },
+    ]);
     const imageSubmitCall = toolCalls.find((entry) => entry.name === "topview_generate_image");
     assert.equal(imageSubmitCall.arguments.req.taskType, "image_edit");
-    assert.deepEqual(imageSubmitCall.arguments.req.inputImageFileIds, ["topview-file-1"]);
+    assert.deepEqual(imageSubmitCall.arguments.req.inputImageFileIds, ["topview-file-2"]);
     assert.equal(imageSubmitCall.arguments.req.model, "gpt-image-2");
     assert.equal(imageSubmitCall.arguments.req.aspectRatio, "16:9");
     assert.equal(imageSubmitCall.arguments.req.generateCount, 1);
@@ -549,4 +660,36 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("requires the shared desktop MCP connection for hosted Topview", async () => {
+  const worker = await loadWorker();
+  const database = new FakeD1Database();
+  const environment = testEnvironment({
+    DB: database,
+    MEDIA: {},
+    CINEGEN_TOPVIEW_TOKEN_SECRET: "hosted-topview-test-secret",
+  });
+  const rpc = (method, args = []) => worker.fetch(
+    new Request(`https://cinegen-cloud-studio.cogden.chatgpt.site/api/rpc/topview/${method}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "oai-authenticated-user-id": "owner-1",
+      },
+      body: JSON.stringify({ args }),
+    }),
+    environment,
+    executionContext,
+  );
+  const loginResponse = await rpc("authLogin", ["https://cinegen-cloud-studio.cogden.chatgpt.site"]);
+  assert.equal(loginResponse.status, 409);
+  assert.deepEqual(await loginResponse.json(), {
+    ok: false,
+    error: {
+      code: "TOPVIEW_TEAM_MCP_REQUIRED",
+      message: "Topview MCP is shared from CineGen Desktop for this hosted workspace. On the owner's Mac, open Settings → Provider and choose Share MCP with team, then refresh this page.",
+    },
+  });
+  assert.equal(database.providerConnections.size, 0);
 });

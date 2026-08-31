@@ -94,6 +94,16 @@ export interface TranscriptSegment {
   words?: TranscriptWord[];
 }
 
+/** Non-secret task coordinates needed to resume a paid Topview video render. */
+export interface TopviewVideoTaskState {
+  taskId: string;
+  taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+  boardId?: string;
+  model: string;
+  durationSec: number;
+  boardUrl?: string;
+}
+
 export interface WorkflowNodeData extends Record<string, unknown> {
   type: CinegenNodeType;
   label: string;
@@ -117,6 +127,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     wordTimestampsStatus?: 'idle' | 'loading' | 'ready' | 'error';
     /** Remote render retained so a transient transfer failure can resume without paying for another job. */
     remoteJobId?: string;
+    /** Topview task retained across polling failures, app restarts, and project saves. */
+    topviewTask?: TopviewVideoTaskState;
   };
   generations?: string[];
   activeGeneration?: number;

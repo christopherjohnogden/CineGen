@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, session } from 'electron';
+import { exportTopviewTeamConnection } from './topview.js';
 
 const LOCAL_WORKSPACE_ORIGIN = 'http://localhost:3000';
 const HOSTED_WORKSPACE_ORIGIN = 'https://cinegen-cloud-studio.cogden.chatgpt.site';
@@ -32,8 +33,12 @@ type RpcTarget = {
   source: 'hosted' | 'local-web';
 };
 
+const HOSTED_RPC_TARGET: RpcTarget = { origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' };
+const LOCAL_RPC_TARGET: RpcTarget = { origin: LOCAL_WORKSPACE_ORIGIN, source: 'local-web' };
+
 let activeTarget: RpcTarget | null = null;
 let authWindow: BrowserWindow | null = null;
+let authConnectionPromise: Promise<ProviderStatus> | null = null;
 
 function emptyStatus(): ProviderStatus {
   return {
@@ -77,6 +82,9 @@ async function rpcFetch<T>(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ args }),
       credentials: 'include',
+      // RPC payloads can contain provider credentials. Never forward their
+      // request bodies through an unexpected redirect.
+      redirect: 'error',
       signal: controller.signal,
     };
     const response = target.source === 'hosted'
@@ -111,9 +119,6 @@ async function statusFor(target: RpcTarget): Promise<ProviderStatus | null> {
 }
 
 async function resolveTarget(): Promise<{ target: RpcTarget; status: ProviderStatus } | null> {
-  const hosted: RpcTarget = { origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' };
-  const local: RpcTarget = { origin: LOCAL_WORKSPACE_ORIGIN, source: 'local-web' };
-
   if (activeTarget) {
     const status = await statusFor(activeTarget);
     if (status) return { target: activeTarget, status };
@@ -123,15 +128,15 @@ async function resolveTarget(): Promise<{ target: RpcTarget; status: ProviderSta
   // A previously authenticated hosted workspace is authoritative. The local
   // browser workspace is a development/test fallback when the hosted session
   // has not been connected yet.
-  const hostedStatus = await statusFor(hosted);
+  const hostedStatus = await statusFor(HOSTED_RPC_TARGET);
   if (hostedStatus) {
-    activeTarget = hosted;
-    return { target: hosted, status: hostedStatus };
+    activeTarget = HOSTED_RPC_TARGET;
+    return { target: HOSTED_RPC_TARGET, status: hostedStatus };
   }
-  const localStatus = await statusFor(local);
+  const localStatus = await statusFor(LOCAL_RPC_TARGET);
   if (localStatus) {
-    activeTarget = local;
-    return { target: local, status: localStatus };
+    activeTarget = LOCAL_RPC_TARGET;
+    return { target: LOCAL_RPC_TARGET, status: localStatus };
   }
   return null;
 }
@@ -160,20 +165,53 @@ async function mutateTeamProvider(method: 'save' | 'remove', value: unknown): Pr
   return decorateStatus(payload.result, resolved.target);
 }
 
+async function shareDesktopTopviewConnection(): Promise<{
+  connected: boolean;
+  configured: boolean;
+  shared: boolean;
+}> {
+  const connection = await exportTopviewTeamConnection();
+  if (!connection || !('client' in connection)) {
+    throw new Error('Connect Topview MCP in CineGen Desktop before sharing it with the team.');
+  }
+  let resolved = await resolveTarget();
+  if (!resolved || resolved.target.source !== 'hosted') {
+    // Sharing is a desktop-to-hosted action. If this Mac has only discovered
+    // localhost (or no workspace at all), start the hosted team sign-in here
+    // instead of sending the user hunting for a second prerequisite button.
+    const hostedStatus = await connectHostedWorkspace();
+    if (hostedStatus.desktop?.connected && hostedStatus.desktop.source === 'hosted') {
+      resolved = { target: HOSTED_RPC_TARGET, status: hostedStatus };
+    }
+  }
+  if (!resolved || resolved.target.source !== 'hosted') {
+    throw new Error('CineGen team sign-in was not completed. Sign in in the window that opened, then choose Share MCP with team again.');
+  }
+  const { response, payload } = await rpcFetch<{
+    connected: boolean;
+    configured: boolean;
+    shared: boolean;
+  }>(resolved.target, 'topview', 'importTeamConnection', [connection]);
+  if (!response.ok || !payload?.ok || !payload.result) {
+    throw new Error(payload?.error?.message || `Topview MCP could not be shared (${response.status}).`);
+  }
+  return payload.result;
+}
+
 export async function invokeSharedOpenAi(params: Record<string, unknown>): Promise<unknown> {
   return invokeTeamRpc('llm', 'openaiChat', [{ ...params, apiKey: TEAM_PROVIDER_SENTINEL }]);
 }
 
 async function connectHostedWorkspace(): Promise<ProviderStatus> {
-  const existing = await statusFor({ origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' });
+  const existing = await statusFor(HOSTED_RPC_TARGET);
   if (existing) {
-    activeTarget = { origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' };
+    activeTarget = HOSTED_RPC_TARGET;
     return existing;
   }
 
-  if (authWindow && !authWindow.isDestroyed()) {
-    authWindow.focus();
-    return emptyStatus();
+  if (authConnectionPromise) {
+    if (authWindow && !authWindow.isDestroyed()) authWindow.focus();
+    return authConnectionPromise;
   }
 
   const window = new BrowserWindow({
@@ -193,28 +231,82 @@ async function connectHostedWorkspace(): Promise<ProviderStatus> {
   authWindow = window;
 
   const signInUrl = `${HOSTED_WORKSPACE_ORIGIN}/signin-with-chatgpt?return_to=${encodeURIComponent('/')}`;
-  const result = await new Promise<ProviderStatus>((resolve, reject) => {
+  const connectionPromise = new Promise<ProviderStatus>((resolve, reject) => {
     let settled = false;
+    let checking = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    const cleanup = () => {
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      pollTimer = null;
+      timeoutTimer = null;
+    };
     const finish = (value: ProviderStatus) => {
       if (settled) return;
       settled = true;
+      cleanup();
       resolve(value);
     };
+    const fail = (cause: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(cause);
+    };
     const check = async () => {
-      const next = await statusFor({ origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' });
-      if (!next) return;
-      activeTarget = { origin: HOSTED_WORKSPACE_ORIGIN, source: 'hosted' };
-      finish(next);
-      if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+      if (checking || settled) return;
+      checking = true;
+      try {
+        const next = await statusFor(HOSTED_RPC_TARGET);
+        if (settled) return;
+        if (!next) return;
+        activeTarget = HOSTED_RPC_TARGET;
+        finish(next);
+        if (!window.isDestroyed()) window.close();
+      } finally {
+        checking = false;
+      }
     };
     window.webContents.on('did-finish-load', () => void check());
     window.on('closed', () => {
-      authWindow = null;
-      if (!settled) finish(emptyStatus());
+      if (authWindow === window) authWindow = null;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      if (settled) return;
+      // A user can close the window immediately after ChatGPT accepts the
+      // sign-in. Let any in-flight probe finish, then make one final serialized
+      // check so a just-committed cookie is not mistaken for cancellation.
+      void (async () => {
+        while (checking && !settled) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        if (settled) return;
+        await check();
+        if (!settled) finish(emptyStatus());
+      })();
     });
-    window.loadURL(signInUrl).catch(reject);
+    // OAuth may finish in a child window and cookie persistence can land just
+    // after the final navigation event. Poll serially so either path completes
+    // without racing overlapping network checks.
+    pollTimer = setInterval(() => void check(), 1_000);
+    timeoutTimer = setTimeout(() => {
+      finish(emptyStatus());
+      if (!window.isDestroyed()) window.close();
+    }, 10 * 60 * 1_000);
+    window.loadURL(signInUrl).catch((cause) => {
+      fail(cause);
+      if (!window.isDestroyed()) window.close();
+    });
   });
-  return result;
+  authConnectionPromise = connectionPromise;
+  try {
+    return await connectionPromise;
+  } finally {
+    if (authConnectionPromise === connectionPromise) authConnectionPromise = null;
+  }
 }
 
 export function registerTeamProviderHandlers(): void {
@@ -234,4 +326,5 @@ export function registerTeamProviderHandlers(): void {
   ipcMain.handle('team-providers:remove', async (_event, value: unknown) => {
     return mutateTeamProvider('remove', value);
   });
+  ipcMain.handle('team-providers:share-topview', () => shareDesktopTopviewConnection());
 }

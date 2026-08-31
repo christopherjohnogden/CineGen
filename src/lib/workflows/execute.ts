@@ -18,7 +18,12 @@ import {
   resolveVideoModelEndpoint,
   sanitizeVideoInputsForEndpoint,
 } from '@/lib/fal/models';
-import type { TranscriptSegment, TranscriptWord, WorkflowNodeData } from '@/types/workflow';
+import type {
+  TopviewVideoTaskState,
+  TranscriptSegment,
+  TranscriptWord,
+  WorkflowNodeData,
+} from '@/types/workflow';
 import type { Element } from '@/types/elements';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
 import { runWorkflow } from '@/lib/cloud/funding';
@@ -35,6 +40,10 @@ import {
 } from './runpod-session-image';
 import { isRetryableRunpodSessionImagePollError } from '@/lib/runpod/session-image-client';
 import { qwenMultiImagePrompt, type QwenPromptPicture } from '@/lib/runpod/qwen-prompt';
+import {
+  isTopviewVideoTaskFailedError,
+  normalizeTopviewVideoTask,
+} from '@/lib/topview/video-task';
 
 interface WorkflowDispatch {
   setNodeRunning: (nodeId: string, running: boolean) => void;
@@ -833,16 +842,39 @@ async function executeModelNode(
   let runpodLtx25JobId = nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE
     ? data.result?.remoteJobId?.trim() ?? ''
     : '';
-  const progressStartedAt = Date.now();
+  const isTopviewVideoNode = modelDef.provider === 'topview' && modelDef.outputType === 'video';
+  let topviewVideoTask = isTopviewVideoNode
+    ? normalizeTopviewVideoTask(data.result?.topviewTask)
+    : undefined;
+  const progressStartedAt = isTopviewVideoNode
+    ? data.result?.progressStartedAt ?? Date.now()
+    : Date.now();
+  const initialProgressStage = isLayerDecomposeNodeType(nodeType)
+    ? 'init'
+    : nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE
+      ? (runpodLtx25JobId ? 'checking' : 'submitting')
+      : isTopviewVideoNode
+        ? (topviewVideoTask ? 'checking' : 'submitting')
+        : undefined;
+  const initialProgressMessage = isTopviewVideoNode
+    ? (topviewVideoTask
+        ? 'Resuming the existing Topview render'
+        : 'Submitting the video to Topview')
+    : undefined;
+  const initialProgressExtras: Partial<NonNullable<WorkflowNodeData['result']>> | undefined =
+    nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE
+      ? { progressStartedAt }
+      : isTopviewVideoNode
+        ? {
+            progressStartedAt,
+            ...(topviewVideoTask ? { topviewTask: topviewVideoTask } : {}),
+          }
+        : undefined;
   dispatch.setNodeResult(nodeId, buildRunningResult(
     nodeType,
-    isLayerDecomposeNodeType(nodeType)
-      ? 'init'
-      : nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE
-        ? (runpodLtx25JobId ? 'checking' : 'submitting')
-        : undefined,
-    undefined,
-    nodeType === RUNPOD_LTX25_SESSION_NODE_TYPE ? { progressStartedAt } : undefined,
+    initialProgressStage,
+    initialProgressMessage,
+    initialProgressExtras,
   ));
   let runpodSessionImageJobId = isRunpodSessionImageNodeType(nodeType)
     ? data.result?.remoteJobId?.trim() ?? ''
@@ -1352,7 +1384,37 @@ async function executeModelNode(
           modelId: effectiveModelId,
           outputType: modelDef.outputType === 'model3d' ? '3d' : modelDef.outputType,
           inputs: apiInputs,
-        });
+        }, isTopviewVideoNode ? {
+          topviewVideoTask,
+          onTopviewVideoTask: (task: TopviewVideoTaskState) => {
+            topviewVideoTask = task;
+            dispatch.setNodeResult(nodeId, buildRunningResult(
+              nodeType,
+              'queued',
+              'Topview accepted the video render',
+              { topviewTask: task, progressStartedAt },
+            ));
+          },
+          onTopviewVideoStatus: (query, task) => {
+            topviewVideoTask = task;
+            const stage = query.status === 'init'
+              ? 'queued'
+              : query.status === 'running'
+                ? 'rendering'
+                : 'checking';
+            const message = query.status === 'success'
+              ? 'Topview finished rendering the video'
+              : query.status === 'init'
+                ? 'Topview queued the video render'
+                : 'Topview is rendering the video';
+            dispatch.setNodeResult(nodeId, buildRunningResult(
+              nodeType,
+              stage,
+              message,
+              { topviewTask: task, progressStartedAt },
+            ));
+          },
+        } : undefined);
       }
     }
 
@@ -1693,10 +1755,14 @@ async function executeModelNode(
       : runpodSessionImageJobId && isRetryableRunpodSessionImagePollError(error)
         ? runpodSessionImageJobId
         : '';
+    const retainedTopviewTask = topviewVideoTask && !isTopviewVideoTaskFailedError(error)
+      ? topviewVideoTask
+      : undefined;
     dispatch.setNodeResult(nodeId, {
       status: 'error',
       error: error instanceof Error ? error.message : 'Unknown error',
       ...(retainedRemoteJobId ? { remoteJobId: retainedRemoteJobId } : {}),
+      ...(retainedTopviewTask ? { topviewTask: retainedTopviewTask, progressStartedAt } : {}),
     });
   } finally {
     dispatch.setNodeRunning(nodeId, false);

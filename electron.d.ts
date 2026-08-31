@@ -413,6 +413,8 @@ export interface ElectronAPI {
       configured: boolean;
       email?: string;
       credits?: number;
+      authMode?: 'oauth' | 'api_key';
+      creditType?: 'mcp' | 'api_key';
       error?: string;
     }>;
     modelCatalog: () => Promise<import('./src/lib/topview/model-catalog').TopviewGenerationCatalog>;
@@ -421,6 +423,8 @@ export interface ElectronAPI {
       configured: boolean;
       email?: string;
       credits?: number;
+      authMode?: 'oauth' | 'api_key';
+      creditType?: 'mcp' | 'api_key';
       error?: string;
     }>;
     authLogout: () => Promise<void>;
@@ -435,20 +439,20 @@ export interface ElectronAPI {
     }) => Promise<{
       taskId: string;
       taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
-      boardId: string;
+      boardId?: string;
       model: string;
       durationSec: number;
     }>;
     query?: (params: {
       taskId: string;
       taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
-      boardId: string;
+      boardId?: string;
       model: string;
       durationSec: number;
     }) => Promise<{
       taskId: string;
       taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
-      boardId: string;
+      boardId?: string;
       model: string;
       durationSec: number;
       status: 'init' | 'running' | 'success' | 'fail';
@@ -512,6 +516,9 @@ export interface ElectronAPI {
     disconnect: () => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
     save: (value: { provider: import('./src/lib/providers/workspace-connections').WorkspaceProviderId; secret: string }) => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
     remove: (value: { provider: import('./src/lib/providers/workspace-connections').WorkspaceProviderId }) => Promise<import('./src/lib/providers/workspace-connections').WorkspaceProviderStatus>;
+    // Native-only capability. The browser compatibility shim intentionally
+    // omits it so renderer code can distinguish Desktop without a user-agent.
+    shareTopview?: () => Promise<{ connected: boolean; configured: boolean; shared: boolean }>;
   };
   copilot: {
     analyzeVisualRefs: (params: {

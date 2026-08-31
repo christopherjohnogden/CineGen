@@ -674,6 +674,8 @@ type TopviewState = {
   configured: boolean;
   email?: string;
   credits?: number;
+  authMode?: 'oauth' | 'api_key';
+  creditType?: 'mcp' | 'api_key';
   error?: string;
 };
 
@@ -681,7 +683,7 @@ function friendlyTopviewError(cause: unknown): string {
   const message = cause instanceof Error ? cause.message : String(cause ?? '');
   if (/pop-?ups?/i.test(message)) return 'Allow pop-ups for CineGen, then try connecting Topview again.';
   if (/timed out/i.test(message)) return 'Topview sign-in timed out. Try connecting again.';
-  if (/credit|balance|billing/i.test(message)) return 'Topview needs more credits for this generation. Check your Topview account balance.';
+  if (/credit|balance|billing/i.test(message)) return 'Topview says the current connection has insufficient credits. If this is an API-key connection, share the desktop MCP connection with your team to use the MCP plan balance.';
   const remoteMessage = message.split(/Error:\s*/).filter(Boolean).pop()?.trim();
   return remoteMessage && remoteMessage.length < 260
     ? remoteMessage
@@ -691,7 +693,18 @@ function friendlyTopviewError(cause: unknown): string {
 function TopviewConnect() {
   const [status, setStatus] = useState<TopviewState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
   const [error, setError] = useState('');
+  // Detect the native capability itself. Packaged builds can customize or mask
+  // Electron's user agent, which previously hid the team-sharing control even
+  // though the secure desktop bridge was available.
+  const canShareTopviewWithTeam = typeof window !== 'undefined'
+    && typeof window.electronAPI?.teamProviders?.shareTopview === 'function';
+  const isHostedWorkspace = typeof window !== 'undefined'
+    && (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+    && window.location.hostname !== 'localhost'
+    && window.location.hostname !== '127.0.0.1';
 
   const refresh = useCallback(async () => {
     try {
@@ -730,6 +743,24 @@ function TopviewConnect() {
     }
   }, []);
 
+  const shareWithTeam = useCallback(async () => {
+    setSharing(true);
+    setError('');
+    setShareMessage('');
+    try {
+      const shareTopview = window.electronAPI?.teamProviders?.shareTopview;
+      if (typeof shareTopview !== 'function') {
+        throw new Error('Topview MCP sharing is available in the CineGen desktop app.');
+      }
+      await shareTopview();
+      setShareMessage('This Topview MCP connection is now shared with the hosted team workspace.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Topview MCP could not be shared with the team.');
+    } finally {
+      setSharing(false);
+    }
+  }, []);
+
   return (
     <div className="sp-field" style={{ marginTop: 12 }}>
       <label className="sp-field__label">
@@ -740,12 +771,18 @@ function TopviewConnect() {
           <>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
               Connected to Topview{status.email ? ` · ${status.email}` : ''}
-              {typeof status.credits === 'number' ? ` · ${status.credits} credits` : ''}
+              {typeof status.credits === 'number'
+                ? ` · ${status.credits} ${status.creditType === 'api_key' ? 'API-key credits' : 'MCP plan credits'}`
+                : ''}
             </span>
             <button className="sp-field__eye-btn" type="button" onClick={() => void disconnect()} disabled={busy} style={{ width: 'auto', padding: '4px 10px' }}>
               Disconnect
             </button>
           </>
+        ) : isHostedWorkspace ? (
+          <span style={{ fontSize: 13, color: 'var(--text-tertiary, #888)' }}>
+            Waiting for the team&apos;s Topview MCP connection
+          </span>
         ) : (
           <>
             <span style={{ fontSize: 13, color: 'var(--text-tertiary, #888)' }}>Not connected</span>
@@ -757,6 +794,32 @@ function TopviewConnect() {
       </div>
       {(error || status?.error) && (
         <p className="sp-card__desc" style={{ marginTop: 4, color: 'var(--danger, #d66)' }}>{error || status?.error}</p>
+      )}
+      {shareMessage && (
+        <p className="sp-card__desc" style={{ marginTop: 4, color: 'var(--success, #58c98b)' }}>{shareMessage}</p>
+      )}
+      {status?.connected && status.authMode === 'api_key' && (
+        <p className="sp-topview-credit-note">
+          <strong>API-key connection:</strong> This web fallback uses Topview&apos;s separate API balance. To use the MCP plan balance shown on desktop, share the owner&apos;s desktop MCP connection with the team.
+        </p>
+      )}
+      {status?.connected && canShareTopviewWithTeam && status.authMode !== 'api_key' && (
+        <div style={{ marginTop: 8 }}>
+          <button
+            className="sp-btn sp-btn--accent"
+            type="button"
+            onClick={() => void shareWithTeam()}
+            disabled={sharing}
+          >{sharing ? 'Sharing MCP…' : 'Share MCP with team'}</button>
+          <p className="sp-card__desc" style={{ marginTop: 5 }}>
+            Securely shares this OAuth MCP connection with the hosted workspace so web and mobile use the same Topview plan balance.
+          </p>
+        </div>
+      )}
+      {!status?.connected && isHostedWorkspace && (
+        <p className="sp-topview-credit-note">
+          On the owner&apos;s Mac, open CineGen Desktop, then go to <strong>Settings → Provider → Topview AI MCP</strong> and choose <strong>Share MCP with team</strong>. Refresh this page afterward. Web and mobile will then use the same team MCP connection and plan balance.
+        </p>
       )}
       <p className="sp-card__desc" style={{ marginTop: 4 }}>
         Signs in directly through Topview&apos;s official MCP. On the hosted workspace, one connection works for the whole team. CineGen selects a compatible live model, uploads selected elements as references, and saves results to your Topview board.

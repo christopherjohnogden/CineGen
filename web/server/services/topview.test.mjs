@@ -232,6 +232,33 @@ test('routes a single CineGen element through omni reference, not first-frame vi
   assert.equal(topviewVideoReferences([
     { value: '/media/opening.png', role: 'start_image' },
   ]).taskType, 'image_to_video');
+  assert.equal(topviewVideoReferences([
+    { value: '/media/opening.png', role: 'start_image' },
+    { value: '/media/closing.png', role: 'end_image' },
+  ]).taskType, 'image_to_video');
+
+  const framed = buildTopviewVideoRequest({
+    config: {
+      ...LIVE_CONFIG,
+      models: [{
+        ...LIVE_CONFIG.models[0],
+        requiredSubmitFields: ['model', 'prompt', 'duration', 'resolution'],
+      }],
+    },
+    generateTool: wrappedTool('topview_generate_video', {
+      firstFrameFileId: { type: 'string' },
+      endFrameFileId: { type: 'string' },
+    }),
+    taskType: 'image_to_video',
+    params: { prompt: 'Move between the approved frames.' },
+    references: [
+      { value: '/media/opening.png', role: 'start_image' },
+      { value: '/media/closing.png', role: 'end_image' },
+    ],
+    fileIds: ['file-open', 'file-close'],
+  });
+  assert.equal(framed.req.firstFrameFileId, 'file-open');
+  assert.equal(framed.req.endFrameFileId, 'file-close');
 });
 
 test('completes DCR + PKCE, encrypts tokens, uploads local references, and generates through exact MCP tools', async (t) => {

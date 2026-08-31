@@ -35,7 +35,9 @@ describe('desktop team provider bridge', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.defineProperty(window.navigator, 'userAgent', { configurable: true, value: 'CineGen Electron' });
+    // Production builds may mask Electron in their user agent. The native
+    // bridge, rather than this string, must determine the runtime.
+    Object.defineProperty(window.navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 CineGen Desktop' });
     (window as Window & { electronAPI: typeof window.electronAPI }).electronAPI = {
       ...originalElectronApi,
       teamProviders: {
@@ -44,11 +46,13 @@ describe('desktop team provider bridge', () => {
         disconnect: vi.fn(async () => connectedStatus),
         save,
         remove,
+        shareTopview: vi.fn(async () => ({ connected: true, configured: true, shared: true })),
       },
     };
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     (window as Window & { electronAPI: typeof window.electronAPI }).electronAPI = originalElectronApi;
     if (originalUserAgent) Object.defineProperty(window.navigator, 'userAgent', originalUserAgent);
     else Reflect.deleteProperty(window.navigator, 'userAgent');
@@ -67,5 +71,26 @@ describe('desktop team provider bridge', () => {
     expect(save).toHaveBeenCalledWith({ provider: 'openai', secret: 'sk-team-placeholder' });
     expect(remove).toHaveBeenCalledWith({ provider: 'openai' });
     expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the browser compatibility shim on direct RPC when native sharing is absent', async () => {
+    const browserTeamProviders = { ...window.electronAPI.teamProviders };
+    delete browserTeamProviders.shareTopview;
+    (window as Window & { electronAPI: typeof window.electronAPI }).electronAPI = {
+      ...window.electronAPI,
+      teamProviders: browserTeamProviders,
+    };
+    const fetchRpc = vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: connectedStatus,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchRpc);
+
+    await expect(getWorkspaceProviderStatus()).resolves.toEqual(connectedStatus);
+    expect(status).not.toHaveBeenCalled();
+    expect(fetchRpc).toHaveBeenCalledWith('/api/rpc/providers/status', expect.objectContaining({ method: 'POST' }));
   });
 });

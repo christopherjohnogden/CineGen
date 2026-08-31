@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     disconnect: () => ipcRenderer.invoke('team-providers:disconnect'),
     save: (value: unknown) => ipcRenderer.invoke('team-providers:save', value),
     remove: (value: unknown) => ipcRenderer.invoke('team-providers:remove', value),
+    shareTopview: () => ipcRenderer.invoke('team-providers:share-topview'),
   },
   copilot: {
     analyzeVisualRefs: (params: {

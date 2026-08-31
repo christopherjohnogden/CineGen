@@ -197,6 +197,12 @@ export async function handleRpc(
       case "topview.accountStatus":
         result = await topview.accountStatus();
         break;
+      case "topview.connectionStatus":
+        result = await topview.connectionStatus();
+        break;
+      case "topview.importTeamConnection":
+        result = await topview.importTeamConnection(args[0]);
+        break;
       case "topview.modelCatalog":
         result = await topview.modelCatalog();
         break;
@@ -281,6 +287,12 @@ export async function handleRpc(
         break;
       case "topview.generate":
         result = await topview.generate(args[0]);
+        break;
+      case "topview.submit":
+        result = await topview.submit(args[0]);
+        break;
+      case "topview.query":
+        result = await topview.query(args[0]);
         break;
       case "topview.generateImage":
         result = await topview.generate({ ...requireRecord(args[0] ?? {}, "Topview image parameters"), outputType: "image" });

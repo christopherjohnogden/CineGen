@@ -25,7 +25,11 @@ type RpcEnvelope<T> = {
 };
 
 function isDesktopRuntime(): boolean {
-  return typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent);
+  // Use the native bridge as the source of truth. Packaged CineGen builds may
+  // customize their user agent, so looking for the word "Electron" can make
+  // the desktop app incorrectly take the browser-only RPC path.
+  return typeof window !== 'undefined'
+    && typeof window.electronAPI?.teamProviders?.shareTopview === 'function';
 }
 
 async function providerRpc<T>(method: 'status' | 'save' | 'remove', value?: unknown): Promise<T> {

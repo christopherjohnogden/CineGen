@@ -61,14 +61,39 @@ function WorkflowCanvasInner() {
   const [typeWarning, setTypeWarning] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [isFileDragging, setIsFileDragging] = useState(false);
+  const [isMobileCanvas, setIsMobileCanvas] = useState(false);
+  const [mobileMultiSelect, setMobileMultiSelect] = useState(false);
+  const [mobileGuideOpen, setMobileGuideOpen] = useState(false);
+  const [confirmMobileDelete, setConfirmMobileDelete] = useState(false);
   const mouseRef = useRef({ x: 0, y: 0 });
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const nodesRef = useRef(state.nodes);
   nodesRef.current = state.nodes;
   const edgesRef = useRef(state.edges);
   edgesRef.current = state.edges;
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const updateMobileCanvas = () => setIsMobileCanvas(media.matches);
+    updateMobileCanvas();
+    media.addEventListener('change', updateMobileCanvas);
+    return () => media.removeEventListener('change', updateMobileCanvas);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileCanvas) return;
+    try {
+      if (localStorage.getItem('cinegen_mobile_canvas_guide_seen') !== '1') {
+        setMobileGuideOpen(true);
+      }
+    } catch {
+      setMobileGuideOpen(true);
+    }
+  }, [isMobileCanvas]);
 
   const [helperLines, setHelperLines] = useState<{ horizontal: number | null; vertical: number | null }>({
     horizontal: null,
@@ -77,12 +102,15 @@ function WorkflowCanvasInner() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      const effectiveChanges = isMobileCanvas && mobileMultiSelect
+        ? changes.filter((change) => change.type !== 'select' || change.selected)
+        : changes;
       dispatch({
         type: 'SET_NODES',
-        nodes: applyNodeChanges(changes, nodesRef.current) as Node<WorkflowNodeData>[],
+        nodes: applyNodeChanges(effectiveChanges, nodesRef.current) as Node<WorkflowNodeData>[],
       });
     },
-    [dispatch],
+    [dispatch, isMobileCanvas, mobileMultiSelect],
   );
 
   const onNodeDrag = useCallback(
@@ -113,9 +141,12 @@ function WorkflowCanvasInner() {
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      dispatch({ type: 'SET_EDGES', edges: applyEdgeChanges(changes, edgesRef.current) });
+      const effectiveChanges = isMobileCanvas && mobileMultiSelect
+        ? changes.filter((change) => change.type !== 'select' || change.selected)
+        : changes;
+      dispatch({ type: 'SET_EDGES', edges: applyEdgeChanges(effectiveChanges, edgesRef.current) });
     },
-    [dispatch],
+    [dispatch, isMobileCanvas, mobileMultiSelect],
   );
 
   const handleConnect = useCallback(
@@ -376,6 +407,76 @@ function WorkflowCanvasInner() {
     [state.nodes],
   );
 
+  const clearSelection = useCallback(() => {
+    dispatch({
+      type: 'SET_NODES',
+      nodes: state.nodes.map((node) => (node.selected ? { ...node, selected: false } : node)) as Node<WorkflowNodeData>[],
+    });
+    dispatch({
+      type: 'SET_EDGES',
+      edges: state.edges.map((edge) => (edge.selected ? { ...edge, selected: false } : edge)),
+    });
+    setMobileMultiSelect(false);
+    setConfirmMobileDelete(false);
+    setContextMenu(null);
+  }, [state.nodes, state.edges, dispatch]);
+
+  const deleteSelection = useCallback(() => {
+    const selectedNodeIds = new Set(state.nodes.filter((node) => node.selected).map((node) => node.id));
+    const remainingNodes = state.nodes.filter((node) => !selectedNodeIds.has(node.id));
+    const remainingEdges = state.edges.filter(
+      (edge) => !edge.selected && !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target),
+    );
+    dispatch({ type: 'SET_NODES', nodes: remainingNodes as Node<WorkflowNodeData>[] });
+    dispatch({ type: 'SET_EDGES', edges: remainingEdges });
+    setMobileMultiSelect(false);
+    setConfirmMobileDelete(false);
+    setContextMenu(null);
+  }, [state.nodes, state.edges, dispatch]);
+
+  const closeMobileGuide = useCallback(() => {
+    setMobileGuideOpen(false);
+    try { localStorage.setItem('cinegen_mobile_canvas_guide_seen', '1'); } catch {}
+  }, []);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+    longPressStartRef.current = null;
+  }, []);
+
+  const handleMobilePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMobileCanvas || event.pointerType === 'mouse') return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, a, [role="button"]')) return;
+    const nodeElement = target.closest<HTMLElement>('.react-flow__node');
+    const nodeId = nodeElement?.dataset.id;
+    if (!nodeId) return;
+
+    cancelLongPress();
+    const point = { x: event.clientX, y: event.clientY };
+    longPressStartRef.current = point;
+    longPressTimerRef.current = setTimeout(() => {
+      const nodeIsSelected = nodesRef.current.some((node) => node.id === nodeId && node.selected);
+      if (!nodeIsSelected) {
+        dispatch({
+          type: 'SET_NODES',
+          nodes: nodesRef.current.map((node) => ({ ...node, selected: node.id === nodeId })) as Node<WorkflowNodeData>[],
+        });
+      }
+      setContextMenu({ x: point.x, y: point.y });
+      longPressTimerRef.current = null;
+    }, 520);
+  }, [isMobileCanvas, cancelLongPress, dispatch]);
+
+  const handleMobilePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const start = longPressStartRef.current;
+    if (!start) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 9) cancelLongPress();
+  }, [cancelLongPress]);
+
+  useEffect(() => cancelLongPress, [cancelLongPress]);
+
   const addNodeToCenter = useCallback(
     (nodeType: string) => {
       const definition = NODE_REGISTRY[nodeType];
@@ -615,8 +716,16 @@ function WorkflowCanvasInner() {
       : edge;
   });
 
-  const selectedNode = state.nodes.find((n) => n.selected);
+  const selectedNodes = state.nodes.filter((node) => node.selected);
+  const selectedEdges = state.edges.filter((edge) => edge.selected);
+  const selectedCount = selectedNodes.length + selectedEdges.length;
+  const selectedSignature = `${selectedNodes.map((node) => node.id).join(',')}|${selectedEdges.map((edge) => edge.id).join(',')}`;
+  const selectedNode = selectedNodes[0];
   const showInspector = selectedNode && getModelDefinition(selectedNode.data.type);
+
+  useEffect(() => {
+    setConfirmMobileDelete(false);
+  }, [selectedSignature]);
 
   // Floating group button for multi-selection
   const selectedNonGroup = state.nodes.filter((n) => n.selected && n.type !== 'group');
@@ -639,10 +748,14 @@ function WorkflowCanvasInner() {
     <RunNodeContext.Provider value={handleRunNode}>
     <div
       ref={canvasWrapperRef}
-      className={`workflow-canvas-wrapper${isFileDragging ? ' workflow-canvas-wrapper--file-drag' : ''}`}
+      className={`workflow-canvas-wrapper${isFileDragging ? ' workflow-canvas-wrapper--file-drag' : ''}${isMobileCanvas ? ' workflow-canvas-wrapper--mobile' : ''}${selectedCount > 0 ? ' workflow-canvas-wrapper--has-selection' : ''}`}
       onMouseMove={(e) => {
         mouseRef.current = { x: e.clientX, y: e.clientY };
       }}
+      onPointerDownCapture={handleMobilePointerDown}
+      onPointerMoveCapture={handleMobilePointerMove}
+      onPointerUpCapture={cancelLongPress}
+      onPointerCancelCapture={cancelLongPress}
       onDrop={handleCanvasDrop}
       onDragOver={handleCanvasDragOver}
       onDragLeave={handleCanvasDragLeave}
@@ -665,15 +778,21 @@ function WorkflowCanvasInner() {
             setPendingPaletteConnection(null);
           }
           setContextMenu(null);
+          setConfirmMobileDelete(false);
         }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={{ type: 'animated' }}
-        connectionRadius={25}
+        connectionRadius={isMobileCanvas ? 36 : 25}
         minZoom={0.1}
-        panOnDrag={[1, 2]}
-        selectionOnDrag
+        panOnDrag={isMobileCanvas ? true : [1, 2]}
+        selectionOnDrag={!isMobileCanvas}
         selectionMode={SelectionMode.Partial}
+        zoomOnPinch
+        zoomOnDoubleClick={!isMobileCanvas}
+        nodeClickDistance={isMobileCanvas ? 8 : 0}
+        paneClickDistance={isMobileCanvas ? 8 : 0}
+        deleteKeyCode={['Backspace', 'Delete']}
         onMoveStart={() => setIsPanning(true)}
         onMoveEnd={(_, viewport) => {
           setIsPanning(false);
@@ -696,6 +815,52 @@ function WorkflowCanvasInner() {
 
       <HelperLines horizontal={helperLines.horizontal} vertical={helperLines.vertical} />
 
+      {isMobileCanvas && (
+        <button
+          type="button"
+          className={`canvas-touch-help-btn${mobileGuideOpen ? ' is-active' : ''}`}
+          aria-label="Show canvas finger gestures"
+          aria-expanded={mobileGuideOpen}
+          onClick={() => {
+            if (mobileGuideOpen) closeMobileGuide();
+            else setMobileGuideOpen(true);
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 11V5a2 2 0 0 1 4 0v5" />
+            <path d="M13 10V7a2 2 0 0 1 4 0v4" />
+            <path d="M17 11V9a2 2 0 0 1 4 0v5c0 5-3 8-8 8h-1c-3 0-5-1-7-4l-2-3a2 2 0 0 1 3-2l3 2" />
+          </svg>
+          Gestures
+        </button>
+      )}
+
+      {isMobileCanvas && mobileGuideOpen && (
+        <section className="canvas-touch-guide" aria-label="Canvas finger gestures">
+          <div className="canvas-touch-guide__header">
+            <div>
+              <span>Touch guide</span>
+              <small>Move around the canvas without a mouse.</small>
+            </div>
+            <button type="button" aria-label="Close touch guide" onClick={closeMobileGuide}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="canvas-touch-guide__grid">
+            <span><strong>Tap</strong><small>Select an item</small></span>
+            <span><strong>Drag item</strong><small>Move it</small></span>
+            <span><strong>Drag canvas</strong><small>Pan around</small></span>
+            <span><strong>Pinch</strong><small>Zoom in or out</small></span>
+            <span><strong>Drag a dot</strong><small>Connect nodes</small></span>
+            <span><strong>Press and hold</strong><small>More item actions</small></span>
+            <span><strong>Delete</strong><small>Use the selection bar</small></span>
+            <span><strong>Select more</strong><small>Keep several selected</small></span>
+          </div>
+        </section>
+      )}
+
       {showGroupBtn && groupBtnPos && (
         <button
           type="button"
@@ -715,6 +880,59 @@ function WorkflowCanvasInner() {
 
       {showInspector && selectedNode && (
         <NodeInspector nodeId={selectedNode.id} data={selectedNode.data} />
+      )}
+
+      {isMobileCanvas && selectedCount > 0 && (
+        <div className="canvas-touch-actions" role="toolbar" aria-label="Selected canvas item actions">
+          <div className="canvas-touch-actions__selection" aria-live="polite">
+            <strong>{selectedCount}</strong>
+            <span>selected</span>
+          </div>
+          <button
+            type="button"
+            className={mobileMultiSelect ? 'is-active' : ''}
+            aria-pressed={mobileMultiSelect}
+            onClick={() => {
+              setMobileMultiSelect((active) => !active);
+              setConfirmMobileDelete(false);
+            }}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <path d="M14 6h7M17.5 2.5v7" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+            Add
+          </button>
+          {selectedNonGroup.length >= 2 && (
+            <button type="button" onClick={handleGroupSelected}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+              </svg>
+              Group
+            </button>
+          )}
+          {selectedNodes.some((node) => node.type === 'group') && (
+            <button type="button" onClick={handleUngroupSelected}>Ungroup</button>
+          )}
+          <button
+            type="button"
+            className={`canvas-touch-actions__delete${confirmMobileDelete ? ' is-confirming' : ''}`}
+            onClick={() => {
+              if (confirmMobileDelete) deleteSelection();
+              else setConfirmMobileDelete(true);
+            }}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6" />
+            </svg>
+            {confirmMobileDelete ? `Delete ${selectedCount}` : 'Delete'}
+          </button>
+          <button type="button" className="canvas-touch-actions__close" aria-label="Clear selection" onClick={clearSelection}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
       )}
 
       {paletteOpen && (
@@ -781,16 +999,7 @@ function WorkflowCanvasInner() {
           <button
             type="button"
             className="workflow-context-menu__item workflow-context-menu__item--danger"
-            onClick={() => {
-              const selectedIds = state.nodes.filter((n) => n.selected).map((n) => n.id);
-              const remaining = state.nodes.filter((n) => !selectedIds.includes(n.id));
-              const remainingEdges = state.edges.filter(
-                (e) => !selectedIds.includes(e.source) && !selectedIds.includes(e.target),
-              );
-              dispatch({ type: 'SET_NODES', nodes: remaining as Node<WorkflowNodeData>[] });
-              dispatch({ type: 'SET_EDGES', edges: remainingEdges });
-              setContextMenu(null);
-            }}
+            onClick={deleteSelection}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6" />

@@ -558,15 +558,19 @@ export function topviewVideoReferences(medias) {
     .filter((entry, index, all) => all.findIndex((candidate) => (
       candidate.value === entry.value && candidate.role === entry.role
     )) === index);
+  const isStartFrame = (role) => /^(?:start_image|startimage|first_frame|firstframe)$/i.test(role);
+  const isEndFrame = (role) => /^(?:end_image|endimage|end_frame|endframe|last_frame|lastframe)$/i.test(role);
+  const startFrames = references.filter((entry) => isStartFrame(entry.role));
+  const onlyFrameInputs = references.every((entry) => isStartFrame(entry.role) || isEndFrame(entry.role));
   const taskType = references.length === 0
     ? 'text_to_video'
-    : references.length === 1 && /^(?:start_image|startimage|first_frame|firstframe)$/i.test(references[0].role)
+    : startFrames.length === 1 && onlyFrameInputs
       ? 'image_to_video'
       : 'omni_reference';
   return { references, taskType };
 }
 
-export function buildTopviewVideoRequest({ config, generateTool, taskType, params, fileIds = [], boardId }) {
+export function buildTopviewVideoRequest({ config, generateTool, taskType, params, references = [], fileIds = [], boardId }) {
   if (!['text_to_video', 'image_to_video', 'omni_reference'].includes(taskType)) {
     throw serviceError('Topview received an unsupported video input mode.', 'TOPVIEW_TASK_TYPE_UNSUPPORTED', 422);
   }
@@ -633,7 +637,12 @@ export function buildTopviewVideoRequest({ config, generateTool, taskType, param
       422,
     );
   }
-  if (taskType === 'image_to_video') req.firstFrameFileId = fileIds[0];
+  if (taskType === 'image_to_video') {
+    const startIndex = references.findIndex((entry) => /^(?:start_image|startimage|first_frame|firstframe)$/i.test(entry.role));
+    const endIndex = references.findIndex((entry) => /^(?:end_image|endimage|end_frame|endframe|last_frame|lastframe)$/i.test(entry.role));
+    req.firstFrameFileId = fileIds[startIndex >= 0 ? startIndex : 0];
+    if (endIndex >= 0 && fileIds[endIndex]) req.endFrameFileId = fileIds[endIndex];
+  }
   if (taskType === 'omni_reference') {
     const inputImages = fileIds.map((fileId, index) => ({ fileId, name: `Image${index + 1}` }));
     prompt = `${inputImages.map((entry) => `<<<${entry.name}>>>`).join(', ')} are authoritative visual references. Match every supplied subject, setting, prop, wardrobe, silhouette, material, color, and design detail.\n\n${prompt}`;
@@ -1126,14 +1135,14 @@ export function createTopviewService(options = {}) {
     let built;
     try {
       built = buildTopviewVideoRequest({
-        config: parseTopviewToolDocuments(config), generateTool, taskType, params, fileIds, boardId,
+        config: parseTopviewToolDocuments(config), generateTool, taskType, params, references, fileIds, boardId,
       });
     } catch (error) {
       const explicitModel = typeof params.model === 'string' && params.model.trim() && params.model.trim() !== 'auto';
       if (!explicitModel || error?.code !== 'TOPVIEW_MODEL_UNAVAILABLE') throw error;
       config = await callTool(session, 'topview_get_generation_config', { type: 'video', taskType, refresh: true });
       built = buildTopviewVideoRequest({
-        config: parseTopviewToolDocuments(config), generateTool, taskType, params, fileIds, boardId,
+        config: parseTopviewToolDocuments(config), generateTool, taskType, params, references, fileIds, boardId,
       });
     }
     let result = await callTool(session, 'topview_generate_video', built.req);

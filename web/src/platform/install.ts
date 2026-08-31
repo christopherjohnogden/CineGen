@@ -114,6 +114,12 @@ async function connectArtlistInBrowser(): Promise<ArtlistStatus> {
 }
 
 async function connectTopviewInBrowser(): Promise<TopviewStatus> {
+  if (!isLocalBrowserPage()) {
+    throw new Error(
+      'Topview MCP is shared from CineGen Desktop for this hosted workspace. '
+      + 'On the owner\'s Mac, open Settings → Provider and choose Share MCP with team, then refresh this page.',
+    );
+  }
   // Open synchronously from the button click so browsers do not block the
   // authorization window while CineGen prepares DCR and PKCE on the server.
   const popup = window.open('about:blank', 'cinegen-topview-oauth', 'popup,width=560,height=760');
@@ -129,12 +135,15 @@ async function connectTopviewInBrowser(): Promise<TopviewStatus> {
     if (!started.authorizationUrl) throw new Error(started.error || 'Topview did not return an authorization link.');
     popup.location.replace(started.authorizationUrl);
 
-    const deadline = Date.now() + 3 * 60 * 1000;
+    const deadline = Date.now() + 10 * 60 * 1000;
     let closedAt = 0;
     while (Date.now() < deadline) {
       await new Promise((resolve) => window.setTimeout(resolve, 1000));
       const status = await rpc<TopviewStatus>('topview', 'accountStatus');
-      if (status.connected) return status;
+      if (status.connected) {
+        if (!popup.closed) popup.close();
+        return status;
+      }
       if (popup.closed) {
         if (!closedAt) closedAt = Date.now();
         if (Date.now() - closedAt > 5000) {
@@ -497,6 +506,8 @@ export const browserElectronAPI: BrowserElectronAPI = {
     modelCatalog: () => rpc('topview', 'modelCatalog'),
     authLogin: connectTopviewInBrowser,
     authLogout: () => rpc('topview', 'authLogout'),
+    submit: (params) => rpc('topview', 'submit', params),
+    query: (params) => rpc('topview', 'query', params),
     generate: (params) => rpc('topview', 'generate', params),
     generateImage: (params) => rpc('topview', 'generateImage', params),
     generateAudio: (params) => rpc('topview', 'generateAudio', params),

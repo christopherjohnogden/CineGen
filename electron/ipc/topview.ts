@@ -125,6 +125,15 @@ interface StoredToken extends JsonRecord {
   expires_at: number;
 }
 
+export type TopviewTeamConnection = {
+  client: StoredClient;
+  token: StoredToken;
+} | {
+  apiKey: string;
+  uid: string;
+  email?: string;
+};
+
 interface McpTool {
   name: string;
   description?: string;
@@ -1123,6 +1132,42 @@ class TopviewMcpService {
     }
   }
 
+  async teamConnection(): Promise<TopviewTeamConnection | null> {
+    const client = await this.store.read<StoredClient>('client');
+    const token = await this.store.read<StoredToken>('token');
+    if (client?.client_id && token?.access_token) {
+      await this.accessToken();
+      const refreshed = await this.store.read<StoredToken>('token');
+      if (refreshed?.access_token) return { client, token: refreshed };
+    }
+    try {
+      const official = JSON.parse(await fs.readFile(
+        path.join(app.getPath('home'), '.topview', 'credentials.json'),
+        'utf8',
+      )) as unknown;
+      if (
+        isRecord(official)
+        && typeof official.api_key === 'string'
+        && official.api_key.trim()
+        && typeof official.uid === 'string'
+        && official.uid.trim()
+      ) {
+        return {
+          apiKey: official.api_key.trim(),
+          uid: official.uid.trim(),
+          ...(typeof official.email === 'string' && official.email.trim()
+            ? { email: official.email.trim() }
+            : {}),
+        };
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn('Could not read the official Topview device connection.', error);
+      }
+    }
+    return null;
+  }
+
   private async mcpRequest(token: string, message: JsonRecord, sessionId?: string): Promise<{ payload: JsonRecord; sessionId?: string }> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), MCP_REQUEST_TIMEOUT_MS);
@@ -1263,7 +1308,15 @@ class TopviewMcpService {
     }
   }
 
-  async accountStatus(): Promise<{ connected: boolean; configured: boolean; email?: string; credits?: number; error?: string }> {
+  async accountStatus(): Promise<{
+    connected: boolean;
+    configured: boolean;
+    email?: string;
+    credits?: number;
+    authMode?: 'oauth';
+    creditType?: 'mcp';
+    error?: string;
+  }> {
     const storageError = this.store.availabilityError();
     if (storageError) return { connected: false, configured: false, error: storageError };
     try {
@@ -1293,6 +1346,8 @@ class TopviewMcpService {
       return {
         connected: true,
         configured: true,
+        authMode: 'oauth',
+        creditType: 'mcp',
         ...(typeof profile?.email === 'string' ? { email: profile.email } : {}),
         ...(credits !== undefined ? { credits } : {}),
       };
@@ -1341,7 +1396,15 @@ class TopviewMcpService {
     };
   }
 
-  async authLogin(): Promise<{ connected: boolean; configured: boolean; email?: string; credits?: number; error?: string }> {
+  async authLogin(): Promise<{
+    connected: boolean;
+    configured: boolean;
+    email?: string;
+    credits?: number;
+    authMode?: 'oauth';
+    creditType?: 'mcp';
+    error?: string;
+  }> {
     const storageError = this.store.availabilityError();
     if (storageError) throw new Error(storageError);
     const server = createServer();
@@ -1711,8 +1774,14 @@ class TopviewMcpService {
   }
 }
 
+const topviewMcpService = new TopviewMcpService();
+
+export function exportTopviewTeamConnection(): Promise<TopviewTeamConnection | null> {
+  return topviewMcpService.teamConnection();
+}
+
 export function registerTopviewHandlers(): void {
-  const service = new TopviewMcpService();
+  const service = topviewMcpService;
   ipcMain.handle('topview:account-status', () => service.accountStatus());
   ipcMain.handle('topview:model-catalog', () => service.modelCatalog());
   ipcMain.handle('topview:auth-login', () => service.authLogin());
