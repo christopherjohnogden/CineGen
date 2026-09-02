@@ -167,6 +167,19 @@ export function CreateTab() {
     }
   }, []);
 
+  // Switching to the canvas is only half of "open in canvas" — on a large Space
+  // the node is usually off-screen, so centre it too. The canvas is display:none
+  // until the switch commits, and fitView measures nothing while hidden, so the
+  // event has to wait a frame.
+  const handleOpenNodeInCanvas = useCallback((nodeId: string) => {
+    handleViewModeChange('canvas');
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent('cinegen:fit-node', { detail: nodeId }));
+      });
+    });
+  }, [handleViewModeChange]);
+
   const openSpaces = useMemo(
     () => state.spaces.filter((space) => state.openSpaceIds.has(space.id)),
     [state.spaces, state.openSpaceIds],
@@ -537,7 +550,7 @@ export function CreateTab() {
           </div>
           {viewMode === 'studio' && (
             <div className="create-tab__studio">
-              <SpaceStudio />
+              <SpaceStudio onOpenInCanvas={handleOpenNodeInCanvas} />
             </div>
           )}
         </div>
