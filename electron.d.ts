@@ -471,20 +471,21 @@ export interface ElectronAPI {
       taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
       boardId?: string;
       model: string;
-      durationSec: number;
+      /** Absent for fixed-length models, which expose no duration parameter. */
+      durationSec?: number;
     }>;
     query?: (params: {
       taskId: string;
       taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
       boardId?: string;
       model: string;
-      durationSec: number;
+      durationSec?: number;
     }) => Promise<{
       taskId: string;
       taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
       boardId?: string;
       model: string;
-      durationSec: number;
+      durationSec?: number;
       status: 'init' | 'running' | 'success' | 'fail';
       url?: string;
       boardUrl?: string;

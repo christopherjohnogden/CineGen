@@ -19,6 +19,7 @@ import {
   sanitizeVideoInputsForEndpoint,
 } from '@/lib/fal/models';
 import type {
+  ModelInputField,
   TopviewVideoTaskState,
   TranscriptSegment,
   TranscriptWord,
@@ -734,6 +735,41 @@ function resolveElementListInputs(
   return inputs;
 }
 
+/**
+ * Expand an Element reference into the payload the model branches consume.
+ *
+ * Shared by the `element` utility node (edge path) and by a model node that
+ * carries its Elements in its own config (Studio's single-node generations), so
+ * the two can never produce different references for the same selection.
+ */
+function expandElementReference(
+  config: Record<string, unknown>,
+  dispatch: WorkflowDispatch,
+): ElementData[] {
+  const elementIds = resolveElementNodeIds(config);
+  const variationIds = resolveElementNodeVariationIds(config);
+  const elements = dispatch.getElements();
+  const stack: ElementData[] = [];
+  for (const elementId of elementIds) {
+    const el = elements.find((e) => e.id === elementId);
+    if (!el) continue;
+    const images = elementImagesForVariation(el, variationIds[elementId]);
+    if (images.length === 0) continue;
+    // Pick best references: 0=frontal, 1=full body front, 5=left portrait, 6=right portrait
+    const refIndices = [1, 5, 6];
+    stack.push({
+      frontalImageUrl: images[0].url,
+      referenceImageUrls: refIndices
+        .filter((idx) => idx < images.length)
+        .map((idx) => images[idx].url),
+      allUrls: images.map((img) => img.url),
+      name: el.name,
+      type: el.type,
+    });
+  }
+  return stack;
+}
+
 function resolveUtilityOutputs(
   nodeType: string,
   outputs: { id: string }[],
@@ -768,27 +804,7 @@ function resolveUtilityOutputs(
         break;
       }
       case 'element': {
-        const elementIds = resolveElementNodeIds(data.config);
-        const variationIds = resolveElementNodeVariationIds(data.config);
-        const elements = dispatch.getElements();
-        const stack: ElementData[] = [];
-        for (const elementId of elementIds) {
-          const el = elements.find((e) => e.id === elementId);
-          if (!el) continue;
-          const images = elementImagesForVariation(el, variationIds[elementId]);
-          if (images.length === 0) continue;
-          // Pick best references: 0=frontal, 1=full body front, 5=left portrait, 6=right portrait
-          const refIndices = [1, 5, 6];
-          stack.push({
-            frontalImageUrl: images[0].url,
-            referenceImageUrls: refIndices
-              .filter((idx) => idx < images.length)
-              .map((idx) => images[idx].url),
-            allUrls: images.map((img) => img.url),
-            name: el.name,
-            type: el.type,
-          });
-        }
+        const stack = expandElementReference(data.config, dispatch);
         // Single element keeps the original scalar shape; a stack emits an array
         if (stack.length === 1) {
           output[port.id] = stack[0];
@@ -912,6 +928,22 @@ async function executeModelNode(
       }
     }
 
+    // A node can carry its Elements in its own config instead of on an edge —
+    // Studio generations do. This covers both reference field shapes: an
+    // element-list, and the plain `multiple` port fields that topview and
+    // higgsfield expose. Without it the references are dropped in silence.
+    const configElements = new Map<string, ElementData[]>();
+    for (const field of modelDef.inputs) {
+      if (field.fieldType !== 'port' && field.fieldType !== 'element-list') continue;
+      if (elementListData.has(field.id)) continue;
+      const configured = data.config[field.id];
+      if (!configured || typeof configured !== 'object' || Array.isArray(configured)) continue;
+      const expanded = expandElementReference(configured as Record<string, unknown>, dispatch);
+      if (!expanded.length) continue;
+      configElements.set(field.id, expanded);
+      if (field.fieldType === 'element-list') elementListData.set(field.id, expanded);
+    }
+
     for (const field of modelDef.inputs) {
       if (field.fieldType === 'element-list') {
         const items = elementListData.get(field.id);
@@ -962,7 +994,10 @@ async function executeModelNode(
       if (field.id === 'last_frame') continue;
 
       const portValue = portInputs[field.id];
-      const configValue = data.config[field.id];
+      const expandedElements = configElements.get(field.id);
+      const configValue = expandedElements
+        ? expandedElements.flatMap((element) => element.allUrls)
+        : data.config[field.id];
       const value = portValue ?? configValue ?? field.default;
 
       const isMissing = value === undefined
@@ -1104,6 +1139,9 @@ async function executeModelNode(
     for (const items of elementListData.values()) {
       connectedElements.push(...items);
     }
+    for (const [fieldId, items] of configElements) {
+      if (!elementListData.has(fieldId)) connectedElements.push(...items);
+    }
 
     // multi_prompt and prompt are mutually exclusive in Kling
     if (falInputs.multi_prompt && Array.isArray(falInputs.multi_prompt)) {
@@ -1208,9 +1246,21 @@ async function executeModelNode(
       }
     }
 
+    // Media reaching the model through config counts exactly as much as media
+    // reaching it through an edge. Consulting only portInputs sent an
+    // image-to-video request down the text-to-video endpoint, where the frames
+    // are deleted below — a billed render that silently ignored its own inputs.
+    const hasSuppliedMedia = (field: ModelInputField): boolean => {
+      if (portInputs[field.id]) return true;
+      if (Object.keys(portInputs).some((key) => key.startsWith(field.id + '_'))) return true;
+      const configured = data.config[field.id];
+      if (typeof configured === 'string') return configured.trim().length > 0;
+      if (Array.isArray(configured)) return configured.length > 0;
+      return elementListData.has(field.id) || configElements.has(field.id);
+    };
     const hasImageInputs = modelDef.inputs.some(
       (f) => (f.portType === 'image' && (f.fieldType === 'port' || f.fieldType === 'element-list'))
-        && (portInputs[f.id] || Object.keys(portInputs).some((k) => k.startsWith(f.id + '_'))),
+        && hasSuppliedMedia(f),
     );
     const qualityTier = String(falInputs.quality ?? data.config.quality ?? 'pro');
     const effectiveModelId = resolveVideoModelEndpoint(modelDef.nodeType, modelDef, {

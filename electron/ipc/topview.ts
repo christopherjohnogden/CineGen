@@ -89,7 +89,8 @@ export interface TopviewSubmitResult {
   taskType: TopviewVideoTaskType;
   boardId: string;
   model: string;
-  durationSec: number;
+  /** Absent for fixed-length models, which expose no duration parameter. */
+  durationSec?: number;
 }
 
 export interface TopviewQueryParams extends TopviewSubmitResult {}
@@ -609,12 +610,18 @@ export function buildTopviewImageRequest(args: {
   return { req, model: submitModel, taskType };
 }
 
+// Topview screens every prompt before it reaches a model. The previous suffix asked the
+// model not to render "watermarks", which reads to a content filter as watermark removal
+// and had prompts rejected on copyright grounds that ran fine when sent by hand. Keep the
+// on-screen-text guard, drop the wording that trips the filter.
+export const TOPVIEW_NO_ON_SCREEN_TEXT = 'Keep the frame free of on-screen text, captions, and subtitles.';
+
 export function sanitizeTopviewPrompt(prompt: string): string {
   const withoutMentionSyntax = prompt
     .replace(/@([A-Za-z0-9][A-Za-z0-9_-]*)/g, (_match, name: string) => name.replaceAll('-', ' '))
     .replace(/\s{2,}/g, ' ')
     .trim();
-  return `${withoutMentionSyntax}\n\nDo not render labels, mention tags, captions, subtitles, watermarks, interface text, or any other on-screen text.`;
+  return `${withoutMentionSyntax}\n\n${TOPVIEW_NO_ON_SCREEN_TEXT}`;
 }
 
 function matchingOption(values: unknown[], requested: unknown): unknown | undefined {
@@ -728,7 +735,7 @@ export function buildTopviewVideoRequest(args: {
   params: TopviewGenerateParams;
   references: UploadedTopviewReference[];
   boardId: string;
-}): { req: JsonRecord; model: string; durationSec: number } {
+}): { req: JsonRecord; model: string; durationSec?: number } {
   const model = selectModel(args.config, args.params.model, args.params.generateAudio === true);
   const submitModel = String(model.submitModel ?? '').trim();
   if (!submitModel) throw new Error('Topview returned a video model without a submit identifier.');
@@ -763,7 +770,9 @@ export function buildTopviewVideoRequest(args: {
   assignConfigured('resolution', args.params.resolution === undefined
     ? undefined
     : Number.parseInt(args.params.resolution, 10), 720);
-  assignConfigured('duration', requestedDuration, 5);
+  // Fixed-length models advertise no duration at all. Dropping the request is correct
+  // there — refusing it stopped those models from ever running from a Space.
+  if (advertisesField(model, 'duration')) assignConfigured('duration', requestedDuration, 5);
   assignConfigured('generatingCount', undefined, 1);
   if (args.taskType !== 'image_to_video') {
     assignConfigured('aspectRatio', args.params.aspectRatio?.trim(), '16:9');
@@ -801,26 +810,26 @@ export function buildTopviewVideoRequest(args: {
       if (reference.role === 'video') {
         const name = `Video${++videoIndex}`;
         inputVideos.push({ fileId: reference.fileId, name });
-        instructions.push(`<<<${name}>>> is an authoritative motion and timing reference.`);
+        instructions.push(`<<<${name}>>> is a supplied motion and timing reference.`);
       } else if (reference.role === 'audio') {
         const name = `Audio${++audioIndex}`;
         inputAudios.push({ fileId: reference.fileId, name });
-        instructions.push(`<<<${name}>>> is an authoritative audio reference.`);
+        instructions.push(`<<<${name}>>> is a supplied audio reference.`);
       } else {
         const name = `Image${++imageIndex}`;
         inputImages.push({ fileId: reference.fileId, name });
         const meaning = reference.role === 'start_image'
-          ? 'the requested opening-frame visual reference'
+          ? 'the requested opening-frame reference'
           : reference.role === 'end_image'
-            ? 'the requested closing-frame visual reference'
-            : 'an authoritative visual reference';
+            ? 'the requested closing-frame reference'
+            : 'a supplied visual reference';
         instructions.push(`<<<${name}>>> is ${meaning}.`);
       }
     }
     if (inputAudios.length && !advertisesField(model, 'inputAudios')) {
       throw new Error(`Topview model "${submitModel}" does not accept audio reference elements for omni-reference video.`);
     }
-    prompt = `${instructions.join('\n')} Match every supplied subject, setting, prop, wardrobe, silhouette, material, color, and requested motion.\n\n${prompt}`;
+    prompt = `${instructions.join('\n')} Follow the supplied references for the subjects, wardrobe, props, materials, colour, setting, and requested motion.\n\n${prompt}`;
     req.prompt = prompt;
     if (inputImages.length) req.inputImages = inputImages;
     if (inputVideos.length) req.inputVideos = inputVideos;
@@ -832,9 +841,11 @@ export function buildTopviewVideoRequest(args: {
       throw new Error(`Topview model "${submitModel}" requires "${field}" for this request.`);
     }
   }
-  const duration = Number(req.duration ?? defaults.duration ?? requestedDuration ?? 5);
-  const durationSec = Number.isFinite(duration) ? duration : 5;
-  return { req, model: submitModel, durationSec };
+  // Report only the duration actually sent. A model that advertises none has no duration,
+  // and echoing the caller's request here would claim a length Topview never applied.
+  const duration = Number(req.duration ?? defaults.duration);
+  const durationSec = Number.isFinite(duration) && duration > 0 ? duration : undefined;
+  return { req, model: submitModel, ...(durationSec !== undefined ? { durationSec } : {}) };
 }
 
 const CONTENT_TYPE_FORMATS: Record<string, string> = {
@@ -1073,6 +1084,21 @@ async function loadReference(value: string, role: TopviewMediaRole): Promise<{ b
   return { bytes: downloaded.bytes, format, contentType: FORMAT_CONTENT_TYPES[format] };
 }
 
+/**
+ * Topview reports a content-check rejection as an ordinary tool error, so the raw text is
+ * the only signal the user has about what was flagged. Keep it verbatim and add the one
+ * next step that actually clears it.
+ */
+export function topviewRejectionHint(message: string): string | undefined {
+  if (/copyright|infring|intellectual\s+property|trademark|likeness|celebrit/i.test(message)) {
+    return "Topview's content check rejected this submission. It usually flags a named brand, film, studio, or real person in the prompt, or a reference image it reads as protected — rephrase that part or swap the reference, then run it again.";
+  }
+  if (/moderat|content\s+polic|violat|sensitive|nsfw|blocked|not\s+allowed/i.test(message)) {
+    return "Topview's content policy rejected this submission. Rephrase the flagged part of the prompt, or remove the reference it objected to, then run it again.";
+  }
+  return undefined;
+}
+
 function uploadHeaders(value: unknown): Record<string, string> {
   const headerRecord = collectRecords(value).find((record) => isRecord(record.headers))?.headers;
   if (!isRecord(headerRecord)) return {};
@@ -1251,7 +1277,13 @@ class TopviewMcpService {
     session.sessionId = called.sessionId || session.sessionId;
     const result = isRecord(called.payload) ? called.payload.result : undefined;
     if (isRecord(result) && result.isError === true) {
-      throw new Error(collectStrings(result).join(' ').slice(0, 700) || `Topview could not run ${name}.`);
+      const documents = parseToolDocuments(result);
+      const reported = findStringByKeys(documents, [
+        'errorMsg', 'error_msg', 'errorMessage', 'error_message', 'failureReason', 'failure_reason', 'message',
+      ]) ?? collectStrings(result).join(' ').slice(0, 700);
+      const message = reported.trim() || `Topview could not run ${name}.`;
+      const hint = topviewRejectionHint(message);
+      throw new Error(hint ? `${message}\n\n${hint}` : message);
     }
     return result;
   }
@@ -1558,8 +1590,11 @@ class TopviewMcpService {
     if (typeof params.boardId !== 'string' || !params.boardId.trim()) {
       throw new Error('Topview task query requires the board ID returned by submit.');
     }
-    if (typeof params.model !== 'string' || !params.model.trim() || !Number.isFinite(params.durationSec)) {
+    if (typeof params.model !== 'string' || !params.model.trim()) {
       throw new Error('Topview task query requires the complete result returned by submit.');
+    }
+    if (params.durationSec !== undefined && !Number.isFinite(params.durationSec)) {
+      throw new Error('Topview task query received an invalid duration.');
     }
   }
 
@@ -1774,14 +1809,21 @@ class TopviewMcpService {
   }
 }
 
-const topviewMcpService = new TopviewMcpService();
+// Built on first use. Constructing it at module scope reached into Electron's `app`
+// during import, which stopped this file's pure request builders from being testable.
+let topviewMcpService: TopviewMcpService | undefined;
+
+function topviewService(): TopviewMcpService {
+  topviewMcpService ??= new TopviewMcpService();
+  return topviewMcpService;
+}
 
 export function exportTopviewTeamConnection(): Promise<TopviewTeamConnection | null> {
-  return topviewMcpService.teamConnection();
+  return topviewService().teamConnection();
 }
 
 export function registerTopviewHandlers(): void {
-  const service = topviewMcpService;
+  const service = topviewService();
   ipcMain.handle('topview:account-status', () => service.accountStatus());
   ipcMain.handle('topview:model-catalog', () => service.modelCatalog());
   ipcMain.handle('topview:auth-login', () => service.authLogin());

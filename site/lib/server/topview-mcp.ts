@@ -772,6 +772,21 @@ function taskError(value: unknown, fallback: string): string {
   return message?.slice(0, 700) || fallback;
 }
 
+/**
+ * Topview reports a content-check rejection as an ordinary tool error, so the raw text is
+ * the only signal the user has about what was flagged. Keep it verbatim and add the one
+ * next step that actually clears it.
+ */
+export function topviewRejectionHint(message: string): string | undefined {
+  if (/copyright|infring|intellectual\s+property|trademark|likeness|celebrit/i.test(message)) {
+    return "Topview's content check rejected this submission. It usually flags a named brand, film, studio, or real person in the prompt, or a reference image it reads as protected — rephrase that part or swap the reference, then run it again.";
+  }
+  if (/moderat|content\s+polic|violat|sensitive|nsfw|blocked|not\s+allowed/i.test(message)) {
+    return "Topview's content policy rejected this submission. Rephrase the flagged part of the prompt, or remove the reference it objected to, then run it again.";
+  }
+  return undefined;
+}
+
 function friendlyToolError(value: unknown, fallback: string, apiKeyMode = false): string {
   const message = taskError(value, fallback);
   if (/credit\s*(?:is\s*)?(?:not\s+enough|insufficient)|not\s+enough\s+credit|insufficient\s+credit/i.test(message)) {
@@ -779,7 +794,8 @@ function friendlyToolError(value: unknown, fallback: string, apiKeyMode = false)
       ? "This web connection is using a Topview API key with insufficient API credits. Share the owner's Topview MCP connection from CineGen Desktop to use the team's MCP plan balance."
       : "Topview says the connected MCP account has insufficient credits for this generation.";
   }
-  return message;
+  const hint = topviewRejectionHint(message);
+  return hint ? `${message}\n\n${hint}` : message;
 }
 
 async function callTool(session: McpSession, name: string, req: JsonRecord): Promise<unknown> {
@@ -823,8 +839,16 @@ function topviewBoard(value: unknown): { boardId: string; name?: string } | unde
       ? entry.name
       : typeof entry.boardName === "string" ? entry.boardName : undefined,
     isSystemDefault: entry.isSystemDefault === true || entry.is_system_default === true,
+    taskCount: Number(entry.taskCount ?? entry.task_count ?? 0) || 0,
   })).filter((entry) => entry.boardId);
-  return candidates.find((entry) => entry.isSystemDefault)
+  // Match the desktop app: reuse the busiest existing CineGen board. Falling straight
+  // through to "first board on the page" scattered renders across the account, which is
+  // why a finished generation could not be found in Topview afterwards.
+  const cinegenBoards = candidates
+    .filter((entry) => entry.name?.trim().toLowerCase() === "cinegen")
+    .sort((left, right) => right.taskCount - left.taskCount);
+  return cinegenBoards[0]
+    ?? candidates.find((entry) => entry.isSystemDefault)
     ?? candidates.find((entry) => entry.name === "My First Board")
     ?? candidates[0];
 }
@@ -834,7 +858,7 @@ async function chooseBoard(session: McpSession): Promise<string | undefined> {
   try {
     const listed = await callTool(session, "topview_list_boards", {
       pageNo: 1,
-      pageSize: 20,
+      pageSize: 100,
       mode: "editable-by-me",
     });
     const existing = topviewBoard(parseToolDocuments(listed));
@@ -1278,14 +1302,18 @@ function validateModelArgs(model: JsonRecord, args: JsonRecord) {
   }
 }
 
+// Topview screens every prompt before it reaches a model. The previous suffix asked the
+// model not to render "watermarks", which reads to a content filter as watermark removal
+// and had prompts rejected on copyright grounds that ran fine when sent by hand. Keep the
+// on-screen-text guard, drop the wording that trips the filter.
+const NO_ON_SCREEN_TEXT = "Keep the frame free of on-screen text, captions, and subtitles.";
+
 function sanitizePrompt(prompt: string, forbidOnScreenText: boolean): string {
   const cleaned = prompt
     .replace(/@([A-Za-z0-9][A-Za-z0-9_-]*)/g, (_match, name: string) => name.replaceAll("-", " "))
     .replace(/\s{2,}/g, " ")
     .trim();
-  return forbidOnScreenText
-    ? `${cleaned}\n\nDo not render labels, mention tags, captions, subtitles, watermarks, interface text, or other on-screen text.`
-    : cleaned;
+  return forbidOnScreenText ? `${cleaned}\n\n${NO_ON_SCREEN_TEXT}` : cleaned;
 }
 
 function normalizeTaskType(
@@ -1617,12 +1645,12 @@ function buildRequest(args: {
     const inputVideos = videos.map((entry, index) => ({ fileId: entry.fileId, name: `Video${index + 1}` }));
     const inputAudios = audios.map((entry, index) => ({ fileId: entry.fileId, name: `Audio${index + 1}` }));
     const referenceInstructions = [
-      ...inputImages.map((entry) => `<<<${entry.name}>>> is an authoritative visual identity and appearance reference.`),
-      ...inputVideos.map((entry) => `<<<${entry.name}>>> is an authoritative motion and timing reference.`),
-      ...inputAudios.map((entry) => `<<<${entry.name}>>> is an authoritative audio reference.`),
+      ...inputImages.map((entry) => `<<<${entry.name}>>> is a supplied visual reference.`),
+      ...inputVideos.map((entry) => `<<<${entry.name}>>> is a supplied motion and timing reference.`),
+      ...inputAudios.map((entry) => `<<<${entry.name}>>> is a supplied audio reference.`),
     ];
     if (referenceInstructions.length) {
-      request.prompt = `${referenceInstructions.join("\n")} Match the supplied references while following the requested scene and action.\n\n${String(request.prompt)}`;
+      request.prompt = `${referenceInstructions.join("\n")} Follow the supplied references while performing the requested scene and action.\n\n${String(request.prompt)}`;
     }
     if (inputImages.length) request.inputImages = inputImages;
     if (inputVideos.length) request.inputVideos = inputVideos;

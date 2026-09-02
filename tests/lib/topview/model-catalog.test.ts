@@ -103,6 +103,40 @@ describe('Topview live model catalog', () => {
     expect(registry['topview-audio-seed-audio-1-0']?.inputs.find((field) => field.id === 'reference_audio')?.required).toBe(true);
   });
 
+  it('omits controls a live model does not advertise', () => {
+    // Gemini Omni Flash has no duration. Offering one anyway sent a parameter Topview
+    // refuses, which cost a submitted render for every fixed-length model.
+    const registry = buildTopviewModelRegistry({
+      configs: [{
+        outputType: 'video',
+        taskType: 'omni_reference',
+        config: [{ result: { models: [{
+          displayName: 'Gemini Omni Flash',
+          submitModel: 'gemini-omni-flash-ext',
+          requiredSubmitFields: ['taskType', 'model', 'prompt', 'resolution', 'aspectRatio'],
+          defaultSubmitParameters: { aspectRatio: '16:9', resolution: 720 },
+          submitParameterOptions: { aspectRatio: ['9:16', '16:9'], resolution: [720] },
+        }] } }],
+      }],
+    });
+    const model = registry['topview-video-gemini-omni-flash'];
+
+    expect(model).toBeDefined();
+    expect(model.inputs.map((field) => field.id)).not.toContain('duration');
+    expect(model.inputs.map((field) => field.id)).toEqual(
+      expect.arrayContaining(['prompt', 'aspect_ratio', 'resolution']),
+    );
+  });
+
+  it('keeps the generic controls when no live catalog is available', () => {
+    const fallback = buildTopviewModelRegistry(null);
+    const seedance = fallback['topview-video-seedance-2-5'];
+
+    expect(seedance.inputs.map((field) => field.id)).toEqual(
+      expect.arrayContaining(['duration', 'aspect_ratio', 'resolution']),
+    );
+  });
+
   it('submits the actual selected Topview model name', () => {
     const registry = buildTopviewModelRegistry(catalog);
     expect(topviewRequestedModel(registry['topview-image-gpt-image-2'])).toBe('gpt-image-2-submit-value');

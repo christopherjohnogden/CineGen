@@ -87,11 +87,18 @@ async function runTopviewWorkflow(params: WorkflowRunParams, options: WorkflowRu
     });
   }
   if (model.outputType === 'video') {
-    const duration = Number(params.inputs.duration ?? params.inputs.durationSec ?? 5);
+    // Only forward the fields this model actually exposes. Topview refuses a submit
+    // that carries a parameter the chosen model does not advertise, so inventing a
+    // default duration here silently broke every fixed-length model (Gemini Omni
+    // Flash, Kling Omni, Grok Video Edit) after the render had already been paid for.
+    const requestedDuration = params.inputs.duration ?? params.inputs.durationSec;
+    const duration = requestedDuration === undefined || requestedDuration === ''
+      ? undefined
+      : Number(requestedDuration);
     const request = {
       prompt,
       model: requestedModel,
-      durationSec: Number.isFinite(duration) ? duration : 5,
+      ...(duration !== undefined && Number.isFinite(duration) ? { durationSec: duration } : {}),
       aspectRatio: typeof params.inputs.aspect_ratio === 'string' ? params.inputs.aspect_ratio : undefined,
       resolution: typeof params.inputs.resolution === 'string' ? params.inputs.resolution : undefined,
       generateAudio: params.inputs.generate_audio === undefined ? undefined : Boolean(params.inputs.generate_audio),

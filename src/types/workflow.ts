@@ -31,7 +31,8 @@ export interface ModelInputField {
   required: boolean;
   falParam: string;
   fieldType: 'port' | 'text' | 'textarea' | 'number' | 'select' | 'range' | 'toggle' | 'json' | 'element-list';
-  options?: { value: string; label: string }[];
+  /** `description` renders as the secondary line in a setting row's option flyout. */
+  options?: { value: string; label: string; description?: string }[];
   default?: unknown;
   min?: number;
   max?: number;
@@ -100,7 +101,8 @@ export interface TopviewVideoTaskState {
   taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
   boardId?: string;
   model: string;
-  durationSec: number;
+  /** Absent for fixed-length models, which do not expose a duration parameter. */
+  durationSec?: number;
   boardUrl?: string;
 }
 

@@ -43,6 +43,8 @@ interface PortEntry {
   portType: string;
   label: string;
   required: boolean;
+  /** Value lives in this node's config, so the port needs no incoming edge. */
+  suppliedByConfig?: boolean;
 }
 
 interface GenerationTabsProps {
@@ -190,11 +192,31 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
     updateNodeInternals(id);
   }, [id, elementCount, updateNodeInternals]);
 
+  // An input satisfied from this node's own config is not missing. Marking it
+  // required anyway drew a Studio generation — which carries its prompt and
+  // frames in config and has no incoming edges at all — as a broken node.
+  const isSuppliedByConfig = useCallback((fieldId: string): boolean => {
+    const value = data.config[fieldId];
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    if (value && typeof value === 'object') {
+      const ids = (value as { elementIds?: unknown }).elementIds;
+      return Array.isArray(ids) && ids.length > 0;
+    }
+    return false;
+  }, [data.config]);
+
   const portInputs: PortEntry[] = useMemo(() => {
     const ports: PortEntry[] = [];
     for (const f of modelDef.inputs) {
       if (f.fieldType === 'port') {
-        ports.push({ handleId: f.id, portType: f.portType, label: f.label, required: f.required });
+        ports.push({
+          handleId: f.id,
+          portType: f.portType,
+          label: f.label,
+          required: f.required && !isSuppliedByConfig(f.id),
+          suppliedByConfig: isSuppliedByConfig(f.id),
+        });
       } else if (f.fieldType === 'element-list') {
         for (let i = 0; i < elementCount; i++) {
           ports.push({
@@ -207,7 +229,7 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
       }
     }
     return ports;
-  }, [modelDef.inputs, elementCount]);
+  }, [modelDef.inputs, elementCount, isSuppliedByConfig]);
 
   const addElement = useCallback(() => {
     if (elementCount < elementMax) {
@@ -1152,10 +1174,13 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
       {portInputs.map((port, i) => (
         <span
           key={`label-in-${port.handleId}`}
-          className="model-node__port-label model-node__port-label--left"
+          className={`model-node__port-label model-node__port-label--left${
+            port.suppliedByConfig ? ' model-node__port-label--set' : ''
+          }`}
           style={{ top: inputPortTop(port, i) }}
+          title={port.suppliedByConfig ? `${port.label} is set on this node` : undefined}
         >
-          {port.label}{port.required ? '*' : ''}
+          {port.label}{port.required ? '*' : ''}{port.suppliedByConfig ? ' ·' : ''}
         </span>
       ))}
 

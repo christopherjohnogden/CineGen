@@ -24,6 +24,10 @@ type CatalogModel = {
   taskTypes: Set<string>;
   options: Map<string, unknown[]>;
   defaults: Record<string, unknown>;
+  /** Fields the live catalog says this model accepts, however it advertises them. */
+  accepts: Set<string>;
+  /** True when Topview described this model. Offline fallbacks keep the generic controls. */
+  live?: boolean;
   nativeAudio?: boolean;
 };
 
@@ -159,6 +163,8 @@ function mergeCatalog(catalog?: TopviewGenerationCatalog | null): CatalogModel[]
         taskTypes: new Set<string>(),
         options: new Map<string, unknown[]>(),
         defaults: {},
+        accepts: new Set<string>(),
+        live: true,
       };
       existing.catalogType ??= entry.catalogType ?? entry.taskType;
       existing.taskTypes.add(entry.taskType);
@@ -168,9 +174,15 @@ function mergeCatalog(catalog?: TopviewGenerationCatalog | null): CatalogModel[]
       }
       if (model.nativeAudio === true || model.supportsNativeAudio === true) existing.nativeAudio = true;
       if (model.nativeAudio === false || model.supportsNativeAudio === false) existing.nativeAudio ??= false;
+      for (const field of requiredFields(model)) existing.accepts.add(field);
+      for (const field of Object.keys(isRecord(model.defaultSubmitParameters) ? model.defaultSubmitParameters : {})) {
+        existing.accepts.add(field);
+      }
       for (const field of ['aspectRatio', 'resolution', 'duration', 'quality', 'sound']) {
         const values = optionValues(model, field);
-        if (values.length) existing.options.set(field, uniqueValues([...(existing.options.get(field) ?? []), ...values]));
+        if (!values.length) continue;
+        existing.accepts.add(field);
+        existing.options.set(field, uniqueValues([...(existing.options.get(field) ?? []), ...values]));
       }
       merged.set(key, existing);
     }
@@ -187,6 +199,37 @@ function selectOptions(values: unknown[], fallback: string[]): Array<{ value: st
   return uniqueValues(resolved).map((value) => ({ value: String(value), label: String(value) }));
 }
 
+function requiredFields(model: Record<string, unknown>): string[] {
+  const required = model.requiredSubmitFields;
+  if (isRecord(required)) {
+    return Object.entries(required).filter(([, value]) => value !== false).map(([field]) => field);
+  }
+  if (!Array.isArray(required)) return [];
+  return required.flatMap((entry) => {
+    if (typeof entry === 'string') return [entry];
+    if (!isRecord(entry)) return [];
+    const name = entry.name ?? entry.key ?? entry.field;
+    return typeof name === 'string' ? [name] : [];
+  });
+}
+
+/**
+ * Topview rejects — and in some flows silently drops — any submit field the chosen
+ * model does not advertise. A live catalog entry that never mentions `duration`
+ * genuinely has no duration, so the control must disappear rather than fall back to
+ * a generic list the submit will refuse. Offline fallbacks keep the generic list.
+ */
+function fieldOptions(
+  model: CatalogModel,
+  field: string,
+  fallback: string[],
+): Array<{ value: string; label: string }> {
+  const values = model.options.get(field) ?? [];
+  if (values.length) return selectOptions(values, []);
+  if (model.live && !model.accepts.has(field)) return [];
+  return selectOptions([], fallback);
+}
+
 function preferredDefault(values: Array<{ value: string }>, preferred: string, fallback?: unknown): string {
   const fromConfig = fallback === undefined ? '' : String(fallback);
   if (fromConfig && values.some((entry) => entry.value === fromConfig)) return fromConfig;
@@ -195,9 +238,9 @@ function preferredDefault(values: Array<{ value: string }>, preferred: string, f
 }
 
 function imageDefinition(model: CatalogModel): ModelDefinition {
-  const ratios = selectOptions(model.options.get('aspectRatio') ?? [], DEFAULT_IMAGE_RATIOS);
-  const resolutions = selectOptions(model.options.get('resolution') ?? [], DEFAULT_IMAGE_RESOLUTIONS);
-  const quality = selectOptions(model.options.get('quality') ?? [], []);
+  const ratios = fieldOptions(model, 'aspectRatio', DEFAULT_IMAGE_RATIOS);
+  const resolutions = fieldOptions(model, 'resolution', DEFAULT_IMAGE_RESOLUTIONS);
+  const quality = fieldOptions(model, 'quality', []);
   const supportsText = model.taskTypes.size === 0 || model.taskTypes.has('text_to_image');
   const supportsEdit = model.taskTypes.size === 0 || model.taskTypes.has('image_edit');
   const inputs: ModelInputField[] = [
@@ -240,9 +283,9 @@ function imageDefinition(model: CatalogModel): ModelDefinition {
 }
 
 function videoDefinition(model: CatalogModel): ModelDefinition {
-  const ratios = selectOptions(model.options.get('aspectRatio') ?? [], DEFAULT_VIDEO_RATIOS);
-  const resolutions = selectOptions(model.options.get('resolution') ?? [], DEFAULT_VIDEO_RESOLUTIONS);
-  const durations = selectOptions(model.options.get('duration') ?? [], DEFAULT_VIDEO_DURATIONS);
+  const ratios = fieldOptions(model, 'aspectRatio', DEFAULT_VIDEO_RATIOS);
+  const resolutions = fieldOptions(model, 'resolution', DEFAULT_VIDEO_RESOLUTIONS);
+  const durations = fieldOptions(model, 'duration', DEFAULT_VIDEO_DURATIONS);
   const soundValues = model.options.get('sound') ?? [];
   const supportsAudio = model.nativeAudio === true || soundValues.some((value) => String(value).toLowerCase() === 'on');
   const supportsOmniReference = model.taskTypes.size === 0 || model.taskTypes.has('omni_reference');
@@ -268,23 +311,21 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
       { id: 'end_frame', portType: 'image', label: 'End Frame', required: false, falParam: 'end_frame_url', fieldType: 'port', mediaRole: 'end_image' },
     );
   }
-  inputs.push(
-    {
-      id: 'duration', portType: 'number', label: 'Duration', required: false,
-      falParam: 'duration', fieldType: 'select',
-      default: Number(preferredDefault(durations, '5', model.defaults.duration)), options: durations,
-    },
-    {
-      id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false,
-      falParam: 'aspect_ratio', fieldType: 'select',
-      default: preferredDefault(ratios, '16:9', model.defaults.aspectRatio), options: ratios,
-    },
-    {
-      id: 'resolution', portType: 'text', label: 'Resolution', required: false,
-      falParam: 'resolution', fieldType: 'select',
-      default: preferredDefault(resolutions, '720', model.defaults.resolution), options: resolutions,
-    },
-  );
+  if (durations.length) inputs.push({
+    id: 'duration', portType: 'number', label: 'Duration', required: false,
+    falParam: 'duration', fieldType: 'select',
+    default: Number(preferredDefault(durations, '5', model.defaults.duration)), options: durations,
+  });
+  if (ratios.length) inputs.push({
+    id: 'aspect_ratio', portType: 'text', label: 'Aspect Ratio', required: false,
+    falParam: 'aspect_ratio', fieldType: 'select',
+    default: preferredDefault(ratios, '16:9', model.defaults.aspectRatio), options: ratios,
+  });
+  if (resolutions.length) inputs.push({
+    id: 'resolution', portType: 'text', label: 'Resolution', required: false,
+    falParam: 'resolution', fieldType: 'select',
+    default: preferredDefault(resolutions, '720', model.defaults.resolution), options: resolutions,
+  });
   if (supportsAudio) inputs.push({
     id: 'generate_audio', portType: 'number', label: 'Generate Audio', required: false,
     falParam: 'generate_audio', fieldType: 'toggle',
@@ -352,6 +393,7 @@ function fallbackModels(): CatalogModel[] {
       taskTypes: new Set(['text_to_image', 'image_edit']),
       options: new Map<string, unknown[]>(),
       defaults: {},
+      accepts: new Set<string>(),
     })),
     ...FALLBACK_VIDEO_MODELS.map((displayName) => ({
       displayName,
@@ -359,6 +401,7 @@ function fallbackModels(): CatalogModel[] {
       taskTypes: new Set(['text_to_video', 'image_to_video', 'omni_reference']),
       options: new Map<string, unknown[]>(),
       defaults: {},
+      accepts: new Set<string>(),
       nativeAudio: ['Seedance 2.5', 'Standard', 'Fast', 'Kling O3', 'Kling V3', 'Veo 3.1', 'Veo 3.1 Fast', 'Vidu Q3 Pro', 'Wan 2.6', 'Happy Horse 1.1'].includes(displayName),
     })),
     ...FALLBACK_AUDIO_MODELS.map(({ displayName, catalogType }) => ({
@@ -368,6 +411,7 @@ function fallbackModels(): CatalogModel[] {
       taskTypes: new Set([catalogType]),
       options: new Map<string, unknown[]>(),
       defaults: {},
+      accepts: new Set<string>(),
     })),
   ];
 }

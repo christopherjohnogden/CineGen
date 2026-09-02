@@ -64,8 +64,12 @@ export function normalizeTopviewVideoTask(value: unknown): TopviewVideoTaskState
     ? record.boardId.trim()
     : undefined;
   const model = typeof record.model === 'string' ? record.model.trim() : '';
-  const durationSec = Number(record.durationSec);
-  if (!taskId || !taskType || !model || !Number.isFinite(durationSec)) return undefined;
+  // Fixed-length models (Gemini Omni Flash, Kling Omni, Grok Video Edit) never report a
+  // duration. Requiring one here discarded the task ID of a render Topview had already
+  // accepted and charged for, so the poll never started and the video was never claimed.
+  const duration = Number(record.durationSec);
+  const durationSec = Number.isFinite(duration) && duration > 0 ? duration : undefined;
+  if (!taskId || !taskType || !model) return undefined;
   const boardUrl = typeof record.boardUrl === 'string' && record.boardUrl.trim()
     ? record.boardUrl.trim()
     : undefined;
@@ -73,7 +77,7 @@ export function normalizeTopviewVideoTask(value: unknown): TopviewVideoTaskState
     taskId,
     taskType,
     model,
-    durationSec,
+    ...(durationSec !== undefined ? { durationSec } : {}),
     ...(boardId ? { boardId } : {}),
     ...(boardUrl ? { boardUrl } : {}),
   };
@@ -142,7 +146,7 @@ export async function runTopviewVideoTask(
       return {
         url,
         mediaType: 'video',
-        durationSec: task.durationSec,
+        ...(task.durationSec !== undefined ? { durationSec: task.durationSec } : {}),
         taskId: task.taskId,
         model: task.model,
         ...(task.boardUrl ? { boardUrl: task.boardUrl } : {}),

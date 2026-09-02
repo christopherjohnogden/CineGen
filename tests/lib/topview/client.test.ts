@@ -136,6 +136,46 @@ describe('Topview MCP video adapter', () => {
     expect(built.req.sound).toBe('on');
   });
 
+  it('submits fixed-length models that expose no duration parameter', () => {
+    // Gemini Omni Flash, the Kling Omni editors, and Grok Video Edit advertise no
+    // duration at all. Refusing the request here stopped them running from a Space.
+    const fixedLength = {
+      preferredSubmitModel: 'gemini-omni-flash-ext',
+      models: [{
+        submitModel: 'gemini-omni-flash-ext',
+        displayName: 'Gemini Omni Flash',
+        requiredSubmitFields: ['taskType', 'model', 'prompt', 'resolution', 'aspectRatio'],
+        defaultSubmitParameters: { aspectRatio: '16:9', resolution: 720 },
+        submitParameterOptions: { aspectRatio: ['9:16', '16:9'], resolution: [720] },
+      }],
+    };
+    const built = buildTopviewVideoRequest({
+      config: fixedLength,
+      taskType: 'omni_reference',
+      params: { prompt: 'Hold on the miner as the lamps flare.', durationSec: 5 },
+      references: [{ value: '/tmp/face.png', role: 'image', fileId: 'file_face' }],
+      boardId: 'board_1',
+    });
+
+    expect(built.model).toBe('gemini-omni-flash-ext');
+    expect(built.durationSec).toBeUndefined();
+    expect(built.req).not.toHaveProperty('duration');
+    expect(built.req).toMatchObject({ taskType: 'omni_reference', resolution: 720, aspectRatio: '16:9' });
+  });
+
+  it('keeps prompts clear of the watermark wording Topview reads as a copyright request', () => {
+    const built = buildTopviewVideoRequest({
+      config: videoConfig,
+      taskType: 'omni_reference',
+      params: { prompt: 'A wide establishing shot of the valley.' },
+      references: [{ value: '/tmp/valley.png', role: 'image', fileId: 'file_valley' }],
+      boardId: 'board_1',
+    });
+
+    expect(String(built.req.prompt)).not.toMatch(/watermark/i);
+    expect(String(built.req.prompt)).toContain('on-screen text');
+  });
+
   it('does not invent a global reference cap or accept unsupported roles', () => {
     expect(topviewTaskTypeForMedias(Array.from({ length: 17 }, (_, index) => ({
       value: `/tmp/${index}.png`, role: 'image',
