@@ -778,6 +778,14 @@ function taskError(value: unknown, fallback: string): string {
  * next step that actually clears it.
  */
 export function topviewRejectionHint(message: string): string | undefined {
+  if (/video\s+pixel\s+count/i.test(message)) {
+    const reportedFloor = /greater\s+than\s+or\s+equal\s+to\s+(\d+)/i.exec(message)?.[1];
+    const floor = reportedFloor ? Number.parseInt(reportedFloor, 10).toLocaleString('en-US') : '409,600';
+    return `Seedance rejected a reference video for being too small. It needs at least ${floor} pixels per frame, so re-encode the clip at 854x480 or larger for 16:9 (960x540 is a safe choice) and attach it again. A 640x360 clip is the usual cause.`;
+  }
+  if (/duration/i.test(message) && /must\s+be\s+`?-1`?/i.test(message)) {
+    return 'Seedance read this prompt as an edit of the attached clip, so the render takes its length and aspect ratio from that video instead of the duration you picked. Resubmit from CineGen Desktop, which retries with the inherited length, and check that the clip is between 4 and 30 seconds.';
+  }
   if (/copyright|infring|intellectual\s+property|trademark|likeness|celebrit/i.test(message)) {
     return "Topview's content check rejected this submission. It usually flags a named brand, film, studio, or real person in the prompt, or a reference image it reads as protected — rephrase that part or swap the reference, then run it again.";
   }

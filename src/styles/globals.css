@@ -4474,41 +4474,111 @@ input[type='range']::-moz-range-track {
 .space-studio__pill-menu {
   position: absolute;
   z-index: 30;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   left: 0;
-  min-width: 100%;
+  min-width: max(100%, 176px);
   margin: 0;
-  padding: 4px;
+  padding: 6px;
   border: 1px solid var(--studio-popover-border);
-  border-radius: var(--radius-md);
+  border-radius: 18px;
   background: var(--studio-popover);
   box-shadow: 0 18px 44px rgb(0 0 0 / 55%);
   list-style: none;
+}
+
+/* A value menu says which setting it belongs to; a mode menu speaks for itself. */
+.space-studio__pill-menu[role="listbox"]::before {
+  content: attr(aria-label);
+  display: block;
+  padding: 8px 10px 6px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
 
 .space-studio__pill-menu button {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 32px;
-  padding: 0 9px;
-  border-radius: var(--radius-sm);
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.space-studio__pill-menu button:hover,
-.space-studio__pill-menu button.is-active {
+.space-studio__pill-menu button > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-secondary);
+}
+
+.space-studio__pill-menu button:hover {
   background: var(--bg-raised);
 }
 
-.space-studio__pill-menu b {
-  color: var(--accent);
-  font-size: 11px;
+.space-studio__pill-menu button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+/* The set value is held lit, so it reads as chosen rather than merely hovered. */
+.space-studio__pill-menu button.is-active,
+.space-studio__pill-menu button[aria-checked="true"] {
+  background: var(--bg-overlay);
+}
+
+.space-studio__pill-menu button.is-active > svg,
+.space-studio__pill-menu button[aria-checked="true"] > svg {
+  color: var(--text-primary);
+}
+
+/* Ratios are compared, not scanned, so they sit two to a row like the reference. */
+.space-studio__pill-menu--grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  min-width: 232px;
+  padding: 4px 6px 6px;
+}
+
+.space-studio__pill-menu--grid::before {
+  grid-column: 1 / -1;
+  padding: 8px 10px 8px;
+}
+
+.space-studio__pill-menu--grid li {
+  display: flex;
+  min-width: 0;
+}
+
+/* Hairlines between the cells, so the pairs read as a table of shapes. The
+   title is a pseudo-element and not counted here, so nth-child stays honest. */
+.space-studio__pill-menu--grid li:nth-child(odd) {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.space-studio__pill-menu--grid li:nth-child(n+3) {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.space-studio__pill-menu--grid button {
+  flex: 1;
+  min-height: 44px;
+  margin: 3px;
+  padding: 0 10px;
+  border-radius: 10px;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
 /* A dense numeric range gets a slider popover instead of a long menu. */
@@ -4715,9 +4785,9 @@ input[type='range']::-moz-range-track {
   left: calc(100% + 10px);
   width: 258px;
   margin: 0;
-  padding: 5px;
+  padding: 8px;
   border: 1px solid var(--studio-popover-border);
-  border-radius: var(--radius-lg);
+  border-radius: 18px;
   background: var(--studio-popover);
   box-shadow: 0 22px 54px rgb(0 0 0 / 55%);
   list-style: none;
@@ -4729,19 +4799,22 @@ input[type='range']::-moz-range-track {
   width: 100%;
   display: grid;
   gap: 2px;
-  padding: 9px 26px 9px 10px;
-  border-radius: var(--radius-md);
+  padding: 10px 26px 10px 12px;
+  border-radius: 12px;
   text-align: left;
 }
 
-.space-studio__option-flyout button:hover,
-.space-studio__option-flyout button.is-active {
+.space-studio__option-flyout button:hover {
   background: var(--bg-raised);
+}
+
+.space-studio__option-flyout button.is-active {
+  background: var(--bg-overlay);
 }
 
 .space-studio__option-flyout span {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 

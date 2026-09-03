@@ -1,7 +1,7 @@
 # Upcoming Release — Feature Changelog
 
 > **Status:** Draft — update this file as work continues, then copy into a GitHub Release when you ship.  
-> **Last updated:** August 20, 2026
+> **Last updated:** September 3, 2026
 
 Use this document to announce what’s new in the next CineGen update. Items marked **(committed)** are already on `main`; items marked **(in progress)** include local/uncommitted work from the current session.
 
@@ -22,6 +22,12 @@ Use this document to announce what’s new in the next CineGen update. Items mar
 ---
 
 ## New Features
+
+### Studio: Edit video mode **(in progress)**
+
+- **Edit video** joins **Frames** and **References** in the Studio guidance menu (panel and docked bar) for Seedance 2.x, the models whose reference-to-video route actually edits a clip. Picking it says up front that the job is an edit, so the request carries the provider's inherited-length sentinel on the **first** submit — no charged-then-refunded task and retry to discover the verdict
+- A **Video to edit** slot names the clip the way the frame slots name stills: choose it from the Space's own videos or **From your computer** (the docked tile picks from disk, like the frame tiles). The clip leads the reference list, so Elements attached alongside it read as what to change it into — "replace the player wearing 13 with this character sheet"
+- The duration control disappears in this mode rather than being ignored: an edit takes its length and framing from the clip. The choice and the clip survive a reload, and **Reuse** on an edit reopens the composer in Edit video with the same clip when that asset is still in the project
 
 ### Header Assistant **(in progress)**
 - Chat bubble to the **right of Settings** opens a right drawer. Ask questions or give tasks about the current project (Director shots, timelines, assets). The model picker is the same **Director LLM** custom dropdown (Claude Code, Codex, Gemini CLI, ChatGPT Luna, OpenAI Luna, fal.ai, Higgsfield). Replies render as markdown; `cinegen-skill-action` JSON is hidden and shown as an **Add / Apply** button (same as Copilot). Prompts use Director **@Tags** (`@Peter`, `@Sofa`) from the breakdown, including ACTIVE REFERENCES. **Add to Spaces** also drops matching Element stills onto the model’s Medias / Image ports — `@tags` in the prompt text alone do not send reference images. Thread is saved per project. Esc or the dimmed area closes it.
@@ -248,6 +254,10 @@ Models with **fixed output tiers** and no API control (Kling 2.5, MiniMax Video,
 
 ## Improvements
 
+### Studio composer menus **(in progress)**
+
+- Guidance, aspect ratio, and resolution popovers now follow the Higgsfield bar: a titled sheet, a two-column shape grid for ratios, a lit row instead of a tick, and an icon on each guidance mode (Frames, References, Edit video)
+
 ### Copy buttons flash **Copied** **(in progress)**
 
 - Clicking **Copy** (Generate prompt, Shotlist style prefix / Copy prompt, diagram prompt, transcript **Copy Text**, Copilot **Copy SKILL.md**) shows **Copied** for 2 seconds, then the original label — only if the clipboard write succeeded
@@ -314,6 +324,9 @@ New module: `src/lib/fal/video-model-routing.ts` — shared logic for execute pa
 
 ## Bug Fixes
 
+- **Topview / Seedance undersized reference video:** Attaching a low-resolution clip (a 640x360 beat is the usual case) as a motion reference failed late with the raw provider string ``The parameter `content[2]` specified in the request is not valid: the parameter video pixel count … must be greater than or equal to 407696 … in r2v``, after credits were charged and refunded. CineGen now recognizes both provider IDs and Studio labels such as `Seedance 2.5`, ffprobes video references before upload, applies the current model-specific floor (**407,696 pixels for Seedance 2.5; 409,600 for other Seedance 2.x routes**), and automatically uploads a temporary H.264 compatibility copy at a safe even size (854x480 for a 16:9 640x360 source), leaving the original untouched. If probing fails, an area-based FFmpeg fallback still prepares the clip; Studio shows **Upscaling reference video…** before submission, then the applied `source → upload` size with **Generating…** while rendering. Asynchronous provider rejections include the same actionable resize guidance as immediate Desktop/web errors. **(in progress)**
+- **Topview / Seedance video-edit duration:** A reference-to-video prompt that asks for a change to the attached clip ("replace the player in the video with…") is classified by Seedance as *video editing*, where the render inherits the clip's length and aspect ratio and the request must carry the provider's `duration: -1` sentinel — so the picked 4s/8s length failed with ``The parameter `duration` specified in the request is not valid … Issues: [0] `duration` must be -1``. That verdict depends on the prompt and Seedance only reports it **after** the task is created, charged, and refunded, so CineGen now resubmits once with the inherited length from the polled failure (and from an immediate rejection, for accounts that validate up front) instead of surfacing a dead end. Detection accepts any dash the provider renders the sentinel with, `-1` bypasses the advertised 4-30s duration options rather than being validated against them, the node stops claiming a length it does not control, and a repeat failure explains the provider's 4-30 second limit on the clip being edited. Ordinary failures and resumed tasks are never resubmitted, so no render is paid for twice. **(in progress)**
+- **Dev launch under Cursor/VS Code:** `npm run dev` inherited `ELECTRON_RUN_AS_NODE=1` from the editor, so Electron booted as plain Node and died with `TypeError: Cannot read properties of undefined (reading 'exports')`. The spawn now clears that variable. **(in progress)**
 - **Director Frame · map crash:** Clicking a frame/map thumbnail threw `Can't find variable: diagramCopy` because Craft's staging block used a copy-flash hook that lived on the parent **(in progress)**
 - **FLUX 2 Max:** Wrong endpoint slug (`flux-2/max` → `flux-2-max`)
 - **Kling First & Last:** `tail_image_url` was sent to an endpoint that ignored it

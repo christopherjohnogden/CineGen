@@ -190,8 +190,12 @@ function mergeCatalog(catalog?: TopviewGenerationCatalog | null): CatalogModel[]
   return [...merged.values()];
 }
 
-function slug(value: string): string {
+export function topviewModelSlug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+export function isSeedance2ModelName(value: unknown): boolean {
+  return typeof value === 'string' && topviewModelSlug(value).includes('seedance-2');
 }
 
 function selectOptions(values: unknown[], fallback: string[]): Array<{ value: string; label: string }> {
@@ -269,7 +273,7 @@ function imageDefinition(model: CatalogModel): ModelDefinition {
   });
   return {
     id: `topview/image/${model.submitModel ?? model.displayName}`,
-    nodeType: `topview-image-${slug(model.displayName)}`,
+    nodeType: `topview-image-${topviewModelSlug(model.displayName)}`,
     name: model.displayName,
     category: supportsText ? 'image' : 'image-edit',
     description: supportsText && supportsEdit
@@ -336,7 +340,7 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
   });
   return {
     id: `topview/video/${model.submitModel ?? model.displayName}`,
-    nodeType: `topview-video-${slug(model.displayName)}`,
+    nodeType: `topview-video-${topviewModelSlug(model.displayName)}`,
     name: model.displayName,
     category: 'video',
     description: `Topview video generation${supportsAudio ? ' with native audio' : ''}${taskLabels ? ` · ${taskLabels}` : ''}`,
@@ -375,7 +379,7 @@ function audioDefinition(model: CatalogModel): ModelDefinition {
   }
   return {
     id: `topview/audio/${model.submitModel ?? model.displayName}`,
-    nodeType: `topview-audio-${slug(model.displayName)}`,
+    nodeType: `topview-audio-${topviewModelSlug(model.displayName)}`,
     name: model.displayName,
     category: 'audio',
     description: kind === 'music'

@@ -28,6 +28,8 @@ export interface StudioClipViewerProps {
   onDownload: () => void;
   onRecreate: () => void;
   onReference: () => void;
+  /** Absent when the composer's model cannot edit a clip. */
+  onEditVideo?: () => void;
   onExtend: () => void;
   onExtractFrame: (at: 'start' | 'end') => void;
   onOpenInCanvas?: () => void;
@@ -92,6 +94,7 @@ export function StudioClipViewer({
   onDownload,
   onRecreate,
   onReference,
+  onEditVideo,
   onExtend,
   onExtractFrame,
   onOpenInCanvas,
@@ -543,6 +546,9 @@ export function StudioClipViewer({
                   <div className="clip-viewer__menu clip-viewer__menu--up clip-viewer__menu--right" role="menu" aria-label="More actions">
                     {isVideo && (
                       <>
+                        {onEditVideo && (
+                          <button type="button" role="menuitem" onClick={() => { onEditVideo(); setMenu(null); }}>Edit video</button>
+                        )}
                         <button type="button" role="menuitem" onClick={() => { onExtractFrame('start'); setMenu(null); }}>Extract start frame</button>
                         <button type="button" role="menuitem" onClick={() => { onExtractFrame('end'); setMenu(null); }}>Extract last frame</button>
                       </>

@@ -133,6 +133,69 @@ describe('Topview video task polling', () => {
     }, { prompt: 'A detective.' })).rejects.toBeInstanceOf(TopviewVideoTaskFailedError);
   });
 
+  it('resubmits once with the inherited length when Seedance reports a video edit', async () => {
+    // Seedance only reveals that it read the prompt as an edit after the task is created,
+    // charged, and refunded, so the picked length has to be replaced from the failure.
+    const editRejection = 'The parameter `duration` specified in the request is not valid. '
+      + 'Seedance identified your task as video editing based on your prompt. '
+      + 'Issues: [0] `duration` must be -1. credits have been refunded';
+    const editedTask: TopviewVideoTaskState = { ...task, taskId: 'topview-task-2', durationSec: undefined };
+    const submit = vi.fn()
+      .mockResolvedValueOnce(task)
+      .mockResolvedValueOnce(editedTask);
+    const query = vi.fn()
+      .mockResolvedValueOnce(queryResult('fail', { error: editRejection }))
+      .mockResolvedValueOnce({
+        ...editedTask,
+        status: 'success',
+        url: 'https://cdn.example/edited-clip.mp4',
+      });
+    const onTask = vi.fn();
+
+    await expect(runTopviewVideoTask({ submit, query }, { prompt: 'Replace the player.', durationSec: 8 }, {
+      onTask,
+      sleep: vi.fn().mockResolvedValue(undefined),
+      now: () => 0,
+    })).resolves.toMatchObject({ url: 'https://cdn.example/edited-clip.mp4', taskId: 'topview-task-2' });
+
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(submit).toHaveBeenLastCalledWith(expect.objectContaining({ durationSec: -1 }));
+    expect(onTask).toHaveBeenLastCalledWith(expect.objectContaining({ taskId: 'topview-task-2' }));
+  });
+
+  it('never resubmits twice, or at all for an unrelated failure or a resumed task', async () => {
+    const editRejection = 'Issues: [0] `duration` must be -1.';
+    const failing = () => vi.fn().mockResolvedValue(queryResult('fail', { error: editRejection }));
+
+    // The retry itself failing the same way is terminal, not an submit loop.
+    const submit = vi.fn().mockResolvedValue(task);
+    await expect(runTopviewVideoTask({ submit, query: failing() }, { prompt: 'Replace.' }, {
+      sleep: vi.fn().mockResolvedValue(undefined),
+      now: () => 0,
+    })).rejects.toBeInstanceOf(TopviewVideoTaskFailedError);
+    expect(submit).toHaveBeenCalledTimes(2);
+
+    // A resumed task is dropped by the caller, so its next run submits fresh and retries there.
+    const resumedSubmit = vi.fn().mockResolvedValue(task);
+    await expect(runTopviewVideoTask({ submit: resumedSubmit, query: failing() }, { prompt: 'Replace.' }, {
+      resumeTask: task,
+      sleep: vi.fn().mockResolvedValue(undefined),
+      now: () => 0,
+    })).rejects.toBeInstanceOf(TopviewVideoTaskFailedError);
+    expect(resumedSubmit).not.toHaveBeenCalled();
+
+    // An ordinary failure must never be resubmitted — that would pay for the render twice.
+    const unrelatedSubmit = vi.fn().mockResolvedValue(task);
+    await expect(runTopviewVideoTask({
+      submit: unrelatedSubmit,
+      query: vi.fn().mockResolvedValue(queryResult('fail', { error: 'Content policy rejected this prompt.' })),
+    }, { prompt: 'Replace.' }, {
+      sleep: vi.fn().mockResolvedValue(undefined),
+      now: () => 0,
+    })).rejects.toBeInstanceOf(TopviewVideoTaskFailedError);
+    expect(unrelatedSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it('retains a paid task even when Topview does not return an optional board ID', async () => {
     const taskWithoutBoard = { ...task, boardId: undefined };
     const submit = vi.fn().mockResolvedValue(taskWithoutBoard);
@@ -156,6 +219,29 @@ describe('Topview video task polling', () => {
 });
 
 describe('Spaces Topview video recovery', () => {
+  it('shows when CineGen prepared an undersized reference before submission', async () => {
+    const preparedTask: TopviewVideoTaskState = {
+      ...task,
+      referencePreparation: 'Upscaled reference video 640x360 → 854x480',
+    };
+    const submit = vi.fn().mockResolvedValue(preparedTask);
+    const query = vi.fn().mockResolvedValue({
+      ...preparedTask,
+      status: 'success',
+      url: 'https://cdn.example/upscaled-reference-result.mp4',
+    });
+    installTopviewBridge(submit, query);
+    const dispatch = workflowDispatch();
+
+    await executeWorkflow([workflowNode()], [], dispatch);
+
+    expect(dispatch.setNodeResult).toHaveBeenCalledWith('topview-video-1', expect.objectContaining({
+      status: 'running',
+      progressMessage: 'Upscaled reference video 640x360 → 854x480. Generating…',
+      topviewTask: preparedTask,
+    }));
+  });
+
   it('persists the submitted task and publishes its eventual URL to the node', async () => {
     const submit = vi.fn().mockResolvedValue(task);
     const query = vi.fn().mockResolvedValue(queryResult('success', {

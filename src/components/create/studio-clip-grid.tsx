@@ -7,6 +7,8 @@ export interface StudioClipGridActions {
   onDownload: (id: string) => void;
   onRecreate: (id: string) => void;
   onReference: (id: string) => void;
+  /** Absent when the composer's model cannot edit a clip. */
+  onEditVideo?: (id: string) => void;
   onExtractFrame: (id: string, at: 'start' | 'end') => void;
   onOpenInCanvas?: (id: string) => void;
   onCopyPrompt: (id: string) => void;
@@ -297,6 +299,9 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
           )}
           {item.kind === 'video' && item.url && (
             <>
+              {actions.onEditVideo && (
+                <button type="button" role="menuitem" onClick={run(() => actions.onEditVideo?.(item.id))}>Edit video</button>
+              )}
               <button type="button" role="menuitem" onClick={run(() => actions.onExtractFrame(item.id, 'start'))}>Extract start frame</button>
               <button type="button" role="menuitem" onClick={run(() => actions.onExtractFrame(item.id, 'end'))}>Extract last frame</button>
             </>

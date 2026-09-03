@@ -1,4 +1,8 @@
 import type { TopviewVideoTaskState } from '@/types/workflow';
+import {
+  topviewRequiresInheritedVideoDuration,
+  TOPVIEW_INHERITED_VIDEO_DURATION,
+} from './video-duration';
 
 export interface TopviewVideoRequest {
   prompt: string;
@@ -73,6 +77,9 @@ export function normalizeTopviewVideoTask(value: unknown): TopviewVideoTaskState
   const boardUrl = typeof record.boardUrl === 'string' && record.boardUrl.trim()
     ? record.boardUrl.trim()
     : undefined;
+  const referencePreparation = typeof record.referencePreparation === 'string' && record.referencePreparation.trim()
+    ? record.referencePreparation.trim()
+    : undefined;
   return {
     taskId,
     taskType,
@@ -80,6 +87,7 @@ export function normalizeTopviewVideoTask(value: unknown): TopviewVideoTaskState
     ...(durationSec !== undefined ? { durationSec } : {}),
     ...(boardId ? { boardId } : {}),
     ...(boardUrl ? { boardUrl } : {}),
+    ...(referencePreparation ? { referencePreparation } : {}),
   };
 }
 
@@ -129,6 +137,9 @@ export async function runTopviewVideoTask(
   options.onTask?.(task);
 
   const startedAt = now();
+  // Seedance charges, refunds, and only then reports that it read the prompt as an edit of
+  // the attached clip, so the task has to fail once before the inherited length is knowable.
+  let inheritedDurationRetried = request.durationSec === TOPVIEW_INHERITED_VIDEO_DURATION;
   for (;;) {
     const query = await client.query(task);
     const updatedTask = normalizeTopviewVideoTask({ ...task, ...query }) ?? task;
@@ -136,7 +147,22 @@ export async function runTopviewVideoTask(
     options.onStatus?.(query, task);
 
     if (query.status === 'fail') {
-      throw new TopviewVideoTaskFailedError(query.error ?? 'Topview could not complete this video.', task);
+      const failure = query.error ?? 'Topview could not complete this video.';
+      // Only resubmit a task this call paid for. A resumed task is dropped by the caller on
+      // failure, so its next run submits fresh and retries there instead of paying twice.
+      if (!resumedTask && !inheritedDurationRetried && topviewRequiresInheritedVideoDuration(failure)) {
+        inheritedDurationRetried = true;
+        const resubmitted = normalizeTopviewVideoTask(await client.submit({
+          ...request,
+          durationSec: TOPVIEW_INHERITED_VIDEO_DURATION,
+        }));
+        if (resubmitted) {
+          task = resubmitted;
+          options.onTask?.(task);
+          continue;
+        }
+      }
+      throw new TopviewVideoTaskFailedError(failure, task);
     }
     const url = typeof query.url === 'string' ? query.url.trim() : '';
     if (query.status === 'success') {

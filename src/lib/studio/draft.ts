@@ -13,6 +13,8 @@
  * cloud revision, and it should not follow you to another machine.
  */
 
+import { parseStudioVideoMode, type StudioVideoMode } from './video-mode';
+
 export interface ComposerAttachment {
   id: string;
   url: string;
@@ -23,11 +25,13 @@ export interface ComposerAttachment {
 export interface ComposerDraft {
   prompt: string;
   outputKind: 'image' | 'video';
-  videoMode: 'frames' | 'references';
+  videoMode: StudioVideoMode;
   elementIds: string[];
   attachments: ComposerAttachment[];
   startAssetId: string;
   endAssetId: string;
+  /** The clip Edit video works on. Kept apart from attachments: it is the subject, not a reference. */
+  editAssetId: string;
 }
 
 export const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
@@ -38,6 +42,7 @@ export const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
   attachments: [],
   startAssetId: '',
   endAssetId: '',
+  editAssetId: '',
 };
 
 const DRAFT_KEY = 'cinegen_studio_draft';
@@ -79,11 +84,12 @@ export function readComposerDraft(projectId: string): ComposerDraft {
     return {
       prompt: typeof parsed.prompt === 'string' ? parsed.prompt : '',
       outputKind: parsed.outputKind === 'image' ? 'image' : 'video',
-      videoMode: parsed.videoMode === 'frames' ? 'frames' : 'references',
+      videoMode: parseStudioVideoMode(parsed.videoMode, 'references'),
       elementIds: strings(parsed.elementIds),
       attachments: attachments(parsed.attachments),
       startAssetId: typeof parsed.startAssetId === 'string' ? parsed.startAssetId : '',
       endAssetId: typeof parsed.endAssetId === 'string' ? parsed.endAssetId : '',
+      editAssetId: typeof parsed.editAssetId === 'string' ? parsed.editAssetId : '',
     };
   } catch {
     return EMPTY_COMPOSER_DRAFT;

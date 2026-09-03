@@ -1,4 +1,5 @@
 import type { Edge, Node } from '@xyflow/react';
+import { parseStudioVideoMode, type StudioVideoMode } from '@/lib/studio/video-mode';
 import { toFileUrl } from '@/lib/utils/file-url';
 import type { Asset } from '@/types/project';
 import type { ModelDefinition, ModelInputField, WorkflowNodeData } from '@/types/workflow';
@@ -23,7 +24,9 @@ export interface StudioRecipe {
   elementVariationIds: Record<string, string>;
   startAssetId: string;
   endAssetId: string;
-  videoMode: 'frames' | 'references';
+  /** The clip an Edit video generation worked on, when that asset is still around. */
+  editAssetId: string;
+  videoMode: StudioVideoMode;
   controls: Record<string, string | number | boolean>;
   presetId?: string;
 }
@@ -190,10 +193,16 @@ export function resolveStudioRecipe(
   const startAssetId = frame(isStartField, '__studioStartAssetId');
   const endAssetId = frame(isEndField, '__studioEndAssetId');
 
-  const storedMode = config.__studioVideoMode;
-  const videoMode: StudioRecipe['videoMode'] = storedMode === 'frames' || storedMode === 'references'
-    ? storedMode
-    : elementIds.length ? 'references' : 'frames';
+  const videoMode = parseStudioVideoMode(
+    config.__studioVideoMode,
+    elementIds.length ? 'references' : 'frames',
+  );
+  // An edit is pointless without its clip, so a deleted asset drops the reference
+  // rather than reopening the composer on a mode with an empty subject.
+  const editAssetId = typeof config.__studioEditAssetId === 'string'
+    && assets.some((asset) => asset.id === config.__studioEditAssetId)
+    ? config.__studioEditAssetId
+    : '';
 
   const controls: StudioRecipe['controls'] = {};
   for (const input of model.inputs) {
@@ -211,6 +220,7 @@ export function resolveStudioRecipe(
     elementVariationIds,
     startAssetId,
     endAssetId,
+    editAssetId,
     videoMode,
     controls,
     ...(typeof config.__studioPresetId === 'string' ? { presetId: config.__studioPresetId } : {}),

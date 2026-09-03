@@ -104,6 +104,8 @@ export interface TopviewVideoTaskState {
   /** Absent for fixed-length models, which do not expose a duration parameter. */
   durationSec?: number;
   boardUrl?: string;
+  /** Describes any temporary compatibility conversion applied before upload. */
+  referencePreparation?: string;
 }
 
 export interface WorkflowNodeData extends Record<string, unknown> {

@@ -108,6 +108,7 @@ describe('StudioClipGrid', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     const menu = screen.getByRole('menu', { name: 'Clip actions' });
     expect(within(menu).getByRole('menuitem', { name: 'Extract start frame' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: 'Edit video' })).not.toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Extract last frame' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Open in Canvas' })).toBeInTheDocument();
     expect(within(menu).getByRole('menuitem', { name: 'Copy video URL' })).toBeInTheDocument();
@@ -121,6 +122,14 @@ describe('StudioClipGrid', () => {
     expect(screen.getByText('Remove this generation?')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     expect(handlers.onRemove).toHaveBeenCalledWith('a');
+  });
+
+  it('offers Edit video on a clip when the composer can edit', () => {
+    const handlers = { ...actions(), onEditVideo: vi.fn() };
+    render(<StudioClipGrid items={[clip({ id: 'a' })]} cardSize="m" {...handlers} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Clip actions' })).getByRole('menuitem', { name: 'Edit video' }));
+    expect(handlers.onEditVideo).toHaveBeenCalledWith('a');
   });
 
   it('sets a review status from the tile pill', () => {

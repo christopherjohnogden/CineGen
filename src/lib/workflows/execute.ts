@@ -27,7 +27,7 @@ import type {
 } from '@/types/workflow';
 import type { Element } from '@/types/elements';
 import { getApiKey, getKieApiKey, getRunpodApiKey, getRunpodEndpointId, getPodUrl } from '@/lib/utils/api-key';
-import { runWorkflow } from '@/lib/cloud/funding';
+import { runWorkflow, workflowMediaInputs } from '@/lib/cloud/funding';
 import {
   RUNPOD_LTX25_SESSION_NODE_TYPE,
   runRunpodLtx25Session,
@@ -45,6 +45,7 @@ import {
   isTopviewVideoTaskFailedError,
   normalizeTopviewVideoTask,
 } from '@/lib/topview/video-task';
+import { isSeedance2ModelName } from '@/lib/topview/model-catalog';
 
 export interface WorkflowDispatch {
   setNodeRunning: (nodeId: string, running: boolean) => void;
@@ -1436,6 +1437,23 @@ async function executeModelNode(
         (falInputs as any)._promptList = promptList;
         result = {}; // placeholder — all SAM 3 calls happen in the handler below
       } else {
+        const topviewMedias = isTopviewVideoNode
+          ? workflowMediaInputs(apiInputs, modelDef.outputType)
+          : [];
+        const selectedTopviewModel = apiInputs.model ?? data.config.model ?? modelDef.name;
+        if (
+          isTopviewVideoNode
+          && !topviewVideoTask
+          && isSeedance2ModelName(selectedTopviewModel)
+          && topviewMedias.some((reference) => reference.role === 'video')
+        ) {
+          dispatch.setNodeResult(nodeId, buildRunningResult(
+            nodeType,
+            'preparing',
+            'Upscaling reference video for Seedance…',
+            { progressStartedAt },
+          ));
+        }
         result = await runWorkflow({
           apiKey: getApiKey(),
           kieKey: getKieApiKey(),
@@ -1454,7 +1472,9 @@ async function executeModelNode(
             dispatch.setNodeResult(nodeId, buildRunningResult(
               nodeType,
               'queued',
-              'Topview accepted the video render',
+              task.referencePreparation
+                ? `${task.referencePreparation}. Generating…`
+                : 'Generating…',
               { topviewTask: task, progressStartedAt },
             ));
           },

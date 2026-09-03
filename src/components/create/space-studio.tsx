@@ -78,6 +78,9 @@ import {
   isSliderControl,
 } from '@/lib/studio/controls';
 import { readComposerDraft, writeComposerDraft } from '@/lib/studio/draft';
+import { parseStudioVideoMode, type StudioVideoMode } from '@/lib/studio/video-mode';
+import { isSeedance2ModelName } from '@/lib/topview/model-catalog';
+import { TOPVIEW_INHERITED_VIDEO_DURATION } from '@/lib/topview/video-duration';
 import type { Asset } from '@/types/project';
 // Aliased: the DOM's global `Element` would otherwise win.
 import type { Element as CineElement } from '@/types/elements';
@@ -88,11 +91,12 @@ import type {
 } from '@/types/workflow';
 
 type OutputKind = 'image' | 'video';
-type VideoInputMode = 'frames' | 'references';
 type FeedFilter = 'all' | OutputKind | 'liked';
 type ControlValue = string | number | boolean;
 type FeedStatus = GenerationStatus;
 type FrameSlot = 'start' | 'end';
+/** What the hidden file input is filling: a frame slot, the clip to edit, or the reference set. */
+type AttachTarget = FrameSlot | 'edit';
 type FeedView = 'list' | 'grid';
 
 const CONTROL_FIELD_TYPES = new Set<ModelInputField['fieldType']>([
@@ -101,6 +105,12 @@ const CONTROL_FIELD_TYPES = new Set<ModelInputField['fieldType']>([
   'range',
   'toggle',
 ]);
+
+const DURATION_FIELD_IDS = new Set(['duration', 'durationSec', 'duration_sec']);
+
+function isDurationField(field: ModelInputField): boolean {
+  return DURATION_FIELD_IDS.has(field.id);
+}
 
 const PRIMARY_CONTROL_IDS = [
   'duration',
@@ -219,9 +229,7 @@ function modelCapabilitySummary(model: ModelDefinition): CapabilityBadge[] {
   const controls = orderedControlFields(model);
   const badges: CapabilityBadge[] = [];
   const resolution = controls.find((field) => field.id === 'resolution');
-  const duration = controls.find((field) => (
-    field.id === 'duration' || field.id === 'durationSec' || field.id === 'duration_sec'
-  ));
+  const duration = controls.find(isDurationField);
   if (resolution?.options?.length) {
     // The headline number, not a range — "1080p" says what the model can do;
     // "720–1080" makes the reader do arithmetic to reach the same fact.
@@ -289,9 +297,64 @@ function bitrateIcon(value: string) {
   return /high|max|best/i.test(value) ? PILL_ICONS.bitrate_high : PILL_ICONS.bitrate_standard;
 }
 
+/**
+ * A frame drawn in the shape of the ratio it stands for. Reading "9:16" is work;
+ * seeing a tall rectangle is not, so the glyph carries the meaning and the label
+ * confirms it.
+ */
+function aspectGlyph(value: string): ReactElement | null {
+  const [wide, tall] = value.split(/[:x/]/).map((part) => Number(part.trim()));
+  if (!Number.isFinite(wide) || !Number.isFinite(tall) || wide <= 0 || tall <= 0) return null;
+  const scale = 12.4 / Math.max(wide, tall);
+  const width = wide * scale;
+  const height = tall * scale;
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <rect
+        x={(16 - width) / 2}
+        y={(16 - height) / 2}
+        width={width}
+        height={height}
+        rx="1.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+    </svg>
+  );
+}
+
+/** One glyph per guidance mode, so the menu reads at a glance. */
+const MODE_ICONS: Record<StudioVideoMode, ReactElement> = {
+  frames: (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <rect x="1.6" y="3.6" width="12.8" height="8.8" rx="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5.2 3.6v8.8M10.8 3.6v8.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
+  references: (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <rect x="1.7" y="5.2" width="3.4" height="7.6" rx="0.9" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="6.3" y="2.4" width="3.4" height="10.4" rx="0.9" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="10.9" y="4" width="3.4" height="8.8" rx="0.9" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  ),
+  edit: (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle cx="4" cy="12" r="2.1" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12" cy="12" r="2.1" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5.4 10.4 12 2M10.6 10.4 4 2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  ),
+};
+
+function isAspectField(field: ModelInputField): boolean {
+  return field.id === 'aspect_ratio' || field.id === 'aspectRatio';
+}
+
 function pillIcon(field: ModelInputField): ReactElement | null {
   if (/duration/i.test(field.id)) return PILL_ICONS.duration;
-  if (field.id === 'aspect_ratio' || field.id === 'aspectRatio') return PILL_ICONS.aspect_ratio;
+  if (isAspectField(field)) return PILL_ICONS.aspect_ratio;
   if (field.id === 'resolution') return PILL_ICONS.resolution;
   if (field.id === 'generate_audio' || field.id === 'generateAudio') return PILL_ICONS.generate_audio;
   return null;
@@ -713,13 +776,15 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   // would only find out once the render was paid for.
   const draft = useRef(readComposerDraft(projectId)).current;
   const [outputKind, setOutputKind] = useState<OutputKind>(draft.outputKind);
-  const [videoMode, setVideoMode] = useState<VideoInputMode>(draft.videoMode);
+  const [videoMode, setVideoMode] = useState<StudioVideoMode>(draft.videoMode);
   const [prompt, setPrompt] = useState(draft.prompt);
   const [modelType, setModelType] = useState('');
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>(draft.elementIds);
   const [missingReferences, setMissingReferences] = useState(0);
   const [startAssetId, setStartAssetId] = useState(draft.startAssetId);
   const [endAssetId, setEndAssetId] = useState(draft.endAssetId);
+  const [editAssetId, setEditAssetId] = useState(draft.editAssetId);
+  const [editPickerOpen, setEditPickerOpen] = useState(false);
   const [controlValuesByModel, setControlValuesByModel] = useState<
     Record<string, Record<string, ControlValue>>
   >({});
@@ -757,7 +822,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   dockModeRef.current = dockMode;
   const flyoutAnchorRef = useRef<HTMLElement | null>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
-  const attachTargetRef = useRef<FrameSlot | null>(null);
+  const attachTargetRef = useRef<AttachTarget | null>(null);
   // The docked tool row scrolls sideways; arrows appear only where there is more.
   const toolsRef = useRef<HTMLDivElement>(null);
   const [toolsEdges, setToolsEdges] = useState({ left: false, right: false });
@@ -863,7 +928,14 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   }, [modelOptions, modelType, outputKind]);
 
   const model = modelType ? getModelDefinition(modelType) : undefined;
-  const allControls = useMemo(() => orderedControlFields(model), [model]);
+  const editing = outputKind === 'video' && videoMode === 'edit';
+  const modelControls = useMemo(() => orderedControlFields(model), [model]);
+  // An edit inherits its length from the clip it works on, so offering seconds
+  // here would only be a number the provider throws away.
+  const allControls = useMemo(
+    () => (editing ? modelControls.filter((field) => !isDurationField(field)) : modelControls),
+    [editing, modelControls],
+  );
   // Toggles live in the prompt card as chips; the settings row keeps the value
   // pickers, which then fit on a single line.
   const controls = useMemo(
@@ -882,6 +954,11 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     () => state.assets.filter((asset) => asset.type === 'image'),
     [state.assets],
   );
+  const videoAssets = useMemo(
+    () => state.assets.filter((asset) => asset.type === 'video'),
+    [state.assets],
+  );
+  const editAsset = videoAssets.find((asset) => asset.id === editAssetId);
   const availableElements = useMemo(
     () => state.elements.filter((element) => elementImagesForVariation(element).length > 0),
     [state.elements],
@@ -891,9 +968,12 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   const referenceField = model ? referenceFieldFor(model) : undefined;
   const supportsFrames = Boolean(startField);
   const supportsReferences = Boolean(referenceField);
-  const hasDurationControl = controls.some((field) => (
-    field.id === 'duration' || field.id === 'durationSec' || field.id === 'duration_sec'
-  ));
+  // Editing a clip is Seedance's reference-to-video route with the inherited-length
+  // sentinel. Other models read a video reference as guidance for a new shot, so
+  // offering the mode there would promise something the provider will not do.
+  const supportsEdit = supportsReferences
+    && (isSeedance2ModelName(model?.name) || isSeedance2ModelName(model?.nodeType));
+  const hasDurationControl = controls.some(isDurationField);
   const hasAudioControl = controls.some((field) => (
     field.id === 'generate_audio' || field.id === 'generateAudio'
   ));
@@ -909,7 +989,8 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     if (outputKind !== 'video') return;
     if (videoMode === 'frames' && !supportsFrames && supportsReferences) setVideoMode('references');
     if (videoMode === 'references' && !supportsReferences && supportsFrames) setVideoMode('frames');
-  }, [outputKind, supportsFrames, supportsReferences, videoMode]);
+    if (videoMode === 'edit' && !supportsEdit) setVideoMode(supportsReferences ? 'references' : 'frames');
+  }, [outputKind, supportsEdit, supportsFrames, supportsReferences, videoMode]);
 
   // A phone keyboard would cover half of an auto-focused sheet, and "focus the
   // prompt" after reuse would open it over the composer the user cannot see.
@@ -1156,10 +1237,11 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     setMissingReferences(missing);
     // Infer the mode from what actually resolved — landing in References with
     // nothing attached and no explanation was the bug being fixed here.
-    const storedMode = node.data.config.__studioVideoMode;
-    setVideoMode(storedMode === 'frames' || storedMode === 'references'
-      ? storedMode
-      : resolvedIds.length ? 'references' : 'frames');
+    setVideoMode(parseStudioVideoMode(
+      node.data.config.__studioVideoMode,
+      resolvedIds.length ? 'references' : 'frames',
+    ));
+    setEditAssetId(recipe.editAssetId);
     setStartAssetId(recipe.startAssetId);
     setEndAssetId(recipe.endAssetId);
     setControlValuesByModel((current) => ({ ...current, [feedModel.nodeType]: recipe.controls }));
@@ -1215,7 +1297,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       return;
     }
 
-    const useReferences = outputKind === 'image' || videoMode === 'references';
+    const useReferences = outputKind === 'image' || videoMode === 'references' || editing;
     const elementIds = useReferences
       ? selectedElementIds.filter((id) => availableElements.some((element) => element.id === id))
       : [];
@@ -1223,6 +1305,21 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     if (elementIds.length > 0 && !selectedReferenceField) {
       setFormError('This model does not accept Element references.');
       return;
+    }
+
+    // The clip is the subject of an edit, not a nicety: without it the provider
+    // reads the prompt as a fresh shot and charges for the wrong video.
+    const editVideo = editing ? videoAssets.find((asset) => asset.id === editAssetId) : undefined;
+    if (editing) {
+      if (!selectedReferenceField) {
+        setFormError(`${selectedModel.name} cannot edit a video.`);
+        return;
+      }
+      if (!editVideo) {
+        setFormError('Choose the video to edit.');
+        setEditPickerOpen(true);
+        return;
+      }
     }
 
     const selectedStartAsset = imageAssets.find((asset) => asset.id === startAssetId);
@@ -1270,10 +1367,20 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       __studioElementVariationIds: elementVariationIds,
       __studioStartAssetId: selectedStartAsset?.id,
       __studioEndAssetId: selectedEndAsset?.id,
+      __studioEditAssetId: editVideo?.id,
     };
-    for (const field of orderedControlFields(selectedModel)) {
+    const selectedControlFields = orderedControlFields(selectedModel);
+    for (const field of selectedControlFields) {
+      if (editing && isDurationField(field)) continue;
       const value = controlValue(currentControlValues, field);
       if (value !== '') modelConfig[field.id] = value;
+    }
+    // Seedance requires the sentinel rather than seconds for an edit, and it only
+    // said so by failing the task after it had been charged. Choosing the mode up
+    // front means the first submit is already the right one.
+    if (editing) {
+      const durationField = selectedControlFields.find(isDurationField);
+      if (durationField) modelConfig[durationField.id] = TOPVIEW_INHERITED_VIDEO_DURATION;
     }
     const missingRequired = selectedModel.inputs.find((field) => {
       if (!field.required || field.default !== undefined) return false;
@@ -1302,11 +1409,17 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       modelConfig.__studioPresetName = activePreset.name;
     }
     const attachedUrls = attachedRefs.map((reference) => reference.url);
-    if ((elementIds.length > 0 || attachedUrls.length > 0) && selectedReferenceField) {
+    // The clip leads the reference list so it reads as what the edit is about,
+    // with the Elements after it as what to change it into.
+    const editUrl = editVideo ? toFileUrl(editVideo.fileRef || editVideo.url) : '';
+    const referenceUrls = editUrl
+      ? [editUrl, ...attachedUrls.filter((url) => url !== editUrl)]
+      : attachedUrls;
+    if ((elementIds.length > 0 || referenceUrls.length > 0) && selectedReferenceField) {
       modelConfig[selectedReferenceField.id] = {
         elementIds,
         elementVariationIds,
-        ...(attachedUrls.length > 0 ? { urls: attachedUrls } : {}),
+        ...(referenceUrls.length > 0 ? { urls: referenceUrls } : {}),
       };
       modelConfig.__studioElementVariationIds = elementVariationIds;
       if (attachedUrls.length > 0) modelConfig.__studioAttachedRefs = attachedUrls;
@@ -1413,8 +1526,9 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       attachments: attachedRefs,
       startAssetId,
       endAssetId,
+      editAssetId,
     });
-  }, [attachedRefs, endAssetId, outputKind, projectId, prompt, selectedElementIds, startAssetId, videoMode]);
+  }, [attachedRefs, editAssetId, endAssetId, outputKind, projectId, prompt, selectedElementIds, startAssetId, videoMode]);
 
   // The visit ends when the Studio unmounts or the page goes away; everything
   // created after that is "New" next time.
@@ -1561,13 +1675,17 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   }, [dispatch]);
 
   /** The bar's "+": bring a file off the machine in as the shot's start frame. */
-  const attachLocalFile = useCallback(async (file: File | undefined, target?: FrameSlot | null) => {
+  const attachLocalFile = useCallback(async (file: File | undefined, target?: AttachTarget | null) => {
     if (!file) return;
-    if (target && getMediaTypeForFile(file) !== 'image') {
+    const kind = getMediaTypeForFile(file);
+    if (target === 'edit' && kind !== 'video') {
+      showNotice('The clip to edit has to be a video.', 'error');
+      return;
+    }
+    if (target && target !== 'edit' && kind !== 'image') {
       showNotice('A frame has to be an image.', 'error');
       return;
     }
-    const kind = getMediaTypeForFile(file);
     if (kind !== 'image' && kind !== 'video' && kind !== 'audio') {
       showNotice('Attach an image, a video, or an audio file.', 'error');
       return;
@@ -1585,6 +1703,13 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
         metadata: { generatedVia: 'studio-attachment' },
       };
       dispatch({ type: 'ADD_ASSET', asset });
+      if (target === 'edit') {
+        setVideoMode('edit');
+        setEditAssetId(asset.id);
+        setEditPickerOpen(false);
+        showNotice(`${file.name} is the clip to edit.`);
+        return;
+      }
       if (target) {
         setVideoMode('frames');
         if (target === 'start') setStartAssetId(asset.id);
@@ -1637,6 +1762,32 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       showNotice(error instanceof Error ? error.message : 'Could not use this clip as a reference.', 'error');
     }
   }, [assetFromFrame, clipById, dispatch, showNotice, state.assets, useAsStartFrame]);
+
+  // A clip in the feed lives on its node, not in the asset library, so editing
+  // one has to file it first — otherwise the only editable videos would be the
+  // ones imported from disk.
+  const editClip = useCallback((id: string) => {
+    const item = clipById(id);
+    if (!item?.url || item.kind !== 'video') return;
+    const existing = state.assets.find((candidate) => (
+      candidate.url === item.url || candidate.sourceUrl === item.url
+    ));
+    const asset: Asset = existing ?? {
+      id: generateId(),
+      name: `${item.model.name} · clip`,
+      type: 'video',
+      url: item.url,
+      createdAt: timestamp(),
+      metadata: { generatedVia: 'studio-generation', sourceNodeId: item.id },
+    };
+    if (!existing) dispatch({ type: 'ADD_ASSET', asset });
+    setVideoMode('edit');
+    setEditAssetId(asset.id);
+    setEditPickerOpen(false);
+    setViewerId(null);
+    showNotice('Loaded as the video to edit.');
+    if (coarsePointer) composerRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [clipById, coarsePointer, dispatch, showNotice, state.assets]);
 
   const extendClip = useCallback(async (id: string) => {
     const item = clipById(id);
@@ -1729,7 +1880,9 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   const selectedElementCount = selectedElementIds.filter((id) => (
     availableElements.some((element) => element.id === id)
   )).length;
-  const referencesActive = outputKind === 'image' || videoMode === 'references';
+  // An edit still takes references: "replace the player with this character sheet"
+  // is one clip to change plus the Elements that say what to change it into.
+  const referencesActive = outputKind === 'image' || videoMode === 'references' || editing;
 
   const capabilityBadges = useMemo(() => (model ? modelCapabilitySummary(model) : []), [model]);
 
@@ -1832,9 +1985,17 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     )
     : null;
 
-  const openAttachFor = (target: FrameSlot | null) => {
+  const openAttachFor = (target: AttachTarget | null) => {
     attachTargetRef.current = target;
-    attachInputRef.current?.click();
+    // The dialog opens on the same click, so the filter is written to the input
+    // directly: a state change would land a render too late to be picked up.
+    const input = attachInputRef.current;
+    if (input) {
+      input.accept = target === 'edit'
+        ? 'video/*'
+        : target ? 'image/*' : 'image/*,video/*,audio/*';
+    }
+    input?.click();
   };
 
   const renderDockFrame = (label: string, target: FrameSlot, value: string, onClear: () => void) => {
@@ -1865,6 +2026,38 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       </div>
     );
   };
+
+  // Edit video works on one clip, so the docked bar carries a slot for it the
+  // way Frames carries the first and last image.
+  const dockEditVideo = dockMode && editing && supportsEdit
+    ? (
+      <div className="space-studio__dock-frames" data-testid="space-studio-dock-edit-video">
+        <div className={`space-studio__dock-frame${editAsset ? ' is-filled' : ''}`}>
+          <button
+            type="button"
+            data-testid="space-studio-dock-edit-video-button"
+            aria-label={editAsset ? `Video to edit: ${editAsset.name}. Replace` : 'Add the video to edit from your computer'}
+            onClick={() => openAttachFor('edit')}
+          >
+            {editAsset?.thumbnailUrl
+              ? <img src={assetPreviewUrl(editAsset)} alt="" />
+              : <span className="space-studio__dock-frame-icon" aria-hidden="true">{editAsset ? '▶' : '+'}</span>}
+            <span className="space-studio__dock-frame-label">Video to edit</span>
+          </button>
+          {editAsset && (
+            <button
+              type="button"
+              className="space-studio__dock-frame-clear"
+              aria-label="Remove the video to edit"
+              onClick={() => setEditAssetId('')}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+    )
+    : null;
 
   // Frames mode names the first and last image of the shot, so the docked bar
   // carries the same two slots the panel has.
@@ -1942,7 +2135,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
           className="space-studio__dock-add"
           aria-label="Attach an image or video"
           data-testid="space-studio-dock-add"
-          onClick={() => attachInputRef.current?.click()}
+          onClick={() => openAttachFor(null)}
         >
           +
         </button>
@@ -1956,23 +2149,45 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
               aria-expanded={dockModeMenuOpen}
               data-testid="space-studio-dock-mode"
               onClick={(event) => {
-                anchorRowMenu(event.currentTarget);
+                anchorRowMenu(event.currentTarget, 196);
                 setRowOpen(null);
                 setSliderOpen(null);
                 setDockModeMenuOpen((open) => !open);
               }}
             >
-              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                <rect x="2" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-                <rect x="10" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
-              </svg>
-              <span>{videoMode === 'frames' ? 'Frames' : 'References'}</span>
+              {MODE_ICONS[videoMode]}
+              <span>{videoMode === 'frames' ? 'Frames' : videoMode === 'edit' ? 'Edit video' : 'References'}</span>
               <i aria-hidden="true">⌄</i>
             </button>
             {dockModeMenuOpen && (
               <div className="space-studio__pill-menu" role="menu" aria-label="Video guidance" style={dockMenuStyle}>
-                <button type="button" role="menuitemradio" aria-checked={videoMode === 'frames'} disabled={!supportsFrames} onClick={() => { setVideoMode('frames'); setDockModeMenuOpen(false); }}>Frames</button>
-                <button type="button" role="menuitemradio" aria-checked={videoMode === 'references'} disabled={!supportsReferences} onClick={() => { setVideoMode('references'); setDockModeMenuOpen(false); }}>References</button>
+                <button type="button" role="menuitemradio" aria-checked={videoMode === 'frames'} className={videoMode === 'frames' ? 'is-active' : undefined} disabled={!supportsFrames} onClick={() => { setVideoMode('frames'); setDockModeMenuOpen(false); }}>
+                  {MODE_ICONS.frames}
+                  <span>Frames</span>
+                </button>
+                <button type="button" role="menuitemradio" aria-checked={videoMode === 'references'} className={videoMode === 'references' ? 'is-active' : undefined} disabled={!supportsReferences} onClick={() => { setVideoMode('references'); setDockModeMenuOpen(false); }}>
+                  {MODE_ICONS.references}
+                  <span>References</span>
+                </button>
+                {/* Choosing the mode up front is the point: the provider otherwise
+                    only reveals it read the prompt as an edit by failing the task. */}
+                {supportsEdit && (
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={videoMode === 'edit'}
+                    className={videoMode === 'edit' ? 'is-active' : undefined}
+                    data-testid="space-studio-dock-video-mode-edit"
+                    onClick={() => {
+                      setVideoMode('edit');
+                      setDockModeMenuOpen(false);
+                      if (!editAssetId) openAttachFor('edit');
+                    }}
+                  >
+                    {MODE_ICONS.edit}
+                    <span>Edit video</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -2029,6 +2244,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
 
         {dockReferences}
         {dockFrames}
+        {dockEditVideo}
 
         <form className="space-studio__form" ref={formRef} onSubmit={handleGenerate}>
           <div className="space-studio__tabs" role="group" aria-label="Output type">
@@ -2129,15 +2345,32 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                 >
                   References
                 </button>
+                {supportsEdit && (
+                  <button
+                    type="button"
+                    className={videoMode === 'edit' ? 'is-active' : undefined}
+                    aria-pressed={videoMode === 'edit'}
+                    data-testid="space-studio-video-mode-edit"
+                    onClick={() => {
+                      setVideoMode('edit');
+                      setFormError('');
+                      setEditPickerOpen(!editAssetId);
+                    }}
+                  >
+                    Edit video
+                  </button>
+                )}
               </div>
               <p className="space-studio__hint space-studio__mode-hint">
-                {!supportsFrames && supportsReferences
+                {!supportsFrames && supportsReferences && videoMode !== 'edit'
                   ? `${model?.name ?? 'This model'} takes references, not frames.`
                   : !supportsReferences && supportsFrames
                     ? `${model?.name ?? 'This model'} takes frames, not references.`
                     : videoMode === 'frames'
                       ? 'Frames pin the first and last image of the shot.'
-                      : 'References keep characters, wardrobe, and props consistent.'}
+                      : videoMode === 'edit'
+                        ? 'Edit video changes the clip you choose and keeps its length and framing.'
+                        : 'References keep characters, wardrobe, and props consistent.'}
               </p>
             </fieldset>
           )}
@@ -2173,6 +2406,82 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                           }}
                         >
                           <img src={assetPreviewUrl(asset)} alt="" />
+                          <span>{asset.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </fieldset>
+          )}
+
+          {editing && supportsEdit && (
+            <fieldset className="space-studio__frames" data-testid="space-studio-edit-video">
+              <legend className="space-studio__sr-only">Video to edit</legend>
+              <div className="space-studio__slot-row">
+                <div className={`space-studio__slot${editAsset ? ' is-filled' : ''}`}>
+                  <button
+                    type="button"
+                    className="space-studio__slot-button"
+                    data-testid="space-studio-edit-video-slot"
+                    aria-label={editAsset ? `Video to edit: ${editAsset.name}. Change` : 'Choose the video to edit'}
+                    onClick={() => setEditPickerOpen((open) => !open)}
+                  >
+                    {editAsset?.thumbnailUrl
+                      ? <img src={assetPreviewUrl(editAsset)} alt="" />
+                      : <span className="space-studio__slot-icon" aria-hidden="true">{editAsset ? '▶' : '+'}</span>}
+                    <span className="space-studio__slot-label">
+                      {editAsset ? editAsset.name : 'Video to edit'}
+                    </span>
+                  </button>
+                  {!editAsset && <span className="space-studio__slot-badge">Required</span>}
+                  {editAsset && (
+                    <button
+                      type="button"
+                      className="space-studio__slot-clear"
+                      aria-label="Remove the video to edit"
+                      onClick={() => setEditAssetId('')}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+              {editPickerOpen && (
+                <div className="space-studio__slot-picker" role="dialog" aria-label="Choose the video to edit">
+                  <button
+                    type="button"
+                    className="space-studio__link-button"
+                    data-testid="space-studio-edit-video-upload"
+                    onClick={() => openAttachFor('edit')}
+                  >
+                    From your computer
+                  </button>
+                  {videoAssets.length === 0 ? (
+                    <p className="space-studio__empty-note">
+                      Generate or import a clip and it will show up here.
+                    </p>
+                  ) : (
+                    <div className="space-studio__thumb-row" role="listbox" aria-label="Videos">
+                      {videoAssets.map((asset) => (
+                        <button
+                          key={asset.id}
+                          type="button"
+                          role="option"
+                          aria-selected={editAssetId === asset.id}
+                          className="space-studio__thumb"
+                          title={asset.name}
+                          data-testid={`space-studio-edit-video-${asset.id}`}
+                          onClick={() => {
+                            setEditAssetId(asset.id);
+                            setEditPickerOpen(false);
+                            setFormError('');
+                          }}
+                        >
+                          {asset.thumbnailUrl
+                            ? <img src={assetPreviewUrl(asset)} alt="" />
+                            : <span aria-hidden="true">▶</span>}
                           <span>{asset.name}</span>
                         </button>
                       ))}
@@ -2526,18 +2835,20 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                           className="space-studio__pill-trigger"
                           data-testid={inputId}
                           onClick={(event) => {
-                            anchorRowMenu(event.currentTarget);
+                            anchorRowMenu(event.currentTarget, isAspectField(field) ? 248 : 168);
                             setSliderOpen(null);
                             setDockModeMenuOpen(false);
                             setRowOpen((current) => (current === field.id ? null : field.id));
                           }}
                         >
-                          {pillIcon(field)}
+                          {/* The trigger wears the shape it is set to, so 16:9 and
+                              9:16 are told apart before the label is read. */}
+                          {(isAspectField(field) && aspectGlyph(String(value))) || pillIcon(field)}
                           {controlOptionLabel(field, active?.label ?? String(value))}
                         </button>
                         {rowOpen === field.id && (
                           <ul
-                            className="space-studio__pill-menu"
+                            className={`space-studio__pill-menu${isAspectField(field) ? ' space-studio__pill-menu--grid' : ''}`}
                             role="listbox"
                             aria-label={controlPillLabel(field)}
                             style={dockMenuStyle}
@@ -2557,8 +2868,8 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                                       setRowOpen(null);
                                     }}
                                   >
-                                    {controlOptionLabel(field, option.label)}
-                                    {selected && <b aria-hidden="true">✓</b>}
+                                    {isAspectField(field) && aspectGlyph(String(option.value))}
+                                    <span>{controlOptionLabel(field, option.label)}</span>
                                   </button>
                                 </li>
                               );
@@ -2965,6 +3276,9 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
             onDownload={downloadClip}
             onRecreate={recreateClip}
             onReference={(id) => { void referenceClip(id); }}
+            // Offered only where the composer's model can actually edit a clip,
+            // so the action is never a mode the model would bounce back.
+            onEditVideo={supportsEdit ? editClip : undefined}
             onExtractFrame={(id, at) => { void extractFrame(id, at); }}
             onOpenInCanvas={onOpenInCanvas ? (id) => { setViewerId(null); onOpenInCanvas(id); } : undefined}
             onCopyPrompt={(id) => { void copyPromptOf(id); }}
@@ -3005,6 +3319,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
             onDownload={() => downloadClip(viewerItem.id)}
             onRecreate={() => recreateClip(viewerItem.id)}
             onReference={() => { void referenceClip(viewerItem.id); }}
+            onEditVideo={supportsEdit ? () => editClip(viewerItem.id) : undefined}
             onExtend={() => { void extendClip(viewerItem.id); }}
             onExtractFrame={(at) => { void extractFrame(viewerItem.id, at); }}
             onOpenInCanvas={onOpenInCanvas ? () => { setViewerId(null); onOpenInCanvas(viewerItem.id); } : undefined}

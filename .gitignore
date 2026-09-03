@@ -32,3 +32,10 @@ target
 
 # Playwright MCP browser scratch
 .playwright-mcp/
+
+# Local screenshots and generated previews
+output/
+studio-mobile-baseline.png
+
+# Local Claude / Cursor launch config
+.claude/launch.json

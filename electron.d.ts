@@ -481,6 +481,7 @@ export interface ElectronAPI {
       model: string;
       /** Absent for fixed-length models, which expose no duration parameter. */
       durationSec?: number;
+      referencePreparation?: string;
     }>;
     query?: (params: {
       taskId: string;
@@ -488,12 +489,14 @@ export interface ElectronAPI {
       boardId?: string;
       model: string;
       durationSec?: number;
+      referencePreparation?: string;
     }) => Promise<{
       taskId: string;
       taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
       boardId?: string;
       model: string;
       durationSec?: number;
+      referencePreparation?: string;
       status: 'init' | 'running' | 'success' | 'fail';
       url?: string;
       boardUrl?: string;

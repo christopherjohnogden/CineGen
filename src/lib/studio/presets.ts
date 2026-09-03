@@ -1,3 +1,4 @@
+import type { StudioVideoMode } from '@/lib/studio/video-mode';
 import type { ModelDefinition } from '@/types/workflow';
 
 /**
@@ -18,7 +19,7 @@ export interface StudioPreset {
   modelPreference: string[];
   /** Appended to the user's prompt at submit. Never replaces it. */
   promptSuffix: string;
-  videoMode?: 'frames' | 'references';
+  videoMode?: StudioVideoMode;
   controls?: Record<string, string>;
   /** Shipped default — re-seeded if deleted, refreshed when the revision bumps. */
   builtIn?: boolean;

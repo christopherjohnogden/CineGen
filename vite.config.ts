@@ -10,6 +10,10 @@ import { execFileSync } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Cursor/VS Code terminals may set this for their own Electron child processes.
+// Leaving it inherited makes vite-plugin-electron start CineGen as plain Node.
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 // Plugin to copy static files (e.g., splash.html) to dist-electron
 function copyElectronStaticFiles() {
   return {

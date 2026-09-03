@@ -6,7 +6,21 @@ import { request as httpsRequest } from 'node:https';
 import fs from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
-import type { TopviewGenerationCatalog, TopviewGenerationCatalogConfig } from '@/lib/topview/model-catalog';
+import {
+  minimumEvenFrameSize,
+  probeVideoFrameSize,
+  transcodeVideoFrameSize,
+  transcodeVideoToMinimumPixels,
+} from '../lib/video-frame-size.js';
+import {
+  topviewModelSlug,
+  type TopviewGenerationCatalog,
+  type TopviewGenerationCatalogConfig,
+} from '@/lib/topview/model-catalog';
+import {
+  topviewRequiresInheritedVideoDuration,
+  TOPVIEW_INHERITED_VIDEO_DURATION,
+} from '@/lib/topview/video-duration';
 
 export const TOPVIEW_MCP_URL = 'https://mcp.topview.ai/mcp';
 const TOPVIEW_RESOURCE = 'https://mcp.topview.ai';
@@ -91,6 +105,8 @@ export interface TopviewSubmitResult {
   model: string;
   /** Absent for fixed-length models, which expose no duration parameter. */
   durationSec?: number;
+  /** User-facing note when CineGen prepared a reference for provider compatibility. */
+  referencePreparation?: string;
 }
 
 export interface TopviewQueryParams extends TopviewSubmitResult {}
@@ -111,6 +127,7 @@ interface TopviewReference {
 
 interface UploadedTopviewReference extends TopviewReference {
   fileId: string;
+  preparation?: string;
 }
 
 interface StoredClient extends JsonRecord {
@@ -735,6 +752,8 @@ export function buildTopviewVideoRequest(args: {
   params: TopviewGenerateParams;
   references: UploadedTopviewReference[];
   boardId: string;
+  /** Send the provider's inherit-from-input-clip duration instead of the requested length. */
+  inheritInputVideoDuration?: boolean;
 }): { req: JsonRecord; model: string; durationSec?: number } {
   const model = selectModel(args.config, args.params.model, args.params.generateAudio === true);
   const submitModel = String(model.submitModel ?? '').trim();
@@ -772,7 +791,13 @@ export function buildTopviewVideoRequest(args: {
     : Number.parseInt(args.params.resolution, 10), 720);
   // Fixed-length models advertise no duration at all. Dropping the request is correct
   // there — refusing it stopped those models from ever running from a Space.
-  if (advertisesField(model, 'duration')) assignConfigured('duration', requestedDuration, 5);
+  if (args.inheritInputVideoDuration || requestedDuration === TOPVIEW_INHERITED_VIDEO_DURATION) {
+    // The sentinel is not one of the advertised duration options, so it has to bypass the
+    // option check the provider itself is overriding here.
+    req.duration = TOPVIEW_INHERITED_VIDEO_DURATION;
+  } else if (advertisesField(model, 'duration')) {
+    assignConfigured('duration', requestedDuration, 5);
+  }
   assignConfigured('generatingCount', undefined, 1);
   if (args.taskType !== 'image_to_video') {
     assignConfigured('aspectRatio', args.params.aspectRatio?.trim(), '16:9');
@@ -1052,7 +1077,12 @@ async function downloadPublicReference(value: string, redirects = 0): Promise<{
   });
 }
 
-async function loadReference(value: string, role: TopviewMediaRole): Promise<{ bytes: Buffer; format: string; contentType?: string }> {
+async function loadReference(value: string, role: TopviewMediaRole): Promise<{
+  bytes: Buffer;
+  format: string;
+  contentType?: string;
+  filePath?: string;
+}> {
   const trimmed = value.trim();
   if (!trimmed) throw new Error('Topview received an empty element reference.');
   if (trimmed.startsWith('data:')) {
@@ -1077,11 +1107,42 @@ async function loadReference(value: string, role: TopviewMediaRole): Promise<{ b
     if (!stats.isFile()) throw new Error('A Topview element reference is not a file.');
     if (stats.size > MAX_REFERENCE_BYTES) throw new Error("This reference exceeds CineGen's 45 MB Topview upload safety limit.");
     const format = referenceFormat(filePath, role);
-    return { bytes: await fs.readFile(filePath), format, contentType: FORMAT_CONTENT_TYPES[format] };
+    return { bytes: await fs.readFile(filePath), format, contentType: FORMAT_CONTENT_TYPES[format], filePath };
   }
   const downloaded = await downloadPublicReference(trimmed);
   const format = referenceFormat(downloaded.finalUrl, role, downloaded.contentType);
   return { bytes: downloaded.bytes, format, contentType: FORMAT_CONTENT_TYPES[format] };
+}
+
+export const SEEDANCE_2_5_REFERENCE_VIDEO_MIN_PIXELS = 407_696;
+export const SEEDANCE_REFERENCE_VIDEO_MIN_PIXELS = 409_600;
+
+/**
+ * Topview currently reports 407,696 for Seedance 2.5 while the other Seedance 2.x
+ * routes document 409,600. Other model families set no known floor.
+ */
+export function topviewReferenceVideoMinPixels(submitModel: string): number | undefined {
+  const model = topviewModelSlug(submitModel);
+  if (model.includes('seedance-2-5')) return SEEDANCE_2_5_REFERENCE_VIDEO_MIN_PIXELS;
+  return model.includes('seedance-2') ? SEEDANCE_REFERENCE_VIDEO_MIN_PIXELS : undefined;
+}
+
+function formatPixelCount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+export function topviewReferenceVideoFloorError(args: {
+  submitModel: string;
+  width: number;
+  height: number;
+}): string | undefined {
+  const floor = topviewReferenceVideoMinPixels(args.submitModel);
+  if (floor === undefined) return undefined;
+  const pixels = args.width * args.height;
+  if (pixels >= floor) return undefined;
+  return `This reference video is ${args.width}x${args.height}, which is ${formatPixelCount(pixels)} pixels per frame. `
+    + `"${args.submitModel}" requires at least ${formatPixelCount(floor)}. `
+    + 'Re-encode the clip at 854x480 or larger for 16:9 (960x540 is a safe choice), then attach it again.';
 }
 
 /**
@@ -1090,6 +1151,14 @@ async function loadReference(value: string, role: TopviewMediaRole): Promise<{ b
  * next step that actually clears it.
  */
 export function topviewRejectionHint(message: string): string | undefined {
+  if (/video\s+pixel\s+count/i.test(message)) {
+    const reportedFloor = /greater\s+than\s+or\s+equal\s+to\s+(\d+)/i.exec(message)?.[1];
+    const floor = reportedFloor ? Number.parseInt(reportedFloor, 10) : SEEDANCE_REFERENCE_VIDEO_MIN_PIXELS;
+    return `Seedance rejected a reference video for being too small. It needs at least ${formatPixelCount(floor)} pixels per frame, so re-encode the clip at 854x480 or larger for 16:9 (960x540 is a safe choice) and attach it again. A 640x360 clip is the usual cause.`;
+  }
+  if (topviewRequiresInheritedVideoDuration(message)) {
+    return 'Seedance read this prompt as an edit of the attached clip, so the render takes its length and aspect ratio from that video instead of the duration you picked. CineGen resubmits this automatically — if it fails again, the attached clip is outside the 4-30 second range Seedance edits.';
+  }
   if (/copyright|infring|intellectual\s+property|trademark|likeness|celebrit/i.test(message)) {
     return "Topview's content check rejected this submission. It usually flags a named brand, film, studio, or real person in the prompt, or a reference image it reads as protected — rephrase that part or swap the reference, then run it again.";
   }
@@ -1300,13 +1369,55 @@ class TopviewMcpService {
     return boardId;
   }
 
-  private async uploadReference(session: McpSession, reference: TopviewReference): Promise<UploadedTopviewReference> {
+  private async uploadReference(
+    session: McpSession,
+    reference: TopviewReference,
+    submitModel?: string,
+  ): Promise<UploadedTopviewReference> {
     if (reference.value.startsWith('topview-file:')) {
       const fileId = reference.value.slice('topview-file:'.length).trim();
       if (!fileId) throw new Error('Topview received an empty existing file ID.');
       return { ...reference, fileId };
     }
-    const source = await loadReference(reference.value, reference.role);
+    let source = await loadReference(reference.value, reference.role);
+    let preparation: string | undefined;
+    if (reference.role === 'video' && submitModel && topviewReferenceVideoMinPixels(submitModel) !== undefined) {
+      const size = await probeVideoFrameSize(source);
+      const undersized = size && topviewReferenceVideoFloorError({ submitModel, ...size });
+      if (size && undersized) {
+        const target = minimumEvenFrameSize(size, SEEDANCE_REFERENCE_VIDEO_MIN_PIXELS);
+        try {
+          const bytes = await transcodeVideoFrameSize(source, target);
+          if (bytes.length > MAX_REFERENCE_BYTES) {
+            throw new Error("The resized reference exceeds CineGen's 45 MB Topview upload safety limit.");
+          }
+          source = { bytes, format: 'mp4', contentType: FORMAT_CONTENT_TYPES.mp4 };
+          preparation = `Upscaled reference video ${size.width}x${size.height} → ${target.width}x${target.height}`;
+          console.info(
+            `[topview] resized Seedance reference video ${size.width}x${size.height} -> ${target.width}x${target.height}`,
+          );
+        } catch (error) {
+          console.warn('[topview] could not resize undersized Seedance reference video', error);
+          throw new Error(`${undersized}\n\nCineGen could not create the temporary resized copy automatically.`);
+        }
+      } else if (!size) {
+        console.warn('[topview] ffprobe could not read a Seedance video reference; using the FFmpeg compatibility fallback');
+        try {
+          const bytes = await transcodeVideoToMinimumPixels(source, SEEDANCE_REFERENCE_VIDEO_MIN_PIXELS);
+          if (bytes.length > MAX_REFERENCE_BYTES) {
+            throw new Error("The prepared reference exceeds CineGen's 45 MB Topview upload safety limit.");
+          }
+          source = { bytes, format: 'mp4', contentType: FORMAT_CONTENT_TYPES.mp4 };
+          preparation = 'Prepared reference video at Seedance-compatible resolution';
+          console.info('[topview] prepared Seedance reference video with the area-based compatibility fallback');
+        } catch (error) {
+          console.warn('[topview] could not prepare the Seedance reference video', error);
+          throw new Error('CineGen could not read or resize this Seedance reference video. Re-encode it as an H.264 MP4 and attach it again.');
+        }
+      } else {
+        console.info(`[topview] Seedance reference video is already compatible at ${size.width}x${size.height}`);
+      }
+    }
     const credential = await this.callTool(session, 'ta_upload_credential', {
       format: source.format,
       needAccelerateUrl: false,
@@ -1324,7 +1435,7 @@ class TopviewMcpService {
     if (!response.ok) throw new Error(`Topview could not upload an element reference (${response.status}).`);
     const checked = await this.callTool(session, 'ta_upload_check_file', { fileId });
     if (findBoolean(parseToolDocuments(checked)) === false) throw new Error('Topview could not verify an uploaded element reference.');
-    return { ...reference, fileId };
+    return { ...reference, fileId, ...(preparation ? { preparation } : {}) };
   }
 
   private async reusableGeneratedImageReference(session: McpSession, url: string): Promise<string | undefined> {
@@ -1543,6 +1654,33 @@ class TopviewMcpService {
     }
   }
 
+  /**
+   * Submits the built request, retrying once with the inherited clip duration when Seedance
+   * classifies the job as video editing. That verdict depends on the prompt and only arrives
+   * as a rejection, which the provider refunds, so the retry reuses the uploaded references
+   * instead of asking the user to resubmit by hand.
+   */
+  private async submitVideoRequest(session: McpSession, args: {
+    config: unknown;
+    taskType: TopviewVideoTaskType;
+    params: TopviewGenerateParams;
+    references: UploadedTopviewReference[];
+    boardId: string;
+  }): Promise<{ built: ReturnType<typeof buildTopviewVideoRequest>; documents: unknown[] }> {
+    const built = buildTopviewVideoRequest(args);
+    try {
+      return { built, documents: parseToolDocuments(await this.callTool(session, 'topview_generate_video', built.req)) };
+    } catch (error) {
+      if (!topviewRequiresInheritedVideoDuration(safeMessage(error, ''))) throw error;
+      console.info('[topview] resubmitting as a video edit so the render inherits the input clip length');
+      const retried = buildTopviewVideoRequest({ ...args, inheritInputVideoDuration: true });
+      return {
+        built: retried,
+        documents: parseToolDocuments(await this.callTool(session, 'topview_generate_video', retried.req)),
+      };
+    }
+  }
+
   private async submitWithSession(session: McpSession, params: TopviewGenerateParams): Promise<{
     result: TopviewSubmitResult;
     documents: unknown[];
@@ -1555,7 +1693,7 @@ class TopviewMcpService {
       type: 'video', taskType,
     }));
     // Validate model selection and every requested live-config field before uploading user media.
-    buildTopviewVideoRequest({
+    const preflight = buildTopviewVideoRequest({
       config,
       taskType,
       params,
@@ -1563,14 +1701,29 @@ class TopviewMcpService {
       references: references.map((reference, index) => ({ ...reference, fileId: `preflight-${index + 1}` })),
     });
     const uploaded: UploadedTopviewReference[] = [];
-    for (const reference of references) uploaded.push(await this.uploadReference(session, reference));
-    const built = buildTopviewVideoRequest({ config, taskType, params, references: uploaded, boardId });
-    const submitted = await this.callTool(session, 'topview_generate_video', built.req);
-    const documents = parseToolDocuments(submitted);
+    for (const reference of references) {
+      uploaded.push(await this.uploadReference(session, reference, preflight.model));
+    }
+    const { built, documents } = await this.submitVideoRequest(session, {
+      config, taskType, params, references: uploaded, boardId,
+    });
     const taskId = findStringByKeys(documents, ['taskId', 'task_id', 'generationId', 'generation_id']);
     if (!taskId) throw new Error('Topview did not return a task ID for this generation.');
     return {
-      result: { taskId, taskType, boardId, model: built.model, durationSec: built.durationSec },
+      result: {
+        taskId,
+        taskType,
+        boardId,
+        model: built.model,
+        durationSec: built.durationSec,
+        ...(uploaded.some((reference) => reference.preparation)
+          ? {
+              referencePreparation: uploaded
+                .flatMap((reference) => reference.preparation ?? [])
+                .join('; '),
+            }
+          : {}),
+      },
       documents,
     };
   }
@@ -1623,10 +1776,12 @@ class TopviewMcpService {
     const remoteErrorMessage = findStringByKeys(documents, [
       'errorMsg', 'error_msg', 'errorMessage', 'error_message', 'failureReason', 'failure_reason',
     ]);
-    const error = status === 'fail'
-      ? remoteErrorMessage
-        ?? (successful ? 'Topview completed the task without returning a video URL.' : 'Topview could not complete this video.')
-      : undefined;
+    const remoteErrorHint = remoteErrorMessage ? topviewRejectionHint(remoteErrorMessage) : undefined;
+    const error = status !== 'fail'
+      ? undefined
+      : remoteErrorMessage
+        ? (remoteErrorHint ? `${remoteErrorMessage}\n\n${remoteErrorHint}` : remoteErrorMessage)
+        : (successful ? 'Topview completed the task without returning a video URL.' : 'Topview could not complete this video.');
     return {
       ...params,
       taskId: params.taskId.trim(),

@@ -704,6 +704,54 @@ describe('Space Studio', () => {
     expect(screen.getByRole('button', { name: 'More versions' })).toBeDisabled();
   });
 
+  it('submits Edit video as an edit of the chosen clip, with the length left to the clip', () => {
+    vi.mocked(executeFromNode).mockResolvedValue(undefined as never);
+    vi.mocked(createWorkflowNodeFromSpec).mockImplementation((spec: { nodeType: string; label: string; config: Record<string, unknown> }, position: { x: number; y: number }) => ({
+      id: 'made-edit',
+      type: spec.nodeType,
+      position,
+      data: { type: spec.nodeType, label: spec.label, config: spec.config },
+    }) as never);
+    workspaceHarness.state = {
+      ...makeState(),
+      assets: [{
+        id: 'clip-1',
+        name: 'tunnel-walkout.mp4',
+        type: 'video',
+        url: 'local-media://file/Users/chris/Movies/tunnel-walkout.mp4',
+        createdAt: '2026-09-01T12:00:00.000Z',
+      }] as Asset[],
+    };
+
+    render(<SpaceStudio />);
+    // Seedance 2.5 is the opening model, and it is the one that can edit.
+    fireEvent.click(screen.getByTestId('space-studio-video-mode-edit'));
+    expect(screen.getByTestId('space-studio-video-mode-edit')).toHaveAttribute('aria-pressed', 'true');
+    // Seconds are the clip's to give, so the control is gone rather than ignored.
+    expect(screen.queryByTestId('space-studio-control-duration-trigger')).not.toBeInTheDocument();
+
+    // Choosing the clip: from the Space's own assets, or from the machine.
+    expect(screen.getByTestId('space-studio-edit-video-upload')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('space-studio-edit-video-clip-1'));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), {
+      target: { value: 'Replace the player wearing 13 with the character sheet.' },
+    });
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form') as HTMLFormElement);
+
+    const setNodes = workspaceHarness.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'SET_NODES') as { nodes: Array<{ data: { config: Record<string, unknown> } }> };
+    const config = setNodes.nodes[0].data.config;
+    // The sentinel goes out on the first submit, so Seedance never has to reject
+    // the task to tell us it read the prompt as an edit.
+    expect(config.duration).toBe(-1);
+    expect(config.__studioVideoMode).toBe('edit');
+    expect(config.__studioEditAssetId).toBe('clip-1');
+    const reference = config.image_url as { urls?: string[] };
+    expect(reference.urls?.[0]).toContain('tunnel-walkout.mp4');
+  });
+
   it('removes a multi-selection from the grid after one confirmation', () => {
     localStorage.removeItem('cinegen_studio_feed_view');
     workspaceHarness.state = makeState([
@@ -786,9 +834,9 @@ describe('Space Studio', () => {
     open();
     const menu = screen.getByRole('listbox', { name: 'Resolution' });
     expect(menu.style.position).toBe('fixed');
-    expect(menu.style.width).toBe('220px');
-    expect(menu.style.minWidth).toBe('220px');
-    expect(menu.style.maxWidth).toBe('220px');
+    expect(menu.style.width).toBe('168px');
+    expect(menu.style.minWidth).toBe('168px');
+    expect(menu.style.maxWidth).toBe('168px');
 
     // A second click on the same control closes it.
     open();
@@ -806,6 +854,36 @@ describe('Space Studio', () => {
     fireEvent.click(option);
     expect(screen.queryByRole('listbox', { name: 'Resolution' })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Resolution' })).toHaveAttribute('data-value', '1080p');
+  });
+
+  it('opens aspect as a shape grid and resolution as a titled list, without ticks', async () => {
+    render(<SpaceStudio />);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Output type' })).getByRole('button', { name: 'Image' }));
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Aspect ratio' }));
+    const aspect = screen.getByRole('listbox', { name: 'Aspect ratio' });
+    expect(aspect).toHaveClass('space-studio__pill-menu--grid');
+    expect(within(aspect).getByRole('option', { name: '16:9' }).querySelector('svg')).not.toBeNull();
+    expect(within(aspect).queryByText('✓')).not.toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Output type' })).getByRole('button', { name: 'Video' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
+    fireEvent.click(screen.getByRole('option', { name: /Alternate Video/ }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Resolution' }));
+    const quality = screen.getByRole('listbox', { name: 'Resolution' });
+    expect(quality).not.toHaveClass('space-studio__pill-menu--grid');
+    expect(within(quality).getByRole('option', { name: '720p' })).toHaveClass('is-active');
+    expect(within(quality).queryByText('✓')).not.toBeInTheDocument();
+  });
+
+  it('offers Edit video in the docked guidance menu for Seedance', async () => {
+    localStorage.removeItem('cinegen_studio_feed_view');
+    render(<SpaceStudio />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).toHaveAttribute('data-value', 'video-seedance'));
+    fireEvent.click(screen.getByTestId('space-studio-dock-mode'));
+    const menu = screen.getByRole('menu', { name: 'Video guidance' });
+    expect(within(menu).getByRole('menuitemradio', { name: 'Edit video' })).toHaveAttribute('aria-checked', 'false');
+    expect(within(menu).getByRole('menuitemradio', { name: 'References' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(menu).getByRole('menuitemradio', { name: 'Frames' })).toBeInTheDocument();
   });
 
   it('treats a file attached from the bar as a reference and leaves the mode alone', async () => {
