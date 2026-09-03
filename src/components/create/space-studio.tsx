@@ -6,6 +6,7 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
 } from 'react';
 import type { CSSProperties } from 'react';
@@ -77,7 +78,14 @@ import {
   isPillControl,
   isSliderControl,
 } from '@/lib/studio/controls';
-import { readComposerDraft, writeComposerDraft } from '@/lib/studio/draft';
+import {
+  clampDockBarPx,
+  clampDockPromptPx,
+  DOCK_BAR_DEFAULT,
+  DOCK_PROMPT_DEFAULT,
+  readComposerDraft,
+  writeComposerDraft,
+} from '@/lib/studio/draft';
 import { parseStudioVideoMode, type StudioVideoMode } from '@/lib/studio/video-mode';
 import { isSeedance2ModelName } from '@/lib/topview/model-catalog';
 import { TOPVIEW_INHERITED_VIDEO_DURATION } from '@/lib/topview/video-duration';
@@ -802,6 +810,9 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   const [selectedClipIds, setSelectedClipIds] = useState<ReadonlySet<string>>(() => new Set());
   /** Files attached from disk. References in their own right, not Elements. */
   const [attachedRefs, setAttachedRefs] = useState<AttachedReference[]>(draft.attachments);
+  const [dockPromptPx, setDockPromptPx] = useState(draft.dockPromptPx);
+  const [dockBarPx, setDockBarPx] = useState(draft.dockBarPx);
+  const dockResizeRef = useRef<{ prompt: number; width: number; x: number; y: number } | null>(null);
   // The docked bar needs room beside the grid; phones keep the stacked layout.
   const [narrow, setNarrow] = useState(() => (
     typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 780px)').matches
@@ -1527,8 +1538,10 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       startAssetId,
       endAssetId,
       editAssetId,
+      dockPromptPx,
+      dockBarPx,
     });
-  }, [attachedRefs, editAssetId, endAssetId, outputKind, projectId, prompt, selectedElementIds, startAssetId, videoMode]);
+  }, [attachedRefs, dockBarPx, dockPromptPx, editAssetId, endAssetId, outputKind, projectId, prompt, selectedElementIds, startAssetId, videoMode]);
 
   // The visit ends when the Studio unmounts or the page goes away; everything
   // created after that is "New" next time.
@@ -1736,6 +1749,32 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     setViewerId(null);
     if (coarsePointer) composerRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [coarsePointer]);
+
+  const onDockResizePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dockResizeRef.current = {
+      prompt: dockPromptPx,
+      width: composerRef.current?.getBoundingClientRect().width ?? dockBarPx,
+      x: event.clientX,
+      y: event.clientY,
+    };
+  };
+
+  const onDockResizePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = dockResizeRef.current;
+    if (!start) return;
+    // Top-right handle: drag up to grow the prompt, drag left to grow the bar.
+    setDockPromptPx(clampDockPromptPx(start.prompt + (start.y - event.clientY)));
+    setDockBarPx(clampDockBarPx(start.width + (start.x - event.clientX)));
+  };
+
+  const onDockResizePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    dockResizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   const referenceClip = useCallback(async (id: string) => {
     const item = clipById(id);
@@ -2200,6 +2239,10 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     <div
       className={`space-studio${dockMode ? ' space-studio--dock' : ''}${sheetMode ? ' space-studio--sheet' : ''}${sheetMode && composerOpen ? ' is-composing' : ''}`}
       data-testid="space-studio"
+      style={dockMode ? {
+        '--dock-prompt-h': `${dockPromptPx}px`,
+        '--dock-bar-max': `${dockBarPx}px`,
+      } as CSSProperties : undefined}
     >
       {sheetMode && !composerOpen && selectedClips.length === 0 && (
         <button
@@ -2998,6 +3041,22 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
           )}
 
           <div className="space-studio__submit">
+            {dockMode && (
+              <button
+                type="button"
+                className="space-studio__dock-resize"
+                aria-label="Resize composer"
+                data-testid="space-studio-dock-resize"
+                onPointerDown={onDockResizePointerDown}
+                onPointerMove={onDockResizePointerMove}
+                onPointerUp={onDockResizePointerUp}
+                onPointerCancel={onDockResizePointerUp}
+                onDoubleClick={() => {
+                  setDockPromptPx(DOCK_PROMPT_DEFAULT);
+                  setDockBarPx(DOCK_BAR_DEFAULT);
+                }}
+              />
+            )}
             {formError && <p className="space-studio__form-error" role="alert">{formError}</p>}
             <button
               className="space-studio__generate"

@@ -32,6 +32,32 @@ export interface ComposerDraft {
   endAssetId: string;
   /** The clip Edit video works on. Kept apart from attachments: it is the subject, not a reference. */
   editAssetId: string;
+  /** Docked composer prompt height in px. The corner handle writes this. */
+  dockPromptPx: number;
+  /** Docked composer max width in px. The same handle writes this. */
+  dockBarPx: number;
+}
+
+/** Compact Higgsfield-like bar. Dragging the corner grows it from here. */
+export const DOCK_PROMPT_DEFAULT = 40;
+export const DOCK_PROMPT_MIN = 36;
+export const DOCK_PROMPT_MAX = 168;
+export const DOCK_BAR_DEFAULT = 1040;
+export const DOCK_BAR_MIN = 760;
+export const DOCK_BAR_MAX = 1180;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+export function clampDockPromptPx(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? clamp(n, DOCK_PROMPT_MIN, DOCK_PROMPT_MAX) : DOCK_PROMPT_DEFAULT;
+}
+
+export function clampDockBarPx(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? clamp(n, DOCK_BAR_MIN, DOCK_BAR_MAX) : DOCK_BAR_DEFAULT;
 }
 
 export const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
@@ -43,6 +69,8 @@ export const EMPTY_COMPOSER_DRAFT: ComposerDraft = {
   startAssetId: '',
   endAssetId: '',
   editAssetId: '',
+  dockPromptPx: DOCK_PROMPT_DEFAULT,
+  dockBarPx: DOCK_BAR_DEFAULT,
 };
 
 const DRAFT_KEY = 'cinegen_studio_draft';
@@ -90,6 +118,8 @@ export function readComposerDraft(projectId: string): ComposerDraft {
       startAssetId: typeof parsed.startAssetId === 'string' ? parsed.startAssetId : '',
       endAssetId: typeof parsed.endAssetId === 'string' ? parsed.endAssetId : '',
       editAssetId: typeof parsed.editAssetId === 'string' ? parsed.editAssetId : '',
+      dockPromptPx: clampDockPromptPx(parsed.dockPromptPx),
+      dockBarPx: clampDockBarPx(parsed.dockBarPx),
     };
   } catch {
     return EMPTY_COMPOSER_DRAFT;

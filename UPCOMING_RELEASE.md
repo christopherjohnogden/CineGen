@@ -258,6 +258,13 @@ Models with **fixed output tiers** and no API control (Kling 2.5, MiniMax Video,
 
 - Guidance, aspect ratio, and resolution popovers now follow the Higgsfield bar: a titled sheet, a two-column shape grid for ratios, a lit row instead of a tick, and an icon on each guidance mode (Frames, References, Edit video)
 
+### Studio docked composer **(in progress)**
+
+- The grid-mode bar is tighter (shorter pills, smaller Image/Video toggle, Generate no longer a 108px block) so it covers less of the clip grid
+- A corner handle on the top-right of Generate resizes the FAB: drag up to grow the prompt, drag left to grow the bar, double-click to restore the compact size. The size is remembered with the composer draft
+- Generate sits inset in the bar instead of hanging below it; the wide outer shadow halo around the docked composer is gone
+- Docked chips match Higgsfield’s compact row (28px, tighter padding) and Frames / References labels stay white like the other pills
+
 ### Copy buttons flash **Copied** **(in progress)**
 
 - Clicking **Copy** (Generate prompt, Shotlist style prefix / Copy prompt, diagram prompt, transcript **Copy Text**, Copilot **Copy SKILL.md**) shows **Copied** for 2 seconds, then the original label — only if the clipboard write succeeded

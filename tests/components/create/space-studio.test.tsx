@@ -664,11 +664,26 @@ describe('Space Studio', () => {
     // The Elements chip sits in the tool row while docked, and back in the prompt card for the list.
     expect(screen.getByTestId('space-studio-elements-chip').closest('.space-studio__tools')).not.toBeNull();
     expect(screen.getByTestId('space-studio-dock-add')).toBeInTheDocument();
+    expect(screen.getByTestId('space-studio-dock-resize')).toBeInTheDocument();
+    expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-prompt-h': '40px' });
     fireEvent.click(screen.getByTestId('space-studio-view-list'));
     expect(screen.getByTestId('space-studio')).not.toHaveClass('space-studio--dock');
     expect(screen.getByTestId('space-studio-elements-chip').closest('.space-studio__prompt-chips')).not.toBeNull();
     expect(screen.queryByTestId('space-studio-dock-add')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('space-studio-dock-resize')).not.toBeInTheDocument();
     expect(screen.getByTestId('space-studio-generate')).toHaveTextContent('Generate video');
+  });
+
+  it('grows the docked bar from the top-right handle, and a double-click restores the compact size', () => {
+    localStorage.removeItem('cinegen_studio_feed_view');
+    render(<SpaceStudio />);
+    const handle = screen.getByTestId('space-studio-dock-resize');
+    fireEvent.pointerDown(handle, { clientX: 900, clientY: 500, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 860, clientY: 460, pointerId: 1 });
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+    expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-prompt-h': '80px' });
+    fireEvent.doubleClick(handle);
+    expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-prompt-h': '40px' });
   });
 
   it('makes one node and one run per version when the stepper asks for more than one', () => {

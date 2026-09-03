@@ -22527,7 +22527,7 @@ input[type='range']::-moz-range-track {
   }
 
   .space-studio--dock .space-studio__feed {
-    padding-bottom: 190px;
+    padding-bottom: calc(var(--dock-prompt-h, 40px) + 108px);
   }
 
   .space-studio--dock .space-studio__composer {
@@ -22537,13 +22537,13 @@ input[type='range']::-moz-range-track {
     bottom: 16px;
     z-index: 40;
     width: auto;
-    max-width: 1180px;
+    max-width: var(--dock-bar-max, 1040px);
     height: auto;
     margin: 0 auto;
     padding: 0;
     overflow: visible;
     border: 0;
-    background: none;
+    background: transparent;
     box-shadow: none;
   }
 
@@ -22555,6 +22555,7 @@ input[type='range']::-moz-range-track {
   .space-studio--dock .space-studio__ref-empty,
   .space-studio--dock .space-studio__ref-missing,
   .space-studio--dock .space-studio__frames,
+  .space-studio--dock .space-studio__elements,
   .space-studio--dock .space-studio__field-head,
   .space-studio--dock .space-studio__prompt-ghost,
   .space-studio--dock .space-studio__preset-chip,
@@ -22563,6 +22564,8 @@ input[type='range']::-moz-range-track {
   }
 
   .space-studio--dock .space-studio__form {
+    --dock-pad: 6px;
+    --dock-pill-h: 28px;
     position: relative;
     z-index: 0;
     display: grid;
@@ -22571,7 +22574,7 @@ input[type='range']::-moz-range-track {
     grid-template-areas:
       "toggle prompt generate"
       "toggle tools generate";
-    gap: 6px 0;
+    gap: 2px 0;
     padding: 0;
     border: 0;
     background: none;
@@ -22583,9 +22586,9 @@ input[type='range']::-moz-range-track {
     grid-column: 2 / 4;
     grid-row: 1 / 3;
     z-index: -1;
-    border-radius: 28px;
+    border-radius: 22px;
     background: var(--bg-raised);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
   }
 
   .space-studio--dock .space-studio__form::after {
@@ -22593,10 +22596,10 @@ input[type='range']::-moz-range-track {
     grid-column: 1;
     grid-row: 1 / 3;
     z-index: -1;
-    margin-right: 10px;
-    border-radius: 24px;
+    margin-right: 8px;
+    border-radius: 20px;
     background: var(--bg-raised);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
   }
 
   /* Output toggle: two stacked tiles with an icon over the label. */
@@ -22604,10 +22607,10 @@ input[type='range']::-moz-range-track {
     grid-area: toggle;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 6px;
-    margin: 0 10px 0 0;
-    padding: 6px;
+    justify-content: stretch;
+    gap: 4px;
+    margin: 0 8px 0 0;
+    padding: 5px;
     border: 0;
   }
 
@@ -22618,22 +22621,24 @@ input[type='range']::-moz-range-track {
     display: grid;
     place-items: center;
     align-content: center;
-    gap: 6px;
-    width: 92px;
-    height: 62px;
+    flex: 1;
+    gap: 3px;
+    width: 68px;
+    height: auto;
+    min-height: 0;
     padding: 0;
     border: 0;
-    border-radius: 18px;
+    border-radius: 14px;
     background: transparent;
     color: var(--text-tertiary);
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 600;
   }
 
   .space-studio--dock .space-studio__tabs button::before {
     content: '';
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     background: currentColor;
     mask: center / contain no-repeat;
     -webkit-mask: center / contain no-repeat;
@@ -22663,19 +22668,19 @@ input[type='range']::-moz-range-track {
     grid-area: prompt;
     position: relative;
     min-height: 0;
-    margin: 12px 8px 0 12px;
+    margin: var(--dock-pad) 6px 0 12px;
   }
 
   .space-studio--dock .space-studio__prompt-box textarea,
   .space-studio--dock .space-studio__prompt-highlight {
-    height: 56px;
-    min-height: 56px;
-    max-height: 56px;
-    padding: 10px 12px 4px;
+    height: var(--dock-prompt-h, 40px);
+    min-height: var(--dock-prompt-h, 40px);
+    max-height: var(--dock-prompt-h, 40px);
+    padding: 6px 10px 2px;
     border: 0;
     background: transparent;
-    font-size: 17px;
-    line-height: 1.4;
+    font-size: 15px;
+    line-height: 1.35;
     resize: none;
   }
 
@@ -22689,10 +22694,10 @@ input[type='range']::-moz-range-track {
     grid-area: tools;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     min-width: 0;
-    margin: 0 8px 14px 20px;
-    padding: 0 2px 2px;
+    margin: 0 6px var(--dock-pad) 16px;
+    padding: 0;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -22711,40 +22716,59 @@ input[type='range']::-moz-range-track {
   .space-studio--dock .space-studio__setting-row {
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    height: 42px;
-    min-height: 0;
+    gap: 5px;
+    height: var(--dock-pill-h);
+    min-height: var(--dock-pill-h);
     width: auto;
-    padding: 0 14px;
+    padding: 0 8px;
     border: 0;
-    border-radius: 13px;
+    border-radius: 8px;
     background: var(--bg-overlay);
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
   }
 
+  /* Base pills mute the label; the docked bar keeps every chip white. */
+  .space-studio--dock .space-studio__pill > svg,
+  .space-studio--dock .space-studio__pill > span,
+  .space-studio--dock .space-studio__pill > i,
+  .space-studio--dock .space-studio__dock-mode svg,
+  .space-studio--dock .space-studio__dock-mode span,
+  .space-studio--dock .space-studio__dock-mode i,
+  .space-studio--dock .space-studio__setting-row--model i,
+  .space-studio--dock .space-studio__setting-row svg {
+    color: var(--text-primary);
+  }
+
+  .space-studio--dock .space-studio__pill > svg,
+  .space-studio--dock .space-studio__dock-mode svg,
+  .space-studio--dock .space-studio__setting-row svg {
+    width: 14px;
+    height: 14px;
+  }
+
   /* "+" and "@" share one pill with a divider, as in the reference. */
   .space-studio--dock .space-studio__dock-add {
-    width: 44px;
+    width: var(--dock-pill-h);
     padding: 0;
     justify-content: center;
-    border-radius: 13px 0 0 13px;
-    font-size: 22px;
+    border-radius: 8px 0 0 8px;
+    font-size: 18px;
     font-weight: 400;
     line-height: 1;
   }
 
   .space-studio--dock .space-studio__dock-add + .space-studio__prompt-chip {
-    margin-left: -8px;
-    border-radius: 0 13px 13px 0;
+    margin-left: -4px;
+    border-radius: 0 8px 8px 0;
     box-shadow: inset 1px 0 0 var(--border-medium);
   }
 
   /* The Elements chip becomes the @ button; its count badge stays. */
   .space-studio--dock .space-studio__prompt-chip:not(.space-studio__prompt-chip--toggle) {
-    width: 44px;
+    width: var(--dock-pill-h);
     padding: 0;
     justify-content: center;
     font-size: 0;
@@ -22768,14 +22792,14 @@ input[type='range']::-moz-range-track {
   }
 
   .space-studio--dock .space-studio__setting-row--model i,
-  .space-studio--dock .space-studio__dock-mode i { color: var(--text-tertiary); font-style: normal; }
+  .space-studio--dock .space-studio__dock-mode i { font-style: normal; }
 
   .space-studio--dock .space-studio__setting-row-wrap { position: relative; }
   .space-studio--dock .space-studio__dock-mode { position: relative; order: 2; }
   .space-studio--dock .space-studio__controls { display: contents; }
   .space-studio--dock .space-studio__pill-row {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     order: 3;
   }
 
@@ -22806,10 +22830,14 @@ input[type='range']::-moz-range-track {
   /* Generate: the tall accent block at the right. */
   .space-studio--dock .space-studio__submit {
     grid-area: generate;
-    position: static;
-    display: grid;
+    align-self: stretch;
+    position: relative;
+    /* The sidebar rule sticks this bar to bottom: -22px; docked it would just
+       shove Generate 22px below the bar it is meant to sit inside. */
+    bottom: auto;
+    display: flex;
     align-items: stretch;
-    margin: 12px 12px 12px 8px;
+    margin: var(--dock-pad) var(--dock-pad) var(--dock-pad) 4px;
     padding: 0;
     background: none;
   }
@@ -22817,18 +22845,55 @@ input[type='range']::-moz-range-track {
   .space-studio--dock .space-studio__generate {
     display: grid;
     place-content: center;
-    gap: 4px;
-    width: 150px;
-    height: 100%;
-    min-height: 108px;
-    border-radius: 20px;
+    flex: 1 1 auto;
+    gap: 2px;
+    width: 120px;
+    height: auto;
+    min-height: 0;
+    max-height: 100%;
+    align-self: stretch;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: 12px;
     background: var(--accent);
     color: #151209;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 800;
     letter-spacing: .05em;
     text-transform: uppercase;
-    box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 35%, transparent);
+    box-shadow: none;
+  }
+
+  /* Higgsfield's corner grip: drag up/left to grow the bar, double-click to reset. */
+  .space-studio--dock .space-studio__dock-resize {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    z-index: 2;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: nesw-resize;
+    touch-action: none;
+  }
+
+  .space-studio--dock .space-studio__dock-resize::before {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 10px;
+    height: 10px;
+    border-top: 1.5px solid color-mix(in srgb, #151209 50%, transparent);
+    border-right: 1.5px solid color-mix(in srgb, #151209 50%, transparent);
+    border-radius: 0 9px 0 0;
+    pointer-events: none;
+  }
+
+  .space-studio--dock .space-studio__dock-resize:hover::before {
+    border-color: #151209;
   }
 
   .space-studio--dock .space-studio__generate:disabled {
@@ -22838,7 +22903,7 @@ input[type='range']::-moz-range-track {
   }
 
   .space-studio--dock .space-studio__generate-cost {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0;
     text-transform: none;
@@ -22917,16 +22982,17 @@ input[type='range']::-moz-range-track {
 @media (min-width: 781px) {
   .space-studio--dock .space-studio__batch {
     order: 3;
-    height: 42px;
-    padding: 0 6px;
-    border-radius: 13px;
+    height: var(--dock-pill-h, 28px);
+    min-height: var(--dock-pill-h, 28px);
+    padding: 0 2px;
+    border-radius: 8px;
     background: var(--bg-overlay);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
   }
 
   .space-studio--dock .space-studio__batch-label { display: none; }
-  .space-studio--dock .space-studio__batch button { width: 30px; height: 30px; }
+  .space-studio--dock .space-studio__batch button { width: 22px; height: 22px; }
 
   .space-studio--dock .space-studio__tools-nav {
     grid-area: tools;
@@ -22934,13 +23000,13 @@ input[type='range']::-moz-range-track {
     z-index: 1;
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 42px;
-    margin: 0 8px 14px 0;
-    border-radius: 13px;
+    width: var(--dock-pill-h, 28px);
+    height: var(--dock-pill-h, 28px);
+    margin: 0 6px var(--dock-pad, 6px) 0;
+    border-radius: 8px;
     background: var(--bg-overlay);
     color: var(--text-primary);
-    font-size: 20px;
+    font-size: 16px;
     line-height: 1;
     cursor: pointer;
     box-shadow: -28px 0 26px -6px var(--bg-raised);
@@ -22949,7 +23015,7 @@ input[type='range']::-moz-range-track {
   .space-studio--dock .space-studio__tools-nav--right { justify-self: end; }
   .space-studio--dock .space-studio__tools-nav--left {
     justify-self: start;
-    margin: 0 0 14px 20px;
+    margin: 0 0 var(--dock-pad, 6px) 16px;
     box-shadow: 28px 0 26px -6px var(--bg-raised);
   }
 }
@@ -23008,7 +23074,7 @@ input[type='range']::-moz-range-track {
   color: var(--text-primary);
 }
 
-.space-studio--dock .clip-selection { bottom: 190px; }
+.space-studio--dock .clip-selection { bottom: calc(var(--dock-prompt-h, 40px) + 92px); }
 
 .clip-selection__summary {
   display: inline-flex;

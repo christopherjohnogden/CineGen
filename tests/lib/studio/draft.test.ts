@@ -21,6 +21,9 @@ describe('composer draft', () => {
       ],
       startAssetId: '',
       endAssetId: '',
+      editAssetId: '',
+      dockPromptPx: 40,
+      dockBarPx: 1040,
     });
 
     const restored = readComposerDraft('p1');
@@ -29,6 +32,8 @@ describe('composer draft', () => {
       .toEqual(['local-media://game.mp4', 'local-media://sheet.png']);
     expect(restored.attachments[0].kind).toBe('video');
     expect(restored.elementIds).toEqual(['el-peter']);
+    expect(restored.editAssetId).toBe('');
+    expect(restored.dockPromptPx).toBe(40);
   });
 
   it('is scoped per project and survives a corrupt entry', () => {
@@ -50,5 +55,16 @@ describe('composer draft', () => {
     expect(restored.attachments).toEqual([
       { id: 'a3', url: 'local-media://ok.png', name: '', kind: 'image' },
     ]);
+  });
+
+  it('clamps a stored dock size rather than restoring a bar that would cover the grid', () => {
+    localStorage.setItem('cinegen_studio_draft:p5', JSON.stringify({
+      prompt: 'Keep me.',
+      dockPromptPx: 400,
+      dockBarPx: 80,
+    }));
+    const restored = readComposerDraft('p5');
+    expect(restored.dockPromptPx).toBe(168);
+    expect(restored.dockBarPx).toBe(760);
   });
 });
