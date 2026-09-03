@@ -101,7 +101,8 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
     authLogout: () => electron.ipcRenderer.invoke("higgsfield:auth-logout"),
     quickEdit: (params) => electron.ipcRenderer.invoke("higgsfield:quick-edit", params),
     generate: (params) => electron.ipcRenderer.invoke("higgsfield:generate", params),
-    generateList: (params) => electron.ipcRenderer.invoke("higgsfield:generate-list", params)
+    generateList: (params) => electron.ipcRenderer.invoke("higgsfield:generate-list", params),
+    generateCost: (params) => electron.ipcRenderer.invoke("higgsfield:generate-cost", params)
   },
   artlist: {
     accountStatus: () => electron.ipcRenderer.invoke("artlist:account-status"),

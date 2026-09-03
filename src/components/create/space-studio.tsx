@@ -17,6 +17,7 @@ import { useTopviewModelCatalogVersion } from '@/components/create/use-topview-m
 import { getModelDefinition } from '@/lib/fal/models';
 import { elementImagesForVariation } from '@/lib/elements/variations';
 import { topviewImageCreditEstimate } from '@/lib/topview/image-pricing';
+import { topviewVideoCreditEstimate } from '@/lib/topview/video-pricing';
 import { createWorkflowNodeFromSpec } from '@/lib/llm/space-node-factory';
 import {
   modelProviderLabel,
@@ -776,6 +777,14 @@ interface AttachedReference {
 /** The video model the composer opens on when the catalog offers it. */
 const DEFAULT_VIDEO_MODEL_NAME = 'Seedance 2.5';
 
+const FAVOURITES_GROUP = 'Favorites';
+
+/** Pinned above the provider groups in the picker, in this order. */
+const FAVOURITE_MODEL_NAMES: Record<'image' | 'video', string[]> = {
+  image: ['GPT Image 2', 'Nano Banana 2'],
+  video: [DEFAULT_VIDEO_MODEL_NAME],
+};
+
 export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   const { state, dispatch, projectId } = useWorkspace();
   const catalogVersion = useTopviewModelCatalogVersion();
@@ -927,8 +936,18 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       entries.push({ key: option.key, name: model.name });
       groups.set(provider, entries);
     }
-    return [...groups.entries()];
-  }, [modelOptions]);
+    // The handful worth reaching for first, in the order named, above the
+    // provider groups. Whichever provider offers one, the first match wins.
+    const favourites: Array<{ key: string; name: string }> = [];
+    for (const name of FAVOURITE_MODEL_NAMES[outputKind === 'video' ? 'video' : 'image']) {
+      const option = modelOptions.find((candidate) => getModelDefinition(candidate.key)?.name === name);
+      if (option) favourites.push({ key: option.key, name });
+    }
+    return [
+      ...(favourites.length ? [[FAVOURITES_GROUP, favourites] as [string, typeof favourites]] : []),
+      ...groups.entries(),
+    ];
+  }, [modelOptions, outputKind]);
 
   useEffect(() => {
     if (modelOptions.some((option) => option.key === modelType)) return;
@@ -1489,19 +1508,69 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       studioCreatedAt(right.node) - studioCreatedAt(left.node) || right.index - left.index
     )), [feedFilter, state.nodes]);
 
-  // Topview publishes image credit prices; there is no video price table, so the
-  // badge appears only where the number is real rather than guessed.
+  // Every scalar the model is set to, keyed the way the provider names it.
+  const controlParams = useMemo(() => {
+    const params: Record<string, unknown> = {};
+    for (const field of controls) {
+      const value = controlValue(controlValuesByModel[modelType], field);
+      if (value === undefined || value === '') continue;
+      params[field.falParam ?? field.id] = value;
+    }
+    return params;
+  }, [controls, controlValuesByModel, modelType]);
+
+  // Higgsfield quotes a job before it exists, so ask it rather than keeping a
+  // table. Debounced: settings move in bursts as pills are clicked.
+  const [higgsfieldCredits, setHiggsfieldCredits] = useState<number | null>(null);
+  const higgsfieldModelId = model?.provider === 'higgsfield' ? model.id : null;
+  useEffect(() => {
+    const quote = window.electronAPI?.higgsfield?.generateCost;
+    if (!higgsfieldModelId || !quote) {
+      setHiggsfieldCredits(null);
+      return undefined;
+    }
+    let live = true;
+    const timer = window.setTimeout(() => {
+      quote({ model: higgsfieldModelId, params: controlParams })
+        .then((credits) => { if (live) setHiggsfieldCredits(credits); })
+        .catch(() => { if (live) setHiggsfieldCredits(null); });
+    }, 350);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [controlParams, higgsfieldModelId]);
+
+  // Topview only bills after a run, so both tables are read off its own generate
+  // button. The badge appears only where the number is real rather than guessed:
+  // an unpriced model, resolution, or duration leaves it off entirely.
   const creditEstimate = useMemo(() => {
-    if (!model || outputKind !== 'image') return null;
-    const resolution = controlValue(controlValuesByModel[modelType], 
-      controls.find((field) => field.id === 'resolution') ?? { id: 'resolution' } as ModelInputField);
-    const estimate = topviewImageCreditEstimate({
+    if (!model) return null;
+    if (model.provider === 'higgsfield') {
+      // Higgsfield quotes one job; the versions stepper repeats it.
+      return higgsfieldCredits === null
+        ? null
+        : Math.round(higgsfieldCredits * batchCount * 100) / 100;
+    }
+    const settingValue = (id: string) => {
+      const field = controls.find((candidate) => candidate.id === id || candidate.falParam === id);
+      return field ? controlValue(controlValuesByModel[modelType], field) : undefined;
+    };
+    const resolution = settingValue('resolution');
+    if (outputKind === 'image') {
+      const estimate = topviewImageCreditEstimate({
+        model,
+        resolution: typeof resolution === 'string' && resolution ? resolution : undefined,
+        quality: settingValue('quality'),
+        count: batchCount,
+      });
+      return estimate ? estimate.totalCredits : null;
+    }
+    const estimate = topviewVideoCreditEstimate({
       model,
-      resolution: typeof resolution === 'string' && resolution ? resolution : undefined,
+      resolution,
+      duration: settingValue('duration'),
       count: batchCount,
     });
     return estimate ? estimate.totalCredits : null;
-  }, [batchCount, controls, controlValuesByModel, model, modelType, outputKind]);
+  }, [batchCount, controls, controlValuesByModel, higgsfieldCredits, model, modelType, outputKind]);
 
   const selectedElements = useMemo(
     () => availableElements.filter((element) => selectedElementIds.includes(element.id)),
@@ -2290,6 +2359,23 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
         {dockEditVideo}
 
         <form className="space-studio__form" ref={formRef} onSubmit={handleGenerate}>
+          {/* Corner grip on the bar itself, not on Generate: drag up/left to grow, double-click to reset. */}
+          {dockMode && (
+            <button
+              type="button"
+              className="space-studio__dock-resize"
+              aria-label="Resize composer"
+              data-testid="space-studio-dock-resize"
+              onPointerDown={onDockResizePointerDown}
+              onPointerMove={onDockResizePointerMove}
+              onPointerUp={onDockResizePointerUp}
+              onPointerCancel={onDockResizePointerUp}
+              onDoubleClick={() => {
+                setDockPromptPx(DOCK_PROMPT_DEFAULT);
+                setDockBarPx(DOCK_BAR_DEFAULT);
+              }}
+            />
+          )}
           <div className="space-studio__tabs" role="group" aria-label="Output type">
             {(['video', 'image'] as const).map((kind) => (
               <button
@@ -3041,22 +3127,6 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
           )}
 
           <div className="space-studio__submit">
-            {dockMode && (
-              <button
-                type="button"
-                className="space-studio__dock-resize"
-                aria-label="Resize composer"
-                data-testid="space-studio-dock-resize"
-                onPointerDown={onDockResizePointerDown}
-                onPointerMove={onDockResizePointerMove}
-                onPointerUp={onDockResizePointerUp}
-                onPointerCancel={onDockResizePointerUp}
-                onDoubleClick={() => {
-                  setDockPromptPx(DOCK_PROMPT_DEFAULT);
-                  setDockBarPx(DOCK_BAR_DEFAULT);
-                }}
-              />
-            )}
             {formError && <p className="space-studio__form-error" role="alert">{formError}</p>}
             <button
               className="space-studio__generate"
@@ -3117,10 +3187,15 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                     <p className="space-studio__empty-note">No model matches that search.</p>
                   )}
                   {filteredModels.map(([provider, entries]) => (
-                    <div key={provider} className="space-studio__picker-group">
+                    <div
+                      key={provider}
+                      className={`space-studio__picker-group${provider === FAVOURITES_GROUP ? ' space-studio__picker-group--favorites' : ''}`}
+                    >
                       <h4>
                         <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                          <path d="M8 1.8l1.5 4.2 4.2 1.5-4.2 1.5L8 13.2l-1.5-4.2L2.3 7.5l4.2-1.5z" fill="currentColor" />
+                          {provider === FAVOURITES_GROUP
+                            ? <path d="M8 1.6l1.85 4.05 4.4.5-3.28 3 .9 4.35L8 11.3l-3.87 2.2.9-4.35-3.28-3 4.4-.5z" fill="currentColor" />
+                            : <path d="M8 1.8l1.5 4.2 4.2 1.5-4.2 1.5L8 13.2l-1.5-4.2L2.3 7.5l4.2-1.5z" fill="currentColor" />}
                         </svg>
                         {provider}
                       </h4>
@@ -3133,7 +3208,9 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                             role="option"
                             aria-selected={entry.key === modelType}
                             className={`space-studio__picker-item${entry.key === modelType ? ' is-active' : ''}`}
-                            data-testid={`space-studio-model-option-${entry.key}`}
+                            data-testid={provider === FAVOURITES_GROUP
+                              ? `space-studio-model-favorite-${entry.key}`
+                              : `space-studio-model-option-${entry.key}`}
                             onClick={() => {
                               setModelType(entry.key);
                               setModelPickerOpen(false);

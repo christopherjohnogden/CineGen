@@ -12,10 +12,11 @@ import { ModelsPanel } from './toolbar/models-panel';
 import { HistoryPanel } from './toolbar/history-panel';
 import {
   getVideoGenerationProvider,
+  setVideoGenerationProvider,
   type VideoGenerationProvider,
 } from '@/lib/utils/video-generation-provider';
 import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
-import { renewalCountdown, renewalSummary } from '@/lib/providers/renewal';
+import { renewalCountdown } from '@/lib/providers/renewal';
 
 type SidebarPanel = 'workflows' | 'models' | 'history' | null;
 type SpaceViewMode = 'canvas' | 'studio';
@@ -39,6 +40,9 @@ const PROVIDER_LABELS: Record<VideoGenerationProvider, string> = {
   artlist: 'Artlist',
   runpod: 'RunPod',
 };
+
+/** The card flips between the two credit-metered providers; the rest are set in Settings. */
+const SWITCHABLE_PROVIDERS: VideoGenerationProvider[] = ['topview', 'higgsfield'];
 
 function formatCredits(value: number): string {
   return new Intl.NumberFormat(undefined, {
@@ -72,6 +76,17 @@ function ProviderBudgetCard() {
     requestProviderUsageRefresh(provider);
   };
 
+  // One click swaps the two credit providers. Anything else set in Settings —
+  // Artlist, RunPod — comes back to Topview rather than picking for the user.
+  const nextProvider = SWITCHABLE_PROVIDERS[
+    (SWITCHABLE_PROVIDERS.indexOf(provider) + 1) % SWITCHABLE_PROVIDERS.length
+  ];
+  const switchProvider = () => {
+    setVideoGenerationProvider(nextProvider);
+    setProvider(nextProvider);
+    requestProviderUsageRefresh(nextProvider);
+  };
+
   // Topview resets its balance monthly, which is more use here than a
   // per-project tally.
   const isTopview = provider === 'topview';
@@ -95,7 +110,19 @@ function ProviderBudgetCard() {
           <span className={`cs-provider-budget__status${usage?.connected === false ? ' is-offline' : usage?.connected === undefined ? ' is-unknown' : ''}`} aria-hidden="true" />
           <div>
             <span>Current provider</span>
-            <strong>{PROVIDER_LABELS[provider]}</strong>
+            <button
+              type="button"
+              className="cs-provider-budget__switch"
+              data-testid="cs-provider-switch"
+              title={`Switch to ${PROVIDER_LABELS[nextProvider]}`}
+              aria-label={`Current provider ${PROVIDER_LABELS[provider]}. Switch to ${PROVIDER_LABELS[nextProvider]}`}
+              onClick={switchProvider}
+            >
+              <strong>{PROVIDER_LABELS[provider]}</strong>
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M2.5 6h9M9 3.5 11.5 6 9 8.5M13.5 10h-9M7 7.5 4.5 10 7 12.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
           </div>
         </div>
         <button
@@ -122,7 +149,6 @@ function ProviderBudgetCard() {
           <strong data-testid={isTopview ? 'cs-provider-renewal' : undefined}>{isTopview ? renewalCountdown() : used}</strong>
         </div>
       </div>
-      <p>{isTopview ? renewalSummary() : hasCreditBalance ? 'Based on actual provider balance changes.' : 'This provider does not expose a credit balance.'}</p>
     </section>
   );
 }

@@ -808,6 +808,52 @@ export async function resolveHiggsfieldJob(
   return waitForHiggsfieldJob(jobId, params);
 }
 
+/**
+ * Higgsfield prices a job before it exists: `generate cost` returns the credits the
+ * same parameters would spend, without creating anything. Scalars only — passing a
+ * media flag would upload the file as a side effect, which an estimate has no
+ * business doing, so a model that needs one simply goes unpriced.
+ */
+export function buildCostArgs(model: string, params: Record<string, unknown>): string[] {
+  const args = ['generate', 'cost', model];
+  for (const [name, value] of Object.entries(pickKnownHiggsfieldParams(model, params) ?? {})) {
+    if (value === undefined || value === null || value === '') continue;
+    if (!PARAM_NAME_PATTERN.test(name) || RESERVED_PARAM_NAMES.has(name)) continue;
+    if (typeof value === 'string') args.push(`--${name}`, value);
+    else if (typeof value === 'number' && Number.isFinite(value)) args.push(`--${name}`, String(value));
+    else if (typeof value === 'boolean') args.push(`--${name}`, value ? 'true' : 'false');
+  }
+  args.push('--json');
+  return args;
+}
+
+/** Credits the run would spend, or null when Higgsfield will not quote it. */
+export function creditsFromCostStdout(stdout: string): number | null {
+  const trimmed = stdout.trim();
+  const start = trimmed.lastIndexOf('{');
+  if (start < 0) return null;
+  try {
+    const parsed = JSON.parse(trimmed.slice(start)) as Record<string, unknown>;
+    const credits = parsed.credits ?? parsed.cost;
+    return typeof credits === 'number' && Number.isFinite(credits) ? credits : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function estimateHiggsfieldCost(
+  model: string,
+  params: Record<string, unknown> = {},
+): Promise<number | null> {
+  if (!model || !/^[A-Za-z][A-Za-z0-9_-]*$/.test(model)) return null;
+  try {
+    return creditsFromCostStdout(await runHiggsfieldCli(buildCostArgs(model, params), 20_000));
+  } catch {
+    // An unpriceable model shows no badge; it must never block generating.
+    return null;
+  }
+}
+
 /** Account/connection status (email, plan, credits) or null when not signed in. */
 export async function getHiggsfieldAccountStatus(): Promise<Record<string, unknown> | null> {
   try {
@@ -990,6 +1036,13 @@ export function registerHiggsfieldHandlers(): void {
 
   ipcMain.handle('higgsfield:generate-list', async (_event, params?: { video?: boolean; size?: number }) => {
     return listHiggsfieldJobs(params);
+  });
+
+  ipcMain.handle('higgsfield:generate-cost', async (_event, params: {
+    model: string;
+    params?: Record<string, unknown>;
+  }): Promise<number | null> => {
+    return estimateHiggsfieldCost(params?.model, params?.params ?? {});
   });
 
   // Browser-based device login. Resolves when the CLI exits (user completed or aborted in browser).

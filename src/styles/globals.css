@@ -5259,6 +5259,11 @@ input[type='range']::-moz-range-track {
   padding: 11px 12px;
 }
 
+/* Docked only: the corner grip is absolutely placed against the bar there. */
+.space-studio__dock-resize {
+  display: none;
+}
+
 .space-studio__submit {
   position: sticky;
   z-index: 3;
@@ -6438,11 +6443,39 @@ input[type='range']::-moz-range-track {
   white-space: nowrap;
 }
 
-.cs-provider-budget > p {
-  margin: 7px 1px 0;
+/* The provider name is the switch: one click swaps Topview and Higgsfield. */
+.cs-provider-budget__switch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin: 0 -4px;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+
+.cs-provider-budget__switch svg {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
   color: var(--text-tertiary);
-  font-size: 9px;
-  line-height: 1.35;
+  opacity: 0;
+  transition: opacity .14s ease, color .14s ease;
+}
+
+.cs-provider-budget__switch:hover,
+.cs-provider-budget__switch:focus-visible {
+  background: var(--bg-input);
+}
+
+.cs-provider-budget__switch:hover svg,
+.cs-provider-budget__switch:focus-visible svg {
+  color: var(--accent);
+  opacity: 1;
 }
 
 /* ── Footer (collapse button) ── */
@@ -22527,7 +22560,7 @@ input[type='range']::-moz-range-track {
   }
 
   .space-studio--dock .space-studio__feed {
-    padding-bottom: calc(var(--dock-prompt-h, 40px) + 108px);
+    padding-bottom: calc(var(--dock-prompt-h, 40px) + 122px);
   }
 
   .space-studio--dock .space-studio__composer {
@@ -22564,8 +22597,13 @@ input[type='range']::-moz-range-track {
   }
 
   .space-studio--dock .space-studio__form {
-    --dock-pad: 6px;
+    --dock-pad: 12px;
     --dock-pill-h: 28px;
+    /* Output tiles are a fixed block, so growing the prompt never stretches them. */
+    --dock-tile-h: 40px;
+    /* Same for Generate: it hugs the bottom-right corner at a constant size,
+       sized so the corner grip still has clear bar above it when compact. */
+    --dock-generate-h: 58px;
     position: relative;
     z-index: 0;
     display: grid;
@@ -22591,27 +22629,26 @@ input[type='range']::-moz-range-track {
     box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
   }
 
+  /* The toggle block paints itself (see .space-studio__tabs) so it can stay
+     bottom-aligned at a fixed height while the bar above it grows. */
   .space-studio--dock .space-studio__form::after {
-    content: '';
-    grid-column: 1;
-    grid-row: 1 / 3;
-    z-index: -1;
-    margin-right: 8px;
-    border-radius: 20px;
-    background: var(--bg-raised);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+    content: none;
   }
 
   /* Output toggle: two stacked tiles with an icon over the label. */
   .space-studio--dock .space-studio__tabs {
     grid-area: toggle;
+    align-self: end;
     display: flex;
     flex-direction: column;
-    justify-content: stretch;
+    justify-content: flex-end;
     gap: 4px;
     margin: 0 8px 0 0;
     padding: 5px;
     border: 0;
+    border-radius: 20px;
+    background: var(--bg-raised);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
   }
 
   /* Image above Video, as in the reference. */
@@ -22621,10 +22658,10 @@ input[type='range']::-moz-range-track {
     display: grid;
     place-items: center;
     align-content: center;
-    flex: 1;
+    flex: 0 0 auto;
     gap: 3px;
     width: 68px;
-    height: auto;
+    height: var(--dock-tile-h);
     min-height: 0;
     padding: 0;
     border: 0;
@@ -22836,8 +22873,8 @@ input[type='range']::-moz-range-track {
        shove Generate 22px below the bar it is meant to sit inside. */
     bottom: auto;
     display: flex;
-    align-items: stretch;
-    margin: var(--dock-pad) var(--dock-pad) var(--dock-pad) 4px;
+    align-items: flex-end;
+    margin: 0 var(--dock-pad) var(--dock-pad) 4px;
     padding: 0;
     background: none;
   }
@@ -22845,13 +22882,15 @@ input[type='range']::-moz-range-track {
   .space-studio--dock .space-studio__generate {
     display: grid;
     place-content: center;
-    flex: 1 1 auto;
+    /* The label sets the column width; centre the price under it. */
+    justify-items: center;
+    flex: 0 0 auto;
     gap: 2px;
     width: 120px;
-    height: auto;
+    height: var(--dock-generate-h);
     min-height: 0;
     max-height: 100%;
-    align-self: stretch;
+    align-self: flex-end;
     box-sizing: border-box;
     border: 0;
     border-radius: 12px;
@@ -22864,14 +22903,16 @@ input[type='range']::-moz-range-track {
     box-shadow: none;
   }
 
-  /* Higgsfield's corner grip: drag up/left to grow the bar, double-click to reset. */
+  /* Higgsfield's corner grip: drag up/left to grow the bar, double-click to reset.
+     It tracks the bar's own top-right corner, clear of the Generate block. */
   .space-studio--dock .space-studio__dock-resize {
+    display: block;
     position: absolute;
-    top: 2px;
-    right: 2px;
-    z-index: 2;
-    width: 22px;
-    height: 22px;
+    top: 3px;
+    right: 3px;
+    z-index: 4;
+    width: 20px;
+    height: 20px;
     padding: 0;
     border: 0;
     background: transparent;
@@ -22882,18 +22923,18 @@ input[type='range']::-moz-range-track {
   .space-studio--dock .space-studio__dock-resize::before {
     content: '';
     position: absolute;
-    top: 5px;
-    right: 5px;
-    width: 10px;
-    height: 10px;
-    border-top: 1.5px solid color-mix(in srgb, #151209 50%, transparent);
-    border-right: 1.5px solid color-mix(in srgb, #151209 50%, transparent);
-    border-radius: 0 9px 0 0;
+    top: 4px;
+    right: 4px;
+    width: 12px;
+    height: 12px;
+    border-top: 1.5px solid var(--text-tertiary);
+    border-right: 1.5px solid var(--text-tertiary);
+    border-radius: 0 10px 0 0;
     pointer-events: none;
   }
 
   .space-studio--dock .space-studio__dock-resize:hover::before {
-    border-color: #151209;
+    border-color: var(--text-secondary);
   }
 
   .space-studio--dock .space-studio__generate:disabled {
@@ -22903,6 +22944,9 @@ input[type='range']::-moz-range-track {
   }
 
   .space-studio--dock .space-studio__generate-cost {
+    /* The sparkle carries the row's weight on its left, so a geometrically
+       centred price reads right of the label. Pad it back onto the label's axis. */
+    padding-right: 5px;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0;

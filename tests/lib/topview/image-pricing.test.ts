@@ -81,6 +81,37 @@ describe('Topview Storyboarder image pricing', () => {
     });
   });
 
+  it('prices every quality Topview quotes, not just the cheapest', () => {
+    const gpt = imageModel({
+      inputs: [
+        {
+          id: 'quality', portType: 'text', label: 'Quality', required: false,
+          falParam: 'quality', fieldType: 'select', default: 'medium',
+          options: [{ value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }],
+        },
+      ],
+    });
+    const quoted = [
+      { quality: 'medium', resolution: '1K', credits: 0.2 },
+      { quality: 'medium', resolution: '2K', credits: 0.8 },
+      { quality: 'medium', resolution: '4K', credits: 1.4 },
+      { quality: 'high', resolution: '1K', credits: 1.6 },
+      { quality: 'high', resolution: '2K', credits: 3.2 },
+      { quality: 'high', resolution: '4K', credits: 4.8 },
+    ];
+    for (const { quality, resolution, credits } of quoted) {
+      expect(topviewImageCreditEstimate({ model: gpt, resolution, quality, count: 1 })?.unitCredits)
+        .toBe(credits);
+    }
+    // However the catalog cases it.
+    expect(topviewImageCreditEstimate({ model: gpt, resolution: '2K', quality: 'High', count: 1 })?.unitCredits)
+      .toBe(3.2);
+    // With nothing chosen, the quality the model would actually submit.
+    expect(topviewImageCreditEstimate({ model: gpt, resolution: '2K', count: 1 })?.unitCredits).toBe(0.8);
+    // A tier the button was never read on is not quoted at the cheapest tier's price.
+    expect(topviewImageCreditEstimate({ model: gpt, resolution: '2K', quality: 'low', count: 1 })).toBeNull();
+  });
+
   it('does not invent Topview credit pricing for another provider', () => {
     expect(topviewImageCreditEstimate({
       model: imageModel({ provider: 'higgsfield' }),

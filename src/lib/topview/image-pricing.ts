@@ -15,10 +15,35 @@ const TOPVIEW_IMAGE_CREDIT_PRICES: Record<string, Record<string, number>> = {
   'Grok Image Quality': { '1K': 0.6, '2K': 1 },
   'Grok Image': { '1K': 0.3, '2K': 0.3 },
   'Kling V3 Omni': { '1K': 0.3, '2K': 0.3, '4K': 0.6 },
-  'GPT Image 2': { '1K': 0.2, '2K': 0.8, '4K': 1.4 },
+  // GPT Image 2 charges by quality as well; it lives in TOPVIEW_IMAGE_QUALITY_PRICES.
   'Reve Image Remix': { '1K': 1.6, '2K': 1.8, '4K': 2 },
   'Kontext-Pro': { default: 0.5 },
   'Imagen 4': { default: 0.5 },
+};
+
+interface QualityPricing {
+  /** What Topview submits, and charges for, when no quality has been chosen. */
+  default: string;
+  prices: Record<string, Record<string, number>>;
+}
+
+/**
+ * Some models charge for quality on top of resolution, and not by any constant
+ * factor: GPT Image 2's High is eight times its Medium at 1K but only three and
+ * a half times at 4K. A model listed here is priced from this table alone, so a
+ * quality it has no row for shows nothing rather than the wrong resolution price.
+ *
+ * Unlike video, Topview quotes one figure for an image — there is no struck-through
+ * list price beside it, so what is stored here is what the balance is charged.
+ */
+const TOPVIEW_IMAGE_QUALITY_PRICES: Record<string, QualityPricing> = {
+  'GPT Image 2': {
+    default: 'medium',
+    prices: {
+      medium: { '1K': 0.2, '2K': 0.8, '4K': 1.4 },
+      high: { '1K': 1.6, '2K': 3.2, '4K': 4.8 },
+    },
+  },
 };
 
 function optionValue(option: unknown): string | undefined {
@@ -48,9 +73,17 @@ export function preferredImageResolution(model: ModelDefinition | undefined, con
   return options[0];
 }
 
+/** The quality the model will submit when nothing has been chosen for it. */
+export function preferredImageQuality(model: ModelDefinition | undefined, configured?: unknown): string | undefined {
+  if (typeof configured === 'string' && configured.trim()) return configured.trim();
+  const field = model?.inputs.find((input) => input.id === 'quality' || input.falParam === 'quality');
+  return field ? optionValue(field.default) : undefined;
+}
+
 export interface TopviewImageCreditEstimate {
   model: string;
   resolution?: string;
+  quality?: string;
   unitCredits: number;
   totalCredits: number;
   count: number;
@@ -61,14 +94,24 @@ export interface TopviewImageCreditEstimate {
 export function topviewImageCreditEstimate(params: {
   model?: ModelDefinition;
   resolution?: string;
+  /** Omit to price the quality the model submits by default. */
+  quality?: unknown;
   count: number;
 }): TopviewImageCreditEstimate | null {
   if (params.model?.provider !== 'topview') return null;
   const usesAutomaticDefault = params.model.id === 'topview/image/auto'
     || params.model.nodeType === 'topview-image-auto';
   const modelName = usesAutomaticDefault ? 'GPT Image 2' : params.model.name;
-  const prices = TOPVIEW_IMAGE_CREDIT_PRICES[modelName];
+
+  // A model that charges for quality is priced from that table only: falling back
+  // to the flat one would quote its cheapest tier for every tier.
+  const byQuality = TOPVIEW_IMAGE_QUALITY_PRICES[modelName];
+  const quality = byQuality
+    ? (preferredImageQuality(params.model, params.quality) ?? byQuality.default).trim().toLowerCase()
+    : undefined;
+  const prices = byQuality ? byQuality.prices[quality ?? ''] : TOPVIEW_IMAGE_CREDIT_PRICES[modelName];
   if (!prices) return null;
+
   const unitCredits = params.resolution && prices[params.resolution] !== undefined
     ? prices[params.resolution]
     : prices.default;
@@ -77,6 +120,7 @@ export function topviewImageCreditEstimate(params: {
   return {
     model: modelName,
     ...(params.resolution ? { resolution: params.resolution } : {}),
+    ...(quality ? { quality } : {}),
     unitCredits,
     totalCredits: Math.round(unitCredits * count * 100) / 100,
     count,

@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     quickEdit: (params: unknown) => ipcRenderer.invoke('higgsfield:quick-edit', params),
     generate: (params: unknown) => ipcRenderer.invoke('higgsfield:generate', params),
     generateList: (params?: unknown) => ipcRenderer.invoke('higgsfield:generate-list', params),
+    generateCost: (params: unknown) => ipcRenderer.invoke('higgsfield:generate-cost', params),
   },
   artlist: {
     accountStatus: () => ipcRenderer.invoke('artlist:account-status'),

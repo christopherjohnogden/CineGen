@@ -110,6 +110,20 @@ const models = vi.hoisted(() => {
             label: String(index + 4),
           })),
         },
+        {
+          id: 'resolution',
+          portType: 'config',
+          label: 'Resolution',
+          required: false,
+          falParam: 'resolution',
+          fieldType: 'select',
+          default: '720',
+          options: [
+            { value: '480', label: '480p' },
+            { value: '720', label: '720p' },
+            { value: '1080', label: '1080p' },
+          ],
+        },
       ],
     },
     'video-ref': {
@@ -253,9 +267,8 @@ vi.mock('@/lib/workflows/execute', () => ({ executeFromNode: vi.fn() }));
 vi.mock('@/lib/llm/space-node-factory', () => ({
   createWorkflowNodeFromSpec: vi.fn(),
 }));
-vi.mock('@/lib/utils/video-generation-provider', () => ({
-  getVideoGenerationProvider: () => 'topview',
-}));
+// Not mocked: the real module is localStorage plus an event, and beforeEach
+// clears storage, so it already reports Topview until something switches it.
 vi.mock('@/lib/providers/project-usage', () => ({ requestProviderUsageRefresh: vi.fn() }));
 
 import { CreateTab } from '@/components/create/create-tab';
@@ -649,7 +662,7 @@ describe('Space Studio', () => {
 
     render(<SpaceStudio />);
     expect(screen.getByTestId('space-studio')).toHaveClass('space-studio--dock');
-    expect(screen.getByTestId('space-studio-generate')).toHaveTextContent(/^Generate$/);
+    expect(screen.getByTestId('space-studio-generate')).toHaveTextContent(/^Generate/);
 
     // The guidance pill drives the same state as the panel's segmented control.
     const modePill = screen.getByTestId('space-studio-dock-mode');
@@ -672,6 +685,33 @@ describe('Space Studio', () => {
     expect(screen.queryByTestId('space-studio-dock-add')).not.toBeInTheDocument();
     expect(screen.queryByTestId('space-studio-dock-resize')).not.toBeInTheDocument();
     expect(screen.getByTestId('space-studio-generate')).toHaveTextContent('Generate video');
+  });
+
+  it('prices the run on the Generate button, and drops the badge when the price is a guess', () => {
+    localStorage.removeItem('cinegen_studio_feed_view');
+    render(<SpaceStudio />);
+
+    const price = () => screen.getByTestId('space-studio-generate')
+      .querySelector('.space-studio__generate-cost')?.textContent?.trim();
+
+    // Seedance 2.5 at the default 5s / 720p: 1.5 credits a second, less the
+    // fifth Topview takes off its own quote — 7.5 list, 6 billed.
+    expect(price()).toBe('6');
+
+    // Two versions are two clips, so twice the credits.
+    fireEvent.click(screen.getByRole('button', { name: 'More versions' }));
+    expect(price()).toBe('12');
+
+    // 1080p costs its own rate, not a multiple of the 720p one: 2.2 a second.
+    fireEvent.click(screen.getByTestId('space-studio-control-resolution'));
+    fireEvent.click(screen.getByTestId('space-studio-control-resolution-1080'));
+    expect(price()).toBe('22');
+
+    // A model the rate card has never been read on shows no number rather than
+    // a wrong one, however tempting the neighbouring model's rate is.
+    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
+    fireEvent.click(screen.getByRole('option', { name: /Video Model/ }));
+    expect(price()).toBeUndefined();
   });
 
   it('grows the docked bar from the top-right handle, and a double-click restores the compact size', () => {
@@ -1068,7 +1108,27 @@ describe('Space Studio', () => {
     // The countdown is derived from today, so assert against the same helper
     // rather than a date that would rot.
     expect(screen.getByTestId('cs-provider-renewal')).toHaveTextContent(renewalCountdown());
-    expect(within(card).getByText(/resets? on the 27th of each month/i)).toBeInTheDocument();
+    // The reset sentence is gone; the countdown metric carries it.
+    expect(within(card).queryByText(/resets? on the 27th of each month/i)).not.toBeInTheDocument();
+  });
+
+  it('switches provider from the card without a trip through Settings', () => {
+    workspaceHarness.state = makeState([]);
+
+    render(<CreateTab />);
+
+    const swap = screen.getByTestId('cs-provider-switch');
+    expect(swap).toHaveTextContent('Topview AI');
+    expect(swap).toHaveAttribute('title', 'Switch to Higgsfield');
+
+    fireEvent.click(swap);
+
+    expect(screen.getByTestId('cs-provider-switch')).toHaveTextContent('Higgsfield');
+    expect(JSON.parse(localStorage.getItem('cinegen_settings') ?? '{}').videoGenerationProvider)
+      .toBe('higgsfield');
+    // And back, so a stray click is one click to undo.
+    fireEvent.click(screen.getByTestId('cs-provider-switch'));
+    expect(screen.getByTestId('cs-provider-switch')).toHaveTextContent('Topview AI');
   });
 
   it('shows every attached reference above the bar, Elements and files alike', async () => {

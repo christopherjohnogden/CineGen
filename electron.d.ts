@@ -417,6 +417,8 @@ export interface ElectronAPI {
       wait?: boolean;
     }) => Promise<{ url?: string; text?: string; mediaType: 'image' | 'video' | 'audio' | 'text' | '3d'; durationSec?: number; jobId?: string; model: string }>;
     generateList: (params?: { video?: boolean; size?: number }) => Promise<Array<Record<string, unknown>>>;
+    /** Credits the run would spend, quoted before anything is created. Null when unpriced. */
+    generateCost: (params: { model: string; params?: Record<string, unknown> }) => Promise<number | null>;
   };
   artlist: {
     accountStatus: () => Promise<{

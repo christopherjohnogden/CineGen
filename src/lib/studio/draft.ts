@@ -40,7 +40,8 @@ export interface ComposerDraft {
 
 /** Compact Higgsfield-like bar. Dragging the corner grows it from here. */
 export const DOCK_PROMPT_DEFAULT = 40;
-export const DOCK_PROMPT_MIN = 36;
+// Matches the default: the fixed-height output tiles fill the compact bar exactly.
+export const DOCK_PROMPT_MIN = 40;
 export const DOCK_PROMPT_MAX = 168;
 export const DOCK_BAR_DEFAULT = 1040;
 export const DOCK_BAR_MIN = 760;
