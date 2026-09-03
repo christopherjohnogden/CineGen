@@ -5,6 +5,7 @@ import {
   clipFileName,
   clipReview,
   formatClipTime,
+  formatElapsed,
   generationStatus,
   isNewClip,
   readFeedView,
@@ -53,6 +54,25 @@ describe('seen bookkeeping', () => {
     const opened = writeSeen('p1', { viewed: [...seen.viewed, 'a'], lastViewed: 'a' });
     expect(isNewClip(visit + 1000, 'a', opened)).toBe(false);
     expect(opened.lastViewed).toBe('a');
+  });
+
+  it('withholds New until the render is finished', () => {
+    const visit = Date.parse('2026-09-01T10:00:00Z');
+    writeSeen('p-new', { seenAt: visit });
+    const seen = readSeen('p-new');
+    // There is nothing to watch yet, so the badge would be promising a video
+    // that does not exist.
+    expect(isNewClip(visit + 1000, 'a', seen, 'running')).toBe(false);
+    expect(isNewClip(visit + 1000, 'a', seen, 'queued')).toBe(false);
+    expect(isNewClip(visit + 1000, 'a', seen, 'error')).toBe(false);
+    expect(isNewClip(visit + 1000, 'a', seen, 'complete')).toBe(true);
+  });
+
+  it('counts elapsed render time in minutes and seconds', () => {
+    expect(formatElapsed(0)).toBe('0:00');
+    expect(formatElapsed(7_400)).toBe('0:07');
+    expect(formatElapsed(271_000)).toBe('4:31');
+    expect(formatElapsed(-5_000)).toBe('0:00');
   });
 
   it('is scoped per project and survives a garbage entry', () => {

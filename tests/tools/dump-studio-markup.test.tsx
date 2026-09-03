@@ -128,6 +128,9 @@ it('dumps the rendered Studio markup for mobile layout verification', () => {
     fireEvent.click(screen.getByTestId('space-studio-modal-element-el-haz'));
     fireEvent.keyDown(document, { key: 'Escape' });
   }
+  if (process.env.STUDIO_DUMP_SHEET) {
+    fireEvent.click(screen.getByTestId('space-studio-peek'));
+  }
   if (process.env.STUDIO_DUMP_SELECT) {
     fireEvent.click(screen.getByTestId('space-studio-select-ready'));
     fireEvent.click(screen.getByTestId('space-studio-select-img2'));

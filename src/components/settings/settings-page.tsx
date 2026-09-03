@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { renewalSummary } from '@/lib/providers/renewal';
 import type { DefaultTranscriptionEngine } from '@/lib/utils/api-key';
 import { CloudAccountCard } from '@/components/cloud/cloud-account';
 import type { Ltx25GpuProfile } from '@/lib/runpod/ltx25-service';
@@ -798,6 +799,11 @@ function TopviewConnect() {
       {shareMessage && (
         <p className="sp-card__desc" style={{ marginTop: 4, color: 'var(--success, #58c98b)' }}>{shareMessage}</p>
       )}
+      {status?.connected && (
+        <p className="sp-card__desc" style={{ marginTop: 4 }} data-testid="sp-topview-renewal">
+          {renewalSummary()}
+        </p>
+      )}
       {status?.connected && status.authMode === 'api_key' && (
         <p className="sp-topview-credit-note">
           <strong>API-key connection:</strong> This web fallback uses Topview&apos;s separate API balance. To use the MCP plan balance shown on desktop, share the owner&apos;s desktop MCP connection with the team.
@@ -1306,7 +1312,7 @@ export function SettingsPage({ onBack, projectId, useSqlite }: SettingsPageProps
             </nav>
 
             <div className="sp-sidebar__footer">
-              <span className="sp-sidebar__version">CINEGEN Desktop v1</span>
+              <span className="sp-sidebar__version">CINEGEN Desktop v1.0.1</span>
             </div>
           </>
         )}

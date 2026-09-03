@@ -122,7 +122,7 @@ export function CloudAccountButton({ onAccountChange }: { onAccountChange?: () =
 
 const roleOptions: Array<{ value: TeamRole; label: string; description: string }> = [
   { value: 'editor', label: 'Editor', description: 'Can edit every team project' },
-  { value: 'owner', label: 'Owner', description: 'Can manage the team and projects' },
+  { value: 'owner', label: 'Owner', description: 'Can manage the team; creators control project deletion' },
 ];
 
 function RoleDropdown({

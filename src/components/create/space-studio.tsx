@@ -28,6 +28,14 @@ import { getMediaTypeForFile, resolveMediaFileUrl, getLocalPathForFile } from '@
 import { nextStudioSlot } from '@/lib/studio/layout';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { classifyFeedError } from '@/lib/studio/errors';
+import { primeVideoPoster } from '@/lib/studio/clips';
+import {
+  endFieldFor,
+  isImageField,
+  promptFieldFor,
+  referenceFieldFor,
+  startFieldFor,
+} from '@/lib/studio/fields';
 import {
   captureVideoFrame,
   clipComments,
@@ -69,6 +77,7 @@ import {
   isPillControl,
   isSliderControl,
 } from '@/lib/studio/controls';
+import { readComposerDraft, writeComposerDraft } from '@/lib/studio/draft';
 import type { Asset } from '@/types/project';
 // Aliased: the DOM's global `Element` would otherwise win.
 import type { Element as CineElement } from '@/types/elements';
@@ -103,67 +112,6 @@ const PRIMARY_CONTROL_IDS = [
   'generate_audio',
   'generateAudio',
 ];
-
-function isPromptField(field: ModelInputField): boolean {
-  return field.fieldType === 'port'
-    && field.portType === 'text'
-    && /prompt|text/i.test(`${field.id} ${field.falParam} ${field.label}`);
-}
-
-function promptFieldFor(model: ModelDefinition): ModelInputField | undefined {
-  return model.inputs.find((field) => isPromptField(field) && field.id === 'prompt')
-    ?? model.inputs.find(isPromptField);
-}
-
-function isImageField(field: ModelInputField): boolean {
-  if (field.fieldType !== 'port' && field.fieldType !== 'element-list') return false;
-  if (field.portType === 'image') return true;
-  if (field.portType !== 'media') return false;
-  return field.mediaRole === 'image'
-    || field.mediaRole === 'start_image'
-    || field.mediaRole === 'end_image'
-    || /image|frame|photo|reference/i.test(`${field.id} ${field.falParam} ${field.label}`);
-}
-
-function isExplicitStartField(field: ModelInputField): boolean {
-  if (!isImageField(field)) return false;
-  if (field.mediaRole === 'start_image') return true;
-  return /(^|[_\s-])(start|first)([_\s-]|$)/i.test(`${field.id} ${field.falParam} ${field.label}`);
-}
-
-function isExplicitEndField(field: ModelInputField): boolean {
-  if (!isImageField(field)) return false;
-  if (field.mediaRole === 'end_image') return true;
-  return /(^|[_\s-])(end|last)([_\s-]|$)/i.test(`${field.id} ${field.falParam} ${field.label}`);
-}
-
-function startFieldFor(model: ModelDefinition): ModelInputField | undefined {
-  const imageFields = model.inputs.filter(isImageField);
-  return imageFields.find((field) => field.mediaRole === 'start_image')
-    ?? imageFields.find(isExplicitStartField)
-    ?? imageFields.find((field) => (
-      field.fieldType === 'port'
-      && field.mediaRole !== 'end_image'
-      && /^(image|image_url|image_input|init_image|source_image)$/i.test(field.id)
-    ));
-}
-
-function endFieldFor(model: ModelDefinition): ModelInputField | undefined {
-  const imageFields = model.inputs.filter(isImageField);
-  return imageFields.find((field) => field.mediaRole === 'end_image')
-    ?? imageFields.find(isExplicitEndField);
-}
-
-function referenceFieldFor(model: ModelDefinition): ModelInputField | undefined {
-  const imageFields = model.inputs.filter((field) => (
-    isImageField(field) && !isExplicitStartField(field) && !isExplicitEndField(field)
-  ));
-  return imageFields.find((field) => field.fieldType === 'element-list')
-    ?? imageFields.find((field) => field.mediaRole === 'image' && field.multiple)
-    ?? imageFields.find((field) => field.multiple)
-    ?? imageFields.find((field) => field.mediaRole === 'image')
-    ?? imageFields[0];
-}
 
 function canStudioSupplyRequiredField(
   field: ModelInputField,
@@ -744,6 +692,15 @@ const VIEW_ICONS = {
 
 /** Versions one Generate can make at once; each is its own node and its own credit spend. */
 const MAX_BATCH = 4;
+/** Reference sets are large on omni-reference models; this is a sanity bound, not a provider limit. */
+const MAX_ATTACHED_REFERENCES = 50;
+
+interface AttachedReference {
+  id: string;
+  url: string;
+  name: string;
+  kind: 'image' | 'video' | 'audio';
+}
 
 /** The video model the composer opens on when the catalog offers it. */
 const DEFAULT_VIDEO_MODEL_NAME = 'Seedance 2.5';
@@ -751,14 +708,18 @@ const DEFAULT_VIDEO_MODEL_NAME = 'Seedance 2.5';
 export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   const { state, dispatch, projectId } = useWorkspace();
   const catalogVersion = useTopviewModelCatalogVersion();
-  const [outputKind, setOutputKind] = useState<OutputKind>('video');
-  const [videoMode, setVideoMode] = useState<VideoInputMode>('references');
-  const [prompt, setPrompt] = useState('');
+  // A reload, a restart, or a hot reload in dev must not empty the composer:
+  // the next Generate would go out without the references you attached, and you
+  // would only find out once the render was paid for.
+  const draft = useRef(readComposerDraft(projectId)).current;
+  const [outputKind, setOutputKind] = useState<OutputKind>(draft.outputKind);
+  const [videoMode, setVideoMode] = useState<VideoInputMode>(draft.videoMode);
+  const [prompt, setPrompt] = useState(draft.prompt);
   const [modelType, setModelType] = useState('');
-  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>(draft.elementIds);
   const [missingReferences, setMissingReferences] = useState(0);
-  const [startAssetId, setStartAssetId] = useState('');
-  const [endAssetId, setEndAssetId] = useState('');
+  const [startAssetId, setStartAssetId] = useState(draft.startAssetId);
+  const [endAssetId, setEndAssetId] = useState(draft.endAssetId);
   const [controlValuesByModel, setControlValuesByModel] = useState<
     Record<string, Record<string, ControlValue>>
   >({});
@@ -774,6 +735,8 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   // How many versions one Generate makes: each is its own node and its own run.
   const [batchCount, setBatchCount] = useState(1);
   const [selectedClipIds, setSelectedClipIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** Files attached from disk. References in their own right, not Elements. */
+  const [attachedRefs, setAttachedRefs] = useState<AttachedReference[]>(draft.attachments);
   // The docked bar needs room beside the grid; phones keep the stacked layout.
   const [narrow, setNarrow] = useState(() => (
     typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 780px)').matches
@@ -786,6 +749,10 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     return () => query.removeEventListener('change', update);
   }, []);
   const dockMode = feedView === 'grid' && !narrow;
+  // On a phone the composer is a full screen of controls above the clips, so in
+  // grid view it collapses to a bar and opens as a sheet.
+  const sheetMode = feedView === 'grid' && narrow;
+  const [composerOpen, setComposerOpen] = useState(false);
   const dockModeRef = useRef(dockMode);
   dockModeRef.current = dockMode;
   const flyoutAnchorRef = useRef<HTMLElement | null>(null);
@@ -795,14 +762,17 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   const toolsRef = useRef<HTMLDivElement>(null);
   const [toolsEdges, setToolsEdges] = useState({ left: false, right: false });
   const [rowMenuStyle, setRowMenuStyle] = useState<CSSProperties | null>(null);
-  const anchorRowMenu = useCallback((el: HTMLElement | null) => {
+  const anchorRowMenu = useCallback((el: HTMLElement | null, minWidth = 220) => {
     if (!el || !dockModeRef.current) {
       setRowMenuStyle(null);
       return;
     }
     const rect = el.getBoundingClientRect();
     const margin = 12;
-    const width = Math.max(220, Math.round(rect.width));
+    const width = Math.min(
+      Math.max(minWidth, Math.round(rect.width)),
+      Math.max(200, window.innerWidth - margin * 2),
+    );
     const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
     setRowMenuStyle({
       position: 'fixed',
@@ -1331,9 +1301,15 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       modelConfig.__studioPresetId = activePreset.id;
       modelConfig.__studioPresetName = activePreset.name;
     }
-    if (elementIds.length > 0 && selectedReferenceField) {
-      modelConfig[selectedReferenceField.id] = { elementIds, elementVariationIds };
+    const attachedUrls = attachedRefs.map((reference) => reference.url);
+    if ((elementIds.length > 0 || attachedUrls.length > 0) && selectedReferenceField) {
+      modelConfig[selectedReferenceField.id] = {
+        elementIds,
+        elementVariationIds,
+        ...(attachedUrls.length > 0 ? { urls: attachedUrls } : {}),
+      };
       modelConfig.__studioElementVariationIds = elementVariationIds;
+      if (attachedUrls.length > 0) modelConfig.__studioAttachedRefs = attachedUrls;
     }
     if (outputKind === 'video' && videoMode === 'frames') {
       if (selectedStartAsset && selectedStartField) {
@@ -1361,6 +1337,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     const nextNodes = [...state.nodes, ...created];
     dispatch({ type: 'SET_NODES', nodes: nextNodes });
     for (const modelNode of created) runNode(modelNode.id, nextNodes, state.edges);
+    setComposerOpen(false);
 
     window.setTimeout(() => {
       launchLockRef.current = false;
@@ -1425,6 +1402,20 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     writeFeedView(feedView);
   }, [feedView]);
 
+  // Written on every change rather than on unmount: a crash, a restart, or a
+  // dev hot reload never gets the chance to run an unmount handler.
+  useEffect(() => {
+    writeComposerDraft(projectId, {
+      prompt,
+      outputKind,
+      videoMode,
+      elementIds: selectedElementIds,
+      attachments: attachedRefs,
+      startAssetId,
+      endAssetId,
+    });
+  }, [attachedRefs, endAssetId, outputKind, projectId, prompt, selectedElementIds, startAssetId, videoMode]);
+
   // The visit ends when the Studio unmounts or the page goes away; everything
   // created after that is "New" next time.
   useEffect(() => {
@@ -1455,11 +1446,12 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       status,
       ...(status === 'error' ? { error: classifyFeedError(node.data.result?.error).message } : {}),
       createdAt,
+      startedAt: node.data.result?.progressStartedAt ?? createdAt,
       liked: clipLiked(node),
       review: clipReview(node),
       comments: clipComments(node),
       elementNames: clipElementNames(node),
-      isNew: isNewClip(createdAt, node.id, seen),
+      isNew: isNewClip(createdAt, node.id, seen, status),
       lastViewed: seen.lastViewed === node.id,
     };
   }), [feedItems, seen, state.edges, state.nodes, state.runningNodeIds]);
@@ -1492,11 +1484,14 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
 
   const openClip = useCallback((id: string) => {
     setViewerId(id);
+    // Opening a tile that is still rendering is not watching it. Counting that
+    // as a view would burn the "New" badge before the clip ever existed.
+    const watched = Boolean(clipById(id)?.url);
     setSeen((current) => writeSeen(projectId, {
-      viewed: current.viewed.includes(id) ? current.viewed : [...current.viewed, id],
+      viewed: !watched || current.viewed.includes(id) ? current.viewed : [...current.viewed, id],
       lastViewed: id,
     }));
-  }, [projectId]);
+  }, [clipById, projectId]);
 
   const navigateViewer = useCallback((delta: 1 | -1) => {
     if (viewerIndex < 0 || clipItems.length === 0) return;
@@ -1573,8 +1568,8 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
       return;
     }
     const kind = getMediaTypeForFile(file);
-    if (kind !== 'image' && kind !== 'video') {
-      showNotice('Attach an image or a video.', 'error');
+    if (kind !== 'image' && kind !== 'video' && kind !== 'audio') {
+      showNotice('Attach an image, a video, or an audio file.', 'error');
       return;
     }
     try {
@@ -1595,19 +1590,20 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
         if (target === 'start') setStartAssetId(asset.id);
         else setEndAssetId(asset.id);
         showNotice(`${file.name} is the ${target === 'start' ? 'first' : 'last'} frame.`);
-      } else if (kind === 'image' && supportsFrames) {
-        setVideoMode('frames');
-        setStartAssetId(asset.id);
-        showNotice(`${file.name} is the start frame.`);
-      } else if (kind === 'image') {
-        showNotice(`${model?.name ?? 'This model'} takes references, not frames. ${file.name} was saved to Assets.`);
-      } else {
-        showNotice(`${file.name} was saved to Assets.`);
+        return;
       }
+      // An attachment is a reference. Switching the shot to Frames behind the
+      // user's back was the wrong call: the mode is theirs to choose.
+      setAttachedRefs((current) => (
+        current.length >= MAX_ATTACHED_REFERENCES || current.some((entry) => entry.url === url)
+          ? current
+          : [...current, { id: asset.id, url, name: file.name, kind }]
+      ));
+      showNotice(`${file.name} added as a reference.`);
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'Could not attach that file.', 'error');
     }
-  }, [dispatch, model, showNotice, supportsFrames]);
+  }, [dispatch, showNotice]);
 
   const useAsStartFrame = useCallback((asset: Asset) => {
     setVideoMode('frames');
@@ -1881,6 +1877,62 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     )
     : null;
 
+  // Everything attached to the shot should be visible without opening a picker,
+  // the way the frame slots are. Elements and files sit in one strip because
+  // they are the same thing to the model: references.
+  const dockReferences = dockMode && (selectedElements.length > 0 || attachedRefs.length > 0)
+    ? (
+      <div className="space-studio__dock-refs" data-testid="space-studio-dock-refs">
+        {selectedElements.map((element) => {
+          const image = elementImagesForVariation(element)[0];
+          return (
+            <div key={element.id} className="space-studio__dock-ref" title={element.name}>
+              {image
+                ? <img src={toFileUrl(image.url)} alt="" />
+                : <span className="space-studio__dock-ref-kind">EL</span>}
+              <span className="space-studio__dock-ref-label">{element.name}</span>
+              <button
+                type="button"
+                className="space-studio__dock-ref-clear"
+                aria-label={`Remove ${element.name}`}
+                data-testid={`space-studio-dock-ref-${element.id}`}
+                onClick={() => toggleElement(element.id)}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+        {attachedRefs.map((reference) => (
+          <div key={reference.id} className="space-studio__dock-ref" title={reference.name}>
+            {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt="" />}
+            {reference.kind === 'video' && (
+              // eslint-disable-next-line jsx-a11y/media-has-caption
+              <video
+                src={toFileUrl(reference.url)}
+                muted
+                playsInline
+                preload="metadata"
+                onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
+              />
+            )}
+            {reference.kind === 'audio' && <span className="space-studio__dock-ref-kind">AUD</span>}
+            <span className="space-studio__dock-ref-label">{reference.name}</span>
+            <button
+              type="button"
+              className="space-studio__dock-ref-clear"
+              aria-label={`Remove ${reference.name}`}
+              data-testid={`space-studio-dock-ref-${reference.id}`}
+              onClick={() => setAttachedRefs((current) => current.filter((entry) => entry.id !== reference.id))}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    )
+    : null;
+
   // Grid mode docks the composer as a bar over the clips: the Higgsfield layout.
   const dockTools = dockMode
     ? (
@@ -1930,7 +1982,36 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
     : null;
 
   return (
-    <div className={`space-studio${dockMode ? ' space-studio--dock' : ''}`} data-testid="space-studio">
+    <div
+      className={`space-studio${dockMode ? ' space-studio--dock' : ''}${sheetMode ? ' space-studio--sheet' : ''}${sheetMode && composerOpen ? ' is-composing' : ''}`}
+      data-testid="space-studio"
+    >
+      {sheetMode && !composerOpen && selectedClips.length === 0 && (
+        <button
+          type="button"
+          className="space-studio__peek"
+          data-testid="space-studio-peek"
+          onClick={() => setComposerOpen(true)}
+        >
+          <span className="space-studio__peek-text">{prompt.trim() || 'Describe the shot…'}</span>
+          <span className="space-studio__peek-cta" aria-hidden="true">
+            <svg viewBox="0 0 16 16" focusable="false">
+              <path d="M8 1.5l1.7 4.8 4.8 1.7-4.8 1.7L8 14.5l-1.7-4.8L1.5 8l4.8-1.7z" fill="currentColor" />
+            </svg>
+          </span>
+        </button>
+      )}
+      {sheetMode && composerOpen && (
+        <button
+          type="button"
+          className="space-studio__sheet-close"
+          aria-label="Close composer"
+          data-testid="space-studio-sheet-close"
+          onClick={() => setComposerOpen(false)}
+        >
+          ×
+        </button>
+      )}
       <section
         className="space-studio__composer"
         aria-labelledby="space-studio-heading"
@@ -1946,6 +2027,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
           </span>
         </header>
 
+        {dockReferences}
         {dockFrames}
 
         <form className="space-studio__form" ref={formRef} onSubmit={handleGenerate}>
@@ -2115,7 +2197,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                 </button>
               </p>
             )}
-            {selectedElements.length === 0 ? (
+            {selectedElements.length === 0 && attachedRefs.length === 0 ? (
               <button
                 type="button"
                 className="space-studio__ref-empty"
@@ -2149,6 +2231,31 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                     </span>
                   );
                 })}
+                {attachedRefs.map((reference) => (
+                  <span key={reference.id} className="space-studio__ref is-selected" title={reference.name}>
+                    {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt={reference.name} />}
+                    {reference.kind === 'video' && (
+                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                      <video
+                        src={toFileUrl(reference.url)}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
+                      />
+                    )}
+                    {reference.kind === 'audio' && <span className="space-studio__ref-kind">AUD</span>}
+                    <button
+                      type="button"
+                      className="space-studio__ref-remove"
+                      aria-label={`Remove ${reference.name}`}
+                      data-testid={`space-studio-attached-${reference.id}`}
+                      onClick={() => setAttachedRefs((current) => current.filter((entry) => entry.id !== reference.id))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
                 <button
                   type="button"
                   className="space-studio__ref space-studio__ref--add"
@@ -2242,11 +2349,19 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
           <input
             ref={attachInputRef}
             type="file"
-            accept="image/*,video/*"
+            accept="image/*,video/*,audio/*"
             hidden
             data-testid="space-studio-attach-input"
+            multiple
             onChange={(event) => {
-              void attachLocalFile(event.target.files?.[0], attachTargetRef.current);
+              const target = attachTargetRef.current;
+              const files = Array.from(event.target.files ?? []);
+              void (async () => {
+                // A frame slot takes exactly one file; a reference set takes many.
+                for (const file of target ? files.slice(0, 1) : files) {
+                  await attachLocalFile(file, target);
+                }
+              })();
               attachTargetRef.current = null;
               event.target.value = '';
             }}
@@ -2319,7 +2434,10 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                           aria-haspopup="dialog"
                           data-testid={`${inputId}-trigger`}
                           onClick={(event) => {
-                            anchorRowMenu(event.currentTarget);
+                            // Wider than a menu: the stop grid needs the room, and
+                            // pinning it to the pill left every value but the ends
+                            // a two-pixel drag target.
+                            anchorRowMenu(event.currentTarget, 300);
                             setRowOpen(null);
                             setDockModeMenuOpen(false);
                             setSliderOpen((current) => (current === field.id ? null : field.id));
@@ -2335,23 +2453,57 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
                               <span>Choose {controlPillLabel(field).toLowerCase()}</span>
                               <strong>{controlOptionLabel(field, String(value))}</strong>
                             </div>
-                            <input
-                              id={inputId}
-                              data-testid={inputId}
-                              type="range"
-                              aria-label={controlPillLabel(field)}
-                              min={0}
-                              max={values.length - 1}
-                              step={1}
-                              value={index}
-                              onChange={(event) => {
-                                const next = values[Number(event.target.value)];
-                                if (next !== undefined) setControl(field, String(next));
-                              }}
-                            />
-                            <div className="space-studio__slider-ends">
-                              <span>{controlOptionLabel(field, String(values[0]))}</span>
-                              <span>{controlOptionLabel(field, String(values[values.length - 1]))}</span>
+                            <div className="space-studio__slider-row">
+                              <button
+                                type="button"
+                                className="space-studio__slider-step"
+                                aria-label={`One step shorter`}
+                                data-testid={`${inputId}-down`}
+                                disabled={index <= 0}
+                                onClick={() => setControl(field, String(values[index - 1]))}
+                              >
+                                −
+                              </button>
+                              <input
+                                id={inputId}
+                                data-testid={inputId}
+                                type="range"
+                                aria-label={controlPillLabel(field)}
+                                min={0}
+                                max={values.length - 1}
+                                step={1}
+                                value={index}
+                                onChange={(event) => {
+                                  const next = values[Number(event.target.value)];
+                                  if (next !== undefined) setControl(field, String(next));
+                                }}
+                              />
+                              <button
+                                type="button"
+                                className="space-studio__slider-step"
+                                aria-label={`One step longer`}
+                                data-testid={`${inputId}-up`}
+                                disabled={index >= values.length - 1}
+                                onClick={() => setControl(field, String(values[index + 1]))}
+                              >
+                                +
+                              </button>
+                            </div>
+                            {/* Every stop the model actually accepts, so a value in
+                                the middle of the range is one tap rather than a
+                                pixel-perfect drag. */}
+                            <div className="space-studio__slider-stops" data-testid={`${inputId}-stops`}>
+                              {values.map((entry, entryIndex) => (
+                                <button
+                                  key={entry}
+                                  type="button"
+                                  aria-pressed={entryIndex === index}
+                                  className={entryIndex === index ? 'is-on' : undefined}
+                                  onClick={() => setControl(field, String(entry))}
+                                >
+                                  {controlOptionLabel(field, String(entry))}
+                                </button>
+                              ))}
                             </div>
                           </div>
                         )}

@@ -134,41 +134,41 @@ test("server-renders the CineGen client boundary", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>CineGen Cloud<\/title>/i);
+  assert.match(html, /<title>CineGen — AI Film Production Studio<\/title>/i);
   assert.match(html, /Loading CineGen/i);
   assert.doesNotMatch(html, /Your site is taking shape|Building your site/i);
 });
 
-test("sends anonymous hosted visitors through ChatGPT sign-in and preserves the project link", async () => {
+test("shows anonymous hosted visitors a branded welcome page and preserves the project link", async () => {
   const worker = await loadWorker();
   const response = await worker.fetch(
-    new Request("https://cinegen-cloud-studio.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
+    new Request("https://cinegen-team.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
       headers: {
         accept: "text/html",
-        host: "cinegen-cloud-studio.cogden.chatgpt.site",
+        host: "cinegen-team.cogden.chatgpt.site",
       },
-      redirect: "manual",
     }),
     testEnvironment(),
     executionContext,
   );
 
-  assert.equal(response.status, 307);
-  assert.equal(
-    response.headers.get("location"),
-    "/signin-with-chatgpt?return_to=%2F%3Fproject%3Dcloud_demo%26storage%3Ddb",
-  );
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Create together\./i);
+  assert.match(html, /Open CineGen/i);
+  assert.match(html, /\/signin-with-chatgpt\?return_to=%2F%3Fproject%3Dcloud_demo%26storage%3Ddb/i);
+  assert.match(html, /property="og:image" content="https:\/\/cinegen-team\.cogden\.chatgpt\.site\/og\.png"/i);
 });
 
 test("opens the hosted app when Sites supplies the signed-in ChatGPT identity", async () => {
   const worker = await loadWorker();
   const response = await worker.fetch(
-    new Request("https://cinegen-cloud-studio.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
+    new Request("https://cinegen-team.cogden.chatgpt.site/?project=cloud_demo&storage=db", {
       headers: {
         accept: "text/html",
-        host: "cinegen-cloud-studio.cogden.chatgpt.site",
+        host: "cinegen-team.cogden.chatgpt.site",
         "oai-authenticated-user-id": "site-user-1",
-        "oai-authenticated-user-email": "director@example.com",
+        "oai-authenticated-user-email": "christopherjohnogden@gmail.com",
       },
     }),
     testEnvironment(),
@@ -178,6 +178,73 @@ test("opens the hosted app when Sites supplies the signed-in ChatGPT identity", 
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   assert.match(await response.text(), /Loading CineGen/i);
+});
+
+test("opens the hosted app for the second approved team account", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(
+    new Request("https://cinegen-team.cogden.chatgpt.site/", {
+      headers: {
+        accept: "text/html",
+        host: "cinegen-team.cogden.chatgpt.site",
+        "oai-authenticated-user-id": "site-user-brother",
+        "oai-authenticated-user-email": "taylormichaelogden@gmail.com",
+      },
+    }),
+    testEnvironment(),
+    executionContext,
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Loading CineGen/i);
+});
+
+test("blocks a signed-in account that is not on the CineGen allowlist", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(
+    new Request("https://cinegen-team.cogden.chatgpt.site/", {
+      headers: {
+        accept: "text/html",
+        host: "cinegen-team.cogden.chatgpt.site",
+        "oai-authenticated-user-id": "site-user-outsider",
+        "oai-authenticated-user-email": "outsider@example.com",
+      },
+    }),
+    testEnvironment(),
+    executionContext,
+  );
+
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Access restricted\./i);
+  assert.doesNotMatch(html, /Loading CineGen/i);
+});
+
+test("blocks generation APIs for a signed-in account outside the allowlist", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(
+    new Request("https://cinegen-team.cogden.chatgpt.site/api/rpc/providers/status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        host: "cinegen-team.cogden.chatgpt.site",
+        "oai-authenticated-user-id": "site-user-outsider",
+        "oai-authenticated-user-email": "outsider@example.com",
+      },
+      body: JSON.stringify({ args: [] }),
+    }),
+    testEnvironment({ DB: new FakeD1Database() }),
+    executionContext,
+  );
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      message: "This account does not have access to CineGen.",
+      code: "ACCESS_DENIED",
+    },
+  });
 });
 
 test("exposes a lightweight health route", async () => {

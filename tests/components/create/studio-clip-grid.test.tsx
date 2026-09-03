@@ -52,6 +52,26 @@ function actions(): StudioClipGridActions {
 }
 
 describe('StudioClipGrid', () => {
+  it('shows how long a render has been going, and no New badge until it lands', () => {
+    const started = Date.now() - 271_000;
+    render(<StudioClipGrid
+      items={[clip({ id: 'busy', status: 'running', url: '', urls: [], startedAt: started, isNew: true })]}
+      cardSize="m"
+      {...actions()}
+    />);
+
+    const tile = screen.getByTestId('space-studio-tile-busy');
+    expect(within(tile).getByText('Generating…')).toBeInTheDocument();
+    expect(screen.getByTestId('space-studio-elapsed-busy')).toHaveTextContent('4:31');
+    // A tile cannot honestly be both "Generating…" and "New".
+    expect(within(tile).queryByText('New')).not.toBeInTheDocument();
+  });
+
+  it('drops the clock once the clip is ready', () => {
+    render(<StudioClipGrid items={[clip({ id: 'done', startedAt: Date.now() - 60_000 })]} cardSize="m" {...actions()} />);
+    expect(screen.queryByTestId('space-studio-elapsed-done')).not.toBeInTheDocument();
+  });
+
   it('renders one tile per clip with a New badge on unseen ones and a play glyph on videos', () => {
     render(<StudioClipGrid items={[clip({ id: 'a', isNew: true }), clip({ id: 'b', kind: 'image', model: imageModel, url: 'local-media://still.png' })]} cardSize="m" {...actions()} />);
 

@@ -87,7 +87,11 @@ describe('Topview live model catalog', () => {
       falParam: 'reference_images',
       multiple: true,
       mediaRole: 'image',
+      // Omni-reference takes stills, clips and audio. An 'image' port had the
+      // canvas refuse a video output that Topview accepts.
+      portType: 'media',
     });
+    expect(registry['topview-video-seedance-2-5']?.inputs.find((field) => field.id === 'extra_images')?.portType).toBe('media');
     expect(registry['topview-video-seedance-2-5']?.inputs.find((field) => field.id === 'start_frame')).toMatchObject({
       label: 'Start Frame',
       falParam: 'image_url',

@@ -209,6 +209,31 @@ const CASTING_IDENTITY_PROFILES = [
   'Athletic proportions; a diamond-shaped face; defined cheekbones; wide-set eyes; a straight narrow nose; an uneven hairline; and shaggy layered hair.',
 ] as const;
 
+const CHARACTER_CASTING_REFERENCE_SUFFIX = [
+  'Photograph the subject full body from the front, standing naturally and facing camera, with the face or head fully visible.',
+  'Plain warm-gray studio background, soft even light, one subject only. No text, labels, collage, or split screen.',
+].join(' ');
+
+/**
+ * Casting from uploaded references is the opposite job to a blind casting call.
+ *
+ * The blind prompt orders the model to invent a completely new identity and
+ * hands it a differentiation profile — a face deliberately unlike the last one.
+ * With references attached that fought the images and returned strangers, which
+ * read as the references never being sent. Here the subject already exists, so
+ * every option is that same subject and only the take changes.
+ */
+function characterCastingFromReferencePrompt(description: string, optionIndex: number): string {
+  return [
+    'The attached reference images are the authoritative subject for this casting sheet.',
+    'Reproduce that exact subject: the same head and face shape, features, markings, skin or surface colour and texture, proportions, hair, wardrobe, and any equipment or insignia.',
+    'Do not invent a new identity, do not replace a non-human subject with a human interpretation, and do not redesign any defining feature.',
+    `Supporting brief, for context only: ${description}.`,
+    `This is take ${optionIndex + 1}. Keep the subject identical and vary only the pose, expression, and head angle a little.`,
+    CHARACTER_CASTING_REFERENCE_SUFFIX,
+  ].join(' ');
+}
+
 function characterCastingPrompt(description: string, optionIndex: number, profileIndex: number): string {
   return [
     `Independent casting audition ${optionIndex + 1} for this role: ${description}.`,
@@ -619,11 +644,11 @@ export function ElementGenerate({
           : uploadedRefUrls;
         const castingPrompt = correction
           ? characterCastingCorrectionPrompt(desc, correction)
-          : characterCastingPrompt(desc, index, profileIndex);
+          : uploadedRefUrls.length > 0
+            ? characterCastingFromReferencePrompt(desc, index)
+            : characterCastingPrompt(desc, index, profileIndex);
         const generated = await generateSingleImage(
-          uploadedRefUrls.length > 0
-            ? `${castingPrompt} Use the attached images as visual casting inspiration for the requested identity, silhouette, features, palette, and production design. Do not reproduce captions, logos, watermarks, or text from the references.`
-            : castingPrompt,
+          castingPrompt,
           selectedModel,
           castingReferences.length > 0 ? [...new Set(castingReferences)] : undefined,
         );
@@ -1044,8 +1069,12 @@ export function ElementGenerate({
               <div className="character-casting__stage-heading">
                 <div>
                   <span className="character-casting__eyebrow">Casting call</span>
-                  <h4>Find the actor</h4>
-                  <p>Generate distinct people from the casting brief, then select the face and body that fit the role.</p>
+                  <h4>{uploadedRefUrls.length > 0 ? 'Render the subject' : 'Find the actor'}</h4>
+                  <p>
+                    {uploadedRefUrls.length > 0
+                      ? 'Your reference images are the subject. Each take renders that same subject; pick the cleanest one to build the sheet from.'
+                      : 'Generate distinct people from the casting brief, then select the face and body that fit the role.'}
+                  </p>
                 </div>
                 <div className="character-casting__count" aria-label="Number of casting options">
                   <span>Options</span>
@@ -1066,7 +1095,9 @@ export function ElementGenerate({
               <div className="character-casting__primary-row">
                 <span>{desc || 'Add a casting brief in the description above.'}</span>
                 <button type="button" className="element-generate__btn" onClick={() => void handleGenerateCasting()} disabled={!desc || isBusy || !selectedModelOption}>
-                  {castingOptions.some(Boolean) ? `Cast ${castingCount} new actors` : `Generate ${castingCount} ${castingCount === 1 ? 'actor' : 'actors'}`}
+                  {uploadedRefUrls.length > 0
+                    ? `Generate ${castingCount} ${castingCount === 1 ? 'take' : 'takes'}`
+                    : castingOptions.some(Boolean) ? `Cast ${castingCount} new actors` : `Generate ${castingCount} ${castingCount === 1 ? 'actor' : 'actors'}`}
                 </button>
               </div>
 

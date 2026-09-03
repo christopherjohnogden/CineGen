@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type SyntheticEvent } from 'react';
-import { CLIP_REVIEW_STATUSES, type ClipCardSize, type ClipItem, type ClipReviewStatus } from '@/lib/studio/clips';
+import { CLIP_REVIEW_STATUSES, formatElapsed, primeVideoPoster, type ClipCardSize, type ClipItem, type ClipReviewStatus } from '@/lib/studio/clips';
 
 export interface StudioClipGridActions {
   onOpen: (id: string) => void;
@@ -86,12 +86,7 @@ const EYE = (
 );
 
 function primeFrame(event: SyntheticEvent<HTMLVideoElement>) {
-  const video = event.currentTarget;
-  try {
-    if (video.currentTime < 0.04) video.currentTime = 0.05;
-  } catch {
-    // Some engines refuse a seek before data arrives; the poster stays blank until hover.
-  }
+  primeVideoPoster(event.currentTarget);
 }
 
 function hoverCapable(): boolean {
@@ -145,6 +140,17 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
 
   const review = CLIP_REVIEW_STATUSES.find((status) => status.id === item.review);
   const busy = item.status === 'queued' || item.status === 'running';
+
+  // A render can run for minutes; without a clock there is no way to tell a slow
+  // one from a dead one. Only busy tiles tick.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!busy) return undefined;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
+  const elapsed = busy && item.startedAt ? formatElapsed(now - item.startedAt) : '';
 
   const run = (fn: () => void) => (event: MouseEvent) => {
     event.stopPropagation();
@@ -202,6 +208,7 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
             <span className={`clip-tile__empty${busy ? ' is-busy' : ''}`}>
               {busy ? <span className="clip-tile__spinner" aria-hidden="true" /> : null}
               <span>{busy ? (item.status === 'queued' ? 'Queued' : 'Generating…') : item.model.name}</span>
+              {elapsed && <span className="clip-tile__elapsed" data-testid={`space-studio-elapsed-${item.id}`}>{elapsed}</span>}
             </span>
           )}
         </span>
@@ -221,7 +228,9 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
           {selected && CHECK}
         </button>
       )}
-      {item.isNew && <span className="clip-tile__new"><i aria-hidden="true" />New</span>}
+      {/* "New" is a promise that there is something to watch, so it waits for
+          the render to land rather than sitting on top of the spinner. */}
+      {item.isNew && !busy && <span className="clip-tile__new"><i aria-hidden="true" />New</span>}
       {item.lastViewed && !item.isNew && <span className="clip-tile__viewed">{EYE}Last viewed</span>}
       {item.status === 'error' && <span className="clip-tile__failed">Failed</span>}
 
@@ -281,6 +290,11 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
       {menuStyle && (
         <div ref={menuRef} className="clip-menu" role="menu" aria-label="Clip actions" style={menuStyle}>
           <button type="button" role="menuitem" onClick={run(() => actions.onOpen(item.id))}>Open</button>
+          {onToggleSelect && (
+            <button type="button" role="menuitem" onClick={run(() => onToggleSelect(item.id))}>
+              {selected ? 'Deselect' : 'Select'}
+            </button>
+          )}
           {item.kind === 'video' && item.url && (
             <>
               <button type="button" role="menuitem" onClick={run(() => actions.onExtractFrame(item.id, 'start'))}>Extract start frame</button>

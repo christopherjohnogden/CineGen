@@ -750,6 +750,19 @@ function expandElementReference(
   const variationIds = resolveElementNodeVariationIds(config);
   const elements = dispatch.getElements();
   const stack: ElementData[] = [];
+  // Files attached straight from disk are references too. They have no Element
+  // behind them, so each one stands alone in the stack.
+  const attached = Array.isArray(config.urls) ? config.urls : [];
+  for (const entry of attached) {
+    if (typeof entry !== 'string' || !entry.trim()) continue;
+    stack.push({
+      frontalImageUrl: entry,
+      referenceImageUrls: [],
+      allUrls: [entry],
+      name: `Reference ${stack.length + 1}`,
+      type: 'prop',
+    });
+  }
   for (const elementId of elementIds) {
     const el = elements.find((e) => e.id === elementId);
     if (!el) continue;

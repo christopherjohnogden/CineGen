@@ -42,7 +42,23 @@ export interface WorkflowRunOptions {
   onTopviewVideoStatus?: (query: TopviewVideoTaskQuery, task: TopviewVideoTaskState) => void;
 }
 
-function workflowMediaInputs(inputs: Record<string, unknown>, outputType: string): Array<{ value: string; role: string }> {
+const VIDEO_REFERENCE_EXTENSIONS = ['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv'];
+const AUDIO_REFERENCE_EXTENSIONS = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'aiff'];
+
+/**
+ * A reference list is mixed media. Topview sorts references into stills, clips
+ * and audio by the role we send, so read the role off the file rather than off
+ * the field it arrived in — otherwise a clip is submitted as a still image.
+ */
+function referenceRoleFor(value: string, fallback: string): string {
+  const path = value.split(/[?#]/)[0];
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  if (VIDEO_REFERENCE_EXTENSIONS.includes(ext)) return 'video';
+  if (AUDIO_REFERENCE_EXTENSIONS.includes(ext)) return 'audio';
+  return fallback;
+}
+
+export function workflowMediaInputs(inputs: Record<string, unknown>, outputType: string): Array<{ value: string; role: string }> {
   const media: Array<{ value: string; role: string }> = [];
   const add = (value: unknown, role: string) => {
     if (typeof value === 'string' && value.trim()) media.push({ value: value.trim(), role });
@@ -52,11 +68,14 @@ function workflowMediaInputs(inputs: Record<string, unknown>, outputType: string
       if (typeof record.value === 'string') add(record.value, typeof record.role === 'string' ? record.role : role);
     }
   };
-  add(inputs.higgsfield_media_inputs, 'image');
-  add(inputs.medias, 'image');
-  add(inputs.image_urls, 'image');
-  add(inputs.input_image_urls, 'image');
-  add(inputs.reference_images, 'image');
+  // Reference lists carry whatever the user attached; frames below are frames by
+  // definition, so only these are classified per file.
+  const addReferences = (value: unknown) => add(value, 'reference');
+  addReferences(inputs.higgsfield_media_inputs);
+  addReferences(inputs.medias);
+  addReferences(inputs.image_urls);
+  addReferences(inputs.input_image_urls);
+  addReferences(inputs.reference_images);
   add(inputs.image_url, outputType === 'video' ? 'start_image' : 'image');
   add(inputs.first_frame, 'start_image');
   add(inputs.first_frame_url, 'start_image');
@@ -64,9 +83,13 @@ function workflowMediaInputs(inputs: Record<string, unknown>, outputType: string
   add(inputs.audio_url, 'audio');
   add(inputs.end_frame, 'end_image');
   add(inputs.end_frame_url, 'end_image');
-  return media.filter((entry, index, all) => all.findIndex((candidate) => (
-    candidate.value === entry.value && candidate.role === entry.role
-  )) === index);
+  return media
+    .map((entry) => (entry.role === 'reference' || entry.role === 'image'
+      ? { ...entry, role: referenceRoleFor(entry.value, 'image') }
+      : entry))
+    .filter((entry, index, all) => all.findIndex((candidate) => (
+      candidate.value === entry.value && candidate.role === entry.role
+    )) === index);
 }
 
 async function runTopviewWorkflow(params: WorkflowRunParams, options: WorkflowRunOptions): Promise<unknown> {

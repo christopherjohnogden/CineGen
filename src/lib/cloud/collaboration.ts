@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { cloudDb } from './firebase';
+import { chooseProjectCreationTeam } from './team-policy';
 
 export type TeamRole = 'owner' | 'editor';
 export type ProjectRole = TeamRole;
@@ -190,6 +191,21 @@ export async function ensurePersonalTeam(user: User): Promise<TeamAccess> {
   });
 }
 
+/**
+ * Pick the team that should own projects created by this user. A profile-level
+ * team preference lets a teammate create directly inside the shared team. The
+ * fallback keeps existing single-team accounts working without a migration.
+ */
+export async function resolveProjectCreationTeam(user: User): Promise<TeamAccess> {
+  await registerCloudIdentity(user);
+  const profile = await getDoc(doc(cloudDb, 'users', user.uid));
+  const preferredTeamId = profile.exists() ? String(profile.data().teamId ?? '') : '';
+  const teams = await listTeams(user.uid);
+  const selected = chooseProjectCreationTeam(user.uid, preferredTeamId, teams);
+  if (selected) return selected;
+  return ensurePersonalTeam(user);
+}
+
 async function resolveAccess(access: StoredProjectAccess): Promise<ProjectAccess> {
   if (!access.teamId) return legacyProject(access);
   const snapshot = await getDoc(teamRef(access.teamId));
@@ -199,9 +215,9 @@ async function resolveAccess(access: StoredProjectAccess): Promise<ProjectAccess
 
 async function migrateLegacyProject(access: StoredProjectAccess, user: User): Promise<ProjectAccess> {
   if (access.ownerId !== user.uid) return legacyProject(access);
-  const personalTeam = await ensurePersonalTeam(user);
+  const creationTeam = await resolveProjectCreationTeam(user);
   const projectRef = accessRef(access.projectId);
-  const ref = teamRef(personalTeam.teamId);
+  const ref = teamRef(creationTeam.teamId);
 
   return runTransaction(cloudDb, async (transaction) => {
     const [projectSnapshot, teamSnapshot] = await Promise.all([
@@ -211,7 +227,7 @@ async function migrateLegacyProject(access: StoredProjectAccess, user: User): Pr
     if (!projectSnapshot.exists() || !teamSnapshot.exists()) throw new Error('Project team migration could not be completed.');
 
     const currentAccess = parseStoredAccess(access.projectId, projectSnapshot.data());
-    const team = parseTeam(personalTeam.teamId, teamSnapshot.data());
+    const team = parseTeam(creationTeam.teamId, teamSnapshot.data());
     if (currentAccess.teamId) return projectWithTeam(currentAccess, team);
 
     const timestamp = now();
@@ -250,7 +266,7 @@ export async function ensureProjectAccess(projectId: string, user: User): Promis
   const current = await getDoc(ref);
 
   if (!current.exists()) {
-    const team = await ensurePersonalTeam(user);
+    const team = await resolveProjectCreationTeam(user);
     const timestamp = now();
     const created: StoredProjectAccess = {
       projectId,

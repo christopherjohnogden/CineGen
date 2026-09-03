@@ -43,6 +43,8 @@ export interface ClipItem {
   status: GenerationStatus;
   error?: string;
   createdAt: number;
+  /** When the render started, for the elapsed clock on a busy tile. */
+  startedAt?: number;
   liked: boolean;
   review?: ClipReviewStatus;
   comments: StudioComment[];
@@ -157,9 +159,28 @@ export function writeSeen(projectId: string, patch: Partial<SeenState>): SeenSta
   return next;
 }
 
-/** A clip is new when it arrived after the last visit and has not been opened since. */
-export function isNewClip(createdAt: number, id: string, seen: SeenState): boolean {
+/**
+ * A clip is new when it finished after the last visit and has not been watched.
+ *
+ * A render still in flight is never "New": the badge is a promise that there is
+ * something to watch, and a tile that says both "Generating…" and "New" is a
+ * lie about one of the two.
+ */
+export function isNewClip(
+  createdAt: number,
+  id: string,
+  seen: SeenState,
+  status: GenerationStatus = 'complete',
+): boolean {
+  if (status !== 'complete') return false;
   return createdAt > seen.seenAt && !seen.viewed.includes(id);
+}
+
+/** `0:07`, `4:31` — how long a render has been going. */
+export function formatElapsed(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${pad(seconds % 60)}`;
 }
 
 const CARD_SIZE_KEY = 'cinegen_studio_card_size';
@@ -335,6 +356,20 @@ export async function copyText(text: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Show a still instead of black.
+ *
+ * A <video> paints nothing until it has a frame, so every place that uses one as
+ * a thumbnail seeks a hair past the start once metadata arrives.
+ */
+export function primeVideoPoster(video: HTMLVideoElement): void {
+  try {
+    if (video.currentTime < 0.04) video.currentTime = 0.05;
+  } catch {
+    // Some engines refuse a seek before data arrives; the poster stays blank.
   }
 }
 

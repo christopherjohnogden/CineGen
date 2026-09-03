@@ -1,7 +1,7 @@
 {
   "name": "cinegen-desktop",
   "productName": "CineGen",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI Film Production Studio — Desktop Application",
   "private": true,
   "main": "dist-electron/main.js",

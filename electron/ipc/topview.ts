@@ -1233,7 +1233,7 @@ class TopviewMcpService {
     const token = await this.accessToken();
     const initialized = await this.mcpRequest(token, {
       jsonrpc: '2.0', id: `init-${crypto.randomUUID()}`, method: 'initialize', params: {
-        protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'CineGen Desktop', version: '1.0.0' },
+        protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'CineGen Desktop', version: '1.0.1' },
       },
     });
     const notified = await this.mcpRequest(token, {

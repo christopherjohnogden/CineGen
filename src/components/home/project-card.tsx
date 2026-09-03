@@ -62,7 +62,7 @@ export function ProjectCard({ project, onOpen, onDelete, selected = false, onSel
       </div>
 
       {/* Delete */}
-      {project.cloudRole !== 'editor' && (
+      {(!project.cloud || project.cloudCanDelete) && (
         <button
           className="pm-card__delete"
           onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}

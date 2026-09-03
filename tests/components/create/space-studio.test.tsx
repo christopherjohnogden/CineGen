@@ -259,6 +259,7 @@ vi.mock('@/lib/utils/video-generation-provider', () => ({
 vi.mock('@/lib/providers/project-usage', () => ({ requestProviderUsageRefresh: vi.fn() }));
 
 import { CreateTab } from '@/components/create/create-tab';
+import { renewalCountdown } from '@/lib/providers/renewal';
 import { SpaceStudio } from '@/components/create/space-studio';
 import { createWorkflowNodeFromSpec } from '@/lib/llm/space-node-factory';
 import { executeFromNode } from '@/lib/workflows/execute';
@@ -578,6 +579,19 @@ describe('Space Studio', () => {
     fireEvent.change(slider, { target: { value: '3' } });
     expect(screen.getByTestId('space-studio-control-duration-trigger')).toHaveTextContent('7s');
 
+    // Dragging a 12-stop range inside a pill-width popover left everything but
+    // the ends unreachable, so every accepted value is also a target of its own.
+    const stops = screen.getByTestId('space-studio-control-duration-stops');
+    expect(within(stops).getAllByRole('button')).toHaveLength(12);
+    fireEvent.click(within(stops).getByRole('button', { name: '11s' }));
+    expect(screen.getByTestId('space-studio-control-duration-trigger')).toHaveTextContent('11s');
+
+    // And a nudge lands on the neighbouring second, not two away.
+    fireEvent.click(screen.getByTestId('space-studio-control-duration-up'));
+    expect(screen.getByTestId('space-studio-control-duration-trigger')).toHaveTextContent('12s');
+    fireEvent.click(screen.getByTestId('space-studio-control-duration-down'));
+    expect(screen.getByTestId('space-studio-control-duration-trigger')).toHaveTextContent('11s');
+
     // Bitrate is not one of the three pills, so it becomes a row with a
     // flyout that carries each option's explanation.
     fireEvent.click(screen.getByTestId('space-studio-control-bitrate-trigger'));
@@ -794,35 +808,56 @@ describe('Space Studio', () => {
     expect(screen.getByRole('combobox', { name: 'Resolution' })).toHaveAttribute('data-value', '1080p');
   });
 
-  it('attaches a local file from the bar and makes an image the start frame', async () => {
+  it('treats a file attached from the bar as a reference and leaves the mode alone', async () => {
     localStorage.removeItem('cinegen_studio_feed_view');
     workspaceHarness.state = makeState([]);
-    // Electron hands back a real path for a dropped or chosen file.
     (window as unknown as { electronAPI: unknown }).electronAPI = {
-      file: { getPathForFile: () => '/Users/chris/Movies/first-frame.png' },
+      file: { getPathForFile: (file: File) => `/Users/chris/Movies/${file.name}` },
     };
 
+    vi.mocked(executeFromNode).mockResolvedValue(undefined as never);
+    let made = 0;
+    vi.mocked(createWorkflowNodeFromSpec).mockImplementation((spec: { nodeType: string; label: string; config: Record<string, unknown> }, position: { x: number; y: number }) => ({
+      id: `made-${++made}`,
+      type: spec.nodeType,
+      position,
+      data: { type: spec.nodeType, label: spec.label, config: spec.config },
+    }) as never);
+
     render(<SpaceStudio />);
-    // A model that takes frames, so the attachment has somewhere to land.
-    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
-    fireEvent.click(screen.getByRole('option', { name: /Video Model/ }));
+    const modeBefore = screen.getByTestId('space-studio-dock-mode').textContent;
 
     const input = screen.getByTestId('space-studio-attach-input');
-    expect(input).toHaveAttribute('accept', 'image/*,video/*');
-    // The "+" opens this picker rather than the Elements list.
-    expect(screen.getByTestId('space-studio-dock-add')).toHaveAttribute('aria-label', 'Attach an image or video');
+    expect(input).toHaveAttribute('accept', 'image/*,video/*,audio/*');
+    expect(input).toHaveAttribute('multiple');
 
-    const file = new File(['x'], 'first-frame.png', { type: 'image/png' });
-    fireEvent.change(input, { target: { files: [file] } });
-
-    await waitFor(() => {
-      const added = workspaceHarness.dispatch.mock.calls
-        .map(([action]) => action)
-        .find((action) => action.type === 'ADD_ASSET') as { asset: { name: string; type: string; fileRef?: string } } | undefined;
-      expect(added?.asset).toMatchObject({ name: 'first-frame.png', type: 'image', fileRef: '/Users/chris/Movies/first-frame.png' });
+    // A whole set at once, mixed media — that is what a reference pack is.
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(['x'], 'jordan.png', { type: 'image/png' }),
+          new File(['x'], 'jordan-travis.mp4', { type: 'video/mp4' }),
+        ],
+      },
     });
-    expect(await screen.findByText('first-frame.png is the start frame.')).toBeInTheDocument();
-    expect(screen.getByTestId('space-studio-dock-mode')).toHaveTextContent('Frames');
+
+    expect(await screen.findByText('jordan-travis.mp4 added as a reference.')).toBeInTheDocument();
+    // The video used to stop at "saved to Assets"; both are references now.
+    expect(screen.getAllByRole('button', { name: 'Remove jordan.png' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Remove jordan-travis.mp4' }).length).toBeGreaterThan(0);
+    // Attaching must not move the shot to Frames.
+    expect(screen.getByTestId('space-studio-dock-mode')).toHaveTextContent(modeBefore ?? '');
+
+    // They ride into the generation on the model's reference field.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'He walks out of the tunnel.' } });
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form') as HTMLFormElement);
+    const setNodes = workspaceHarness.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'SET_NODES') as { nodes: Array<{ data: { config: Record<string, unknown> } }> };
+    const reference = setNodes.nodes[0].data.config.image_url as { urls?: string[] };
+    expect(reference.urls).toHaveLength(2);
+    expect(reference.urls?.[0]).toContain('jordan.png');
+    expect(reference.urls?.[1]).toContain('jordan-travis.mp4');
 
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
@@ -872,6 +907,124 @@ describe('Space Studio', () => {
     fireEvent.click(screen.getByTestId('space-studio-dock-start-frame'));
     fireEvent.change(screen.getByTestId('space-studio-attach-input'), { target: { files: [new File(['x'], 'clip.mp4', { type: 'video/mp4' })] } });
     expect(await screen.findByText('A frame has to be an image.')).toBeInTheDocument();
+
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+  });
+
+  it('folds the composer into a bottom sheet on a phone so the clips come first', () => {
+    localStorage.removeItem('cinegen_studio_feed_view');
+    // jsdom reports no matchMedia, which the Studio reads as a desktop width.
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: /max-width:\s*780px/.test(query),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        onchange: null,
+        dispatchEvent: () => false,
+      }),
+    });
+    workspaceHarness.state = makeState([
+      node('a', 'video-one', {
+        config: { __studioGenerated: true, __studioCreatedAt: '2026-09-01T12:00:00.000Z' },
+        generations: ['https://media.example/a.mp4'],
+        result: { status: 'complete', url: 'https://media.example/a.mp4' },
+      }),
+    ]);
+
+    render(<SpaceStudio />);
+
+    const studio = screen.getByTestId('space-studio');
+    expect(studio).toHaveClass('space-studio--sheet');
+    expect(studio).not.toHaveClass('space-studio--dock');
+    expect(studio).not.toHaveClass('is-composing');
+
+    // The collapsed bar shows what the prompt says, and opens the composer.
+    const peek = screen.getByTestId('space-studio-peek');
+    expect(peek).toHaveTextContent('Describe the shot…');
+    fireEvent.click(peek);
+    expect(screen.getByTestId('space-studio')).toHaveClass('is-composing');
+    expect(screen.queryByTestId('space-studio-peek')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'A slow push through the ferns.' } });
+    fireEvent.click(screen.getByTestId('space-studio-sheet-close'));
+    expect(screen.getByTestId('space-studio')).not.toHaveClass('is-composing');
+    expect(screen.getByTestId('space-studio-peek')).toHaveTextContent('A slow push through the ferns.');
+
+    // The list keeps the full panel: the sheet belongs to the grid.
+    fireEvent.click(screen.getByTestId('space-studio-view-list'));
+    expect(screen.getByTestId('space-studio')).not.toHaveClass('space-studio--sheet');
+    expect(screen.queryByTestId('space-studio-peek')).not.toBeInTheDocument();
+
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it('shows the Topview credit reset in the provider card instead of a project tally', () => {
+    workspaceHarness.state = makeState([]);
+
+    render(<CreateTab />);
+
+    const card = screen.getByLabelText('Topview AI project usage');
+    expect(within(card).getByText('Credits left')).toBeInTheDocument();
+    expect(within(card).queryByText('Used in project')).not.toBeInTheDocument();
+    expect(within(card).getByText('Renews in')).toBeInTheDocument();
+    // The countdown is derived from today, so assert against the same helper
+    // rather than a date that would rot.
+    expect(screen.getByTestId('cs-provider-renewal')).toHaveTextContent(renewalCountdown());
+    expect(within(card).getByText(/resets? on the 27th of each month/i)).toBeInTheDocument();
+  });
+
+  it('shows every attached reference above the bar, Elements and files alike', async () => {
+    localStorage.removeItem('cinegen_studio_feed_view');
+    workspaceHarness.state = {
+      ...makeState([]),
+      elements: [{
+        id: 'el-sky',
+        name: 'Sky Diver',
+        type: 'character',
+        description: '',
+        images: [{ id: 'i1', url: 'local-media://sky.png', createdAt: '', source: 'upload' }],
+        createdAt: '',
+        updatedAt: '',
+      }],
+    };
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      file: { getPathForFile: (file: File) => `/Users/chris/Movies/${file.name}` },
+    };
+
+    render(<SpaceStudio />);
+    // Nothing attached yet, so no strip.
+    expect(screen.queryByTestId('space-studio-dock-refs')).not.toBeInTheDocument();
+
+    // An Element picked from the picker.
+    fireEvent.click(screen.getByTestId('space-studio-elements-chip'));
+    fireEvent.click(screen.getByTestId('space-studio-modal-element-el-sky'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    // And a file attached from disk.
+    fireEvent.change(screen.getByTestId('space-studio-attach-input'), {
+      target: { files: [new File(['x'], 'run-cycle.mp4', { type: 'video/mp4' })] },
+    });
+    await screen.findByText('run-cycle.mp4 added as a reference.');
+
+    const strip = screen.getByTestId('space-studio-dock-refs');
+    expect(within(strip).getByText('Sky Diver')).toBeInTheDocument();
+    expect(within(strip).getByText('run-cycle.mp4')).toBeInTheDocument();
+    // A clip shows a still of itself, so you can tell which video it is.
+    const clip = strip.querySelector('video');
+    expect(clip).not.toBeNull();
+    expect(clip?.getAttribute('src')).toContain('run-cycle.mp4');
+    expect(clip?.getAttribute('preload')).toBe('metadata');
+
+    // Each tile can be taken off the shot from here.
+    fireEvent.click(within(strip).getByRole('button', { name: 'Remove run-cycle.mp4' }));
+    expect(within(screen.getByTestId('space-studio-dock-refs')).queryByText('run-cycle.mp4')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('space-studio-dock-refs')).getByRole('button', { name: 'Remove Sky Diver' }));
+    expect(screen.queryByTestId('space-studio-dock-refs')).not.toBeInTheDocument();
 
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });

@@ -1,230 +1,242 @@
 "use strict";
-const electron = require("electron");
-electron.contextBridge.exposeInMainWorld("electronAPI", {
+
+// electron/preload.ts
+var import_electron = require("electron");
+import_electron.contextBridge.exposeInMainWorld("electronAPI", {
   project: {
-    list: () => electron.ipcRenderer.invoke("project:list"),
-    create: (name) => electron.ipcRenderer.invoke("project:create", name),
-    load: (id) => electron.ipcRenderer.invoke("project:load", id),
-    save: (id, data) => electron.ipcRenderer.invoke("project:save", id, data),
-    delete: (id) => electron.ipcRenderer.invoke("project:delete", id)
+    list: () => import_electron.ipcRenderer.invoke("project:list"),
+    create: (name) => import_electron.ipcRenderer.invoke("project:create", name),
+    load: (id) => import_electron.ipcRenderer.invoke("project:load", id),
+    save: (id, data) => import_electron.ipcRenderer.invoke("project:save", id, data),
+    delete: (id) => import_electron.ipcRenderer.invoke("project:delete", id)
+  },
+  mcpBridge: {
+    onInvoke: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      import_electron.ipcRenderer.on("mcp:invoke", listener);
+      return () => import_electron.ipcRenderer.removeListener("mcp:invoke", listener);
+    },
+    respond: (payload) => import_electron.ipcRenderer.send("mcp:result", payload),
+    ready: (ready) => import_electron.ipcRenderer.send("mcp:ready", ready),
+    status: () => import_electron.ipcRenderer.invoke("mcp:status")
   },
   workflow: {
-    run: (params) => electron.ipcRenderer.invoke("workflow:run", params),
-    pollJob: (id) => electron.ipcRenderer.invoke("workflow:poll-job", id)
+    run: (params) => import_electron.ipcRenderer.invoke("workflow:run", params),
+    pollJob: (id) => import_electron.ipcRenderer.invoke("workflow:poll-job", id)
   },
   pod: {
-    start: (params) => electron.ipcRenderer.invoke("pod:start", params),
-    stop: (params) => electron.ipcRenderer.invoke("pod:stop", params),
-    status: (params) => electron.ipcRenderer.invoke("pod:status", params),
-    setupLtx25: (params) => electron.ipcRenderer.invoke("pod:setup-ltx25", params),
-    statusLtx25: (params) => electron.ipcRenderer.invoke("pod:status-ltx25", params),
-    terminateLtx25: (params) => electron.ipcRenderer.invoke("pod:terminate-ltx25", params),
-    generateLtx25: (params) => electron.ipcRenderer.invoke("pod:generate-ltx25", params),
-    generateSessionImage: (params) => electron.ipcRenderer.invoke("pod:generate-session-image", params)
+    start: (params) => import_electron.ipcRenderer.invoke("pod:start", params),
+    stop: (params) => import_electron.ipcRenderer.invoke("pod:stop", params),
+    status: (params) => import_electron.ipcRenderer.invoke("pod:status", params),
+    setupLtx25: (params) => import_electron.ipcRenderer.invoke("pod:setup-ltx25", params),
+    statusLtx25: (params) => import_electron.ipcRenderer.invoke("pod:status-ltx25", params),
+    terminateLtx25: (params) => import_electron.ipcRenderer.invoke("pod:terminate-ltx25", params),
+    generateLtx25: (params) => import_electron.ipcRenderer.invoke("pod:generate-ltx25", params),
+    generateSessionImage: (params) => import_electron.ipcRenderer.invoke("pod:generate-session-image", params)
   },
   export: {
-    start: (params) => electron.ipcRenderer.invoke("export:start", params),
-    poll: (id) => electron.ipcRenderer.invoke("export:poll", id),
-    cancel: (id) => electron.ipcRenderer.invoke("export:cancel", id),
+    start: (params) => import_electron.ipcRenderer.invoke("export:start", params),
+    poll: (id) => import_electron.ipcRenderer.invoke("export:poll", id),
+    cancel: (id) => import_electron.ipcRenderer.invoke("export:cancel", id),
     onProgress: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("export:progress", handler);
-      return () => electron.ipcRenderer.removeListener("export:progress", handler);
+      import_electron.ipcRenderer.on("export:progress", handler);
+      return () => import_electron.ipcRenderer.removeListener("export:progress", handler);
     }
   },
   elements: {
-    upload: (fileData, apiKey) => electron.ipcRenderer.invoke("elements:upload", fileData, apiKey),
-    uploadTranscriptionSource: (sourceUrl, apiKey) => electron.ipcRenderer.invoke("elements:upload-transcription-source", sourceUrl, apiKey),
-    uploadMediaSource: (sourceUrl, apiKey) => electron.ipcRenderer.invoke("elements:upload-media-source", sourceUrl, apiKey),
-    loadLibrary: (opts) => electron.ipcRenderer.invoke("elements-library:load", opts),
-    saveLibrary: (library) => electron.ipcRenderer.invoke("elements-library:save", library)
+    upload: (fileData, apiKey) => import_electron.ipcRenderer.invoke("elements:upload", fileData, apiKey),
+    uploadTranscriptionSource: (sourceUrl, apiKey) => import_electron.ipcRenderer.invoke("elements:upload-transcription-source", sourceUrl, apiKey),
+    uploadMediaSource: (sourceUrl, apiKey) => import_electron.ipcRenderer.invoke("elements:upload-media-source", sourceUrl, apiKey),
+    loadLibrary: (opts) => import_electron.ipcRenderer.invoke("elements-library:load", opts),
+    saveLibrary: (library) => import_electron.ipcRenderer.invoke("elements-library:save", library)
   },
   music: {
-    generatePrompt: (params) => electron.ipcRenderer.invoke("music:generate-prompt", params)
+    generatePrompt: (params) => import_electron.ipcRenderer.invoke("music:generate-prompt", params)
   },
   llm: {
-    chat: (params) => electron.ipcRenderer.invoke("llm:chat", params),
-    localChat: (params) => electron.ipcRenderer.invoke("llm:local-chat", params),
-    localModels: () => electron.ipcRenderer.invoke("llm:local-models"),
+    chat: (params) => import_electron.ipcRenderer.invoke("llm:chat", params),
+    localChat: (params) => import_electron.ipcRenderer.invoke("llm:local-chat", params),
+    localModels: () => import_electron.ipcRenderer.invoke("llm:local-models"),
     onLocalStream: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("llm:local-stream", handler);
-      return () => electron.ipcRenderer.removeListener("llm:local-stream", handler);
+      import_electron.ipcRenderer.on("llm:local-stream", handler);
+      return () => import_electron.ipcRenderer.removeListener("llm:local-stream", handler);
     },
-    runCutWorkflow: (params) => electron.ipcRenderer.invoke("llm:run-cut-workflow", params),
-    claudeCodeDetect: () => electron.ipcRenderer.invoke("llm:claude-code-detect"),
-    cliDetect: () => electron.ipcRenderer.invoke("llm:cli-detect"),
-    claudeCodeChat: (params) => electron.ipcRenderer.invoke("llm:claude-code-chat", params),
-    codexChat: (params) => electron.ipcRenderer.invoke("llm:codex-chat", params),
-    geminiChat: (params) => electron.ipcRenderer.invoke("llm:gemini-chat", params),
-    openaiChat: (params) => electron.ipcRenderer.invoke("llm:openai-chat", params),
-    openaiRealtimeSession: (params) => electron.ipcRenderer.invoke("llm:openai-realtime-session", params),
-    claudeCodeCancel: (requestId) => electron.ipcRenderer.invoke("llm:claude-code-cancel", requestId),
-    codexCancel: (requestId) => electron.ipcRenderer.invoke("llm:codex-cancel", requestId),
-    geminiCancel: (requestId) => electron.ipcRenderer.invoke("llm:gemini-cancel", requestId),
+    runCutWorkflow: (params) => import_electron.ipcRenderer.invoke("llm:run-cut-workflow", params),
+    claudeCodeDetect: () => import_electron.ipcRenderer.invoke("llm:claude-code-detect"),
+    cliDetect: () => import_electron.ipcRenderer.invoke("llm:cli-detect"),
+    claudeCodeChat: (params) => import_electron.ipcRenderer.invoke("llm:claude-code-chat", params),
+    codexChat: (params) => import_electron.ipcRenderer.invoke("llm:codex-chat", params),
+    geminiChat: (params) => import_electron.ipcRenderer.invoke("llm:gemini-chat", params),
+    openaiChat: (params) => import_electron.ipcRenderer.invoke("llm:openai-chat", params),
+    openaiRealtimeSession: (params) => import_electron.ipcRenderer.invoke("llm:openai-realtime-session", params),
+    claudeCodeCancel: (requestId) => import_electron.ipcRenderer.invoke("llm:claude-code-cancel", requestId),
+    codexCancel: (requestId) => import_electron.ipcRenderer.invoke("llm:codex-cancel", requestId),
+    geminiCancel: (requestId) => import_electron.ipcRenderer.invoke("llm:gemini-cancel", requestId),
     onClaudeCodeStream: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("llm:claude-code-stream", handler);
-      return () => electron.ipcRenderer.removeListener("llm:claude-code-stream", handler);
+      import_electron.ipcRenderer.on("llm:claude-code-stream", handler);
+      return () => import_electron.ipcRenderer.removeListener("llm:claude-code-stream", handler);
     },
     onCodexStream: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("llm:codex-stream", handler);
-      return () => electron.ipcRenderer.removeListener("llm:codex-stream", handler);
+      import_electron.ipcRenderer.on("llm:codex-stream", handler);
+      return () => import_electron.ipcRenderer.removeListener("llm:codex-stream", handler);
     },
     onGeminiStream: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("llm:gemini-stream", handler);
-      return () => electron.ipcRenderer.removeListener("llm:gemini-stream", handler);
+      import_electron.ipcRenderer.on("llm:gemini-stream", handler);
+      return () => import_electron.ipcRenderer.removeListener("llm:gemini-stream", handler);
     }
   },
   vision: {
-    indexAsset: (params) => electron.ipcRenderer.invoke("vision:index-asset", params),
-    detectObjects: (params) => electron.ipcRenderer.invoke("vision:detect-objects", params)
+    indexAsset: (params) => import_electron.ipcRenderer.invoke("vision:index-asset", params),
+    detectObjects: (params) => import_electron.ipcRenderer.invoke("vision:detect-objects", params)
   },
   acoustic: {
-    analyzeAsset: (params) => electron.ipcRenderer.invoke("acoustic:analyze-asset", params)
+    analyzeAsset: (params) => import_electron.ipcRenderer.invoke("acoustic:analyze-asset", params)
   },
   higgsfield: {
-    accountStatus: () => electron.ipcRenderer.invoke("higgsfield:account-status"),
-    authLogin: () => electron.ipcRenderer.invoke("higgsfield:auth-login"),
-    authLogout: () => electron.ipcRenderer.invoke("higgsfield:auth-logout"),
-    quickEdit: (params) => electron.ipcRenderer.invoke("higgsfield:quick-edit", params),
-    generate: (params) => electron.ipcRenderer.invoke("higgsfield:generate", params),
-    generateList: (params) => electron.ipcRenderer.invoke("higgsfield:generate-list", params)
+    accountStatus: () => import_electron.ipcRenderer.invoke("higgsfield:account-status"),
+    authLogin: () => import_electron.ipcRenderer.invoke("higgsfield:auth-login"),
+    authLogout: () => import_electron.ipcRenderer.invoke("higgsfield:auth-logout"),
+    quickEdit: (params) => import_electron.ipcRenderer.invoke("higgsfield:quick-edit", params),
+    generate: (params) => import_electron.ipcRenderer.invoke("higgsfield:generate", params),
+    generateList: (params) => import_electron.ipcRenderer.invoke("higgsfield:generate-list", params)
   },
   artlist: {
-    accountStatus: () => electron.ipcRenderer.invoke("artlist:account-status"),
-    authLogin: () => electron.ipcRenderer.invoke("artlist:auth-login"),
-    authLogout: () => electron.ipcRenderer.invoke("artlist:auth-logout"),
-    generate: (params) => electron.ipcRenderer.invoke("artlist:generate", params)
+    accountStatus: () => import_electron.ipcRenderer.invoke("artlist:account-status"),
+    authLogin: () => import_electron.ipcRenderer.invoke("artlist:auth-login"),
+    authLogout: () => import_electron.ipcRenderer.invoke("artlist:auth-logout"),
+    generate: (params) => import_electron.ipcRenderer.invoke("artlist:generate", params)
   },
   topview: {
-    accountStatus: () => electron.ipcRenderer.invoke("topview:account-status"),
-    modelCatalog: () => electron.ipcRenderer.invoke("topview:model-catalog"),
-    authLogin: () => electron.ipcRenderer.invoke("topview:auth-login"),
-    authLogout: () => electron.ipcRenderer.invoke("topview:auth-logout"),
-    submit: (params) => electron.ipcRenderer.invoke("topview:submit", params),
-    query: (params) => electron.ipcRenderer.invoke("topview:query", params),
-    generate: (params) => electron.ipcRenderer.invoke("topview:generate", params),
-    generateImage: (params) => electron.ipcRenderer.invoke("topview:generate-image", params),
-    generateAudio: (params) => electron.ipcRenderer.invoke("topview:generate-audio", params)
+    accountStatus: () => import_electron.ipcRenderer.invoke("topview:account-status"),
+    modelCatalog: () => import_electron.ipcRenderer.invoke("topview:model-catalog"),
+    authLogin: () => import_electron.ipcRenderer.invoke("topview:auth-login"),
+    authLogout: () => import_electron.ipcRenderer.invoke("topview:auth-logout"),
+    submit: (params) => import_electron.ipcRenderer.invoke("topview:submit", params),
+    query: (params) => import_electron.ipcRenderer.invoke("topview:query", params),
+    generate: (params) => import_electron.ipcRenderer.invoke("topview:generate", params),
+    generateImage: (params) => import_electron.ipcRenderer.invoke("topview:generate-image", params),
+    generateAudio: (params) => import_electron.ipcRenderer.invoke("topview:generate-audio", params)
   },
   teamProviders: {
-    status: () => electron.ipcRenderer.invoke("team-providers:status"),
-    connect: () => electron.ipcRenderer.invoke("team-providers:connect"),
-    disconnect: () => electron.ipcRenderer.invoke("team-providers:disconnect"),
-    save: (value) => electron.ipcRenderer.invoke("team-providers:save", value),
-    remove: (value) => electron.ipcRenderer.invoke("team-providers:remove", value),
-    shareTopview: () => electron.ipcRenderer.invoke("team-providers:share-topview")
+    status: () => import_electron.ipcRenderer.invoke("team-providers:status"),
+    connect: () => import_electron.ipcRenderer.invoke("team-providers:connect"),
+    disconnect: () => import_electron.ipcRenderer.invoke("team-providers:disconnect"),
+    save: (value) => import_electron.ipcRenderer.invoke("team-providers:save", value),
+    remove: (value) => import_electron.ipcRenderer.invoke("team-providers:remove", value),
+    shareTopview: () => import_electron.ipcRenderer.invoke("team-providers:share-topview")
   },
   copilot: {
-    analyzeVisualRefs: (params) => electron.ipcRenderer.invoke("copilot:analyze-visual-refs", params)
+    analyzeVisualRefs: (params) => import_electron.ipcRenderer.invoke("copilot:analyze-visual-refs", params)
   },
   dialog: {
-    showSave: (options) => electron.ipcRenderer.invoke("dialog:show-save", options),
-    showOpen: (options) => electron.ipcRenderer.invoke("dialog:show-open", options)
+    showSave: (options) => import_electron.ipcRenderer.invoke("dialog:show-save", options),
+    showOpen: (options) => import_electron.ipcRenderer.invoke("dialog:show-open", options)
   },
   shell: {
-    openPath: (filePath) => electron.ipcRenderer.invoke("shell:open-path", filePath)
+    openPath: (filePath) => import_electron.ipcRenderer.invoke("shell:open-path", filePath)
   },
   db: {
-    createProject: (name) => electron.ipcRenderer.invoke("db:project:create", name),
-    loadProject: (id) => electron.ipcRenderer.invoke("db:project:load", id),
-    saveProject: (id, state) => electron.ipcRenderer.invoke("db:project:save", id, state),
-    deleteProject: (id) => electron.ipcRenderer.invoke("db:project:delete", id),
-    closeProject: (id) => electron.ipcRenderer.invoke("db:project:close", id),
-    updateProject: (id, data) => electron.ipcRenderer.invoke("db:project:update", id, data),
-    insertAsset: (asset) => electron.ipcRenderer.invoke("db:asset:insert", asset),
-    updateAsset: (projectId, id, data) => electron.ipcRenderer.invoke("db:asset:update", projectId, id, data),
-    deleteAsset: (projectId, id) => electron.ipcRenderer.invoke("db:asset:delete", projectId, id)
+    createProject: (name) => import_electron.ipcRenderer.invoke("db:project:create", name),
+    loadProject: (id) => import_electron.ipcRenderer.invoke("db:project:load", id),
+    saveProject: (id, state) => import_electron.ipcRenderer.invoke("db:project:save", id, state),
+    deleteProject: (id) => import_electron.ipcRenderer.invoke("db:project:delete", id),
+    closeProject: (id) => import_electron.ipcRenderer.invoke("db:project:close", id),
+    updateProject: (id, data) => import_electron.ipcRenderer.invoke("db:project:update", id, data),
+    insertAsset: (asset) => import_electron.ipcRenderer.invoke("db:asset:insert", asset),
+    updateAsset: (projectId, id, data) => import_electron.ipcRenderer.invoke("db:asset:update", projectId, id, data),
+    deleteAsset: (projectId, id) => import_electron.ipcRenderer.invoke("db:asset:delete", projectId, id)
   },
   media: {
-    import: (params) => electron.ipcRenderer.invoke("media:import", params),
-    submitJob: (job) => electron.ipcRenderer.invoke("media:submit-job", job),
-    cancelJob: (jobId) => electron.ipcRenderer.invoke("media:cancel-job", jobId),
-    queueProcessing: (params) => electron.ipcRenderer.invoke("media:queue-processing", params),
-    extractFrame: (params) => electron.ipcRenderer.invoke("media:extract-frame", params),
-    writeTempImage: (params) => electron.ipcRenderer.invoke("media:write-temp-image", params),
-    extractClip: (params) => electron.ipcRenderer.invoke("media:extract-clip", params),
-    downloadRemote: (params) => electron.ipcRenderer.invoke("media:download-remote", params),
-    persistGeneratedAsset: (params) => electron.ipcRenderer.invoke("media:persist-generated-asset", params),
+    import: (params) => import_electron.ipcRenderer.invoke("media:import", params),
+    submitJob: (job) => import_electron.ipcRenderer.invoke("media:submit-job", job),
+    cancelJob: (jobId) => import_electron.ipcRenderer.invoke("media:cancel-job", jobId),
+    queueProcessing: (params) => import_electron.ipcRenderer.invoke("media:queue-processing", params),
+    extractFrame: (params) => import_electron.ipcRenderer.invoke("media:extract-frame", params),
+    writeTempImage: (params) => import_electron.ipcRenderer.invoke("media:write-temp-image", params),
+    extractClip: (params) => import_electron.ipcRenderer.invoke("media:extract-clip", params),
+    downloadRemote: (params) => import_electron.ipcRenderer.invoke("media:download-remote", params),
+    persistGeneratedAsset: (params) => import_electron.ipcRenderer.invoke("media:persist-generated-asset", params),
     onJobProgress: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("media:job-progress", handler);
-      return () => electron.ipcRenderer.removeListener("media:job-progress", handler);
+      import_electron.ipcRenderer.on("media:job-progress", handler);
+      return () => import_electron.ipcRenderer.removeListener("media:job-progress", handler);
     },
     onJobComplete: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("media:job-complete", handler);
-      return () => electron.ipcRenderer.removeListener("media:job-complete", handler);
+      import_electron.ipcRenderer.on("media:job-complete", handler);
+      return () => import_electron.ipcRenderer.removeListener("media:job-complete", handler);
     },
     onJobError: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("media:job-error", handler);
-      return () => electron.ipcRenderer.removeListener("media:job-error", handler);
+      import_electron.ipcRenderer.on("media:job-error", handler);
+      return () => import_electron.ipcRenderer.removeListener("media:job-error", handler);
     }
   },
   pm: {
-    openProject: (id, useSqlite) => electron.ipcRenderer.invoke("pm:open-project", id, useSqlite),
-    open: () => electron.ipcRenderer.invoke("pm:open"),
+    openProject: (id, useSqlite) => import_electron.ipcRenderer.invoke("pm:open-project", id, useSqlite),
+    open: () => import_electron.ipcRenderer.invoke("pm:open"),
     onOpenProject: (cb) => {
       const handler = (_e, id, useSqlite) => cb(id, useSqlite);
-      electron.ipcRenderer.on("pm:open-project", handler);
-      return () => electron.ipcRenderer.removeListener("pm:open-project", handler);
+      import_electron.ipcRenderer.on("pm:open-project", handler);
+      return () => import_electron.ipcRenderer.removeListener("pm:open-project", handler);
     }
   },
   transcription: {
-    start: (params) => electron.ipcRenderer.invoke("transcription:start", params),
-    get: (jobId) => electron.ipcRenderer.invoke("transcription:get", jobId),
+    start: (params) => import_electron.ipcRenderer.invoke("transcription:start", params),
+    get: (jobId) => import_electron.ipcRenderer.invoke("transcription:get", jobId),
     onProgress: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("transcription:progress", handler);
-      return () => electron.ipcRenderer.removeListener("transcription:progress", handler);
+      import_electron.ipcRenderer.on("transcription:progress", handler);
+      return () => import_electron.ipcRenderer.removeListener("transcription:progress", handler);
     }
   },
   sam3: {
-    start: () => electron.ipcRenderer.invoke("sam3:start"),
-    stop: () => electron.ipcRenderer.invoke("sam3:stop"),
-    getPort: () => electron.ipcRenderer.invoke("sam3:port")
+    start: () => import_electron.ipcRenderer.invoke("sam3:start"),
+    stop: () => import_electron.ipcRenderer.invoke("sam3:stop"),
+    getPort: () => import_electron.ipcRenderer.invoke("sam3:port")
   },
   localModel: {
-    run: (params) => electron.ipcRenderer.invoke("local-model:run", params),
-    readTranscript: (transcriptPath) => electron.ipcRenderer.invoke("local-model:read-transcript", transcriptPath),
-    get: (jobId) => electron.ipcRenderer.invoke("local-model:get", jobId),
+    run: (params) => import_electron.ipcRenderer.invoke("local-model:run", params),
+    readTranscript: (transcriptPath) => import_electron.ipcRenderer.invoke("local-model:read-transcript", transcriptPath),
+    get: (jobId) => import_electron.ipcRenderer.invoke("local-model:get", jobId),
     onProgress: (cb) => {
       const handler = (_e, d) => cb(d);
-      electron.ipcRenderer.on("local-model:progress", handler);
-      return () => electron.ipcRenderer.removeListener("local-model:progress", handler);
+      import_electron.ipcRenderer.on("local-model:progress", handler);
+      return () => import_electron.ipcRenderer.removeListener("local-model:progress", handler);
     }
   },
   sync: {
-    computeOffset: (params) => electron.ipcRenderer.invoke("sync:compute-offset", params),
-    batchMatch: (params) => electron.ipcRenderer.invoke("sync:batch-match", params),
+    computeOffset: (params) => import_electron.ipcRenderer.invoke("sync:compute-offset", params),
+    batchMatch: (params) => import_electron.ipcRenderer.invoke("sync:batch-match", params),
     onBatchProgress: (callback) => {
       const handler = (_event, data) => callback(data);
-      electron.ipcRenderer.on("sync:batch-progress", handler);
-      return () => electron.ipcRenderer.removeListener("sync:batch-progress", handler);
+      import_electron.ipcRenderer.on("sync:batch-progress", handler);
+      return () => import_electron.ipcRenderer.removeListener("sync:batch-progress", handler);
     }
   },
   app: {
     onPowerEvent: (cb) => {
       const handler = (_e, data) => cb(data);
-      electron.ipcRenderer.on("app:power-event", handler);
-      return () => electron.ipcRenderer.removeListener("app:power-event", handler);
+      import_electron.ipcRenderer.on("app:power-event", handler);
+      return () => import_electron.ipcRenderer.removeListener("app:power-event", handler);
     }
   },
   file: {
-    getPathForFile: (file) => electron.webUtils.getPathForFile(file)
+    getPathForFile: (file) => import_electron.webUtils.getPathForFile(file)
   },
   nativeVideo: {
-    isAvailable: () => electron.ipcRenderer.invoke("native-video:is-available"),
-    resetSurfaces: (surfaceIds) => electron.ipcRenderer.invoke("native-video:reset-surfaces", surfaceIds),
-    createSurface: (surfaceId) => electron.ipcRenderer.invoke("native-video:create-surface", surfaceId),
-    setSurfaceRect: (payload) => electron.ipcRenderer.send("native-video:set-surface-rect", payload),
-    setSurfaceHidden: (payload) => electron.ipcRenderer.send("native-video:set-surface-hidden", payload),
-    clearSurface: (surfaceId) => electron.ipcRenderer.send("native-video:clear-surface", surfaceId),
-    syncSurface: (payload) => electron.ipcRenderer.send("native-video:sync-surface", payload),
-    destroySurface: (surfaceId) => electron.ipcRenderer.send("native-video:destroy-surface", surfaceId)
+    isAvailable: () => import_electron.ipcRenderer.invoke("native-video:is-available"),
+    resetSurfaces: (surfaceIds) => import_electron.ipcRenderer.invoke("native-video:reset-surfaces", surfaceIds),
+    createSurface: (surfaceId) => import_electron.ipcRenderer.invoke("native-video:create-surface", surfaceId),
+    setSurfaceRect: (payload) => import_electron.ipcRenderer.send("native-video:set-surface-rect", payload),
+    setSurfaceHidden: (payload) => import_electron.ipcRenderer.send("native-video:set-surface-hidden", payload),
+    clearSurface: (surfaceId) => import_electron.ipcRenderer.send("native-video:clear-surface", surfaceId),
+    syncSurface: (payload) => import_electron.ipcRenderer.send("native-video:sync-surface", payload),
+    destroySurface: (surfaceId) => import_electron.ipcRenderer.send("native-video:destroy-surface", surfaceId)
   }
 });

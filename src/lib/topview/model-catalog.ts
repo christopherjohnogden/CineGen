@@ -298,8 +298,11 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
     inputs.push(
       // Keep the historical handle ID so existing Spaces connections migrate in place.
       // Its payload is now explicitly reference media instead of a stack of start frames.
-      { id: 'image_url', portType: 'image', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image' },
-      { id: 'extra_images', portType: 'image', label: 'More References', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 30, mediaRole: 'image' },
+      // Omni-reference accepts stills, clips and audio: the submit builder sorts
+      // them into inputImages / inputVideos / inputAudios by role. A 'media' port
+      // is what lets a video output connect on the canvas without a false warning.
+      { id: 'image_url', portType: 'media', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image' },
+      { id: 'extra_images', portType: 'media', label: 'More References', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 30, mediaRole: 'image' },
     );
   } else if (supportsImageToVideo) {
     // Models without omni-reference retain the legacy image_url handle as their start frame.

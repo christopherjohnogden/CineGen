@@ -15,6 +15,7 @@ import {
   type VideoGenerationProvider,
 } from '@/lib/utils/video-generation-provider';
 import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
+import { renewalCountdown, renewalSummary } from '@/lib/providers/renewal';
 
 type SidebarPanel = 'workflows' | 'models' | 'history' | null;
 type SpaceViewMode = 'canvas' | 'studio';
@@ -71,6 +72,9 @@ function ProviderBudgetCard() {
     requestProviderUsageRefresh(provider);
   };
 
+  // Topview resets its balance monthly, which is more use here than a
+  // per-project tally.
+  const isTopview = provider === 'topview';
   const remaining = hasCreditBalance
     ? usage?.connected === false
       ? 'Not connected'
@@ -114,11 +118,11 @@ function ProviderBudgetCard() {
           <strong>{remaining}</strong>
         </div>
         <div>
-          <span>{hasCreditBalance ? 'Used in project' : 'Project activity'}</span>
-          <strong>{used}</strong>
+          <span>{isTopview ? 'Renews in' : hasCreditBalance ? 'Used in project' : 'Project activity'}</span>
+          <strong data-testid={isTopview ? 'cs-provider-renewal' : undefined}>{isTopview ? renewalCountdown() : used}</strong>
         </div>
       </div>
-      <p>{hasCreditBalance ? 'Based on actual provider balance changes.' : 'This provider does not expose a credit balance.'}</p>
+      <p>{isTopview ? renewalSummary() : hasCreditBalance ? 'Based on actual provider balance changes.' : 'This provider does not expose a credit balance.'}</p>
     </section>
   );
 }

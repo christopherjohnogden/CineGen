@@ -8,6 +8,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     save: (id: string, data: unknown) => ipcRenderer.invoke('project:save', id, data),
     delete: (id: string) => ipcRenderer.invoke('project:delete', id),
   },
+  mcpBridge: {
+    onInvoke: (cb: (payload: { id: string; tool: string; args?: Record<string, unknown> }) => void) => {
+      const listener = (_event: unknown, payload: { id: string; tool: string; args?: Record<string, unknown> }) => cb(payload);
+      ipcRenderer.on('mcp:invoke', listener);
+      return () => ipcRenderer.removeListener('mcp:invoke', listener);
+    },
+    respond: (payload: { id: string; ok: boolean; result?: unknown; error?: string }) => ipcRenderer.send('mcp:result', payload),
+    ready: (ready: boolean) => ipcRenderer.send('mcp:ready', ready),
+    status: () => ipcRenderer.invoke('mcp:status'),
+  },
   workflow: {
     run: (params: unknown) => ipcRenderer.invoke('workflow:run', params),
     pollJob: (id: string) => ipcRenderer.invoke('workflow:poll-job', id),

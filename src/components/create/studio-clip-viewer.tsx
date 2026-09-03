@@ -246,6 +246,9 @@ export function StudioClipViewer({
   const quality = controlValue(item, 'resolution');
   const bitrate = controlValue(item, 'bitrate');
   const aspect = controlValue(item, 'aspect_ratio');
+  const attachedReferences = Array.isArray(item.node.data.config.__studioAttachedRefs)
+    ? (item.node.data.config.__studioAttachedRefs as unknown[]).filter((entry) => typeof entry === 'string')
+    : [];
 
   const toggleMenu = (kind: Exclude<MenuKind, null>) => {
     setConfirmRemove(false);
@@ -446,6 +449,11 @@ export function StudioClipViewer({
                     {isVideo && duration > 0 && <div><dt>Duration</dt><dd>{formatClipTime(duration)}</dd></div>}
                     <div><dt>Created</dt><dd>{formatCreated(item.createdAt)}</dd></div>
                     {item.elementNames.length > 0 && <div><dt>Elements</dt><dd>{item.elementNames.join(', ')}</dd></div>}
+                    {/* "It looks like it ignored my references" is only answerable
+                        if the clip records what was actually sent with it. */}
+                    {attachedReferences.length > 0 && (
+                      <div><dt>References</dt><dd>{attachedReferences.length} attached file{attachedReferences.length === 1 ? '' : 's'}</dd></div>
+                    )}
                   </dl>
                 )}
               </section>

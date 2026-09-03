@@ -1,8 +1,28 @@
+@font-face {
+  font-family: "Outfit";
+  src: url("/fonts/Outfit-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Space Mono";
+  src: url("/fonts/SpaceMono-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 html,
 body {
   min-height: 100%;
   margin: 0;
   background: #08090c;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 .cinegen-site-loading {
@@ -13,4 +33,244 @@ body {
   font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+}
+
+.cinegen-welcome {
+  position: relative;
+  display: grid;
+  min-height: 100vh;
+  overflow: hidden;
+  place-items: center;
+  padding: 52px 28px 38px;
+  color: #e8e4df;
+  background:
+    radial-gradient(circle at 68% 38%, rgb(212 160 84 / 10%), transparent 30%),
+    radial-gradient(circle at 38% 74%, rgb(28 55 104 / 15%), transparent 36%),
+    linear-gradient(145deg, #08090c 0%, #0d0f14 52%, #07080b 100%);
+  font-family: "Outfit", ui-sans-serif, sans-serif;
+}
+
+.cinegen-welcome::before {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgb(212 160 84 / 13%) 0.75px, transparent 0.75px);
+  background-size: 36px 36px;
+  content: "";
+  mask-image: linear-gradient(to bottom, black, transparent 84%);
+}
+
+.cinegen-welcome::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(680px, 90vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 205deg,
+    transparent 0deg,
+    rgb(212 160 84 / 10%) 34deg,
+    rgb(239 190 111 / 85%) 69deg,
+    transparent 104deg,
+    transparent 230deg,
+    rgb(70 94 147 / 25%) 287deg,
+    transparent 330deg
+  );
+  content: "";
+  filter: blur(7px);
+  mask-image: radial-gradient(circle, transparent 57%, black 58%, black 63%, transparent 64%);
+  opacity: 0.42;
+  transform: translate(-50%, -50%) rotate(-10deg);
+}
+
+.cinegen-welcome__glow {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  width: min(720px, 92vw);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #d4a054, transparent);
+  box-shadow: 0 0 30px 3px rgb(212 160 84 / 28%);
+  transform: translate(-50%, -50%);
+}
+
+.cinegen-welcome__frame {
+  position: absolute;
+  top: 7vh;
+  right: -74px;
+  display: grid;
+  width: 320px;
+  height: 184px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  padding: 15px;
+  border: 1px solid rgb(212 160 84 / 14%);
+  border-radius: 12px;
+  opacity: 0.48;
+  transform: rotate(-6deg);
+}
+
+.cinegen-welcome__frame span {
+  border: 1px solid rgb(212 160 84 / 19%);
+  border-radius: 5px;
+  background: rgb(25 29 40 / 64%);
+}
+
+.cinegen-welcome__content {
+  position: relative;
+  z-index: 1;
+  width: min(730px, 100%);
+  text-align: center;
+}
+
+.cinegen-welcome__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 54px;
+  color: #e8e4df;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.cinegen-welcome__brand img {
+  width: 52px;
+  height: 52px;
+  border-radius: 13px;
+  box-shadow: 0 10px 36px rgb(212 160 84 / 20%);
+}
+
+.cinegen-welcome__eyebrow {
+  margin: 0 0 18px;
+  color: #d4a054;
+  font: 700 10px/1.4 "Space Mono", ui-monospace, monospace;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.cinegen-welcome h1 {
+  margin: 0;
+  color: #f0ece6;
+  font-size: clamp(58px, 9.2vw, 106px);
+  font-weight: 620;
+  letter-spacing: -0.065em;
+  line-height: 0.92;
+}
+
+.cinegen-welcome__copy {
+  max-width: 570px;
+  margin: 30px auto 34px;
+  color: #8e8a82;
+  font-size: clamp(17px, 2vw, 20px);
+  line-height: 1.65;
+}
+
+.cinegen-welcome__button {
+  display: inline-flex;
+  min-width: 190px;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 15px 21px 15px 25px;
+  border: 1px solid rgb(236 185 108 / 72%);
+  border-radius: 10px;
+  color: #0d0f14;
+  background: linear-gradient(180deg, #e0b06a, #d4a054);
+  box-shadow: 0 14px 42px rgb(212 160 84 / 21%);
+  font-size: 15px;
+  font-weight: 720;
+  text-decoration: none;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.cinegen-welcome__button:hover {
+  box-shadow: 0 18px 52px rgb(212 160 84 / 31%);
+  transform: translateY(-2px);
+}
+
+.cinegen-welcome__button:focus-visible {
+  outline: 3px solid rgb(224 176 106 / 58%);
+  outline-offset: 4px;
+}
+
+.cinegen-welcome__button span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.cinegen-welcome__button--secondary {
+  border-color: rgb(212 160 84 / 34%);
+  color: #d4a054;
+  background: rgb(212 160 84 / 8%);
+  box-shadow: none;
+}
+
+.cinegen-welcome__button--secondary:hover {
+  background: rgb(212 160 84 / 13%);
+  box-shadow: 0 14px 42px rgb(0 0 0 / 24%);
+}
+
+.cinegen-welcome--denied::after {
+  opacity: 0.2;
+}
+
+.cinegen-access-denied h1 {
+  font-size: clamp(48px, 7.2vw, 82px);
+}
+
+.cinegen-welcome__note {
+  margin: 17px 0 0;
+  color: #5c5851;
+  font-size: 12px;
+}
+
+.cinegen-welcome__rail {
+  position: absolute;
+  z-index: 1;
+  bottom: 28px;
+  left: 50%;
+  display: flex;
+  width: min(580px, calc(100% - 56px));
+  align-items: center;
+  justify-content: center;
+  color: #5c5851;
+  font: 700 9px/1 "Space Mono", ui-monospace, monospace;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+}
+
+.cinegen-welcome__rail i {
+  width: min(70px, 8vw);
+  height: 1px;
+  margin: 0 13px;
+  background: linear-gradient(90deg, #26231e, #8f6b38, #26231e);
+}
+
+@media (max-width: 620px) {
+  .cinegen-welcome {
+    padding-bottom: 78px;
+  }
+
+  .cinegen-welcome__brand {
+    margin-bottom: 42px;
+  }
+
+  .cinegen-welcome__copy {
+    margin-top: 24px;
+  }
+
+  .cinegen-welcome__rail span:nth-of-type(2),
+  .cinegen-welcome__rail span:nth-of-type(3),
+  .cinegen-welcome__rail i:nth-of-type(2),
+  .cinegen-welcome__rail i:nth-of-type(3) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinegen-welcome__button {
+    transition: none;
+  }
 }

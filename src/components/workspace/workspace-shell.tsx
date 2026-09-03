@@ -66,6 +66,7 @@ import {
   getMaxConcurrentVisionJobs,
 } from '@/lib/utils/api-key';
 import { markWorkspaceSavePending } from './workspace-persistence';
+import { useMcpBridge } from './use-mcp-bridge';
 
 /* ------------------------------------------------------------------
    Actions
@@ -963,6 +964,10 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     savePendingRef.current = markWorkspaceSavePending(savePendingRef.current, action.type);
     historyDispatch(action);
   }, []);
+
+  // Lets an MCP client drive this workspace: the tools run against the same
+  // state and dispatch the UI uses, so anything they create is simply there.
+  useMcpBridge(state, wrappedDispatch, { projectName: projectNameRef.current });
 
   const toggleVoiceDirector = useCallback(() => {
     setAssistantOpen(false);

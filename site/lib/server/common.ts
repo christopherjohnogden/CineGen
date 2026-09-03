@@ -2,6 +2,11 @@ export const SHARED_WORKSPACE_ID = "cinegen-shared-v1";
 export const LOCAL_WORKSPACE_ID = "cinegen-local-v1";
 export const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
+const ALLOWED_SITE_EMAILS = new Set([
+  "christopherjohnogden@gmail.com",
+  "taylormichaelogden@gmail.com",
+]);
+
 export class SiteHttpError extends Error {
   readonly status: number;
   readonly code: string;
@@ -21,7 +26,8 @@ export function workspaceIdForRequest(request: Request): string {
   }
 
   const authenticatedUserId = request.headers.get("oai-authenticated-user-id");
-  if (!authenticatedUserId) {
+  const authenticatedUserEmail = request.headers.get("oai-authenticated-user-email");
+  if (!authenticatedUserId || !authenticatedUserEmail) {
     throw new SiteHttpError(
       401,
       "Sign in to open this CineGen workspace.",
@@ -29,9 +35,20 @@ export function workspaceIdForRequest(request: Request): string {
     );
   }
 
-  // The Site access policy is the membership boundary. The owner and invited
-  // family members intentionally work in one shared CineGen project space.
+  if (!isAllowedCineGenEmail(authenticatedUserEmail)) {
+    throw new SiteHttpError(
+      403,
+      "This account does not have access to CineGen.",
+      "ACCESS_DENIED",
+    );
+  }
+
+  // Approved family members intentionally work in one shared project space.
   return SHARED_WORKSPACE_ID;
+}
+
+export function isAllowedCineGenEmail(email: string): boolean {
+  return ALLOWED_SITE_EMAILS.has(email.trim().toLowerCase());
 }
 
 export function assertId(value: unknown, label = "id"): string {

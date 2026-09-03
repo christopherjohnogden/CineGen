@@ -105,6 +105,31 @@ describe('config-only Studio generations', () => {
     expect(String(params.prompt)).not.toContain('@Peter');
   });
 
+  it('carries files attached from disk alongside the Elements in one reference', async () => {
+    await executeFromNode(
+      'solo-1',
+      soloNode('hf-gpt-image-2', {
+        prompt: 'He walks out of the tunnel.',
+        medias: {
+          elementIds: ['el-peter'],
+          // The Studio's "+" attaches straight from disk: no Element behind these.
+          urls: ['local-media://file/Users/chris/Movies/run-cycle.mp4', 'local-media://file/Users/chris/Pictures/jersey.png'],
+        },
+      }),
+      [],
+      dispatch(),
+    );
+
+    const sent = run.mock.calls[0][0].params as Record<string, unknown>;
+    const references = Object.values(sent).flat().map((value) => (
+      value && typeof value === 'object' && 'value' in value ? (value as { value: string }).value : value
+    )).filter((value): value is string => typeof value === 'string');
+    expect(references).toContain('local-media://file/Users/chris/Movies/run-cycle.mp4');
+    expect(references).toContain('local-media://file/Users/chris/Pictures/jersey.png');
+    // The Element's own images still ride along.
+    expect(references).toContain('local-media://peter-front.png');
+  });
+
   it('still refuses a required input that config does not supply', async () => {
     const setNodeResult = vi.fn();
     await executeFromNode(

@@ -28,6 +28,8 @@ export interface ProjectMeta {
   cloudRole?: 'owner' | 'editor';
   cloudTeamId?: string;
   cloudTeamName?: string;
+  cloudCreatorId?: string;
+  cloudCanDelete?: boolean;
 }
 
 export interface TopviewVideoRecoveryParams {
@@ -67,6 +69,12 @@ export interface ElectronAPI {
     load: (id: string) => Promise<ProjectSnapshot>;
     save: (id: string, data: Partial<ProjectSnapshot>) => Promise<ProjectSnapshot>;
     delete: (id: string) => Promise<void>;
+  };
+  mcpBridge: {
+    onInvoke: (cb: (payload: { id: string; tool: string; args?: Record<string, unknown> }) => void) => (() => void);
+    respond: (payload: { id: string; ok: boolean; result?: unknown; error?: string }) => void;
+    ready: (ready: boolean) => void;
+    status: () => Promise<{ running: boolean; workspaceReady: boolean; port: number; discoveryFile: string }>;
   };
   workflow: {
     run: (params: {

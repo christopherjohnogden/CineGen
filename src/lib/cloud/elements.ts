@@ -2,7 +2,7 @@ import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import type { Element, ElementFolder, ElementsLibrary } from '@/types/elements';
 import { normalizeLibrary } from '@/lib/elements/library';
 import { cloudDb, waitForCloudAuth } from './firebase';
-import { ensurePersonalTeam, getProjectCollaboration } from './collaboration';
+import { getProjectCollaboration, resolveProjectCreationTeam } from './collaboration';
 import { prepareElementsLibraryForCloudMedia } from './media';
 
 const MAX_LIBRARY_BYTES = 850_000;
@@ -90,7 +90,7 @@ async function resolveTarget(projectId?: string): Promise<{ userId: string; targ
       return { userId: user.uid, target: { teamId: access.teamId, ownerId: access.ownerId } };
     }
   }
-  const team = await ensurePersonalTeam(user);
+  const team = await resolveProjectCreationTeam(user);
   return { userId: user.uid, target: { teamId: team.teamId, ownerId: team.ownerId } };
 }
 

@@ -21,6 +21,7 @@ import {
   registerCloudIdentity,
   type ProjectRole,
 } from './collaboration';
+import { canDeleteTeamProject } from './team-policy';
 
 const CLOUD_IDS_KEY = 'cinegen_cloud_project_ids';
 const CHUNK_SIZE = 180_000;
@@ -31,6 +32,8 @@ export interface AvailableProjectMeta extends ProjectMeta {
   cloudRole?: ProjectRole;
   cloudTeamId?: string;
   cloudTeamName?: string;
+  cloudCreatorId?: string;
+  cloudCanDelete?: boolean;
 }
 
 interface CloudProjectDocument {
@@ -325,6 +328,8 @@ export async function listCloudProjects(): Promise<AvailableProjectMeta[]> {
       cloudRole: access.members[user.uid],
       cloudTeamId: access.teamId || undefined,
       cloudTeamName: access.teamName || undefined,
+      cloudCreatorId: access.ownerId,
+      cloudCanDelete: canDeleteTeamProject(access.ownerId, user.uid),
     } satisfies AvailableProjectMeta;
   }));
   return projects
@@ -360,7 +365,7 @@ export async function deleteAvailableProject(project: AvailableProjectMeta): Pro
     const user = await waitForCloudAuth();
     if (!user) throw new Error('Sign in to delete this cloud project.');
     const access = await ensureProjectAccess(project.id, user);
-    if (access.members[user.uid] !== 'owner') throw new Error('Only a project owner can delete a shared project.');
+    if (!canDeleteTeamProject(access.ownerId, user.uid)) throw new Error('Only the person who created this project can delete it.');
     const projectRef = doc(cloudDb, 'users', access.ownerId, 'projects', project.id);
     const revisions = await getDocs(collection(projectRef, 'revisions'));
     for (const revision of revisions.docs) await deleteRevision(access.ownerId, project.id, revision.id);

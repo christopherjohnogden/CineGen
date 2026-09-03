@@ -30,15 +30,19 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, create, update, delete: if signedIn() && request.auth.uid == userId;
+      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if signedIn() && request.auth.uid == userId;
 
       match /projects/{projectId} {
-        allow read, create, update, delete: if signedIn()
+        allow read, create, update: if signedIn()
           && (request.auth.uid == userId || projectMember(projectId));
+        // The userId segment is the immutable project creator/storage owner.
+        allow delete: if signedIn() && request.auth.uid == userId;
 
         match /{document=**} {
-          allow read, create, update, delete: if signedIn()
+          allow read, create, update: if signedIn()
             && (request.auth.uid == userId || projectMember(projectId));
+          allow delete: if signedIn() && request.auth.uid == userId;
         }
       }
 
@@ -57,12 +61,13 @@ service cloud.firestore {
           || request.auth.uid in resource.data.memberIds);
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
-        && (teamOwner(request.resource.data.get('teamId', ''))
+        && (teamMember(request.resource.data.get('teamId', ''))
           || request.resource.data.members.get(request.auth.uid, '') == 'owner')
         && exists(/databases/$(database)/documents/users/$(request.auth.uid)/projects/$(projectId));
-      allow update, delete: if signedIn()
+      allow update: if signedIn()
         && (teamOwner(resource.data.get('teamId', ''))
           || resource.data.members.get(request.auth.uid, '') == 'owner');
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
     }
 
     match /teams/{teamId} {

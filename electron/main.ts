@@ -12,6 +12,7 @@ import {
   recoverManagedWindowsFromSleep,
 } from './window.js';
 import { registerProjectHandlers } from './ipc/project.js';
+import { registerMcpBridge, stopMcpBridge } from './ipc/mcp-bridge.js';
 import { registerWorkflowHandlers } from './ipc/workflows.js';
 import { registerHiggsfieldHandlers } from './ipc/higgsfield.js';
 import { registerArtlistHandlers } from './ipc/artlist.js';
@@ -404,6 +405,7 @@ app.whenReady().then(async () => {
 
   // Register all IPC handlers
   registerProjectHandlers();
+  registerMcpBridge(() => mainWindow);
   registerWorkflowHandlers();
   registerHiggsfieldHandlers();
   registerArtlistHandlers();
@@ -530,6 +532,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+  stopMcpBridge();
   if (wakeRecoveryTimer) {
     clearTimeout(wakeRecoveryTimer);
     wakeRecoveryTimer = null;
