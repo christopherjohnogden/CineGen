@@ -9,6 +9,8 @@ import {
   extractMediaUrls,
   extractTextOutput,
   matchListedJobRecord,
+  buildCostArgs,
+  creditsFromCostStdout,
   parseConnectionState,
   pickHiggsfieldBinaries,
   higgsfieldBinaryCandidates,
@@ -17,6 +19,43 @@ import {
   buildHiggsfieldWorkflowRequest,
   normalizeHiggsfieldWorkflowResult,
 } from '../../../electron/ipc/workflows';
+
+describe('generate cost', () => {
+  it('asks only for a quote: no --wait, no media, and only params the model knows', () => {
+    const args = buildCostArgs('seedance_2_5', {
+      prompt: 'rain on a window',
+      duration: 10,
+      resolution: '1080p',
+      generate_audio: true,
+      // Not on seedance_2_5's schema, so it never reaches the CLI.
+      not_a_param: 'x',
+      // Empty and absent settings are simply not sent.
+      aspect_ratio: '',
+      seed: null,
+    });
+    expect(args[0]).toBe('generate');
+    expect(args[1]).toBe('cost');
+    expect(args[2]).toBe('seedance_2_5');
+    expect(args).toContain('--duration');
+    expect(args).toContain('10');
+    expect(args).toContain('--resolution');
+    expect(args).toContain('1080p');
+    expect(args).toContain('--generate_audio');
+    expect(args).not.toContain('--not_a_param');
+    expect(args).not.toContain('--aspect_ratio');
+    expect(args).not.toContain('--seed');
+    expect(args).not.toContain('--wait');
+    expect(args.at(-1)).toBe('--json');
+  });
+
+  it('reads the quote out of the CLI payload, and refuses anything else', () => {
+    expect(creditsFromCostStdout('{"credits":45}')).toBe(45);
+    expect(creditsFromCostStdout('warming up\n{"credits":12.5}\n')).toBe(12.5);
+    expect(creditsFromCostStdout('{"credits":"lots"}')).toBeNull();
+    expect(creditsFromCostStdout('not json at all')).toBeNull();
+    expect(creditsFromCostStdout('')).toBeNull();
+  });
+});
 
 describe('buildCreateArgs', () => {
   it('builds a minimal text-to-video create command with --wait --json', () => {

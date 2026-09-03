@@ -1112,6 +1112,27 @@ describe('Space Studio', () => {
     expect(within(card).queryByText(/resets? on the 27th of each month/i)).not.toBeInTheDocument();
   });
 
+  it('pins the models worth reaching for above the provider groups', () => {
+    localStorage.removeItem('cinegen_studio_feed_view');
+    render(<SpaceStudio />);
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
+    const groups = screen.getAllByRole('listbox', { name: 'Models' })[0]
+      .querySelectorAll('.space-studio__picker-group');
+    expect(groups[0].querySelector('h4')?.textContent).toContain('Favorites');
+    // Video favourites, in the order named.
+    expect(screen.getByTestId('space-studio-model-favorite-video-seedance')).toBeInTheDocument();
+    // Still listed under its provider too, so either route finds it.
+    expect(screen.getByTestId('space-studio-model-option-video-seedance')).toBeInTheDocument();
+
+    // Picking from Favorites selects the same model as the provider row would.
+    fireEvent.click(screen.getByTestId('space-studio-model-option-video-one'));
+    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Video Model');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
+    fireEvent.click(screen.getByTestId('space-studio-model-favorite-video-seedance'));
+    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Seedance 2.5');
+  });
+
   it('switches provider from the card without a trip through Settings', () => {
     workspaceHarness.state = makeState([]);
 
