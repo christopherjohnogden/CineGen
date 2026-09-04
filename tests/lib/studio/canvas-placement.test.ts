@@ -24,6 +24,8 @@ vi.mock('@/lib/fal/models', () => ({
 }));
 
 const {
+  detachSelection,
+  isHideOnDelete,
   isPlacedOnCanvas,
   nextPlacedSlot,
   placeStudioNodeOnCanvas,
@@ -198,6 +200,63 @@ describe('studio canvas placement', () => {
     const b = second.nodes.find((node) => node.id === 'g2')!;
     // Far enough apart to clear the input column hanging off the left of each.
     expect(Math.abs(b.position.x - a.position.x)).toBeGreaterThan(580);
+  });
+
+  /**
+   * Deleting a generation on the canvas used to destroy the render itself — the
+   * clip vanished from the Studio feed too, with nothing to undo it. A Delete
+   * keypress meant to tidy the canvas must never cost a paid generation.
+   */
+  it('hides a generation instead of destroying it when deleted from the canvas', () => {
+    const placed = placeStudioNodeOnCanvas([generation('g1', { __studioElementIds: ['el'] })], [], 'g1', []);
+    const result = detachSelection(placed.nodes, placed.edges, ['g1']);
+
+    expect(result.hidden).toBe(1);
+    expect(result.deleted).toBe(0);
+    // Still in state — the feed reads it — but no longer drawn.
+    expect(result.nodes.map((node) => node.id)).toEqual(['g1']);
+    expect(visibleCanvasNodes(result.nodes)).toEqual([]);
+  });
+
+  /**
+   * A hidden node that stays flagged selected is invisible but still counted:
+   * it pulls the multi-select bounding box toward a position nothing is drawn
+   * at, which is what sent the floating Group button off above the selection.
+   */
+  it('drops the selection flag when a generation is hidden', () => {
+    const placed = placeStudioNodeOnCanvas([generation('g1')], [], 'g1', []);
+    const selected = placed.nodes.map((node) => (
+      node.id === 'g1' ? { ...node, selected: true } : node
+    ));
+
+    const hidden = removeStudioNodeFromCanvas(selected, placed.edges, 'g1');
+    expect(hidden.nodes.find((node) => node.id === 'g1')?.selected).toBe(false);
+    expect(visibleCanvasNodes(hidden.nodes).filter((node) => node.selected)).toEqual([]);
+  });
+
+  it('still deletes hand-built nodes outright', () => {
+    const result = detachSelection([authored('a1'), authored('a2')], [], ['a1']);
+    expect(result.deleted).toBe(1);
+    expect(result.hidden).toBe(0);
+    expect(result.nodes.map((node) => node.id)).toEqual(['a2']);
+  });
+
+  it('hides the generations and deletes the authored nodes in a mixed selection', () => {
+    const placed = placeStudioNodeOnCanvas([generation('g1'), authored('a1')], [], 'g1', []);
+    const result = detachSelection(placed.nodes, placed.edges, ['g1', 'a1']);
+
+    expect(result.hidden).toBe(1);
+    expect(result.deleted).toBe(1);
+    expect(result.nodes.map((node) => node.id)).toEqual(['g1']);
+    expect(isPlacedOnCanvas(result.nodes[0])).toBe(false);
+  });
+
+  it('marks only placed generations as hide-on-delete', () => {
+    const placed = placeStudioNodeOnCanvas([generation('g1'), authored('a1')], [], 'g1', []);
+    expect(isHideOnDelete(placed.nodes.find((node) => node.id === 'g1')!)).toBe(true);
+    expect(isHideOnDelete(placed.nodes.find((node) => node.id === 'a1')!)).toBe(false);
+    // A generation that was never placed is not on the canvas to be deleted.
+    expect(isHideOnDelete(generation('g9'))).toBe(false);
   });
 
   it('lays placed clips out clear of authored work rather than on top of it', () => {

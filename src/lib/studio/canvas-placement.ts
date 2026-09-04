@@ -235,6 +235,48 @@ export function placeStudioNodeOnCanvas(
   };
 }
 
+/** True when deleting this node on the canvas should only hide it. */
+export function isHideOnDelete(node: Node<WorkflowNodeData>): boolean {
+  return isStudioGenerated(node) && isPlacedOnCanvas(node);
+}
+
+/**
+ * What "delete" means on the canvas depends on what is selected. A generation
+ * belongs to the Studio feed and is only borrowed by the canvas, so removing it
+ * here hides it; anything hand-built is genuinely deleted. Losing a render to a
+ * Delete keypress meant for tidying the canvas is not a recoverable mistake.
+ */
+export function detachSelection(
+  nodes: Node<WorkflowNodeData>[],
+  edges: Edge[],
+  ids: Iterable<string>,
+): { nodes: Node<WorkflowNodeData>[]; edges: Edge[]; hidden: number; deleted: number } {
+  let nextNodes = nodes;
+  let nextEdges = edges;
+  const doomed = new Set<string>();
+  let hidden = 0;
+
+  for (const id of ids) {
+    const node = nextNodes.find((candidate) => candidate.id === id);
+    if (!node) continue;
+    if (isHideOnDelete(node)) {
+      const result = removeStudioNodeFromCanvas(nextNodes, nextEdges, id);
+      nextNodes = result.nodes;
+      nextEdges = result.edges;
+      hidden += 1;
+    } else {
+      doomed.add(id);
+    }
+  }
+
+  if (doomed.size > 0) {
+    nextNodes = nextNodes.filter((node) => !doomed.has(node.id));
+    nextEdges = nextEdges.filter((edge) => !doomed.has(edge.source) && !doomed.has(edge.target));
+  }
+
+  return { nodes: nextNodes, edges: nextEdges, hidden, deleted: doomed.size };
+}
+
 /**
  * Takes a generation back off the canvas. The generation itself survives — it
  * stays in the feed — but the input nodes materialized with it are removed, so
@@ -256,8 +298,12 @@ export function removeStudioNodeFromCanvas(
     (edge.source === id && edge.target !== nodeId) || edge.target === id
   ))));
 
+  // Drop the selection with the node. A hidden node that stays selected is
+  // invisible but still counted — it drags selection bounds and counts toward
+  // toolbars that are meant to describe what is on screen.
   const hidden: Node<WorkflowNodeData> = {
     ...target,
+    selected: false,
     data: { ...target.data, config: { ...target.data.config } },
   };
   delete hidden.data.config.__studioCanvasPlaced;

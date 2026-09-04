@@ -36,7 +36,7 @@ import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
 import { reconcilePromptMentionConnections } from '@/lib/llm/prompt-elements';
 import { areWorkflowPortsCompatible } from '@/lib/workflows/port-compatibility';
-import { visibleCanvasEdges, visibleCanvasNodes } from '@/lib/studio/canvas-placement';
+import { detachSelection, isHideOnDelete, visibleCanvasEdges, visibleCanvasNodes } from '@/lib/studio/canvas-placement';
 import { createContext, useContext } from 'react';
 import type { PortType } from '@/types/workflow';
 
@@ -111,6 +111,19 @@ function WorkflowCanvasInner() {
       const effectiveChanges = isMobileCanvas && mobileMultiSelect
         ? changes.filter((change) => change.type !== 'select' || change.selected)
         : changes;
+
+      // The Delete key reaches us as remove changes. Route generations through
+      // the same hide path the menu uses so a keypress can never destroy a render.
+      const removed = effectiveChanges.filter((change) => change.type === 'remove').map((change) => change.id);
+      if (removed.length > 0) {
+        const rest = effectiveChanges.filter((change) => change.type !== 'remove');
+        const applied = applyNodeChanges(rest, nodesRef.current) as Node<WorkflowNodeData>[];
+        const detached = detachSelection(applied, edgesRef.current, removed);
+        dispatch({ type: 'SET_NODES', nodes: detached.nodes });
+        dispatch({ type: 'SET_EDGES', edges: detached.edges });
+        return;
+      }
+
       dispatch({
         type: 'SET_NODES',
         nodes: applyNodeChanges(effectiveChanges, nodesRef.current) as Node<WorkflowNodeData>[],
@@ -326,7 +339,8 @@ function WorkflowCanvasInner() {
 
   // --- Grouping logic ---
   const handleGroupSelected = useCallback(() => {
-    const selected = state.nodes.filter((n) => n.selected && n.type !== 'group');
+    // Group what is actually on screen; a hidden generation is not part of it.
+    const selected = visibleCanvasNodes(state.nodes).filter((n) => n.selected && n.type !== 'group');
     if (selected.length < 2) return;
 
     const PADDING = 40;
@@ -388,7 +402,7 @@ function WorkflowCanvasInner() {
   }, [state.nodes, dispatch]);
 
   const handleUngroupSelected = useCallback(() => {
-    const selectedGroups = state.nodes.filter((n) => n.selected && n.type === 'group');
+    const selectedGroups = visibleCanvasNodes(state.nodes).filter((n) => n.selected && n.type === 'group');
     if (selectedGroups.length === 0) return;
 
     const groupIds = new Set(selectedGroups.map((g) => g.id));
@@ -453,11 +467,11 @@ function WorkflowCanvasInner() {
 
   const deleteSelection = useCallback(() => {
     const selectedNodeIds = new Set(state.nodes.filter((node) => node.selected).map((node) => node.id));
-    const remainingNodes = state.nodes.filter((node) => !selectedNodeIds.has(node.id));
-    const remainingEdges = state.edges.filter(
-      (edge) => !edge.selected && !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target),
-    );
-    dispatch({ type: 'SET_NODES', nodes: remainingNodes as Node<WorkflowNodeData>[] });
+    // Studio generations are only borrowed by the canvas: deleting one here
+    // takes it off the canvas and leaves the render in the Studio feed.
+    const detached = detachSelection(state.nodes, state.edges, selectedNodeIds);
+    const remainingEdges = detached.edges.filter((edge) => !edge.selected);
+    dispatch({ type: 'SET_NODES', nodes: detached.nodes });
     dispatch({ type: 'SET_EDGES', edges: remainingEdges });
     setMobileMultiSelect(false);
     setConfirmMobileDelete(false);
@@ -770,7 +784,13 @@ function WorkflowCanvasInner() {
       : edge;
   });
 
-  const selectedNodes = state.nodes.filter((node) => node.selected);
+  // Selection UI describes what is on screen, so it reads the drawn nodes. A
+  // node hidden while still flagged selected would otherwise pull selection
+  // bounds toward a position nothing is being rendered at.
+  const selectedNodes = canvasNodes.filter((node) => node.selected);
+  // Every selected node is a borrowed Studio generation, so "delete" here only
+  // takes them off the canvas — say so rather than showing a red Delete.
+  const selectionHidesOnly = selectedNodes.length > 0 && selectedNodes.every(isHideOnDelete);
   const selectedEdges = state.edges.filter((edge) => edge.selected);
   const selectedCount = selectedNodes.length + selectedEdges.length;
   const selectedSignature = `${selectedNodes.map((node) => node.id).join(',')}|${selectedEdges.map((edge) => edge.id).join(',')}`;
@@ -784,7 +804,7 @@ function WorkflowCanvasInner() {
   }, [selectedSignature]);
 
   // Floating group button for multi-selection
-  const selectedNonGroup = state.nodes.filter((n) => n.selected && n.type !== 'group');
+  const selectedNonGroup = canvasNodes.filter((n) => n.selected && n.type !== 'group');
   const showGroupBtn = selectedNonGroup.length >= 2;
   let groupBtnPos: { x: number; y: number } | null = null;
   if (showGroupBtn) {
@@ -979,14 +999,15 @@ function WorkflowCanvasInner() {
             type="button"
             className={`canvas-touch-actions__delete${confirmMobileDelete ? ' is-confirming' : ''}`}
             onClick={() => {
-              if (confirmMobileDelete) deleteSelection();
+              // Hiding is not destructive, so it does not need the confirm step.
+              if (selectionHidesOnly || confirmMobileDelete) deleteSelection();
               else setConfirmMobileDelete(true);
             }}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6" />
             </svg>
-            {confirmMobileDelete ? `Delete ${selectedCount}` : 'Delete'}
+            {selectionHidesOnly ? 'Remove' : confirmMobileDelete ? `Delete ${selectedCount}` : 'Delete'}
           </button>
           <button type="button" className="canvas-touch-actions__close" aria-label="Clear selection" onClick={clearSelection}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -1057,14 +1078,22 @@ function WorkflowCanvasInner() {
           )}
           <button
             type="button"
-            className="workflow-context-menu__item workflow-context-menu__item--danger"
+            className={`workflow-context-menu__item${selectionHidesOnly ? '' : ' workflow-context-menu__item--danger'}`}
             onClick={deleteSelection}
+            title={selectionHidesOnly ? 'Takes it off the canvas. The clip stays in the Studio feed.' : undefined}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-            Delete
+            {selectionHidesOnly ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            )}
+            {selectionHidesOnly ? 'Remove from canvas' : 'Delete'}
           </button>
         </div>
       )}
