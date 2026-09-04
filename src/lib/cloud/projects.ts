@@ -254,7 +254,11 @@ async function performCloudSave(projectId: string, state: unknown, useSqlite: bo
       transaction.set(projectRef, metadata, { merge: true });
     });
   } catch (error) {
-    await deleteRevision(ownerId, projectId, revision).catch(() => {});
+    // Roll the failed write back, but never silently: a swallowed failure here
+    // leaks an orphaned revision (and its chunks) into Firestore forever.
+    await deleteRevision(ownerId, projectId, revision).catch((cleanupError) => {
+      console.warn('[cloud] Failed save left an orphaned revision behind:', revision, cleanupError);
+    });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cinegen:cloud-sync-error', { detail: error }));
     }

@@ -718,12 +718,34 @@ describe('Space Studio', () => {
     localStorage.removeItem('cinegen_studio_feed_view');
     render(<SpaceStudio />);
     const handle = screen.getByTestId('space-studio-dock-resize');
+    // jsdom reports a zero-width box, which would clamp every drag to the
+    // minimum and hide the horizontal direction. Pin a realistic start width.
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 900, height: 120, top: 0, left: 0, right: 900, bottom: 120, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
     fireEvent.pointerDown(handle, { clientX: 900, clientY: 500, pointerId: 1 });
-    fireEvent.pointerMove(handle, { clientX: 860, clientY: 460, pointerId: 1 });
+    // Up and to the right: the grip pulls the bar open on both axes.
+    fireEvent.pointerMove(handle, { clientX: 940, clientY: 460, pointerId: 1 });
     fireEvent.pointerUp(handle, { pointerId: 1 });
+    rect.mockRestore();
     expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-prompt-h': '80px' });
+    expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-bar-max': '940px' });
     fireEvent.doubleClick(handle);
     expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-prompt-h': '40px' });
+    expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-bar-max': '1040px' });
+  });
+
+  it('shrinks the docked bar when the top-right handle is dragged inward', () => {
+    localStorage.removeItem('cinegen_studio_feed_view');
+    render(<SpaceStudio />);
+    const handle = screen.getByTestId('space-studio-dock-resize');
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 900, height: 120, top: 0, left: 0, right: 900, bottom: 120, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
+    fireEvent.pointerDown(handle, { clientX: 900, clientY: 500, pointerId: 1 });
+    // Dragging left must narrow the bar, not widen it.
+    fireEvent.pointerMove(handle, { clientX: 840, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+    rect.mockRestore();
+    expect(screen.getByTestId('space-studio')).toHaveStyle({ '--dock-bar-max': '840px' });
   });
 
   it('makes one node and one run per version when the stepper asks for more than one', () => {

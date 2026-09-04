@@ -1,6 +1,6 @@
 
 
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -36,6 +36,7 @@ import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
 import { reconcilePromptMentionConnections } from '@/lib/llm/prompt-elements';
 import { areWorkflowPortsCompatible } from '@/lib/workflows/port-compatibility';
+import { visibleCanvasEdges, visibleCanvasNodes } from '@/lib/studio/canvas-placement';
 import { createContext, useContext } from 'react';
 import type { PortType } from '@/types/workflow';
 
@@ -757,7 +758,12 @@ function WorkflowCanvasInner() {
     }
   }, []);
 
-  const edgesWithGeneratingState = state.edges.map((edge) => {
+  // Studio generations stay out of the canvas until they are opened there, so a
+  // long session in the Studio never buries hand-built graph work. They remain in
+  // state — the Space feed reads the same nodes — this only decides what is drawn.
+  const canvasNodes = useMemo(() => visibleCanvasNodes(state.nodes), [state.nodes]);
+
+  const edgesWithGeneratingState = visibleCanvasEdges(state.nodes, state.edges).map((edge) => {
     const targetRunning = state.runningNodeIds.has(edge.target);
     return targetRunning
       ? { ...edge, data: { ...edge.data, isGenerating: true } }
@@ -812,7 +818,7 @@ function WorkflowCanvasInner() {
       style={{ width: '100%', height: '100%', position: 'relative', outline: 'none' }}
     >
       <ReactFlow
-        nodes={state.nodes}
+        nodes={canvasNodes}
         edges={edgesWithGeneratingState}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}

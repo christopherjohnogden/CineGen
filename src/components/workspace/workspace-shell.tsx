@@ -1898,7 +1898,11 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   }, []);
 
   useEffect(() => {
-    if (!loadedRef.current) return;
+    // `loadedRef` only means the load was *started* — it is set before the
+    // project resolves. Saving on that flag alone lets a failed or timed-out
+    // hydration write the empty initial state (and the 'Project' name default)
+    // over the real cloud project. Only ever persist state we actually loaded.
+    if (!hydrationComplete || hydrationError) return;
     if (!savePendingRef.current) return;
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -2020,6 +2024,8 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     state.exports,
     state.director,
     state.providerUsage,
+    hydrationComplete,
+    hydrationError,
   ]);
 
   const librarySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

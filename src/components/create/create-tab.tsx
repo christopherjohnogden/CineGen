@@ -17,6 +17,7 @@ import {
 } from '@/lib/utils/video-generation-provider';
 import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
 import { renewalCountdown } from '@/lib/providers/renewal';
+import { placeStudioNodeOnCanvas, removeStudioNodeFromCanvas } from '@/lib/studio/canvas-placement';
 
 type SidebarPanel = 'workflows' | 'models' | 'history' | null;
 type SpaceViewMode = 'canvas' | 'studio';
@@ -201,14 +202,29 @@ export function CreateTab() {
   // the node is usually off-screen, so centre it too. The canvas is display:none
   // until the switch commits, and fitView measures nothing while hidden, so the
   // event has to wait a frame.
+  // A Studio generation lives off-canvas until this runs, so opening one places
+  // it — along with the prompt, elements and frames that produced it — before
+  // centring. A node already placed is only focused, never duplicated.
   const handleOpenNodeInCanvas = useCallback((nodeId: string) => {
+    const placement = placeStudioNodeOnCanvas(state.nodes, state.edges, nodeId, state.assets);
+    if (placement.changed) {
+      dispatch({ type: 'SET_NODES', nodes: placement.nodes });
+      dispatch({ type: 'SET_EDGES', edges: placement.edges });
+    }
     handleViewModeChange('canvas');
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         window.dispatchEvent(new CustomEvent('cinegen:fit-node', { detail: nodeId }));
       });
     });
-  }, [handleViewModeChange]);
+  }, [dispatch, handleViewModeChange, state.assets, state.edges, state.nodes]);
+
+  const handleHideNodeFromCanvas = useCallback((nodeId: string) => {
+    const placement = removeStudioNodeFromCanvas(state.nodes, state.edges, nodeId);
+    if (!placement.changed) return;
+    dispatch({ type: 'SET_NODES', nodes: placement.nodes });
+    dispatch({ type: 'SET_EDGES', edges: placement.edges });
+  }, [dispatch, state.edges, state.nodes]);
 
   const openSpaces = useMemo(
     () => state.spaces.filter((space) => state.openSpaceIds.has(space.id)),
@@ -580,7 +596,7 @@ export function CreateTab() {
           </div>
           {viewMode === 'studio' && (
             <div className="create-tab__studio">
-              <SpaceStudio onOpenInCanvas={handleOpenNodeInCanvas} />
+              <SpaceStudio onOpenInCanvas={handleOpenNodeInCanvas} onHideFromCanvas={handleHideNodeFromCanvas} />
             </div>
           )}
         </div>

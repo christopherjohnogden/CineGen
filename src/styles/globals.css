@@ -21672,6 +21672,14 @@ input[type='range']::-moz-range-track {
   container-type: size;
 }
 
+/* `isolation` and `container-type` each open a stacking context, so the menu's
+   own z-index only ranks it inside this tile. Later tiles paint in DOM order
+   and would cover it. Lift the whole tile while its menu is open — but keep the
+   value low enough that a tile never rides over the docked composer (z-index 40). */
+.clip-tile.is-menu-open {
+  z-index: 5;
+}
+
 
 .space-studio .clip-tile__open {
   display: block;

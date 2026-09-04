@@ -11,6 +11,10 @@ export interface StudioClipGridActions {
   onEditVideo?: (id: string) => void;
   onExtractFrame: (id: string, at: 'start' | 'end') => void;
   onOpenInCanvas?: (id: string) => void;
+  /** Takes a placed generation back off the canvas; the clip stays in the feed. */
+  onHideFromCanvas?: (id: string) => void;
+  /** Whether the generation currently has a node drawn on the canvas. */
+  isOnCanvas?: (id: string) => boolean;
   onCopyPrompt: (id: string) => void;
   onCopyUrl: (id: string) => void;
   onRemove: (id: string) => void;
@@ -112,6 +116,7 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
   const statusRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const anyMenu = Boolean(menuStyle || statusStyle);
+  const onCanvas = actions.isOnCanvas?.(item.id) ?? false;
 
   useEffect(() => {
     if (!anyMenu) return undefined;
@@ -311,8 +316,14 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
           <div className="clip-menu__rule" role="separator" />
           <button type="button" role="menuitem" onClick={run(() => actions.onLike(item.id))}>{item.liked ? 'Unlike' : 'Like'}</button>
           {item.url && <button type="button" role="menuitem" onClick={run(() => actions.onDownload(item.id))}>Download</button>}
-          {actions.onOpenInCanvas && (
+          {actions.onOpenInCanvas && !onCanvas && (
             <button type="button" role="menuitem" onClick={run(() => actions.onOpenInCanvas?.(item.id))}>Open in Canvas</button>
+          )}
+          {actions.onOpenInCanvas && onCanvas && (
+            <button type="button" role="menuitem" onClick={run(() => actions.onOpenInCanvas?.(item.id))}>Show on Canvas</button>
+          )}
+          {actions.onHideFromCanvas && onCanvas && (
+            <button type="button" role="menuitem" onClick={run(() => actions.onHideFromCanvas?.(item.id))}>Remove from Canvas</button>
           )}
           <button type="button" role="menuitem" onClick={run(() => actions.onCopyPrompt(item.id))}>Copy prompt</button>
           {item.url && <button type="button" role="menuitem" onClick={run(() => actions.onCopyUrl(item.id))}>Copy {item.kind} URL</button>}

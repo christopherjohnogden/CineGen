@@ -28,6 +28,7 @@ import { generateId, timestamp } from '@/lib/utils/ids';
 import { toFileUrl } from '@/lib/utils/file-url';
 import { getMediaTypeForFile, resolveMediaFileUrl, getLocalPathForFile } from '@/lib/utils/media-file';
 import { nextStudioSlot } from '@/lib/studio/layout';
+import { isPlacedOnCanvas } from '@/lib/studio/canvas-placement';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
@@ -741,6 +742,8 @@ function StudioFeedItem({
 export interface SpaceStudioProps {
   /** Switches the Space back to the node canvas so a feed card can be traced to its graph. */
   onOpenInCanvas?: (nodeId: string) => void;
+  /** Takes a placed generation back off the canvas without deleting the generation. */
+  onHideFromCanvas?: (nodeId: string) => void;
 }
 
 const CARD_SIZE_LABELS = { s: 'Small', m: 'Medium', l: 'Large' } as const;
@@ -785,7 +788,7 @@ const FAVOURITE_MODEL_NAMES: Record<'image' | 'video', string[]> = {
   video: [DEFAULT_VIDEO_MODEL_NAME],
 };
 
-export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
+export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioProps = {}) {
   const { state, dispatch, projectId } = useWorkspace();
   const catalogVersion = useTopviewModelCatalogVersion();
   // A reload, a restart, or a hot reload in dev must not empty the composer:
@@ -1833,9 +1836,10 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
   const onDockResizePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const start = dockResizeRef.current;
     if (!start) return;
-    // Top-right handle: drag up to grow the prompt, drag left to grow the bar.
+    // Top-right handle: drag up to grow the prompt, drag right to widen the bar.
+    // The bar is centre-anchored, so widening pushes both edges outward.
     setDockPromptPx(clampDockPromptPx(start.prompt + (start.y - event.clientY)));
-    setDockBarPx(clampDockBarPx(start.width + (start.x - event.clientX)));
+    setDockBarPx(clampDockBarPx(start.width + (event.clientX - start.x)));
   };
 
   const onDockResizePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -2359,7 +2363,7 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
         {dockEditVideo}
 
         <form className="space-studio__form" ref={formRef} onSubmit={handleGenerate}>
-          {/* Corner grip on the bar itself, not on Generate: drag up/left to grow, double-click to reset. */}
+          {/* Corner grip on the bar itself, not on Generate: drag up/right to grow, double-click to reset. */}
           {dockMode && (
             <button
               type="button"
@@ -3417,6 +3421,11 @@ export function SpaceStudio({ onOpenInCanvas }: SpaceStudioProps = {}) {
             onEditVideo={supportsEdit ? editClip : undefined}
             onExtractFrame={(id, at) => { void extractFrame(id, at); }}
             onOpenInCanvas={onOpenInCanvas ? (id) => { setViewerId(null); onOpenInCanvas(id); } : undefined}
+            onHideFromCanvas={onHideFromCanvas}
+            isOnCanvas={(id) => {
+              const node = clipById(id)?.node;
+              return node ? isPlacedOnCanvas(node) : false;
+            }}
             onCopyPrompt={(id) => { void copyPromptOf(id); }}
             onCopyUrl={(id) => { void copyUrlOf(id); }}
             onRemove={removeClip}
