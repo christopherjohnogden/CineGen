@@ -629,6 +629,7 @@ export interface ElectronAPI {
     extractFrame: (params: { inputPath: string; timeSec: number }) => Promise<{ outputPath: string } | null>;
     writeTempImage: (params: { dataUrl: string }) => Promise<{ outputPath: string }>;
     extractClip: (params: { inputPath: string; startTimeSec: number; durationSec: number }) => Promise<{ outputPath: string } | null>;
+    trimVideo: (params: { inputPath: string; startSec: number; endSec: number; projectId: string }) => Promise<{ outputPath: string } | null>;
     downloadRemote: (params: { url: string; projectId: string; assetId: string; ext?: string }) => Promise<{ path: string }>;
     persistGeneratedAsset: (params: {
       projectId: string;

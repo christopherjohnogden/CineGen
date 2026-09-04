@@ -30,6 +30,7 @@ const NODE_BADGES: Record<string, string> = {
   shotBoard: 'BRD',
   storyboarder: 'BRD',
   filePicker: 'REF',
+  trim: 'CUT',
 };
 
 interface NodeHeaderProps {

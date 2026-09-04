@@ -29,6 +29,7 @@ import { toFileUrl } from '@/lib/utils/file-url';
 import { getMediaTypeForFile, resolveMediaFileUrl, getLocalPathForFile } from '@/lib/utils/media-file';
 import { nextStudioSlot } from '@/lib/studio/layout';
 import { isPlacedOnCanvas } from '@/lib/studio/canvas-placement';
+import { StudioTrimDialog } from './studio-trim-dialog';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
@@ -822,6 +823,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   const [selectedClipIds, setSelectedClipIds] = useState<ReadonlySet<string>>(() => new Set());
   /** Files attached from disk. References in their own right, not Elements. */
   const [attachedRefs, setAttachedRefs] = useState<AttachedReference[]>(draft.attachments);
+  const [trimmingRefId, setTrimmingRefId] = useState<string | null>(null);
   const [dockPromptPx, setDockPromptPx] = useState(draft.dockPromptPx);
   const [dockBarPx, setDockBarPx] = useState(draft.dockBarPx);
   const dockResizeRef = useRef<{ prompt: number; width: number; x: number; y: number } | null>(null);
@@ -2223,6 +2225,22 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
             )}
             {reference.kind === 'audio' && <span className="space-studio__dock-ref-kind">AUD</span>}
             <span className="space-studio__dock-ref-label">{reference.name}</span>
+            {reference.kind === 'video' && (
+              <button
+                type="button"
+                className="space-studio__dock-ref-trim"
+                aria-label={`Trim ${reference.name}`}
+                data-testid={`space-studio-dock-trim-${reference.id}`}
+                title="Trim this clip"
+                onClick={() => setTrimmingRefId(reference.id)}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <circle cx="4" cy="12" r="2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                  <circle cx="12" cy="12" r="2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                  <path d="M5.4 10.6 12 2.5M10.6 10.6 4 2.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
             <button
               type="button"
               className="space-studio__dock-ref-clear"
@@ -3450,6 +3468,28 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
             onClear={clearSelection}
           />
         )}
+
+        {trimmingRefId && (() => {
+          const reference = attachedRefs.find((entry) => entry.id === trimmingRefId);
+          if (!reference) return null;
+          return (
+            <StudioTrimDialog
+              sourceUrl={toFileUrl(reference.url)}
+              name={reference.name}
+              projectId={projectId}
+              onCancel={() => setTrimmingRefId(null)}
+              onApply={({ url }) => {
+                // The trimmed file replaces the reference in place, so Generate
+                // sends the shortened clip without another step.
+                setAttachedRefs((current) => current.map((entry) => (
+                  entry.id === trimmingRefId ? { ...entry, url, name: `${entry.name} (trimmed)` } : entry
+                )));
+                setTrimmingRefId(null);
+                showNotice('Reference trimmed.');
+              }}
+            />
+          );
+        })()}
 
         {viewerItem && (
           <StudioClipViewer

@@ -337,6 +337,57 @@ export function registerMediaImportHandlers(): void {
     return { outputPath };
   });
 
+  /**
+   * media:trim-video — render a trimmed copy of a video for the Trim node.
+   *
+   * Distinct from media:extract-clip, which drops audio and writes to the OS temp
+   * directory because it only feeds a one-shot cloud upload. A trim is authored
+   * work: it keeps audio, and lands in the project so it survives a restart and
+   * can be referenced like any other generated media.
+   */
+  ipcMain.handle('media:trim-video', async (_event, params: {
+    inputPath: string;
+    startSec: number;
+    endSec: number;
+    projectId: string;
+  }): Promise<{ outputPath: string } | null> => {
+    const { inputPath, startSec, endSec, projectId } = params;
+    const start = Math.max(0, startSec);
+    const duration = Math.max(0.05, endSec - start);
+    if (!fs.existsSync(inputPath)) return null;
+
+    const outputDir = path.join(projectDir(projectId), 'media', 'generated');
+    await fsPromises.mkdir(outputDir, { recursive: true });
+    const outputPath = path.join(outputDir, `trim-${crypto.randomUUID()}.mp4`);
+
+    return new Promise((resolve) => {
+      const args = [
+        '-y',
+        // Seeking before -i is the fast path; ffmpeg still decodes accurately
+        // from the nearest keyframe with the re-encode below.
+        '-ss', `${start}`,
+        '-i', inputPath,
+        '-t', `${duration}`,
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '18',
+        '-pix_fmt', 'yuv420p',
+        // Keep audio when the source has it, rather than failing on a silent file.
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-movflags', '+faststart',
+        outputPath,
+      ];
+      execFile(getFfmpegPath(), args, { timeout: Math.max(120000, Math.ceil(duration * 4000)) }, (err) => {
+        if (err || !fs.existsSync(outputPath)) {
+          resolve(null);
+          return;
+        }
+        resolve({ outputPath });
+      });
+    });
+  });
+
   // media:extract-clip — extract a trimmed clip segment via ffmpeg for cloud tools
   ipcMain.handle('media:extract-clip', async (_event, params: {
     inputPath: string;

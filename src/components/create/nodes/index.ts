@@ -4,6 +4,7 @@ import { MultiPromptNode } from './multi-prompt-node';
 import { CompositionPlanNode } from './composition-plan-node';
 import { MusicPromptNode } from './music-prompt-node';
 import { ElementNode } from './element-node';
+import { TrimNode } from './trim-node';
 import { FilePickerNode } from './file-picker-node';
 import { ShotBoardNode } from './shot-board-node';
 import { StoryboarderNode } from './storyboarder-node';
@@ -28,6 +29,7 @@ export const nodeTypes: Record<string, React.ComponentType<any>> = {
   compositionPlan: CompositionPlanNode,
   musicPrompt: MusicPromptNode,
   element: ElementNode,
+  trim: TrimNode,
   filePicker: FilePickerNode,
   shotBoard: ShotBoardNode,
   storyboarder: StoryboarderNode,

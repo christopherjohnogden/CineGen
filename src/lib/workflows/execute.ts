@@ -664,7 +664,7 @@ async function runNodes(
     const portInputs = resolveInputs(definition.inputs, edges, nodeId, results);
 
     if (definition.category === 'utility') {
-      results.set(nodeId, resolveUtilityOutputs(nodeType, definition.outputs, node.data, dispatch));
+      results.set(nodeId, resolveUtilityOutputs(nodeType, definition.outputs, node.data, dispatch, portInputs));
       continue;
     }
 
@@ -789,6 +789,7 @@ function resolveUtilityOutputs(
   outputs: { id: string }[],
   data: WorkflowNodeData,
   dispatch: WorkflowDispatch,
+  portInputs: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   for (const port of outputs) {
@@ -810,6 +811,14 @@ function resolveUtilityOutputs(
       case 'musicPrompt':
         output[port.id] = data.config.generatedPrompt ?? '';
         break;
+      case 'trim': {
+        // The rendered trim when there is one, otherwise the untrimmed source,
+        // so an unconfigured Trim node is a pass-through rather than a dead end.
+        const trimmed = data.config.trimmedUrl as string;
+        const incoming = portInputs.video;
+        output[port.id] = trimmed || (typeof incoming === 'string' ? incoming : data.config.sourceUrl) || '';
+        break;
+      }
       case 'filePicker': {
         const fileUrl = data.config.fileUrl as string;
         if (fileUrl) {

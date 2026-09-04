@@ -183,13 +183,13 @@ describe('WorkflowCanvas node click and drag behavior', () => {
     expect(write?.[0].nodes[0].position).toEqual({ x: 120, y: 0 });
   });
   /**
-   * The button used to be positioned from workspace state, which only catches up
-   * when a dispatch lands — so it trailed the nodes for the whole drag. It has to
-   * read the same live store the nodes are drawn from.
+   * The canvas is a controlled flow, so every React-visible store is downstream
+   * of our dispatch and trails the drag. Only the painted node boxes are in step
+   * with what the user sees, so the button has to be measured from those.
    */
-  it('positions the Group button from live node positions, not workspace state', () => {
-    const left = { ...modelNode, id: 'left', position: { x: 100, y: 200 }, width: 200, selected: true };
-    const right = { ...modelNode, id: 'right', position: { x: 500, y: 260 }, width: 200, selected: true };
+  it('positions the Group button from the painted node boxes', async () => {
+    const left = { ...modelNode, id: 'left', position: { x: 100, y: 200 }, selected: true };
+    const right = { ...modelNode, id: 'right', position: { x: 500, y: 260 }, selected: true };
     workspaceHarness.state = {
       nodes: [left, right],
       edges: [],
@@ -197,10 +197,38 @@ describe('WorkflowCanvas node click and drag behavior', () => {
       runningNodeIds: new Set<string>(),
     };
 
+    // Stand in for the nodes React Flow paints, at the boxes it painted them at.
+    const boxes: Record<string, { left: number; top: number; right: number }> = {
+      left: { left: 100, top: 200, right: 300 },
+      right: { left: 500, top: 260, right: 700 },
+    };
+    for (const id of Object.keys(boxes)) {
+      const element = document.createElement('div');
+      element.className = 'react-flow__node';
+      element.dataset.id = id;
+      // Read on every call, so moving a box stands in for React Flow
+      // re-transforming that node mid-drag.
+      element.getBoundingClientRect = () => {
+        const box = boxes[id];
+        return { ...box, bottom: box.top + 100, width: box.right - box.left, height: 100, x: box.left, y: box.top, toJSON: () => ({}) } as DOMRect;
+      };
+      document.body.appendChild(element);
+    }
+
     render(<WorkflowCanvas />);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+
     const button = screen.getByTestId('workflow-group-button');
-    // Centred across the selection (100 -> 700), sitting above its topmost node.
-    expect(button).toHaveStyle({ left: '400px', top: '160px' });
+    // Centred across the painted selection (100 -> 700), above its topmost node.
+    expect(button.style.left).toBe('400px');
+    expect(button.style.top).toBe('160px');
+
+    // It follows the nodes without re-rendering, so moving the boxes is enough.
+    boxes.left = { left: 300, top: 400, right: 500 };
+    boxes.right = { left: 700, top: 460, right: 900 };
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+    expect(button.style.left).toBe('600px');
+    expect(button.style.top).toBe('360px');
   });
 
   it('shows no Group button until at least two nodes are selected', () => {

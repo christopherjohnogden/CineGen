@@ -158,6 +158,7 @@ electron.contextBridge.exposeInMainWorld("electronAPI", {
     extractFrame: (params) => electron.ipcRenderer.invoke("media:extract-frame", params),
     writeTempImage: (params) => electron.ipcRenderer.invoke("media:write-temp-image", params),
     extractClip: (params) => electron.ipcRenderer.invoke("media:extract-clip", params),
+    trimVideo: (params) => electron.ipcRenderer.invoke("media:trim-video", params),
     downloadRemote: (params) => electron.ipcRenderer.invoke("media:download-remote", params),
     persistGeneratedAsset: (params) => electron.ipcRenderer.invoke("media:persist-generated-asset", params),
     onJobProgress: (cb) => {

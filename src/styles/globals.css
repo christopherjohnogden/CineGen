@@ -23581,3 +23581,229 @@ input[type='range']::-moz-range-track {
     inset: -8px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Trim node — video in, shorter video out. The strip is the primary control;
+   the timecode fields are for the frame-accurate last word.
+   --------------------------------------------------------------------------- */
+.trim-node {
+  display: grid;
+  gap: 10px;
+  /* Stretch to the node body rather than setting a width: a fixed width is
+     wider than the body's content box, so it overruns the right padding while
+     the left survives. min-width is what makes the node itself grow. */
+  min-width: 296px;
+  max-width: 100%;
+}
+
+.trim-node__empty {
+  padding: 24px 12px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.trim-node__video {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+}
+
+.trim-strip {
+  position: relative;
+  height: 54px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  touch-action: none;
+}
+
+.trim-strip__frames {
+  display: flex;
+  height: 100%;
+}
+
+.trim-strip__frames img,
+.trim-strip__frames span {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  object-fit: cover;
+  background: var(--bg-overlay);
+}
+
+.trim-strip__shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, .62);
+  pointer-events: none;
+}
+
+.trim-strip__handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  margin-left: -5px;
+  border-radius: 3px;
+  background: var(--accent, #e0b45c);
+  cursor: ew-resize;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .45);
+}
+
+.trim-strip__handle:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+.trim-node__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.trim-node__fields label {
+  display: grid;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.trim-node__fields input {
+  /* Grid items default to min-width:auto, which lets a long timecode push the
+     column past the node edge. */
+  min-width: 0;
+  padding: 5px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+}
+
+.trim-node__error {
+  margin: 0;
+  color: var(--danger, #e06c6c);
+  font-size: 11px;
+}
+
+.trim-node__apply {
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trim-node__apply:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.trim-node__apply:not(:disabled):hover {
+  background: var(--bg-overlay);
+}
+
+/* Studio reference trim — the composer has no room for a Trim node, so the
+   same controls come up over the feed. */
+.space-studio__dock-ref-trim {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, .6);
+  color: #fff;
+  cursor: pointer;
+}
+
+.space-studio__dock-ref-trim svg { width: 12px; height: 12px; }
+.space-studio__dock-ref-trim:hover { background: rgba(0, 0, 0, .82); }
+
+.studio-trim {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .62);
+  backdrop-filter: blur(3px);
+}
+
+.studio-trim__panel {
+  display: grid;
+  gap: 12px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-raised);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+
+.studio-trim__panel header {
+  display: grid;
+  gap: 2px;
+}
+
+.studio-trim__panel header span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-trim__video {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+}
+
+.studio-trim__panel footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.studio-trim__panel footer div { display: flex; gap: 8px; }
+
+.studio-trim__length {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.studio-trim__panel footer button {
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.studio-trim__apply {
+  background: var(--accent, #e0b45c) !important;
+  border-color: transparent !important;
+  color: #1a1408 !important;
+  font-weight: 600;
+}
+
+.studio-trim__apply:disabled { opacity: .55; cursor: default; }

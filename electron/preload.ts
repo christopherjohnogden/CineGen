@@ -174,6 +174,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('media:write-temp-image', params),
     extractClip: (params: { inputPath: string; startTimeSec: number; durationSec: number }) =>
       ipcRenderer.invoke('media:extract-clip', params),
+    trimVideo: (params: { inputPath: string; startSec: number; endSec: number; projectId: string }) =>
+      ipcRenderer.invoke('media:trim-video', params),
     downloadRemote: (params: { url: string; projectId: string; assetId: string; ext?: string }) =>
       ipcRenderer.invoke('media:download-remote', params),
     persistGeneratedAsset: (params: {

@@ -62,6 +62,11 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       stream: true,
       bypassCSP: true,
+      // Without this the renderer cannot read pixels back from local media:
+      // drawing such a video to a canvas taints it and toDataURL throws, which
+      // is what left the Trim filmstrip blank. The scheme only ever serves the
+      // user's own files to the app's own window.
+      corsEnabled: true,
     },
   },
 ]);
@@ -349,6 +354,7 @@ app.whenReady().then(async () => {
             'Content-Length': String(totalSize),
             'Accept-Ranges': 'bytes',
             'Cache-Control': 'public, max-age=31536000, immutable',
+            'Access-Control-Allow-Origin': '*',
           },
         });
       }
@@ -382,6 +388,7 @@ app.whenReady().then(async () => {
             'Content-Range': `bytes ${safeStart}-${safeEnd}/${totalSize}`,
             'Accept-Ranges': 'bytes',
             'Cache-Control': 'public, max-age=31536000, immutable',
+            'Access-Control-Allow-Origin': '*',
           },
         });
       }
@@ -395,6 +402,7 @@ app.whenReady().then(async () => {
           'Content-Length': String(totalSize),
           'Accept-Ranges': 'bytes',
           'Cache-Control': 'public, max-age=31536000, immutable',
+          'Access-Control-Allow-Origin': '*',
         },
       });
     } catch (err) {

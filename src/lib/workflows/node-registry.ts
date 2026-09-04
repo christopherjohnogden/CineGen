@@ -37,6 +37,16 @@ const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
     outputs: [{ id: 'multi_prompt', type: 'multi_prompt', label: 'multi_prompt' }],
     defaultData: { shots: [{ prompt: '', duration: 5 }] },
   },
+  trim: {
+    type: 'trim',
+    label: 'Trim',
+    category: 'utility',
+    inputs: [{ id: 'video', type: 'video', label: 'Input' }],
+    outputs: [{ id: 'video', type: 'video', label: 'Output' }],
+    // trimmedUrl is the rendered result; until it exists the node passes the
+    // source straight through so a half-configured graph still runs.
+    defaultData: { startSec: 0, endSec: 0, trimmedUrl: '', sourceUrl: '' },
+  },
   element: {
     type: 'element',
     label: 'Element',

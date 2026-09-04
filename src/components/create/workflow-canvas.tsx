@@ -54,37 +54,69 @@ interface PendingPaletteConnection {
 }
 
 /**
- * The floating Group button has to sit on the live selection. Measuring it from
- * workspace state leaves it trailing through a drag: that state only catches up
- * when a dispatch lands, a frame or more behind the nodes on screen. React Flow's
- * store is the same source the nodes are drawn from, so reading it keeps the
- * button glued to them — and isolating this in its own component means tracking
- * the drag re-renders one button rather than the whole canvas.
+ * The floating Group button has to sit on the live selection through a drag.
+ * `useNodes` here is only the selection membership; the position comes from the
+ * painted DOM, for the reason spelled out on the effect below.
  */
 function GroupButton({ onGroup }: { onGroup: () => void }) {
-  const { flowToScreenPosition } = useReactFlow();
   const nodes = useNodes();
+  const ref = useRef<HTMLButtonElement>(null);
 
-  const selected = nodes.filter((node) => node.selected && node.type !== 'group');
-  if (selected.length < 2) return null;
+  const selectedIds = nodes.filter((node) => node.selected && node.type !== 'group').map((node) => node.id);
+  const visible = selectedIds.length >= 2;
+  const key = selectedIds.join(',');
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  for (const node of selected) {
-    const width = node.measured?.width ?? node.width ?? 240;
-    minX = Math.min(minX, node.position.x);
-    minY = Math.min(minY, node.position.y);
-    maxX = Math.max(maxX, node.position.x + width);
-  }
-  const screen = flowToScreenPosition({ x: (minX + maxX) / 2, y: minY });
+  // Measure the painted nodes rather than any model of them. The canvas is a
+  // controlled flow, so every store React exposes — `useNodes` included — is
+  // downstream of our own dispatch and therefore a frame or more stale mid-drag.
+  // The node elements are already transformed by then, so reading their boxes is
+  // the only source that cannot trail. Writing straight to style keeps this off
+  // the render path, so following a drag costs no React work at all.
+  useEffect(() => {
+    if (!visible) return undefined;
+    const ids = key.split(',');
+    const escape = (value: string) => (
+      typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(value) : value
+    );
+
+    let frame = 0;
+    const place = () => {
+      const button = ref.current;
+      if (button) {
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        for (const id of ids) {
+          const element = document.querySelector(`.react-flow__node[data-id="${escape(id)}"]`);
+          if (!element) continue;
+          const box = element.getBoundingClientRect();
+          minX = Math.min(minX, box.left);
+          minY = Math.min(minY, box.top);
+          maxX = Math.max(maxX, box.right);
+        }
+        if (Number.isFinite(minX) && Number.isFinite(maxX)) {
+          button.style.left = `${(minX + maxX) / 2}px`;
+          button.style.top = `${minY - 40}px`;
+          button.style.visibility = 'visible';
+        }
+      }
+      frame = requestAnimationFrame(place);
+    };
+    frame = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(frame);
+  }, [visible, key]);
+
+  if (!visible) return null;
 
   return (
     <button
       type="button"
+      ref={ref}
       className="workflow-group-btn"
       data-testid="workflow-group-button"
-      style={{ left: screen.x, top: screen.y - 40 }}
+      // Stays out of sight until the first measurement lands, so it never
+      // flashes in the corner before finding the selection.
+      style={{ visibility: 'hidden' }}
       onClick={onGroup}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -100,7 +132,7 @@ function GroupButton({ onGroup }: { onGroup: () => void }) {
 
 function WorkflowCanvasInner() {
   const { state, dispatch, projectId } = useWorkspace();
-  const { screenToFlowPosition, flowToScreenPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [palettePos, setPalettePos] = useState({ x: 0, y: 0 });
