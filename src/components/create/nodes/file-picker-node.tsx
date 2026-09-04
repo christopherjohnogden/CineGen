@@ -179,9 +179,12 @@ function FilePickerNodeInner({ id, data, selected, width, height }: FilePickerNo
           )}
 
           {mediaError && (
-            <div className="file-picker-node__media-error nodrag">
+            // `nodrag` belongs on the button, not the panel: the error state
+            // covers the whole frame, so marking all of it undraggable leaves a
+            // node that cannot be moved out of the way.
+            <div className="file-picker-node__media-error">
               <span>Media unavailable</span>
-              <button type="button" onClick={() => void openNativeFilePicker()}>Replace</button>
+              <button type="button" className="nodrag" onClick={() => void openNativeFilePicker()}>Replace</button>
             </div>
           )}
 

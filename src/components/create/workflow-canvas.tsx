@@ -8,6 +8,7 @@ import {
   Controls,
   SelectionMode,
   useReactFlow,
+  useNodes,
   ReactFlowProvider,
   applyNodeChanges,
   applyEdgeChanges,
@@ -50,6 +51,51 @@ interface PendingPaletteConnection {
   sourceNodeId: string;
   sourceHandleId: string | null;
   sourcePortType: PortType;
+}
+
+/**
+ * The floating Group button has to sit on the live selection. Measuring it from
+ * workspace state leaves it trailing through a drag: that state only catches up
+ * when a dispatch lands, a frame or more behind the nodes on screen. React Flow's
+ * store is the same source the nodes are drawn from, so reading it keeps the
+ * button glued to them — and isolating this in its own component means tracking
+ * the drag re-renders one button rather than the whole canvas.
+ */
+function GroupButton({ onGroup }: { onGroup: () => void }) {
+  const { flowToScreenPosition } = useReactFlow();
+  const nodes = useNodes();
+
+  const selected = nodes.filter((node) => node.selected && node.type !== 'group');
+  if (selected.length < 2) return null;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  for (const node of selected) {
+    const width = node.measured?.width ?? node.width ?? 240;
+    minX = Math.min(minX, node.position.x);
+    minY = Math.min(minY, node.position.y);
+    maxX = Math.max(maxX, node.position.x + width);
+  }
+  const screen = flowToScreenPosition({ x: (minX + maxX) / 2, y: minY });
+
+  return (
+    <button
+      type="button"
+      className="workflow-group-btn"
+      data-testid="workflow-group-button"
+      style={{ left: screen.x, top: screen.y - 40 }}
+      onClick={onGroup}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="7" height="7" />
+        <rect x="14" y="3" width="7" height="7" />
+        <rect x="3" y="14" width="7" height="7" />
+        <rect x="14" y="14" width="7" height="7" />
+      </svg>
+      Group
+    </button>
+  );
 }
 
 function WorkflowCanvasInner() {
@@ -134,8 +180,17 @@ function WorkflowCanvasInner() {
 
   const onNodeDrag = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      const result = getHelperLines(node, nodesRef.current);
+      // Align only against what is drawn — an off-canvas generation is not a
+      // guide the user can see, and snapping to one looks arbitrary.
+      const visible = visibleCanvasNodes(nodesRef.current);
+      const result = getHelperLines(node, visible);
       setHelperLines({ horizontal: result.horizontal, vertical: result.vertical });
+
+      // React Flow already moves every selected node during a drag. Writing
+      // positions back here rebuilds the array from a snapshot taken before this
+      // frame, which undoes the other nodes' travel — the selection tears apart
+      // and stutters. Snapping stays a single-node affordance.
+      if (visible.filter((candidate) => candidate.selected).length > 1) return;
 
       if (result.snapX !== undefined || result.snapY !== undefined) {
         const snappedNode = {
@@ -803,22 +858,9 @@ function WorkflowCanvasInner() {
     setConfirmMobileDelete(false);
   }, [selectedSignature]);
 
-  // Floating group button for multi-selection
+  // The floating button positions itself from React Flow's live store; this is
+  // only the count that gates the mobile toolbar's Group action.
   const selectedNonGroup = canvasNodes.filter((n) => n.selected && n.type !== 'group');
-  const showGroupBtn = selectedNonGroup.length >= 2;
-  let groupBtnPos: { x: number; y: number } | null = null;
-  if (showGroupBtn) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity;
-    for (const node of selectedNonGroup) {
-      const w = node.measured?.width ?? node.width ?? 240;
-      minX = Math.min(minX, node.position.x);
-      minY = Math.min(minY, node.position.y);
-      maxX = Math.max(maxX, node.position.x + w);
-    }
-    const centerX = (minX + maxX) / 2;
-    const screenPos = flowToScreenPosition({ x: centerX, y: minY });
-    groupBtnPos = { x: screenPos.x, y: screenPos.y - 40 };
-  }
 
   return (
     <RunNodeContext.Provider value={handleRunNode}>
@@ -940,22 +982,7 @@ function WorkflowCanvasInner() {
         </section>
       )}
 
-      {showGroupBtn && groupBtnPos && (
-        <button
-          type="button"
-          className="workflow-group-btn"
-          style={{ left: groupBtnPos.x, top: groupBtnPos.y }}
-          onClick={handleGroupSelected}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="7" height="7" />
-            <rect x="14" y="3" width="7" height="7" />
-            <rect x="3" y="14" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" />
-          </svg>
-          Group
-        </button>
-      )}
+      <GroupButton onGroup={handleGroupSelected} />
 
       {showInspector && inspectorNode && (
         <NodeInspector nodeId={inspectorNode.id} data={inspectorNode.data} />

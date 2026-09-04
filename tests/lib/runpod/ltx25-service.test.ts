@@ -971,7 +971,10 @@ describe('shared RunPod LTX-2.5 service', () => {
     expect(calls[0].init?.headers).toMatchObject({ Authorization: 'Bearer pod-session-token' });
   });
 
-  it('downloads a completed gateway-v2 artifact in authenticated bounded chunks and cleans it up', async () => {
+  // Allocating and base64-encoding a 2MB artifact takes ~2.5s on its own, which
+  // leaves no headroom under the default 5s once the suite runs it alongside
+  // everything else. The work is real, so give it room rather than shrinking it.
+  it('downloads a completed gateway-v2 artifact in authenticated bounded chunks and cleans it up', { timeout: 20_000 }, async () => {
     const chunkBytes = 1024 * 1024;
     const video = Buffer.alloc(chunkBytes * 2 + 13, 0x5a);
     video.write('ftyp', 4, 'ascii');

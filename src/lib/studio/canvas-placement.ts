@@ -3,6 +3,7 @@ import type { Asset } from '@/types/project';
 import type { WorkflowNodeData } from '@/types/workflow';
 import { getModelDefinition } from '@/lib/fal/models';
 import { toFileUrl } from '@/lib/utils/file-url';
+import { detectMediaTypeFromExt } from '@/lib/utils/media-file';
 import { createWorkflowNodeFromSpec } from '@/lib/llm/space-node-factory';
 import { endFieldFor, promptFieldFor, referenceFieldFor, startFieldFor } from './fields';
 
@@ -74,6 +75,22 @@ function assetUrl(assets: Asset[], id: unknown): string {
   // Match how the composer resolved the same asset, or the node renders as
   // "Media unavailable" for a file that is sitting right there on disk.
   return asset ? toFileUrl(asset.fileRef || asset.url) : '';
+}
+
+/**
+ * A file node needs the resolved url, the media kind, and a name. Guessing
+ * `image` for everything mislabels a reference clip, and an unresolved
+ * `local-media://` url renders as "Media unavailable" — a node whose error state
+ * covers the whole frame and cannot even be dragged out of the way.
+ */
+function fileNodeConfig(rawUrl: string, fallbackName: string): Record<string, unknown> {
+  const url = toFileUrl(rawUrl);
+  const name = decodeURIComponent(rawUrl.split(/[?#]/)[0].split('/').pop() ?? '') || fallbackName;
+  return {
+    fileUrl: url,
+    fileType: detectMediaTypeFromExt(name) || 'image',
+    fileName: name,
+  };
 }
 
 /**
@@ -164,7 +181,7 @@ export function expandStudioInputs(
   if (referenceField) {
     for (const url of attached) {
       const refNode = stack(createWorkflowNodeFromSpec(
-        { nodeType: 'filePicker', label: 'Reference', config: { fileUrl: url, fileType: 'image' } },
+        { nodeType: 'filePicker', label: 'Reference', config: fileNodeConfig(url, 'Reference') },
         { x: originX, y: 0 },
       ));
       const handle = nextReferenceHandle();
@@ -180,7 +197,7 @@ export function expandStudioInputs(
     const url = assetUrl(assets, assetId);
     if (!url) continue;
     const frameNode = stack(createWorkflowNodeFromSpec(
-      { nodeType: 'filePicker', label, config: { fileUrl: url, fileType: 'image' } },
+      { nodeType: 'filePicker', label, config: fileNodeConfig(url, label) },
       { x: originX, y: 0 },
     ));
     connect(frameNode, field.id, 'media');

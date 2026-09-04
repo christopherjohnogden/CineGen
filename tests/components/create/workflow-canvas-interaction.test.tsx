@@ -23,6 +23,7 @@ vi.mock('@xyflow/react', () => ({
   SelectionMode: { Partial: 'partial' },
   applyNodeChanges: (_changes: unknown, nodes: unknown) => nodes,
   applyEdgeChanges: (_changes: unknown, edges: unknown) => edges,
+  useNodes: () => (workspaceHarness.state?.nodes ?? []) as unknown[],
   useReactFlow: () => ({
     screenToFlowPosition: (position: unknown) => position,
     flowToScreenPosition: (position: unknown) => position,
@@ -41,9 +42,12 @@ vi.mock('@/components/workspace/workspace-shell', () => ({
 vi.mock('@/components/create/nodes', () => ({ nodeTypes: {} }));
 vi.mock('@/components/create/edges/animated-edge', () => ({ edgeTypes: {} }));
 vi.mock('@/components/create/node-palette', () => ({ NodePalette: () => null }));
+const helperHarness = vi.hoisted(() => ({
+  result: { horizontal: null, vertical: null } as Record<string, unknown>,
+}));
 vi.mock('@/components/create/helper-lines', () => ({
   HelperLines: () => null,
-  getHelperLines: () => ({ horizontal: null, vertical: null }),
+  getHelperLines: () => helperHarness.result,
 }));
 vi.mock('@/components/create/node-inspector', () => ({
   NodeInspector: ({ nodeId }: { nodeId: string }) => (
@@ -96,6 +100,7 @@ describe('WorkflowCanvas node click and drag behavior', () => {
       runningNodeIds: new Set<string>(),
     };
     workspaceHarness.dispatch.mockClear();
+    helperHarness.result = { horizontal: null, vertical: null };
     flowHarness.props = null;
     localStorage.setItem('cinegen_mobile_canvas_guide_seen', '1');
   });
@@ -142,5 +147,64 @@ describe('WorkflowCanvas node click and drag behavior', () => {
 
     act(() => flowHandler('onNodeClick')({} as never, modelNode as never));
     expect(screen.getByTestId('node-inspector')).toHaveTextContent('video-model');
+  });
+  /**
+   * React Flow moves every selected node itself. The snap correction used to
+   * rebuild the node array from a pre-frame snapshot, which put the other
+   * selected nodes back where they started — the selection tore apart and
+   * stuttered for the whole drag.
+   */
+  it('leaves a multi-node drag to React Flow instead of writing positions back', () => {
+    const second = { ...modelNode, id: 'second-node', position: { x: 400, y: 0 }, selected: true };
+    workspaceHarness.state = {
+      nodes: [modelNode, second],
+      edges: [],
+      elements: [],
+      runningNodeIds: new Set<string>(),
+    };
+    helperHarness.result = { horizontal: null, vertical: null, snapX: 120 };
+
+    render(<WorkflowCanvas />);
+    act(() => flowHandler('onNodeDrag')({} as never, modelNode as never));
+
+    const positionWrites = workspaceHarness.dispatch.mock.calls
+      .filter(([action]) => action?.type === 'SET_NODES');
+    expect(positionWrites).toEqual([]);
+  });
+
+  it('still snaps a single dragged node', () => {
+    helperHarness.result = { horizontal: null, vertical: null, snapX: 120 };
+
+    render(<WorkflowCanvas />);
+    act(() => flowHandler('onNodeDrag')({} as never, modelNode as never));
+
+    const write = workspaceHarness.dispatch.mock.calls
+      .find(([action]) => action?.type === 'SET_NODES');
+    expect(write?.[0].nodes[0].position).toEqual({ x: 120, y: 0 });
+  });
+  /**
+   * The button used to be positioned from workspace state, which only catches up
+   * when a dispatch lands — so it trailed the nodes for the whole drag. It has to
+   * read the same live store the nodes are drawn from.
+   */
+  it('positions the Group button from live node positions, not workspace state', () => {
+    const left = { ...modelNode, id: 'left', position: { x: 100, y: 200 }, width: 200, selected: true };
+    const right = { ...modelNode, id: 'right', position: { x: 500, y: 260 }, width: 200, selected: true };
+    workspaceHarness.state = {
+      nodes: [left, right],
+      edges: [],
+      elements: [],
+      runningNodeIds: new Set<string>(),
+    };
+
+    render(<WorkflowCanvas />);
+    const button = screen.getByTestId('workflow-group-button');
+    // Centred across the selection (100 -> 700), sitting above its topmost node.
+    expect(button).toHaveStyle({ left: '400px', top: '160px' });
+  });
+
+  it('shows no Group button until at least two nodes are selected', () => {
+    render(<WorkflowCanvas />);
+    expect(screen.queryByTestId('workflow-group-button')).not.toBeInTheDocument();
   });
 });

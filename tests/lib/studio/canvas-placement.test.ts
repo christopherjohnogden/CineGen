@@ -93,6 +93,27 @@ describe('studio canvas placement', () => {
     expect(promptNode?.data.config.prompt).toBe('A tracking shot.');
   });
 
+  /**
+   * A video reference rendered as an <img> can never load, so the node came up
+   * "Media unavailable" — and that error panel covers the whole frame, leaving a
+   * node that could not even be dragged aside.
+   */
+  it('labels a reference by what it actually is, not always an image', () => {
+    const placed = placeStudioNodeOnCanvas([generation('g1', {
+      __studioAttachedRefs: [
+        'local-media://file/clips/game.mp4',
+        'https://cdn.example.com/refs/sheet.png?alt=media&token=abc',
+      ],
+    })], [], 'g1', []);
+    const files = placed.nodes.filter((node) => node.data.type === 'filePicker');
+
+    expect(files.map((node) => node.data.config.fileType)).toEqual(['video', 'image']);
+    // A name means the node reads as something rather than "Untitled".
+    expect(files.map((node) => node.data.config.fileName)).toEqual(['game.mp4', 'sheet.png']);
+    // The query string is not part of the file name, but stays on the url.
+    expect(files[1].data.config.fileUrl).toContain('token=abc');
+  });
+
   it('leaves an end frame out when the generation never had one', () => {
     const placed = placeStudioNodeOnCanvas([generation('g1')], [], 'g1', []);
     expect(placed.edges.map((edge) => edge.targetHandle)).toEqual(['prompt']);
