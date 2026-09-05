@@ -54,3 +54,12 @@ export function variationKindLabel(kind: ElementVariationKind): string {
     case 'custom': return 'Custom';
   }
 }
+
+/** Match the modal's implicit baseline, with a stable ID for read/edit clients. */
+export function materializeElementLooks(element: Element): Element {
+  const variations = element.variations?.length ? element.variations : [
+    createBaselineVariation(element.images, element.createdAt, `baseline-${element.id}`),
+  ];
+  const active = variations.find(look => look.id === element.activeVariationId) ?? variations[0];
+  return { ...element, variations, activeVariationId: active.id, images: active.images };
+}

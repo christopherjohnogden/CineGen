@@ -1,3 +1,6 @@
+import { prepareElementReferences } from '@/lib/cloud/elements';
+import { buildElementDraft, type ElementBuildRequest } from '@/lib/elements/build-element';
+import type { Element } from '@/types/elements';
 import { flushSync } from 'react-dom';
 import { useEffect, useRef } from 'react';
 import { executeFromNode, type WorkflowDispatch } from '@/lib/workflows/execute';
@@ -16,11 +19,12 @@ interface Job { id: string; action: string; status: 'running' | 'complete' | 'fa
 export function useMcpBridge(
   state: McpHostState,
   dispatch: (action: McpAction) => void,
-  options: { projectName?: string; ready?: boolean; reduce?: (state: McpHostState, action: McpAction) => McpHostState } = {},
-): void {
+  options: { projectId?: string; projectName?: string; ready?: boolean; reduce?: (state: McpHostState, action: McpAction) => McpHostState } = {},
+): () => boolean {
   const hostRef = useRef<McpHost | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const drafts = useRef(new Map<string, { element: Element; original?: string; existingId?: string; durable: boolean; approved: boolean }>());
   const jobs = useRef(new Map<string, Job>());
   const send = (action: McpAction) => {
     // React batches updates: sequential tools and multi-node batches must see their own writes.
@@ -34,6 +38,20 @@ export function useMcpBridge(
     addAsset: (asset) => send({ type: 'ADD_ASSET', asset: { ...asset, thumbnailUrl: asset.url } }),
     getElements: () => stateRef.current.elements,
   });
+
+  const approveDraft = (jobId: string) => {
+    const draft = drafts.current.get(jobId);
+    if (!draft?.durable) throw new Error('The Element draft is not ready. Wait for its build to complete.');
+    if (draft.approved) return { element: draft.element, approved: true };
+    const current = stateRef.current.elements.find(element => element.id === draft.existingId);
+    if (draft.existingId && JSON.stringify(current) !== draft.original) throw new Error('This Element changed during the build. Read it and build a new draft to avoid overwriting edits.');
+    if (draft.existingId) send({ type: 'UPDATE_ELEMENT', elementId: draft.existingId, updates: draft.element });
+    else send({ type: 'ADD_ELEMENT', element: draft.element });
+    draft.approved = true;
+    const result = { element: draft.element, approved: true };
+    const job = jobs.current.get(jobId); if (job) job.result = result;
+    return result;
+  };
 
   hostRef.current = {
     getState: () => stateRef.current,
@@ -54,6 +72,27 @@ export function useMcpBridge(
           return { ...job };
         }
         return [...jobs.current.values()].map(job => ({ ...job }));
+      }
+      if (action === 'persist_element') {
+        if (!options.projectId) throw new Error('Open a project before saving references.');
+        return prepareElementReferences(args.element as Element, options.projectId);
+      }
+      if (action === 'approve_element') return approveDraft(String(args.jobId));
+      if (action === 'build_element') {
+        if (!options.projectId) throw new Error('Open a project before building an Element.');
+        const existing = args.elementId ? stateRef.current.elements.find(element => element.id === args.elementId) : undefined;
+        if (args.elementId && !existing) throw new Error('Unknown Element ID.');
+        if ([...jobs.current.values()].some(job => job.status === 'running')) throw new Error('Wait for the current MCP job to finish before starting another build.');
+        const job: Job = { id: crypto.randomUUID(), action: 'build_element', status: 'running' };
+        jobs.current.set(job.id, job);
+        void buildElementDraft(args as unknown as ElementBuildRequest, existing, options.projectId, element => {
+          job.result = { element, approved: false, building: true };
+        }).then(element => {
+          drafts.current.set(job.id, { element, original: existing ? JSON.stringify(existing) : undefined, existingId: existing?.id, durable: true, approved: false });
+          job.result = args.approve === true ? approveDraft(job.id) : { element, approved: false, readyForApproval: true };
+          job.status = 'complete';
+        }).catch(error => { job.status = 'failed'; job.error = error instanceof Error ? error.message : String(error); });
+        return { ...job };
       }
       if (action === 'view') return invokeMcpCommand('view', args);
       if (action === 'extract_media') {
@@ -134,4 +173,5 @@ export function useMcpBridge(
     });
     return () => { disposed = true; api.ready?.(false); stop(); };
   }, [options.ready]);
+  return () => [...jobs.current.values()].some(job => job.status === 'running');
 }

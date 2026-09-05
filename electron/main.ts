@@ -1,3 +1,4 @@
+import { registerClaudeMcp } from './ipc/claude-mcp.js';
 import { app, BrowserWindow, ipcMain, nativeImage, protocol, powerMonitor } from 'electron';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
@@ -414,6 +415,7 @@ app.whenReady().then(async () => {
   // Register all IPC handlers
   registerProjectHandlers();
   registerMcpBridge(() => mainWindow);
+  registerClaudeMcp();
   registerWorkflowHandlers();
   registerHiggsfieldHandlers();
   registerArtlistHandlers();

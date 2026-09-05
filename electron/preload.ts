@@ -8,6 +8,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     save: (id: string, data: unknown) => ipcRenderer.invoke('project:save', id, data),
     delete: (id: string) => ipcRenderer.invoke('project:delete', id),
   },
+  claudeMcp: {
+    status: () => ipcRenderer.invoke('claude-mcp:status'),
+    setup: () => ipcRenderer.invoke('claude-mcp:setup'),
+    remove: () => ipcRenderer.invoke('claude-mcp:remove'),
+    reveal: () => ipcRenderer.invoke('claude-mcp:reveal'),
+  },
   mcpBridge: {
     onInvoke: (cb: (payload: { id: string; tool: string; args?: Record<string, unknown> }) => void) => {
       const listener = (_event: unknown, payload: { id: string; tool: string; args?: Record<string, unknown> }) => cb(payload);

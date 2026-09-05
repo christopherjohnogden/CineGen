@@ -3,6 +3,8 @@ import { cleanup, render, waitFor } from '@testing-library/react';
 import type { McpAction, McpHostState } from '@/lib/mcp/types';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 
+const elementBuild = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/elements/build-element', () => ({ buildElementDraft: elementBuild }));
 vi.mock('@/lib/workflows/execute', () => ({ executeFromNode: vi.fn(() => Promise.resolve()) }));
 vi.mock('@/lib/mcp/handlers', () => ({
   createMcpHandlers: (host: { getState: () => McpHostState; projectName?: string; appAction?: (action: string,args:Record<string,unknown>)=>Promise<unknown> }) => ({
@@ -10,6 +12,8 @@ vi.mock('@/lib/mcp/handlers', () => ({
     cinegen_explode: async () => { throw new Error('Nope.'); },
     cinegen_director_action: async (args: Record<string,unknown>) => host.appAction?.('director',args),
     cinegen_get_jobs: async (args: Record<string,unknown>) => host.appAction?.('jobs',args),
+    cinegen_build_element: async (args: Record<string,unknown>) => host.appAction?.('build_element',args),
+    cinegen_approve_element: async (args: Record<string,unknown>) => host.appAction?.('approve_element',args),
     cinegen_export: async (args: Record<string,unknown>) => host.appAction?.('export',args),
   }),
 }));
@@ -42,11 +46,11 @@ function mountBridge(state: Partial<McpHostState> = {}) {
   const dispatch = vi.fn<(action: McpAction) => void>();
 
   function Harness() {
-    useMcpBridge(fullState, dispatch, { projectName: 'Subconscious Mind' });
+    useMcpBridge(fullState, dispatch, { projectId: 'project-test', projectName: 'Subconscious Mind' });
     return null;
   }
   const view = render(<Harness />);
-  return { view, respond, ready, stop, get invoke() { return invoke; } };
+  return { view, respond, ready, stop, dispatch, fullState, get invoke() { return invoke; } };
 }
 
 describe('useMcpBridge', () => {
@@ -144,5 +148,34 @@ describe('MCP app jobs', () => {
     bridge.invoke?.({id:'render',tool:'cinegen_export',args:{action:'start'}});
     await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'render',ok:true,result:expect.objectContaining({id:'export1'})})));
     expect(start).toHaveBeenCalledWith(expect.objectContaining({totalDuration:5,preset:'standard',clips:[expect.objectContaining({inputPath:'https://example.com/a.mp4',duration:5})]}));
+  });
+});
+
+
+describe('MCP Element approval', () => {
+  const element = { id:'mug',name:'Mug',type:'prop',description:'Ceramic',images:[{id:'ref',url:'https://project/image.png',source:'generated',createdAt:''}],createdAt:'',updatedAt:'' };
+  it('keeps the build out of the library until approved and makes approval idempotent', async () => {
+    elementBuild.mockResolvedValue(element);
+    const bridge=mountBridge();
+    bridge.invoke?.({id:'build',tool:'cinegen_build_element',args:{name:'Mug',reference:{mode:'upload',uploadUrls:['https://provider/image']}}});
+    await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'build',ok:true})));
+    const jobId=bridge.respond.mock.calls.find(([x])=>x.id==='build')![0].result.id;
+    expect(bridge.dispatch).not.toHaveBeenCalled();
+    bridge.invoke?.({id:'approve',tool:'cinegen_approve_element',args:{jobId,approved:true}});
+    await waitFor(()=>expect(bridge.dispatch).toHaveBeenCalledWith({type:'ADD_ELEMENT',element}));
+    bridge.invoke?.({id:'retry',tool:'cinegen_approve_element',args:{jobId,approved:true}});
+    await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'retry',ok:true})));
+    expect(bridge.dispatch).toHaveBeenCalledTimes(1);
+  });
+  it('refuses stale approval after an existing Element was edited', async () => {
+    elementBuild.mockResolvedValue(element);
+    const bridge=mountBridge({elements:[element as never]});
+    bridge.invoke?.({id:'build',tool:'cinegen_build_element',args:{elementId:'mug',reference:{mode:'upload',uploadUrls:['https://provider/image']}}});
+    await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'build',ok:true})));
+    const jobId=bridge.respond.mock.calls.find(([x])=>x.id==='build')![0].result.id;
+    bridge.fullState.elements=[{...element,name:'Edited by user'} as never];
+    bridge.invoke?.({id:'approve',tool:'cinegen_approve_element',args:{jobId,approved:true}});
+    await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'approve',ok:false,error:expect.stringContaining('changed during')})));
+    expect(bridge.dispatch).not.toHaveBeenCalled();
   });
 });

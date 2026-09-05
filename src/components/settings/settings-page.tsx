@@ -1,3 +1,4 @@
+import { ClaudeMcpConnect } from './claude-mcp-connect';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { renewalSummary } from '@/lib/providers/renewal';
 import type { DefaultTranscriptionEngine } from '@/lib/utils/api-key';
@@ -29,7 +30,7 @@ type SettingsTab = 'app' | 'project';
 type RunpodLtxImageModel = 'sdxl' | 'qwen-image-edit';
 
 /* Sidebar category IDs — these double as scroll-anchor IDs */
-type AppCategory = 'cloud' | 'api-keys' | 'endpoints' | 'pod' | 'provider' | 'preferences';
+type AppCategory = 'claude' | 'cloud' | 'api-keys' | 'endpoints' | 'pod' | 'provider' | 'preferences';
 type ProjectCategory = 'resolution' | 'frame-rate' | 'aspect-ratio';
 type Category = AppCategory | ProjectCategory;
 
@@ -45,6 +46,7 @@ type RunpodLtxSetupStatus =
 
 const APP_CATEGORIES: { id: AppCategory; label: string }[] = [
   { id: 'cloud', label: 'Cloud Account' },
+  { id: 'claude', label: 'Claude Desktop' },
   { id: 'api-keys', label: 'API Keys' },
   { id: 'endpoints', label: 'RunPod Endpoints' },
   { id: 'pod', label: 'Generation Session' },
@@ -1351,6 +1353,8 @@ export function SettingsPage({ onBack, projectId, useSqlite }: SettingsPageProps
           {tab === 'app' && (
             <div className="sp-content__inner">
               <CloudAccountCard projectId={projectId} useSqlite={useSqlite} />
+              <ClaudeMcpConnect />
+
               {/* --- API Keys --- */}
               <section className="sp-card" id="sp-section-api-keys">
                 <h3 className="sp-card__title">Team Provider Access</h3>

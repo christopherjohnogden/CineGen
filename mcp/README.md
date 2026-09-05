@@ -1,11 +1,30 @@
 # CineGen MCP server
 
-CineGen exposes 35 tools for working conversationally in the desktop app. Claude
+CineGen exposes 38 tools for working conversationally in the desktop app. Claude
 can write a script breakdown and shotlist, create approved Elements, generate
 Director takes, work in Spaces, edit timelines, and render an export. Project
 management also works when the app is at its launcher.
 
 ## Setup
+
+**Recommended:** in the installed Mac app, open **Settings → App Settings →
+Claude Desktop** and click **Connect Claude Desktop**. Setup preserves your other
+Claude servers and preferences and saves a private backup before editing the
+configuration. It installs a standalone server using CineGen's bundled runtime;
+no Terminal commands, Node installation, or source checkout are needed.
+
+Fully quit and reopen Claude Desktop, then start a new chat. Check **Claude →
+Settings → Developer → Local MCP servers** for `cinegen`. This local setup is
+separate from remote entries in the Connectors directory and is for Desktop chat,
+not web, iPhone or Cowork. Keep CineGen running.
+
+The same card offers **Check setup**, **Repair Claude setup**, **Show
+configuration**, and **Disconnect**. Use Repair after moving/updating the app.
+Install CineGen in Applications before connecting; do not set it up from a DMG.
+Setup verifies server startup and configuration, not whether Claude has restarted
+and loaded the tools. Generation remains subject to the connected provider.
+
+### Manual setup for a source checkout
 
 Install the repository dependencies with `npm install` if needed, build the updated
 app with `npm run build`, and launch it. Restart an older running app to load these
@@ -45,8 +64,8 @@ provider accounts are needed: generation uses the app's existing connections.
    `cinegen_approve_breakdown` with the selected item IDs and `approved: true`.
    It creates or reuses Elements and links them to the breakdown. Retrying it does
    not duplicate the linked Elements. Creating an Element does not generate its
-   reference image: generate or import images, then attach them with
-   `cinegen_edit_element`.
+   reference image: use `cinegen_build_element` to generate or import its
+   reference pack, review the completed job, then `cinegen_approve_element`.
 5. Read the exact shotlist writing instructions from `cinegen_capabilities`.
    Send the resulting JSON to `cinegen_set_shotlist`. The JSON has **top-level
    `scenes` and `clips` arrays**, not clips nested inside scenes.
@@ -64,6 +83,33 @@ and those LLM jobs may spend provider credits; use them only within the user's
 requested scope. An approval boolean communicates the client's decision; it is
 not an independent app confirmation dialog.
 
+## Element reference workflow
+
+1. Call `cinegen_element_models` for supported model keys and providers.
+2. Call `cinegen_build_element` with a creative brief (or existing `elementId`)
+   and `reference` settings. Modes are `generate`, `guide` (with `guideImages`),
+   and `upload` (with `uploadUrls`). Choose a `workingLook` and optionally add
+   continuity `variations`, each with its own reference settings. Generation
+   defaults to seven views; `views` can limit this to one through seven.
+3. Poll `cinegen_get_jobs`. Completed results contain the draft with stable image
+   IDs and references ingested into project storage. Generation uses the same
+   prompt and provider helpers as the Element modal; both paths share ingestion.
+4. Show the draft to the user. After approval, call `cinegen_approve_element` with
+   `jobId` and `approved: true`. This adds or updates the Element. If the user
+   already explicitly authorized the finished result, `approve: true` on the
+   build call can save it immediately after successful ingestion.
+
+Drafts and jobs last for the current project session. Approval refuses to overwrite
+an Element changed since its build started. Approval is the save action, not a
+separate stored approval flag. `cinegen_read` exposes the implicit Hero / Clean
+look for older Elements that only stored a flat image array.
+
+To repair a temporary provider URL without generating again, build the existing
+Element using `mode: "upload"` and its URLs, then review and approve. Direct
+create/edit calls with references also ingest them before updating the workspace.
+The build tool creates reference packs; interactive character casting selection
+remains in the modal.
+
 ## Tool coverage
 
 | Area | Tools and behavior |
@@ -71,12 +117,12 @@ not an independent app confirmation dialog.
 | Discovery | `cinegen_get_context` gives a summary. `cinegen_read` returns complete Director, Element, Space, asset, timeline, export or folder records. `cinegen_capabilities` gives adapter IDs, storyboard IDs and shotlist instructions. |
 | Projects | `cinegen_project`: list, create, open, save, close, delete. Switching saves the current project and Element library first; save failures prevent switching. Close before deleting a project. |
 | Navigation | `cinegen_navigate`: app tab, existing Space, timeline, Studio or Canvas. |
-| Elements | `cinegen_create_element`, `cinegen_edit_element`, `cinegen_delete_element`: names, descriptions, reference images, continuity variations, default variation and folders. |
+| Elements | `cinegen_element_models`, `cinegen_build_element`, `cinegen_approve_element`: build durable reference packs and review/save drafts. `cinegen_create_element`, `cinegen_edit_element`, `cinegen_delete_element`: names, descriptions, reference images, continuity variations, default variation and folders. |
 | Breakdown | `cinegen_load_script`, `cinegen_set_breakdown`, `cinegen_approve_breakdown`: parse, refine, approve and link Elements. |
 | Director editing | `cinegen_set_shotlist`, `cinegen_edit_director`, `cinegen_delete_director_item`: show settings, look bible, scenes, clip beats, camera, acting, queues, isolation and prompt overrides. |
 | Director operations | `cinegen_generate_shots`, `cinegen_director_action`: real take generation, storyboard generation, app LLM breakdown/shotlist/notes/look bible, staging, and take recovery. |
 | Takes/storyboards | `cinegen_take`: hero, notes, removal. `cinegen_storyboard`: read plan, edit prompt, attach image. `cinegen_framing`: apply or clear a saved framing. |
-| Background jobs | `cinegen_get_jobs`: running/completed/failed MCP Director jobs, results and errors. Jobs live for the current project session. |
+| Background jobs | `cinegen_get_jobs`: running/completed/failed MCP Director and Element jobs, results and errors. Jobs live for the current project session. |
 | One-off generation | `cinegen_list_models`, `cinegen_generate`, `cinegen_get_generations`: generate images/video with Element references and up to four versions. Destination `spaceId` and `view` are optional. |
 | Spaces | `cinegen_create_space`: templates. `cinegen_space`: empty Space, rename, duplicate, delete. |
 | Canvas | `cinegen_list_node_types`, `cinegen_nodes`, `cinegen_connect`: discover all available node types and controls, create/configure/run/remove nodes, connect ports, place Studio generations on Canvas or hide them again. |

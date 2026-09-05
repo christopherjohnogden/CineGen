@@ -957,7 +957,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
 
   // Lets an MCP client drive this workspace: the tools run against the same
   // state and dispatch the UI uses, so anything they create is simply there.
-  useMcpBridge(state, wrappedDispatch, { projectName: projectNameRef.current, ready: hydrationComplete && !hydrationError, reduce: (current, action) => workspaceReducer(current as WorkspaceState, action) });
+  const mcpHasRunningJobs = useMcpBridge(state, wrappedDispatch, { projectId, projectName: projectNameRef.current, ready: hydrationComplete && !hydrationError, reduce: (current, action) => workspaceReducer(current as WorkspaceState, action) });
 
   const toggleVoiceDirector = useCallback(() => {
     setAssistantOpen(false);
@@ -2044,7 +2044,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   }, [hydrationComplete, state.elements, state.elementFolders]);
 
   useEffect(() => registerMcpCommands({ save_project: async () => {
-    if (state.runningNodeIds.size || (state.director.jobStatus && !state.director.jobStatus.error)) throw new Error('Wait for the running generation or Director job before switching projects.');
+    if (mcpHasRunningJobs() || state.runningNodeIds.size || (state.director.jobStatus && !state.director.jobStatus.error)) throw new Error('Wait for the running generation or Director job before switching projects.');
     if (!hydrationComplete || hydrationError || !elementsLibraryReadyRef.current) throw new Error('Project is not ready to save.');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
@@ -2052,7 +2052,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     await saveAvailableElementsLibrary({ version: 1, folders: state.elementFolders, elements: state.elements }, { projectId, projectName: projectNameRef.current });
     savePendingRef.current = false;
     return { saved: projectId };
-  } }), [state, hydrationComplete, hydrationError, persistWorkspace, projectId]);
+  } }), [state, hydrationComplete, hydrationError, persistWorkspace, projectId, mcpHasRunningJobs]);
 
   return (
     <WorkspaceContext.Provider value={{ state, dispatch: wrappedDispatch, projectId }}>

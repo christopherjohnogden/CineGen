@@ -184,3 +184,31 @@ export async function saveAvailableElementsLibrary(
     throw error;
   }
 }
+
+/** Shared by the Element modal and MCP: approval never stores a temporary provider URL. */
+export async function prepareElementReferences(
+  element: Element,
+  projectId: string,
+): Promise<Element> {
+  const context = await resolveTarget(projectId);
+  const library: ElementsLibrary = { version: 1, folders: [], elements: [element] };
+  if (context) {
+    return (await prepareElementsLibraryForCloudMedia(library, context.userId, projectId)).elements[0];
+  }
+  const durable = structuredClone(element);
+  const sources = new Map<string, string>();
+  for (const image of new Set([...durable.images, ...(durable.variations ?? []).flatMap(look => look.images)])) {
+    const existing = sources.get(image.url);
+    if (existing) { image.url = existing; continue; }
+    const source = image.url;
+    const api = window.electronAPI?.media?.persistGeneratedAsset;
+    if (!api) throw new Error('Project reference storage is unavailable. Sign in to the cloud or use CineGen Desktop.');
+    const remote = /^(https?:|data:)/i.test(source);
+    const result = await api({ projectId, assetId: `${element.id}-reference-${image.id}`, assetType: 'image', ...(remote ? { remoteUrl: source } : { localPathHint: source }) });
+    if ('error' in result) throw new Error(result.error);
+    if (!result.path) throw new Error('Reference storage returned no saved file.');
+    image.url = `local-media://file${result.path}`;
+    sources.set(source, image.url);
+  }
+  return durable;
+}

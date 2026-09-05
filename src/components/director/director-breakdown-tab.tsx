@@ -12,6 +12,7 @@ import { DirectorSpendCard } from './director-spend-card';
 import { ElementModal } from '@/components/elements/element-modal';
 
 interface DirectorBreakdownTabProps {
+  projectId?: string;
   show: DirectorShow;
   elements: Element[];
   dirtyKeys: string[];
@@ -28,7 +29,7 @@ interface DirectorBreakdownTabProps {
   onOpenElements: () => void;
 }
 
-export function DirectorBreakdownTab({
+export function DirectorBreakdownTab({ projectId,
   show, elements, dirtyKeys, syncing, onChange, onCreateElement, onOpenElements,
 }: DirectorBreakdownTabProps) {
   const scenes = splitScenes(screenplayFromSource(show));
@@ -160,6 +161,7 @@ export function DirectorBreakdownTab({
 
       {createFor && (
         <ElementModal
+          projectId={projectId}
           key={createFor.tag}
           defaults={{ name: createFor.name, type: createFor.kind, description: createFor.description }}
           onSave={(data) => {

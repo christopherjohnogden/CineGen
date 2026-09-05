@@ -1,3 +1,4 @@
+import { prepareElementReferences } from '@/lib/cloud/elements';
 import { useCallback, useMemo, useState } from 'react';
 import type {
   Element,
@@ -50,6 +51,7 @@ function variationThumbnail(variation: ElementVariation): string | undefined {
 }
 
 interface ElementSaveData {
+  id: string;
   name: string;
   type: ElementType;
   description: string;
@@ -59,6 +61,7 @@ interface ElementSaveData {
 }
 
 interface ElementModalProps {
+  projectId?: string;
   element?: Element;
   defaults?: { name?: string; type?: ElementType; description?: string };
   onSave: (data: ElementSaveData) => void;
@@ -66,13 +69,16 @@ interface ElementModalProps {
   onClose: () => void;
 }
 
-export function ElementModal({ element, defaults, onSave, onDelete, onClose }: ElementModalProps) {
+export function ElementModal({ projectId, element, defaults, onSave, onDelete, onClose }: ElementModalProps) {
   const initialVariations = useMemo<ElementVariation[]>(() => {
     if (element?.variations?.length) return element.variations.map((variation) => ({ ...variation, images: [...variation.images] }));
     const now = new Date().toISOString();
     return [createBaselineVariation(element?.images ?? [], now, crypto.randomUUID())];
   }, [element]);
 
+  const [draftId] = useState(() => element?.id ?? crypto.randomUUID());
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [step, setStep] = useState<ElementModalStep>('brief');
   const [name, setName] = useState(element?.name ?? defaults?.name ?? '');
   const [type, setType] = useState<ElementType>(element?.type ?? defaults?.type ?? 'character');
@@ -186,23 +192,24 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
     return { ...variation, images, updatedAt: new Date().toISOString() };
   }), [pendingGeneratedImages, selectedVariationId, variations]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) return;
     const active = materializedVariations.find((variation) => variation.id === activeVariationId) ?? materializedVariations[0];
-    onSave({
-      name: name.trim(),
-      type,
-      description: description.trim(),
-      images: active.images,
-      variations: materializedVariations,
-      activeVariationId: active.id,
-    });
+    setSaving(true); setSaveError('');
+    try {
+      const draft: Element = { id: draftId, name: name.trim(), type, description: description.trim(), images: active.images, variations: materializedVariations, activeVariationId: active.id, createdAt: element?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const durable = projectId ? await prepareElementReferences(draft, projectId) : draft;
+      onSave({ ...durable, variations: durable.variations!, activeVariationId: durable.activeVariationId! });
+    } catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
+    finally { setSaving(false); }
+
   };
 
   const stepIndex = MODAL_STEPS.findIndex((entry) => entry.id === step);
   const nextStep = () => setStep(MODAL_STEPS[Math.min(stepIndex + 1, MODAL_STEPS.length - 1)].id);
   const previousStep = () => setStep(MODAL_STEPS[Math.max(stepIndex - 1, 0)].id);
   const primaryDisabled = !name.trim()
+    || saving
     || generationBusy
     || (type === 'character' && step === 'reference' && !isContinuityVariation && activeImageTab !== 'approved' && characterWorkflowState === 'in-progress');
 
@@ -495,6 +502,7 @@ export function ElementModal({ element, defaults, onSave, onDelete, onClose }: E
         <footer className="element-modal__footer element-studio__footer">
           <div>
             {element && onDelete && <button type="button" className="element-modal__delete-btn" onClick={onDelete}>Delete element</button>}
+            {saveError && <p role="alert">{saveError}</p>}
             <span className="element-studio__footer-status">{variations.length} continuity {variations.length === 1 ? 'look' : 'looks'} · {variations.reduce((total, variation) => total + variation.images.length, 0)} approved views</span>
           </div>
           <div className="element-modal__footer-right">

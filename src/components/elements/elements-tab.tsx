@@ -270,6 +270,7 @@ export function ElementsTab() {
 
       {modalOpen && (
         <ElementModal
+          projectId={projectId}
           element={editingElement}
           onSave={handleSave}
           onDelete={editingElement ? () => requestDelete([editingElement.id]) : undefined}

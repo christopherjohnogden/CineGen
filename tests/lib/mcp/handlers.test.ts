@@ -109,7 +109,7 @@ function makeHost(overrides: Partial<McpHostState> = {}) {
       if (action.type === 'SET_DIRECTOR') state.director = action.director;
     },
     runNode,
-    appAction: vi.fn(async () => ({ id: 'job-1', status: 'running' })),
+    appAction: vi.fn(async (action: string, args: Record<string, unknown>) => action === 'persist_element' ? args.element : ({ id: 'job-1', status: 'running' })),
     projectName: 'Subconscious Mind',
   };
   return { host, state, actions, runNode, handlers: createMcpHandlers(host) };

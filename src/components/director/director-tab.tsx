@@ -1738,7 +1738,7 @@ export function DirectorTab() {
           />
         )}
         {show.mode === 'breakdown' && (
-          <DirectorBreakdownTab show={show} elements={state.elements} dirtyKeys={cascade.dirty} syncing={cascade.running} onChange={setShow} onCreateElement={createElementFromBreakdown} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
+          <DirectorBreakdownTab projectId={projectId} show={show} elements={state.elements} dirtyKeys={cascade.dirty} syncing={cascade.running} onChange={setShow} onCreateElement={createElementFromBreakdown} onOpenElements={() => dispatch({ type: 'SET_TAB', tab: 'elements' })} />
         )}
         {show.mode === 'shotlist' && (
           <DirectorShotlistTab show={show} elements={state.elements} sceneFilter={sceneFilter} expandRequest={expandRequest} syncing={cascade.running} onChange={setShow} onShotlist={startManualShotlist} onStopShotlist={stopShotlist} onSceneNotes={(sceneId, notes) => runSceneNotes(sceneId, notes)} onClipNotes={(clipId, notes) => runClipNotes(clipId, notes)} onReshotBeat={(clipId, beatN) => void runReshotBeat(clipId, beatN)} onReshotClip={(clipId) => void runReshotClip(clipId)} onSelectClip={selectClip} />

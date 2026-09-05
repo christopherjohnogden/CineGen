@@ -1,3 +1,5 @@
+import { materializeElementLooks } from '@/lib/elements/variations';
+import { elementGenerationModelOptions } from '@/lib/elements/reference-generation';
 import { EDIT_SCHEMAS, showPatch, scenePatch, clipPatch, breakdownPatch } from '../../../mcp/edit-schemas.mjs';
 import type { McpHost, McpToolHandler } from './types';
 import { McpToolError } from './types';
@@ -72,11 +74,14 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
     },
     async cinegen_extract_media(a) { found(state().assets, a.assetId, 'asset'); return app('extract_media', a); },
     async cinegen_project(a) { return app('project', a); },
+    async cinegen_element_models() { return elementGenerationModelOptions(); },
+    async cinegen_build_element(a) { return app('build_element', a); },
+    async cinegen_approve_element(a) { return app('approve_element', a); },
     async cinegen_read(a) {
       const s = state();
       switch (a.section) {
         case 'director': return s.director;
-        case 'elements': return a.id ? found(s.elements, a.id, 'Element') : s.elements;
+        case 'elements': return a.id ? materializeElementLooks(found(s.elements, a.id, 'Element')) : s.elements.map(materializeElementLooks);
         case 'spaces': return s.spaces.map((entry) => space(entry.id));
         case 'space': return space(a.id);
         case 'assets': return a.id ? found(s.assets, a.id, 'asset') : s.assets;
@@ -98,11 +103,20 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
     async cinegen_edit_element(a) {
       const element = found(state().elements, a.elementId, 'Element');
       const patch = a.patch as Partial<Element>;
-      const next = { ...element, ...patch };
+      if (patch.activeVariationId) found(patch.variations ?? materializeElementLooks(element).variations!, patch.activeVariationId, 'variation');
+      let next = materializeElementLooks({ ...element, ...patch });
+      if (patch.images && !patch.variations) {
+        next = { ...next, images: patch.images, variations: next.variations!.map(look => look.id === next.activeVariationId ? { ...look, images: patch.images! } : look) };
+      }
       uniqueIds(next.images, 'image'); uniqueIds(next.variations ?? [], 'variation');
       if (next.activeVariationId) found(next.variations ?? [], next.activeVariationId, 'variation');
       if (next.folderId) found(state().elementFolders ?? [], next.folderId, 'Element folder');
-      host.dispatch({ type: 'UPDATE_ELEMENT', elementId: element.id, updates: { ...patch, updatedAt: timestamp() } });
+      if (patch.images || patch.variations) {
+        next = await app('persist_element', { element: next }) as Element;
+        const latest = found(state().elements, element.id, 'Element');
+        if (JSON.stringify(latest) !== JSON.stringify(element)) throw new McpToolError('Element changed while saving references. Read it and retry.');
+      }
+      host.dispatch({ type: 'UPDATE_ELEMENT', elementId: element.id, updates: { ...next, updatedAt: timestamp() } });
       return { ...next, updatedAt: timestamp() };
     },
     async cinegen_delete_element(a) {

@@ -62,7 +62,22 @@ export type TopviewVideoRecoveryResult =
       status: 'ambiguous';
     };
 
+export interface ClaudeMcpStatus {
+  supported: boolean;
+  configured: boolean;
+  needsRepair: boolean;
+  serverAvailable: boolean;
+  configPath: string;
+  backupPath?: string;
+}
+
 export interface ElectronAPI {
+  claudeMcp: {
+    status: () => Promise<ClaudeMcpStatus>;
+    setup: () => Promise<ClaudeMcpStatus>;
+    remove: () => Promise<ClaudeMcpStatus>;
+    reveal: () => Promise<void>;
+  };
   project: {
     list: () => Promise<ProjectMeta[]>;
     create: (name: string) => Promise<ProjectSnapshot>;

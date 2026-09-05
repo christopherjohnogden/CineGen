@@ -363,7 +363,11 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
         createdAt: now,
         updatedAt: now,
       };
-      host.dispatch({ type: 'ADD_ELEMENT', element });
+      const durable = imageUrl
+        ? await host.appAction?.('persist_element', { element }) as Element | undefined
+        : element;
+      if (!durable) throw new McpToolError('Reference storage requires the desktop app.');
+      host.dispatch({ type: 'ADD_ELEMENT', element: durable });
       return { elementId: element.id, name: element.name, type: element.type };
     },
 
