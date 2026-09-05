@@ -8045,8 +8045,22 @@ input[type='range']::-moz-range-track {
   opacity: 0;
   transition: opacity var(--transition-fast);
 }
-.element-modal__image-item:hover .element-modal__image-remove {
+.element-modal__image-remove svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.element-modal__image-item:hover .element-modal__image-remove,
+.element-modal__image-item:focus-within .element-modal__image-remove {
   opacity: 1;
+}
+.element-modal__image-remove:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
 }
 
 .element-modal__footer {

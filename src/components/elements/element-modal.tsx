@@ -362,7 +362,7 @@ export function ElementModal({ projectId, element, defaults, onSave, onDelete, o
                           {inspirationImages.map((image) => (
                             <div key={image.id} className="element-modal__image-item">
                               <img src={image.url} alt="Generation inspiration" className="element-modal__image-thumb" />
-                              <button type="button" className="element-modal__image-remove" onClick={() => handleRemoveInspirationImage(image.id)} aria-label="Remove inspiration image">
+                              <button type="button" className="element-modal__image-remove" onClick={() => handleRemoveInspirationImage(image.id)} aria-label="Remove inspiration image" title="Remove inspiration image">
                                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
                               </button>
                             </div>
@@ -398,7 +398,7 @@ export function ElementModal({ projectId, element, defaults, onSave, onDelete, o
                         <div key={image.id} className="element-modal__image-item">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={image.url} alt="" className="element-modal__image-thumb" />
-                          <button type="button" className="element-modal__image-remove" onClick={() => handleRemoveImage(image.id)} aria-label="Remove reference image">
+                          <button type="button" className="element-modal__image-remove" onClick={() => handleRemoveImage(image.id)} aria-label="Remove reference image" title="Remove reference image">
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
                           </button>
                         </div>
