@@ -1,3 +1,5 @@
+import { createEditHandlers } from './edit-handlers';
+import { placeStudioNodeOnCanvas } from '@/lib/studio/canvas-placement';
 import type { Node } from '@xyflow/react';
 import { getModelDefinition } from '@/lib/fal/models';
 import { providerModelOptions, modelProviderLabel } from '@/lib/workflows/provider-model-options';
@@ -9,7 +11,6 @@ import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import { localBreakdownForShow } from '@/lib/director/local-breakdown';
 import { mergeBreakdownItems, mergeScenes } from '@/lib/director/breakdown';
 import { applyClaudeShotlistImport, parseClaudeShotlistImport } from '@/lib/director/shotlist-import';
-import { compileClipBody, compileOptionsForShow } from '@/lib/director/prompt-compiler';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import type { Element } from '@/types/elements';
 import type { DirectorBreakdownItem } from '@/types/director';
@@ -110,6 +111,8 @@ interface GenerationRequest {
   durationSec?: number;
   aspectRatio?: string;
   resolution?: string;
+  spaceId?: string;
+  view?: string;
 }
 
 /**
@@ -120,7 +123,13 @@ interface GenerationRequest {
  * the canvas like any other.
  */
 function startGeneration(host: McpHost, request: GenerationRequest): string[] {
-  const state = host.getState();
+  const state = { ...host.getState() };
+  const target = request.spaceId ? state.spaces.find(space => space.id === request.spaceId) : undefined;
+  if (request.spaceId && !target) throw new McpToolError('Unknown destination Space.');
+  if (target && target.id !== state.activeSpaceId) {
+    state.nodes = target.nodes; state.edges = target.edges;
+    host.dispatch({ type: 'SET_ACTIVE_SPACE', spaceId: target.id });
+  }
   const { model } = request;
   const promptField = promptFieldFor(model);
   if (!promptField) throw new McpToolError(`${model.name} does not take a text prompt.`);
@@ -168,9 +177,15 @@ function startGeneration(host: McpHost, request: GenerationRequest): string[] {
     }, nextStudioSlot([...state.nodes, ...created])));
   }
 
-  const nextNodes = [...state.nodes, ...created];
+  let nextNodes = [...state.nodes, ...created];
+  let nextEdges = state.edges;
+  if (request.view === 'canvas') for (const node of created) {
+    const placed = placeStudioNodeOnCanvas(nextNodes, nextEdges, node.id, state.assets);
+    nextNodes = placed.nodes; nextEdges = placed.edges;
+  }
   host.dispatch({ type: 'SET_NODES', nodes: nextNodes });
-  for (const node of created) host.runNode(node.id, nextNodes, state.edges);
+  host.dispatch({ type: 'SET_EDGES', edges: nextEdges });
+  for (const node of created) host.runNode(node.id, nextNodes, nextEdges);
   return created.map((node) => node.id);
 }
 
@@ -213,6 +228,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
   const state = () => host.getState();
 
   const handlers: Record<string, McpToolHandler> = {
+    ...createEditHandlers(host),
     async cinegen_get_context() {
       const s = state();
       const director = s.director;
@@ -288,8 +304,14 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
         durationSec: typeof durationRaw === 'number' ? durationRaw : undefined,
         aspectRatio: str(args, 'aspectRatio') || undefined,
         resolution: str(args, 'resolution') || undefined,
+        spaceId: str(args, 'spaceId') || undefined,
+        view: str(args, 'view') || undefined,
       });
 
+      if (args.view && host.appAction) {
+        host.dispatch({ type: 'SET_TAB', tab: 'create' });
+        await host.appAction('view', { view: args.view });
+      }
       return {
         started: nodeIds.length,
         model: model.name,
@@ -349,7 +371,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
       const text = rawStr(args, 'text');
       const title = str(args, 'title');
       const current = state().director ?? createEmptyDirectorShow();
-      const draft = { ...current, sourceText: text, ...(title ? { title } : {}) };
+      const draft = { ...current, autoSync: false, breakdownApproved: false, sourceElements: undefined, sourceText: text, ...(title ? { title } : {}) };
       const parsed = localBreakdownForShow(draft);
       const director = {
         ...draft,
@@ -384,7 +406,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
       if (incoming.length === 0) throw new McpToolError('No usable items: each needs a name and a kind of character, location, prop or vehicle.');
 
       const current = state().director ?? createEmptyDirectorShow();
-      const director = { ...current, breakdown: mergeBreakdownItems(current.breakdown ?? [], incoming, state().elements) };
+      const director = { ...current, breakdownApproved: false, breakdown: mergeBreakdownItems(current.breakdown ?? [], incoming, state().elements) };
       host.dispatch({ type: 'SET_DIRECTOR', director });
       return { breakdownItems: director.breakdown.length, applied: incoming.length };
     },
@@ -412,6 +434,8 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
       if (clips.length === 0) throw new McpToolError('There is no shot list yet. Send one with cinegen_set_shotlist.');
 
       const wanted = strList(args, 'clipIds');
+      const missing = wanted.filter(id => !clips.some(clip => clip.id === id));
+      if (missing.length) throw new McpToolError(`Unknown clip IDs: ${missing.join(', ')}`);
       const limit = int(args, 'limit', 4, 1, 20);
       const selected = (wanted.length > 0
         ? clips.filter((clip) => wanted.includes(clip.id))
@@ -419,22 +443,11 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
       ).slice(0, limit);
       if (selected.length === 0) throw new McpToolError('No matching shots to generate. Every shot already has a take, or the ids did not match.');
 
-      const model = resolveModel('video', str(args, 'model'));
-      const started: Array<{ clipId: string; nodeIds: string[] }> = [];
-      for (const clip of selected) {
-        const prompt = compileClipBody(clip, compileOptionsForShow(current, clip));
-        if (!prompt.trim()) continue;
-        started.push({
-          clipId: clip.id,
-          nodeIds: startGeneration(host, { model, prompt, elementIds: [], count: 1 }),
-        });
-      }
-      return {
-        started: started.length,
-        model: model.name,
-        shots: started,
-        note: 'Generating. Call cinegen_get_generations for the results.',
-      };
+      if (!host.appAction) throw new McpToolError('Director generation requires the CineGen desktop app.');
+      return host.appAction('director', {
+        action: 'generate', clipIds: selected.map(clip => clip.id),
+        ...(str(args, 'model') ? { adapterId: str(args, 'model') } : {}),
+      });
     },
   };
 

@@ -24,6 +24,7 @@
     "productName": "CineGen",
     "files": [
       "dist/**/*",
+      "mcp/**/*",
       "dist-electron/**/*",
       "build/**/*",
       "electron/**/*",

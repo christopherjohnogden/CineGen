@@ -5,7 +5,7 @@
  * Speaks MCP over stdio and forwards every tool call to the running CineGen
  * app through its loopback bridge. There is no SDK dependency: the protocol
  * surface a tool server needs is four methods, and the repo already hand-rolls
- * MCP clients, so this stays a single file with nothing to install.
+ * MCP clients. Shared tool schemas use the app’s installed zod dependency.
  *
  *   claude mcp add cinegen -- node /absolute/path/to/mcp/cinegen-mcp.mjs
  */
@@ -78,9 +78,9 @@ async function handle(message) {
     result(id, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'cinegen', version: '0.1.0' },
+      serverInfo: { name: 'cinegen', version: '0.2.0' },
       instructions:
-        'Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing — breakdowns, shot lists, prompts — and these tools put the result in the app.',
+        'Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing — breakdowns, shot lists, prompts — and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Poll cinegen_get_jobs for background Director actions.',
     });
     return;
   }
@@ -125,7 +125,11 @@ let inFlight = 0;
 let closing = false;
 
 function maybeExit() {
-  if (closing && inFlight === 0) process.exit(0);
+  if (closing && inFlight === 0 && !process.stdout.writableEnded) {
+    // The expanded catalogue can exceed a pipe buffer. Drain stdout before
+    // exiting or clients that close stdin early receive truncated JSON.
+    process.stdout.end(() => process.exit(0));
+  }
 }
 
 const lines = createInterface({ input: process.stdin });

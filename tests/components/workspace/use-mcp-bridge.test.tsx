@@ -5,12 +5,16 @@ import { createEmptyDirectorShow } from '@/lib/director/create-show';
 
 vi.mock('@/lib/workflows/execute', () => ({ executeFromNode: vi.fn(() => Promise.resolve()) }));
 vi.mock('@/lib/mcp/handlers', () => ({
-  createMcpHandlers: (host: { getState: () => McpHostState; projectName?: string }) => ({
+  createMcpHandlers: (host: { getState: () => McpHostState; projectName?: string; appAction?: (action: string,args:Record<string,unknown>)=>Promise<unknown> }) => ({
     cinegen_get_context: async () => ({ project: host.projectName, spaceCount: host.getState().spaces.length }),
     cinegen_explode: async () => { throw new Error('Nope.'); },
+    cinegen_director_action: async (args: Record<string,unknown>) => host.appAction?.('director',args),
+    cinegen_get_jobs: async (args: Record<string,unknown>) => host.appAction?.('jobs',args),
+    cinegen_export: async (args: Record<string,unknown>) => host.appAction?.('export',args),
   }),
 }));
 
+import { registerMcpCommands } from '@/lib/mcp/app-commands';
 import { useMcpBridge } from '@/components/workspace/use-mcp-bridge';
 
 afterEach(cleanup);
@@ -98,5 +102,47 @@ describe('useMcpBridge', () => {
       return null;
     }
     expect(() => render(<Harness />)).not.toThrow();
+  });
+});
+
+
+describe('MCP app jobs', () => {
+  it('returns a background job immediately, rejects overlapping Director work, then reports completion', async () => {
+    let finish: (value: unknown)=>void=()=>{};
+    const work=new Promise(resolve=>{finish=resolve;});
+    const stop=registerMcpCommands({director:()=>work});
+    const bridge=mountBridge();
+    try {
+      bridge.invoke?.({id:'start',tool:'cinegen_director_action',args:{action:'generate'}});
+      await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'start',ok:true,result:expect.objectContaining({status:'running'})})));
+      const jobId=bridge.respond.mock.calls.find(([x])=>x.id==='start')![0].result.id;
+      bridge.invoke?.({id:'overlap',tool:'cinegen_director_action',args:{action:'generate'}});
+      await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'overlap',ok:false,error:expect.stringContaining('still running')})));
+      finish({generated:1});
+      await waitFor(async()=>{
+        bridge.invoke?.({id:'poll',tool:'cinegen_get_jobs',args:{jobId}});
+        await Promise.resolve();
+        expect(bridge.respond).toHaveBeenCalledWith({id:'poll',ok:true,result:{id:jobId,action:'generate',status:'complete',result:{generated:1}}});
+      });
+    } finally { stop(); }
+  });
+  it('reports background provider failures instead of a successful generation', async () => {
+    const stop=registerMcpCommands({director:()=>{throw new Error('Provider disconnected');}});
+    const bridge=mountBridge();
+    try {
+      bridge.invoke?.({id:'start',tool:'cinegen_director_action',args:{action:'generate'}});
+      await waitFor(()=>expect(bridge.respond).toHaveBeenCalled());
+      const jobId=bridge.respond.mock.calls[0][0].result.id;
+      bridge.invoke?.({id:'poll',tool:'cinegen_get_jobs',args:{jobId}});
+      await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith({id:'poll',ok:true,result:{id:jobId,action:'generate',status:'failed',error:'Provider disconnected'}}));
+    } finally { stop(); }
+  });
+  it('uses the app export API and returns the actual job', async () => {
+    const bridge=mountBridge({assets:[{id:'a',name:'Video',type:'video',url:'https://example.com/a.mp4',createdAt:''}],activeTimelineId:'t',timelines:[{id:'t',name:'Cut',duration:5,tracks:[],transitions:[],markers:[],clips:[{id:'c',assetId:'a',trackId:'v',name:'Video',startTime:0,duration:5,trimStart:0,trimEnd:0,speed:1,opacity:1,volume:1,flipH:false,flipV:false,keyframes:[]}]}]});
+    const start=vi.fn(async()=>({id:'export1',status:'queued',progress:0,preset:'standard',fps:24,createdAt:''}));
+    Object.assign(window.electronAPI,{export:{start}});
+    bridge.invoke?.({id:'render',tool:'cinegen_export',args:{action:'start'}});
+    await waitFor(()=>expect(bridge.respond).toHaveBeenCalledWith(expect.objectContaining({id:'render',ok:true,result:expect.objectContaining({id:'export1'})})));
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({totalDuration:5,preset:'standard',clips:[expect.objectContaining({inputPath:'https://example.com/a.mp4',duration:5})]}));
   });
 });

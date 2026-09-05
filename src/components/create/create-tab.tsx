@@ -1,3 +1,4 @@
+import { registerMcpCommands } from '@/lib/mcp/app-commands';
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { WorkflowCanvas } from './workflow-canvas';
@@ -197,6 +198,13 @@ export function CreateTab() {
       setPreviewMode('pip');
     }
   }, []);
+
+  useEffect(() => registerMcpCommands({ view: (args) => {
+    const mode = args.view;
+    if (mode !== 'canvas' && mode !== 'studio') throw new Error('Unknown Space view.');
+    handleViewModeChange(mode);
+    return { view: mode };
+  } }), [handleViewModeChange]);
 
   // Switching to the canvas is only half of "open in canvas" — on a large Space
   // the node is usually off-screen, so centre it too. The canvas is display:none

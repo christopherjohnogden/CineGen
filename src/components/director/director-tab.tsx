@@ -1,3 +1,4 @@
+import { registerMcpCommands } from '@/lib/mcp/app-commands';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DirectorBeatTime, DirectorBreakdownItem, DirectorMode, DirectorShow } from '@/types/director';
 import type { Element } from '@/types/elements';
@@ -1559,6 +1560,67 @@ export function DirectorTab() {
       mode: 'source',
     });
   }, [setShow]);
+
+  useEffect(() => registerMcpCommands({ director: async (args) => {
+    const need = (key: string) => {
+      const value = args[key];
+      if (typeof value !== 'string' || !value.trim()) throw new Error(`${key} is required.`);
+      return value;
+    };
+    switch (args.action) {
+      case 'generate': {
+        if (args.adapterId) {
+          const adapter = getDirectorAdapter(String(args.adapterId));
+          if (adapter.id !== args.adapterId) throw new Error('Unknown Director adapter ID.');
+          setShow({ ...showRef.current, adapterId: adapter.id });
+        }
+        const ids = args.clipIds as string[] | undefined;
+        if (!ids?.length) throw new Error('clipIds is required for generation.');
+        for (const id of ids) if (!showRef.current.clips.some(clip => clip.id === id)) throw new Error(`Unknown clip ${id}.`);
+        const errors: string[] = [];
+        for (const id of ids) { const error = await generateOne(id); if (error) errors.push(error); }
+        setShow({ ...showRef.current, jobStatus: errors.length ? { type: 'generate', message: errors.join('; '), error: true } : null });
+        if (errors.length) throw new Error(errors.join('; '));
+        return { generated: ids.length };
+      }
+      case 'storyboard': {
+        const ids = args.frameIds as string[] | undefined;
+        if (!ids?.length) throw new Error('frameIds is required. Read the storyboard plan first.');
+        const plan = storyboardPlan(showRef.current);
+        for (const id of ids) if (!plan.some(frame => frame.id === id)) throw new Error(`Unknown storyboard frame ${id}.`);
+        for (const id of ids) await generateStoryboardFrame(id);
+        const failures = showRef.current.storyboardFrames?.filter(frame => ids.includes(frame.id) && frame.status === 'failed');
+        if (failures?.length) throw new Error(failures.map(frame => frame.error).join('; '));
+        return { generated: ids.length };
+      }
+      case 'breakdown': await runBreakdown(); break;
+      case 'shotlist': await runShotlist(); break;
+      case 'scene_notes': await runSceneNotes(need('sceneId'), need('notes')); break;
+      case 'clip_notes': await runClipNotes(need('clipId'), need('notes')); break;
+      case 'reshot_clip': await runReshotClip(need('clipId')); break;
+      case 'reshot_beat': {
+        const clipId = need('clipId');
+        if (typeof args.beatN !== 'number' || !showRef.current.clips.find(clip => clip.id === clipId)?.beats.some(beat => beat.n === args.beatN)) throw new Error('Unknown beat number.');
+        await runReshotBeat(clipId, args.beatN); break;
+      }
+      case 'look_bible': await runLookBible(); break;
+      case 'recover_takes': await recoverLiveTakes(); break;
+      case 'fetch_take': await fetchLiveTake(); break;
+      case 'set_staging_frame': {
+        if (!args.source || typeof args.source !== 'object') throw new Error('source is required.');
+        await setStagingFrame(args.source as { fileRef: string; timeSec?: number }); break;
+      }
+      case 'generate_staging': await makeStagingDiagram(); break;
+      case 'fetch_staging': await fetchStagingDiagram(); break;
+      case 'keep_staging': keepStagingFraming(); break;
+      case 'cancel_staging': cancelStagingDiagram(); break;
+      case 'stop_shotlist': stopShotlist(); break;
+      case 'cancel_look_bible': cancelLookBible(); break;
+      default: throw new Error('Unknown Director action.');
+    }
+    if (showRef.current.jobStatus?.error) throw new Error(showRef.current.jobStatus.message);
+    return { action: args.action };
+  } }), [setShow, generateOne, generateStoryboardFrame, runBreakdown, runShotlist, runSceneNotes, runClipNotes, runReshotClip, runReshotBeat, runLookBible, recoverLiveTakes, fetchLiveTake, setStagingFrame, makeStagingDiagram, fetchStagingDiagram, keepStagingFraming, cancelStagingDiagram, stopShotlist, cancelLookBible]);
 
   return (
     <div className="director-tab">

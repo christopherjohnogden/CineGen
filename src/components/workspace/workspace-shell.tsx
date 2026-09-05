@@ -1,3 +1,4 @@
+import { registerMcpCommands } from '@/lib/mcp/app-commands';
 
 import { createContext, useContext, useReducer, useEffect, useRef, useCallback, useState } from 'react';
 import type { Node, Edge } from '@xyflow/react';
@@ -72,7 +73,7 @@ import { useMcpBridge } from './use-mcp-bridge';
    Actions
    ------------------------------------------------------------------ */
 
-type WorkspaceAction =
+export type WorkspaceAction =
   | { type: 'SET_TAB'; tab: ProjectTab }
   | { type: 'SET_NODES'; nodes: Node<WorkflowNodeData>[] }
   | { type: 'SET_EDGES'; edges: Edge[] }
@@ -379,7 +380,7 @@ const initialState: WorkspaceState = {
   providerUsage: {},
 };
 
-function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
+export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
   switch (action.type) {
     case 'SET_TAB':
       try { localStorage.setItem(TAB_STORAGE_KEY, action.tab); } catch {}
@@ -636,31 +637,17 @@ function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): Works
     }
 
     case 'SET_NODE_RESULT':
-      {
-        const nodes = state.nodes.map((n) =>
-          n.id === action.nodeId ? { ...n, data: { ...n.data, result: action.result } } : n,
-        );
-        return {
-          ...state,
-          nodes,
-          spaces: updateActiveSpace(state.spaces, state.activeSpaceId, { nodes }),
-        };
-      }
-
-    case 'ADD_GENERATION':
-      {
-        const nodes = state.nodes.map((n) => {
-          if (n.id !== action.nodeId) return n;
-          const prev = (n.data.generations as string[]) ?? [];
-          const gens = [...prev, action.url];
-          return { ...n, data: { ...n.data, generations: gens, activeGeneration: gens.length - 1 } };
-        });
-        return {
-          ...state,
-          nodes,
-          spaces: updateActiveSpace(state.spaces, state.activeSpaceId, { nodes }),
-        };
-      }
+    case 'ADD_GENERATION': {
+      const update = (nodes: Node<WorkflowNodeData>[]) => nodes.map(node => {
+        if (node.id !== action.nodeId) return node;
+        if (action.type === 'SET_NODE_RESULT') return { ...node, data: { ...node.data, result: action.result } };
+        const generations = [...((node.data.generations as string[]) ?? []), action.url];
+        return { ...node, data: { ...node.data, generations, activeGeneration: generations.length - 1 } };
+      });
+      // Jobs can finish after the user or MCP switches Spaces. Keep the result
+      // with its original node instead of dropping it from the active canvas.
+      return { ...state, nodes: update(state.nodes), spaces: state.spaces.map(space => ({ ...space, nodes: update(space.nodes) })) };
+    }
 
     case 'ADD_EXPORT':
       return { ...state, exports: [...state.exports, action.exportJob] };
@@ -965,9 +952,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     historyDispatch(action);
   }, []);
 
+  const directorMounted = useRef(false);
+  if (state.activeTab === 'director') directorMounted.current = true;
+
   // Lets an MCP client drive this workspace: the tools run against the same
   // state and dispatch the UI uses, so anything they create is simply there.
-  useMcpBridge(state, wrappedDispatch, { projectName: projectNameRef.current });
+  useMcpBridge(state, wrappedDispatch, { projectName: projectNameRef.current, ready: hydrationComplete && !hydrationError, reduce: (current, action) => workspaceReducer(current as WorkspaceState, action) });
 
   const toggleVoiceDirector = useCallback(() => {
     setAssistantOpen(false);
@@ -1897,6 +1887,99 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     }
   }, []);
 
+  const persistWorkspace = useCallback(async () => {
+    if (!hydrationComplete || hydrationError) throw new Error('Project is not ready to save.');
+    const serializableNodes = sanitizeWorkflowNodes(state.nodes);
+    const serializableSpaces = state.spaces.map((space) => ({
+      ...space,
+      nodes: sanitizeWorkflowNodes(space.id === state.activeSpaceId ? state.nodes : space.nodes),
+      edges: space.id === state.activeSpaceId ? state.edges : space.edges,
+    }));
+
+    if (useSqlite) {
+      // ---------- SQLite save path ----------
+      const dbTimelines = state.timelines.map((tl) => ({
+        id: tl.id,
+        project_id: projectId,
+        name: tl.name,
+        duration: tl.duration,
+        created_at: '',
+        tracks: tl.tracks.map((track, idx) => trackToRow(track, tl.id, idx)),
+        clips: tl.clips.map((clip) => {
+          const clipRow = clipToRow(clip, tl.id);
+          return {
+            ...clipRow,
+            created_at: '',
+            keyframes: (clip.keyframes ?? []).map((kf) => ({
+              id: '',
+              clip_id: clip.id,
+              time: kf.time,
+              property: kf.property,
+              value: kf.value,
+            })),
+          };
+        }),
+        transitions: tl.transitions.map((tr) => transitionToRow(tr, tl.id)),
+        markers: JSON.stringify(tl.markers ?? []),
+      }));
+
+      const dbState = {
+        project: { id: projectId, name: projectNameRef.current, created_at: '', updated_at: '', resolution_width: 1920, resolution_height: 1080, frame_rate: 24 },
+        assets: state.assets.map((a) => assetToRow(a, projectId)),
+        mediaFolders: state.mediaFolders.map((f) => ({
+          id: f.id,
+          project_id: projectId,
+          name: f.name,
+          parent_id: f.parentId ?? null,
+          created_at: f.createdAt ?? '',
+        })),
+        timelines: dbTimelines,
+        activeTimelineId: state.activeTimelineId,
+        workflow: {
+          nodes: serializableNodes,
+          edges: state.edges,
+          spaces: serializableSpaces,
+          activeSpaceId: state.activeSpaceId,
+          openSpaceIds: [...state.openSpaceIds],
+          director: state.director,
+          providerUsage: state.providerUsage,
+        },
+        elements: [],
+        exports: state.exports.map((ex) => ({
+          id: ex.id,
+          project_id: projectId,
+          status: ex.status,
+          progress: ex.progress,
+          preset: ex.preset ?? null,
+          fps: ex.fps ?? null,
+          output_path: ex.outputUrl ?? null,
+          file_size: ex.fileSize ?? null,
+          error: ex.error ?? null,
+          created_at: ex.createdAt ?? '',
+          completed_at: ex.completedAt ?? null,
+        })),
+      };
+
+      await saveAvailableProject(projectId, dbState, true);
+    } else {
+      // ---------- JSON file save path ----------
+      await saveAvailableProject(projectId, {
+        workflow: { nodes: serializableNodes, edges: state.edges },
+        spaces: serializableSpaces,
+        activeSpaceId: state.activeSpaceId,
+        openSpaceIds: [...state.openSpaceIds],
+        assets: state.assets,
+        mediaFolders: state.mediaFolders,
+        timelines: state.timelines,
+        activeTimelineId: state.activeTimelineId,
+        exports: state.exports,
+        elements: [],
+        director: state.director,
+        providerUsage: state.providerUsage,
+      }, false);
+    }
+  }, [state, hydrationComplete, hydrationError, projectId, useSqlite]);
+
   useEffect(() => {
     // `loadedRef` only means the load was *started* — it is set before the
     // project resolves. Saving on that flag alone lets a failed or timed-out
@@ -1913,99 +1996,10 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
       // before this timer fires; keeping the flag set lets that render reschedule
       // the same save instead of cancelling the completed generation result.
       savePendingRef.current = false;
-      const serializableNodes = sanitizeWorkflowNodes(state.nodes);
-      const serializableSpaces = state.spaces.map((space) => ({
-        ...space,
-        nodes: sanitizeWorkflowNodes(space.id === state.activeSpaceId ? state.nodes : space.nodes),
-        edges: space.id === state.activeSpaceId ? state.edges : space.edges,
-      }));
-
-      if (useSqlite) {
-        // ---------- SQLite save path ----------
-        const dbTimelines = state.timelines.map((tl) => ({
-          id: tl.id,
-          project_id: projectId,
-          name: tl.name,
-          duration: tl.duration,
-          created_at: '',
-          tracks: tl.tracks.map((track, idx) => trackToRow(track, tl.id, idx)),
-          clips: tl.clips.map((clip) => {
-            const clipRow = clipToRow(clip, tl.id);
-            return {
-              ...clipRow,
-              created_at: '',
-              keyframes: (clip.keyframes ?? []).map((kf) => ({
-                id: '',
-                clip_id: clip.id,
-                time: kf.time,
-                property: kf.property,
-                value: kf.value,
-              })),
-            };
-          }),
-          transitions: tl.transitions.map((tr) => transitionToRow(tr, tl.id)),
-          markers: JSON.stringify(tl.markers ?? []),
-        }));
-
-        const dbState = {
-          project: { id: projectId, name: projectNameRef.current, created_at: '', updated_at: '', resolution_width: 1920, resolution_height: 1080, frame_rate: 24 },
-          assets: state.assets.map((a) => assetToRow(a, projectId)),
-          mediaFolders: state.mediaFolders.map((f) => ({
-            id: f.id,
-            project_id: projectId,
-            name: f.name,
-            parent_id: f.parentId ?? null,
-            created_at: f.createdAt ?? '',
-          })),
-          timelines: dbTimelines,
-          activeTimelineId: state.activeTimelineId,
-          workflow: {
-            nodes: serializableNodes,
-            edges: state.edges,
-            spaces: serializableSpaces,
-            activeSpaceId: state.activeSpaceId,
-            openSpaceIds: [...state.openSpaceIds],
-            director: state.director,
-            providerUsage: state.providerUsage,
-          },
-          elements: [],
-          exports: state.exports.map((ex) => ({
-            id: ex.id,
-            project_id: projectId,
-            status: ex.status,
-            progress: ex.progress,
-            preset: ex.preset ?? null,
-            fps: ex.fps ?? null,
-            output_path: ex.outputUrl ?? null,
-            file_size: ex.fileSize ?? null,
-            error: ex.error ?? null,
-            created_at: ex.createdAt ?? '',
-            completed_at: ex.completedAt ?? null,
-          })),
-        };
-
-        saveAvailableProject(projectId, dbState, true).catch((err) => {
-          console.error('[workspace] Failed to save project to SQLite:', err);
-        });
-      } else {
-        // ---------- JSON file save path ----------
-        saveAvailableProject(projectId, {
-          workflow: { nodes: serializableNodes, edges: state.edges },
-          spaces: serializableSpaces,
-          activeSpaceId: state.activeSpaceId,
-          openSpaceIds: [...state.openSpaceIds],
-          assets: state.assets,
-          mediaFolders: state.mediaFolders,
-          timelines: state.timelines,
-          activeTimelineId: state.activeTimelineId,
-          exports: state.exports,
-          elements: [],
-          director: state.director,
-          providerUsage: state.providerUsage,
-        }, false).catch((err) => {
-          console.error('[workspace] Failed to save project:', err);
-        });
-      }
+      void persistWorkspace().catch((error) => {
+        savePendingRef.current = true;
+        console.error('[workspace] Failed to save project:', error);
+      });
     }, SAVE_DEBOUNCE_MS);
 
     return () => {
@@ -2049,6 +2043,17 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     };
   }, [hydrationComplete, state.elements, state.elementFolders]);
 
+  useEffect(() => registerMcpCommands({ save_project: async () => {
+    if (state.runningNodeIds.size || (state.director.jobStatus && !state.director.jobStatus.error)) throw new Error('Wait for the running generation or Director job before switching projects.');
+    if (!hydrationComplete || hydrationError || !elementsLibraryReadyRef.current) throw new Error('Project is not ready to save.');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
+    await persistWorkspace();
+    await saveAvailableElementsLibrary({ version: 1, folders: state.elementFolders, elements: state.elements }, { projectId, projectName: projectNameRef.current });
+    savePendingRef.current = false;
+    return { saved: projectId };
+  } }), [state, hydrationComplete, hydrationError, persistWorkspace, projectId]);
+
   return (
     <WorkspaceContext.Provider value={{ state, dispatch: wrappedDispatch, projectId }}>
       <TopTabs
@@ -2080,7 +2085,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           <>
             {state.activeTab === 'elements' && <ElementsTab />}
             {state.activeTab === 'create' && <CreateTab />}
-            {state.activeTab === 'director' && <DirectorTab />}
+            {directorMounted.current && <div hidden={state.activeTab !== 'director'} style={state.activeTab === 'director' ? { display: 'contents' } : undefined}><DirectorTab /></div>}
             {state.activeTab === 'edit' && <EditTab llmJumpRequest={llmJumpRequest} />}
             <div className={`workspace-tab-panel${state.activeTab === 'llm' ? ' workspace-tab-panel--active' : ''}`}>
               <LLMTab

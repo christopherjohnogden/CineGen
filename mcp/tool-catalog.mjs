@@ -1,3 +1,4 @@
+import { EDIT_TOOL_CATALOG } from './edit-schemas.mjs';
 /**
  * The CineGen MCP tool catalogue.
  *
@@ -18,6 +19,7 @@ const optionalString = string;
 
 /** @type {McpTool[]} */
 export const TOOL_CATALOG = [
+  ...EDIT_TOOL_CATALOG,
   {
     name: 'cinegen_get_context',
     description:
@@ -43,6 +45,8 @@ export const TOOL_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        spaceId: optionalString('Destination Space ID; defaults to the active Space.'),
+        view: { type: 'string', enum: ['studio', 'canvas'], description: 'Show results in Studio or place them on Canvas.' },
         prompt: string('What to generate. Write it as a shot description: subject, action, camera, lighting, mood.'),
         kind: { type: 'string', enum: ['video', 'image'], description: 'Defaults to video.' },
         model: optionalString('Model name or node type, e.g. "Seedance 2.5". Defaults to the project default for the kind.'),
@@ -156,7 +160,7 @@ export const TOOL_CATALOG = [
   {
     name: 'cinegen_set_shotlist',
     description:
-      'Import a shot list you wrote into Director. Send the CineGen shotlist JSON: an object with a "scenes" array, each scene holding "clips", each clip holding numbered "beats". Existing clips for the scenes you cover are replaced.',
+      'Import a shot list you wrote into Director. Send the CineGen shotlist JSON: an object with top-level "scenes" and "clips" arrays, each clip holding numbered "beats". Read cinegen_capabilities for the exact writing instructions. Existing clips for the scenes you cover are replaced.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -169,13 +173,13 @@ export const TOOL_CATALOG = [
   {
     name: 'cinegen_generate_shots',
     description:
-      'Generate video for shots already in the Director shot list. Each clip is compiled into its full prompt — style, camera, acting, references — and sent as its own generation, so the results land in the Space feed.',
+      'Generate shots through the real Director pipeline, including Element references, take tracking and media folders. Returns a background job ID; poll cinegen_get_jobs and cinegen_read director.',
     inputSchema: {
       type: 'object',
       properties: {
         clipIds: { type: 'array', items: { type: 'string' }, description: 'Which clips to generate. Defaults to every clip without a take.' },
         limit: { type: 'integer', minimum: 1, maximum: 20, description: 'Cap how many are started at once. Defaults to 4.' },
-        model: optionalString('Model name to use. Defaults to the project default video model.'),
+        model: optionalString('Model name to use. Use the Director adapter ID. Omit to use the current Director provider settings.'),
       },
       additionalProperties: false,
     },

@@ -91,12 +91,25 @@ function makeHost(overrides: Partial<McpHostState> = {}) {
     dispatch: (action: McpAction) => {
       actions.push(action);
       // Mirror the reducer closely enough that sequential tool calls see their own writes.
-      if (action.type === 'SET_NODES') state.nodes = action.nodes;
+      if (action.type === 'SET_NODES') {
+        state.nodes = action.nodes;
+        state.spaces = state.spaces.map(s=>s.id===state.activeSpaceId?{...s,nodes:action.nodes}:s);
+      }
+      if (action.type === 'SET_EDGES') state.edges = action.edges;
+      if (action.type === 'SET_ACTIVE_SPACE') {
+        const target=state.spaces.find(s=>s.id===action.spaceId)!;
+        state.activeSpaceId=target.id;state.nodes=target.nodes;state.edges=target.edges;
+      }
+      if (action.type === 'UPDATE_ELEMENT') state.elements=state.elements.map(e=>e.id===action.elementId?{...e,...action.updates}:e);
+      if (action.type === 'SET_TIMELINE') state.timelines=state.timelines.map(t=>t.id===action.timelineId?action.timeline:t);
+      if (action.type === 'ADD_TIMELINE') state.timelines=[...state.timelines,action.timeline];
+      if (action.type === 'ADD_ASSET') state.assets=[...state.assets,action.asset];
       if (action.type === 'ADD_SPACE') state.spaces = [...state.spaces, action.space];
       if (action.type === 'ADD_ELEMENT') state.elements = [...state.elements, action.element];
       if (action.type === 'SET_DIRECTOR') state.director = action.director;
     },
     runNode,
+    appAction: vi.fn(async () => ({ id: 'job-1', status: 'running' })),
     projectName: 'Subconscious Mind',
   };
   return { host, state, actions, runNode, handlers: createMcpHandlers(host) };
@@ -263,5 +276,106 @@ describe('MCP tools', () => {
 
   it('requires a prompt', async () => {
     await expect(harness.handlers.cinegen_generate({})).rejects.toThrow(/"prompt" is required/);
+  });
+});
+
+
+describe('expanded MCP workflows', () => {
+  it('requires explicit approval, links selected breakdown items, and reuses links on retry', async () => {
+    const h=makeHost();
+    await h.handlers.cinegen_load_script({text:SCRIPT});
+    expect(h.state.director.autoSync).toBe(false);
+    const id=h.state.director.breakdown[0].id;
+    const before=h.state.elements.length;
+    await expect(h.handlers.cinegen_approve_breakdown({itemIds:[id],approved:false})).rejects.toThrow();
+    expect(h.state.elements).toHaveLength(before);
+    await h.handlers.cinegen_approve_breakdown({itemIds:[id],approved:true});
+    const linked=h.state.director.breakdown[0].elementId;
+    expect(h.state.elements.some(e=>e.id===linked)).toBe(true);
+    const count=h.state.elements.length;
+    await h.handlers.cinegen_approve_breakdown({itemIds:[id],approved:true});
+    expect(h.state.elements).toHaveLength(count);
+    expect(h.state.director.breakdownApproved).toBe(true);
+  });
+  it('validates every requested breakdown item before creating anything', async () => {
+    const h=makeHost();await h.handlers.cinegen_load_script({text:SCRIPT});
+    const before=h.state.elements.length;
+    await expect(h.handlers.cinegen_approve_breakdown({itemIds:[h.state.director.breakdown[0].id,'missing'],approved:true})).rejects.toThrow(/No breakdown/);
+    expect(h.state.elements).toHaveLength(before);
+  });
+  it('allows reference images and variations to be edited and rejects broken default references', async () => {
+    const h=makeHost();const id=h.state.elements[0].id;
+    await h.handlers.cinegen_edit_element({elementId:id,patch:{images:[{id:'im1',url:'https://example.com/image.png',source:'generated',createdAt:''}]}});
+    expect(h.state.elements[0].images).toHaveLength(1);
+    await expect(h.handlers.cinegen_edit_element({elementId:id,patch:{activeVariationId:'missing'}})).rejects.toThrow(/No variation/);
+    await expect(h.handlers.cinegen_edit_element({elementId:id,patch:{id:'replace-id'}})).rejects.toThrow(/Invalid arguments/);
+  });
+  it('reads full scripts, IDs and breakdown descriptions instead of only counts', async () => {
+    const h=makeHost();await h.handlers.cinegen_load_script({text:SCRIPT});
+    const result=await h.handlers.cinegen_read({section:'director'}) as typeof h.state.director;
+    expect(result.sourceText).toBe(SCRIPT);expect(result.breakdown[0].id).toBeTruthy();
+    const capabilities=await h.handlers.cinegen_capabilities({}) as {shotlistInstructions:string};
+    expect(capabilities.shotlistInstructions).toContain('PROJECT INPUT');
+  });
+  it('generates into a specified Space and actually places the node on Canvas', async () => {
+    const h=makeHost({spaces:[{id:'s1',name:'one',nodes:[],edges:[],createdAt:''},{id:'s2',name:'two',nodes:[],edges:[],createdAt:''}]});
+    await h.handlers.cinegen_generate({prompt:'Wide shot',spaceId:'s2',view:'canvas'});
+    expect(h.state.activeSpaceId).toBe('s2');
+    expect(h.state.spaces[0].nodes).toHaveLength(0);
+    expect(h.state.nodes.some(n=>n.data.config.__studioCanvasPlaced===true)).toBe(true);
+    expect(h.state.edges.length).toBeGreaterThan(0);
+    expect(h.runNode).toHaveBeenCalledTimes(1);
+    expect(h.host.appAction).toHaveBeenCalledWith('view',{view:'canvas'});
+  });
+  it('does not overwrite another generation when starting multiple calls', async () => {
+    const h=makeHost();
+    await h.handlers.cinegen_generate({prompt:'one'});await h.handlers.cinegen_generate({prompt:'two'});
+    expect(h.state.nodes).toHaveLength(2);
+  });
+  it('routes Director generation through the app pipeline instead of creating unrelated Space nodes', async () => {
+    const h=makeHost();await h.handlers.cinegen_load_script({text:SCRIPT});
+    const scene=h.state.director.scenes[0];
+    await h.handlers.cinegen_set_shotlist({shotlist:JSON.stringify({scenes:[scene],clips:[{id:'1A',sceneId:scene.id,title:'Opening',seconds:10,subject:'Jordan',location:'Bunker',style:'',constraints:'',elementTags:[],beats:[{n:1,from:'00:00',to:'00:10',dur:10,text:'Jordan looks up.'}]}]})});
+    expect(h.state.director.clips).toHaveLength(1);
+    await h.handlers.cinegen_generate_shots({});
+    expect(h.host.appAction).toHaveBeenCalledWith('director',{action:'generate',clipIds:[h.state.director.clips[0].id]});
+    expect(h.runNode).not.toHaveBeenCalled();
+  });
+  it('rejects fields for the wrong Director target and unknown element links', async () => {
+    const h=makeHost();await h.handlers.cinegen_load_script({text:SCRIPT});
+    await expect(h.handlers.cinegen_edit_director({target:'show',patch:{elementId:'bad'}})).rejects.toThrow();
+    await expect(h.handlers.cinegen_edit_director({target:'breakdown',id:h.state.director.breakdown[0].id,patch:{elementId:'bad'}})).rejects.toThrow(/No Element/);
+    await h.handlers.cinegen_edit_director({target:'show',patch:{resolution:'1080p',generateAudio:true}});
+    expect(h.state.director.resolution).toBe('1080p');
+  });
+  it('validates timelines before saving trims, speed, keyframes and markers', async () => {
+    const h=makeHost();
+    const timeline=await h.handlers.cinegen_timeline({action:'create',name:'Rough cut'}) as import('@/types/timeline').Timeline;
+    const asset=await h.handlers.cinegen_asset({action:'add',patch:{name:'Take',type:'video',url:'https://example.com/take.mp4'}}) as {id:string};
+    const edited=structuredClone(timeline);
+    edited.clips=[{id:'c1',assetId:asset.id,trackId:timeline.tracks[0].id,name:'Take',startTime:3,duration:10,trimStart:1,trimEnd:1,speed:2,opacity:1,volume:.5,flipH:false,flipV:false,keyframes:[{time:0,property:'opacity',value:0}]}];
+    edited.markers=[{id:'m1',time:3,color:'red',label:'Start'}];
+    await h.handlers.cinegen_set_timeline({timeline:edited});
+    expect(h.state.timelines[0].duration).toBe(7);
+    const invalid=structuredClone(edited);invalid.clips[0].assetId='missing';
+    await expect(h.handlers.cinegen_set_timeline({timeline:invalid})).rejects.toThrow(/No asset/);
+    invalid.clips[0].assetId=asset.id;invalid.clips[0].trimStart=10;
+    await expect(h.handlers.cinegen_set_timeline({timeline:invalid})).rejects.toThrow(/trims/);
+    await expect(h.handlers.cinegen_asset({action:'delete',assetId:asset.id})).rejects.toThrow(/referenced/);
+  });
+  it('validates node IDs before deleting or running anything', async () => {
+    const h=makeHost();await h.handlers.cinegen_generate({prompt:'one'});
+    const id=h.state.nodes[0].id;
+    await expect(h.handlers.cinegen_nodes({action:'delete',nodeIds:[id,'missing']})).rejects.toThrow(/No node/);
+    expect(h.state.nodes).toHaveLength(1);
+    await h.handlers.cinegen_nodes({action:'update',nodeIds:[id],config:{prompt:'Updated'},position:{x:50,y:60}});
+    expect(h.state.nodes[0].data.config.prompt).toBe('Updated');
+    expect(h.state.nodes[0].position).toEqual({x:50,y:60});
+  });
+  it('rejects malformed arguments and unknown properties on new tools', async () => {
+    const h=makeHost();
+    await expect(h.handlers.cinegen_read({section:'secrets'})).rejects.toThrow(/Invalid arguments/);
+    await expect(h.handlers.cinegen_navigate({tab:'terminal'})).rejects.toThrow(/Invalid arguments/);
+    await expect(h.handlers.cinegen_export({action:'start',fps:27})).rejects.toThrow(/Invalid arguments/);
   });
 });

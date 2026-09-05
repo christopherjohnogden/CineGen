@@ -118,7 +118,7 @@ export function registerMcpBridge(getWindow: () => BrowserWindow | null): void {
           }
           // Without a project open there is nothing to act on, and no listener:
           // say so now rather than making the caller wait out the timeout.
-          if (!workspaceReady) {
+          if (!workspaceReady && tool !== 'cinegen_project') {
             json(res, 200, { ok: false, error: 'No CineGen project is open. Open a project in the app, then try again.' });
             return;
           }
