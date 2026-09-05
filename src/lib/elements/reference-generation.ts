@@ -259,7 +259,7 @@ export async function generateSingleImage(
 }
 
 export const PREFERRED_ELEMENT_MODELS: Partial<Record<ModelProvider, string>> = {
-  topview: 'topview-image-gpt-image-2',
+  topview: 'topview-image-nano-banana-2',
   higgsfield: 'hf-nano-banana-pro',
   fal: 'nano-banana-pro',
   kie: 'kie-nano-banana-pro',
