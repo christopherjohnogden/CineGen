@@ -1,7 +1,7 @@
 # CineGen Cloudflare backend
 
 Production API: https://cinegen-api.christopherjohnogden.workers.dev
-Frontend: https://cinegen-kappa.vercel.app
+Frontend: https://cinegen-film.vercel.app
 
 Cloudflare account: `02423324d517a83d37732f9d451e20fe`.
 D1: `cinegen-workspace` (`312e74f8-4966-4eb3-a774-deea07296b35`).

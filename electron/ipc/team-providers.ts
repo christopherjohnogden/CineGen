@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, session } from 'electron';
 import { exportTopviewTeamConnection } from './topview.js';
 
 const LOCAL_WORKSPACE_ORIGIN = 'http://localhost:3000';
-const HOSTED_WORKSPACE_ORIGIN = 'https://cinegen-kappa.vercel.app';
+const HOSTED_WORKSPACE_ORIGIN = 'https://cinegen-film.vercel.app';
 const TEAM_SESSION_PARTITION = 'persist:cinegen-team-workspace';
 const REQUEST_TIMEOUT_MS = 8_000;
 

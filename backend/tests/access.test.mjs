@@ -11,5 +11,5 @@ test('retired migration endpoints are unavailable',async()=>{
 });
 test('verified Firebase request reaches the shared workspace service',async()=>{
  const old=globalThis.fetch;globalThis.fetch=async()=>Response.json({users:[{localId:'owner',email:'christopherjohnogden@gmail.com'}]});
- try{const r=await worker.fetch(new Request('https://api.example/api/events',{headers:{'x-cinegen-id-token':'test','x-cinegen-origin':'https://cinegen-kappa.vercel.app'}}),{});assert.equal(r.status,200);assert.match(r.headers.get('content-type'),/text\/event-stream/);}finally{globalThis.fetch=old;}
+ try{const r=await worker.fetch(new Request('https://api.example/api/events',{headers:{'x-cinegen-id-token':'test','x-cinegen-origin':'https://cinegen-film.vercel.app'}}),{});assert.equal(r.status,200);assert.match(r.headers.get('content-type'),/text\/event-stream/);}finally{globalThis.fetch=old;}
 });

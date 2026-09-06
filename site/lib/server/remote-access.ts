@@ -5,6 +5,7 @@ export function isCineGenVercelOrigin(value:string):boolean {
     const url=new URL(value);
     return url.origin===value&&url.protocol==='https:'&&(
       url.hostname==='cinegen-kappa.vercel.app'
+      || url.hostname==='cinegen-film.vercel.app'
       || url.hostname==='cinegen-christopher-ogdens-projects-8fd5f6aa.vercel.app'
       || /^cinegen-[a-z0-9]+-christopher-ogdens-projects-8fd5f6aa\.vercel\.app$/.test(url.hostname)
     );

@@ -1,6 +1,6 @@
 # CineGen on Vercel
 
-Production: https://cinegen-kappa.vercel.app
+Production: https://cinegen-film.vercel.app
 Project: https://vercel.com/christopher-ogdens-projects-8fd5f6aa/cinegen
 
 Vercel builds the shared CineGen UI using `npm run build:vercel`. The standalone Cloudflare Worker at https://cinegen-api.christopherjohnogden.workers.dev owns workspace project data (D1), uploaded media (R2), and encrypted provider connections. ChatGPT Sites is retired. Firebase remains the source of cloud projects shared with Desktop and remote MCP.
