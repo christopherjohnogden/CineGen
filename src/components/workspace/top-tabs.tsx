@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-
+import { LayersIcon, DashboardIcon, VideoIcon, MixerHorizontalIcon, ChatBubbleIcon, UploadIcon, GearIcon, CheckIcon } from '@radix-ui/react-icons';
 
 import type { ProjectTab } from '@/types/workspace';
 
@@ -16,6 +16,16 @@ export const PROJECT_TABS: { id: ProjectTab; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'export', label: 'Export' },
 ];
+
+const PAGE_PRESENTATION = {
+  elements: { icon: LayersIcon, detail: 'Your creative library' },
+  create: { icon: DashboardIcon, detail: 'Explore & generate' },
+  director: { icon: VideoIcon, detail: 'Plan your film' },
+  edit: { icon: MixerHorizontalIcon, detail: 'Shape the story' },
+  llm: { icon: ChatBubbleIcon, detail: 'Your AI workspace' },
+  export: { icon: UploadIcon, detail: 'Finish & deliver' },
+  settings: { icon: GearIcon, detail: 'Preferences & connections' },
+};
 
 interface TopTabsProps {
   activeTab: ProjectTab;
@@ -84,11 +94,16 @@ export function TopTabs({
           {pageLabel}<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
         </button>
         {pageMenuOpen && <div id="mobile-page-menu" className="top-nav__page-menu" role="menu" aria-label="Navigate to page">
-          {[...PROJECT_TABS, { id: 'settings' as ProjectTab, label: 'Settings' }].map(({ id, label }) => (
-            <button key={id} type="button" role="menuitemradio" aria-checked={id === activeTab} onClick={() => { onTabChange(id); setPageMenuOpen(false); pageButtonRef.current?.focus(); }}>
-              <span>{label}</span><span aria-hidden="true">{id === activeTab ? '✓' : '→'}</span>
+          <div className="top-nav__page-menu-heading" role="presentation"><span>WORKSPACE</span><span>CINEGEN</span></div>
+          {[...PROJECT_TABS, { id: 'settings' as ProjectTab, label: 'Settings' }].map(({ id, label }) => {
+            const { icon: Icon, detail } = PAGE_PRESENTATION[id];
+            return (
+            <button className={id === 'settings' ? 'top-nav__page-option top-nav__page-option--settings' : 'top-nav__page-option'} aria-label={label} key={id} type="button" role="menuitemradio" aria-checked={id === activeTab} onClick={() => { onTabChange(id); setPageMenuOpen(false); pageButtonRef.current?.focus(); }}>
+              <span className="top-nav__page-icon" aria-hidden="true"><Icon width={20} height={20} /></span>
+              <span className="top-nav__page-copy"><strong>{label}</strong><small>{detail}</small></span>
+              {id === activeTab && <span className="top-nav__page-check" aria-hidden="true"><CheckIcon width={16} height={16} /></span>}
             </button>
-          ))}
+          ); })}
           {showSkillsButton && onOpenSkills && <button type="button" role="menuitem" onClick={() => { onOpenSkills(); setPageMenuOpen(false); }}>Skill builder</button>}
         </div>}
       </div>
