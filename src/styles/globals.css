@@ -23849,3 +23849,75 @@ input[type='range']::-moz-range-track {
   outline: 2px solid var(--text-primary);
   outline-offset: 2px;
 }
+
+/* Mobile page navigation and a naturally scrolling clip detail view. */
+.top-nav__page-selector { display: none; }
+@media (max-width: 767px) {
+  :root { --mobile-project-nav-height: env(safe-area-inset-bottom, 0px); }
+  .top-nav {
+    position: relative;
+    z-index: 260;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 4px;
+  }
+  .top-nav__left { gap: 2px; min-width: 0; }
+  .top-nav__wordmark { font-size: 11px; letter-spacing: .08em; }
+  .top-nav__back, .top-nav__assistant { width: 44px; height: 44px; flex-shrink: 0; }
+  .top-nav__actions { justify-self: end; }
+  .top-nav__tabs, .top-nav__settings, .top-nav__skills { display: none; }
+  .top-nav__page-selector { display: block; }
+  .top-nav__page-button {
+    box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; padding: 0 12px; border-radius: 12px;
+    background: var(--bg-overlay); border: 1px solid var(--border-medium);
+    color: var(--text-primary); font: inherit; font-size: 14px; font-weight: 600;
+  }
+  .top-nav__page-menu {
+    box-sizing: border-box;
+    position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    width: min(320px, calc(100vw - 24px)); padding: 8px;
+    max-height: calc(100dvh - 90px); overflow-y: auto;
+    background: var(--bg-elevated); border: 1px solid var(--border-medium);
+    border-radius: 16px; box-shadow: 0 20px 60px #0009;
+  }
+  .top-nav__page-menu button {
+    box-sizing: border-box;
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; min-height: 48px; padding: 12px 14px; border-radius: 10px;
+    color: var(--text-primary); font: inherit; font-size: 15px; text-align: left;
+  }
+  .top-nav__page-menu button[aria-checked="true"] { background: var(--accent-dim); color: var(--accent); }
+  .top-nav__page-menu button:focus-visible, .top-nav__page-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .clip-viewer {
+    inset: calc(52px + env(safe-area-inset-top)) 0 0;
+    display: block; overflow-y: auto; overscroll-behavior: contain;
+    padding: 0 0 env(safe-area-inset-bottom); background: var(--bg-base);
+  }
+  .clip-viewer__backdrop { position: fixed; pointer-events: none; }
+  .clip-viewer__stage { display: grid; grid-template-rows: auto auto; overflow: visible; }
+  .clip-viewer__media { height: clamp(180px, 32dvh, 360px); padding: 8px; }
+  .clip-viewer__transport { padding: 8px 12px 12px; }
+  .clip-viewer__panel { display: flex; flex-direction: column; min-height: 0; margin-top: 8px; }
+  .clip-viewer__head { padding: 16px; }
+  .clip-viewer .clip-viewer__close { width: 44px; height: 44px; }
+  .clip-viewer__tabs { position: sticky; top: 0; z-index: 5; background: var(--bg-elevated); }
+  .clip-viewer .clip-viewer__tabs button { min-height: 48px; font-size: 14px; }
+  .clip-viewer__body { overflow: visible; max-height: none; flex: none; padding: 16px; }
+  .clip-viewer__info { gap: 16px; }
+  .clip-viewer__card { padding: 16px; }
+  .clip-viewer__details > div { font-size: 14px; line-height: 1.5; }
+  .clip-viewer__actions { position: static; padding: 16px; gap: 12px; }
+  .clip-viewer__composer { margin: 0 16px 16px; }
+  .clip-viewer .clip-viewer__composer input { min-height: 48px; font-size: 16px; }
+  .clip-viewer .clip-viewer__primary, .clip-viewer .clip-viewer__secondary, .clip-viewer .clip-viewer__button, .clip-viewer .clip-viewer__iconbtn { min-height: 48px; }
+}
+@media (max-width: 350px) { .top-nav__wordmark { display: none; } }
+@media (max-width: 767px) {
+  .clip-viewer__stage, .clip-viewer__transport, .clip-viewer__media { min-width: 0; }
+  .clip-viewer__controls { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+  .clip-viewer__time-host { grid-column: 1 / -1; grid-row: 1; justify-self: center; margin: 0; }
+  .clip-viewer .clip-viewer__controls > button,
+  .clip-viewer .clip-viewer__controls .clip-viewer__menu-host > button { box-sizing: border-box; width: 100%; min-width: 0; height: 44px; padding: 0 4px; }
+}

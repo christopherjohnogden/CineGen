@@ -1,0 +1,24 @@
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { TopTabs } from '@/components/workspace/top-tabs';
+afterEach(cleanup);
+it('opens the current page selector, navigates, and dismisses with Escape or outside tap', () => {
+  const navigate = vi.fn();
+  render(<TopTabs activeTab="create" onTabChange={navigate} />);
+  const trigger = screen.getByRole('button', { name: 'Current page: Spaces' });
+  fireEvent.click(trigger);
+  const menu = screen.getByRole('menu', { name: 'Navigate to page' });
+  expect(within(menu).getByRole('menuitemradio', { name: 'Spaces' })).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Edit' }));
+  expect(navigate).toHaveBeenCalledWith('edit');
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+  expect(screen.getByRole('menuitemradio', { name: 'Elements' })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+  expect(trigger).toHaveFocus();
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+});

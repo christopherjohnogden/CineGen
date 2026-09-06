@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 
 
 import type { ProjectTab } from '@/types/workspace';
@@ -44,6 +45,19 @@ export function TopTabs({
   onToggleVoiceDirector,
 }: TopTabsProps) {
   const isSettingsActive = activeTab === 'settings';
+  const [pageMenuOpen, setPageMenuOpen] = useState(false);
+  const pageMenuRef = useRef<HTMLDivElement>(null);
+  const pageButtonRef = useRef<HTMLButtonElement>(null);
+  const pageLabel = PROJECT_TABS.find(tab => tab.id === activeTab)?.label ?? 'Settings';
+  useEffect(() => { setPageMenuOpen(false); }, [activeTab]);
+  useEffect(() => {
+    if (!pageMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!pageMenuRef.current?.contains(event.target as Node)) setPageMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  }, [pageMenuOpen]);
 
   return (
     <nav className="top-nav">
@@ -54,6 +68,29 @@ export function TopTabs({
             <svg width="14" height="14" viewBox="0 0 495.398 495.398" fill="currentColor"><path d="M487.083,225.514l-75.08-75.08V63.704c0-15.682-12.708-28.391-28.413-28.391c-15.669,0-28.377,12.709-28.377,28.391v29.941L299.31,37.74c-27.639-27.624-75.694-27.575-103.27,0.05L8.312,225.514c-11.082,11.104-11.082,29.071,0,40.158c11.087,11.101,29.089,11.101,40.172,0l187.71-187.729c6.115-6.083,16.893-6.083,22.976-0.018l187.742,187.747c5.567,5.551,12.825,8.312,20.081,8.312c7.271,0,14.541-2.764,20.091-8.312C498.17,254.586,498.17,236.619,487.083,225.514z"/><path d="M257.561,131.836c-5.454-5.451-14.285-5.451-19.723,0L72.712,296.913c-2.607,2.606-4.085,6.164-4.085,9.877v120.401c0,28.253,22.908,51.16,51.16,51.16h81.754v-126.61h92.299v126.61h81.755c28.251,0,51.159-22.907,51.159-51.159V306.79c0-3.713-1.465-7.271-4.085-9.877L257.561,131.836z"/></svg>
           </button>
         )}
+      </div>
+
+      <div className="top-nav__page-selector" ref={pageMenuRef} onKeyDown={(event) => {
+        if (event.key === 'Escape') { setPageMenuOpen(false); pageButtonRef.current?.focus(); }
+        if (pageMenuOpen && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+          event.preventDefault();
+          const buttons = Array.from(pageMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"], [role="menuitem"]') ?? []);
+          const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+          buttons[next]?.focus();
+        }
+      }}>
+        <button ref={pageButtonRef} type="button" className="top-nav__page-button" aria-label={`Current page: ${pageLabel}`} aria-haspopup="menu" aria-expanded={pageMenuOpen} aria-controls="mobile-page-menu" onClick={() => setPageMenuOpen(open => !open)}>
+          {pageLabel}<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+        </button>
+        {pageMenuOpen && <div id="mobile-page-menu" className="top-nav__page-menu" role="menu" aria-label="Navigate to page">
+          {[...PROJECT_TABS, { id: 'settings' as ProjectTab, label: 'Settings' }].map(({ id, label }) => (
+            <button key={id} type="button" role="menuitemradio" aria-checked={id === activeTab} onClick={() => { onTabChange(id); setPageMenuOpen(false); pageButtonRef.current?.focus(); }}>
+              <span>{label}</span><span aria-hidden="true">{id === activeTab ? '✓' : '→'}</span>
+            </button>
+          ))}
+          {showSkillsButton && onOpenSkills && <button type="button" role="menuitem" onClick={() => { onOpenSkills(); setPageMenuOpen(false); }}>Skill builder</button>}
+        </div>}
       </div>
 
       <div className="top-nav__tabs">
