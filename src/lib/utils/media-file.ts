@@ -34,13 +34,15 @@ export function isMediaDragEvent(e: DragEvent | { dataTransfer: DataTransfer | n
 export function getLocalPathForFile(file: File): string | undefined {
   try {
     const path = window.electronAPI?.file?.getPathForFile(file);
-    if (path) return path;
+    // The web bridge returns blob URLs for previews, not durable disk paths.
+    // They must go through upload before a remote provider can read the file.
+    if (path && !/^(?:blob|data|https?):/i.test(path)) return path;
   } catch {
     // ignore — fall back below
   }
 
   const legacyPath = (file as File & { path?: string }).path;
-  return legacyPath || undefined;
+  return legacyPath && !/^(?:blob|data|https?):/i.test(legacyPath) ? legacyPath : undefined;
 }
 
 export async function resolveMediaFileUrl(file: File): Promise<string> {

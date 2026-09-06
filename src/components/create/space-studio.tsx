@@ -899,6 +899,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   }, [dockMode, measureTools, modelType, outputKind]);
   const [formError, setFormError] = useState('');
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isUploadingReference, setIsUploadingReference] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
   const [frameSlotTarget, setFrameSlotTarget] = useState<FrameSlot | null>(null);
@@ -1313,7 +1314,11 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
 
   const handleGenerate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (launchLockRef.current) return;
+    if (launchLockRef.current || isUploadingReference) return;
+    if (attachedRefs.some((reference) => reference.url.startsWith('blob:'))) {
+      setFormError('This reference is a temporary preview. Remove it and upload the photo or video again before generating.');
+      return;
+    }
 
     const trimmedPrompt = prompt.trim();
     const selectedModel = modelType ? getModelDefinition(modelType) : undefined;
@@ -2814,11 +2819,18 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
             onChange={(event) => {
               const target = attachTargetRef.current;
               const files = Array.from(event.target.files ?? []);
-              if (files.length > 0) setElementModalOpen(false);
+              if (files.length === 0) return;
+              setElementModalOpen(false);
+              setIsUploadingReference(true);
+              showNotice('Uploading your reference…');
               void (async () => {
-                // A frame slot takes exactly one file; a reference set takes many.
-                for (const file of target ? files.slice(0, 1) : files) {
-                  await attachLocalFile(file, target);
+                try {
+                  // A frame slot takes one file; a reference set takes many.
+                  for (const file of target ? files.slice(0, 1) : files) {
+                    await attachLocalFile(file, target);
+                  }
+                } finally {
+                  setIsUploadingReference(false);
                 }
               })();
               attachTargetRef.current = null;
@@ -3153,9 +3165,9 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
               className="space-studio__generate"
               type="submit"
               data-testid="space-studio-generate"
-              disabled={isLaunching || !prompt.trim() || !modelType}
+              disabled={isLaunching || isUploadingReference || !prompt.trim() || !modelType}
             >
-              {isLaunching ? 'Starting…' : dockMode ? (batchCount > 1 ? `Generate ×${batchCount}` : 'Generate') : `Generate ${batchCount > 1 ? `${batchCount} ${outputKind}s` : outputKind}`}
+              {isUploadingReference ? 'Uploading…' : isLaunching ? 'Starting…' : dockMode ? (batchCount > 1 ? `Generate ×${batchCount}` : 'Generate') : `Generate ${batchCount > 1 ? `${batchCount} ${outputKind}s` : outputKind}`}
               {!isLaunching && creditEstimate !== null && (
                 <span className="space-studio__generate-cost">
                   <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
