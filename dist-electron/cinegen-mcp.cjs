@@ -13824,7 +13824,7 @@ tool("cinegen_director_action", "Run the same Director actions as the app: gener
 tool("cinegen_get_jobs", "Read status, results and errors of MCP background app actions. Poll after Director actions. Jobs last for the current open project session.", { jobId: id.optional() });
 tool("cinegen_space", "Create an empty Space, rename, duplicate or delete an existing Space. For preset layouts use cinegen_create_space instead.", { action: external_exports.enum(["create", "rename", "duplicate", "delete"]), spaceId: id.optional(), name: id.optional() });
 tool("cinegen_list_node_types", "List Canvas node types, connection ports and model input controls. Use these definitions before creating nodes or choosing model-specific configuration.", { nodeType: id.optional() });
-tool("cinegen_nodes", "Create, edit, delete, run or place existing generation nodes on Canvas in a chosen Space. Configuration supports the full controls advertised by cinegen_list_node_types. Running nodes may consume credits.", { action: external_exports.enum(["create", "update", "delete", "run", "place", "unplace"]), spaceId: id.optional(), nodeIds: list(id).optional(), nodeType: id.optional(), label: s.optional(), config: record2.optional(), position: obj({ x: n, y: n }).optional() });
+tool("cinegen_nodes", "Create, edit, delete, run or place existing generation nodes on Canvas in a chosen Space. For Studio-mode creation use cinegen_studio_create instead; for Studio generation use cinegen_generate. Configuration supports the full controls advertised by cinegen_list_node_types. Running nodes may consume credits.", { action: external_exports.enum(["create", "update", "delete", "run", "place", "unplace"]), spaceId: id.optional(), nodeIds: list(id).optional(), nodeType: id.optional(), label: s.optional(), config: record2.optional(), position: obj({ x: n, y: n }).optional() });
 tool("cinegen_connect", "Connect two Canvas node ports or remove a connection in a chosen Space. Use port IDs from cinegen_list_node_types and node IDs from cinegen_read.", { spaceId: id.optional(), action: external_exports.enum(["connect", "disconnect"]), edgeId: id.optional(), source: id.optional(), target: id.optional(), sourceHandle: id.optional(), targetHandle: id.optional() });
 tool("cinegen_asset", "Add media by URL or local file reference, edit its metadata or remove its media-pool entry. Removal never deletes the underlying file; referenced timeline assets cannot be removed.", { action: external_exports.enum(["add", "update", "delete"]), assetId: id.optional(), patch: assetPatch.optional() });
 tool("cinegen_folder", "Create, rename, reparent or delete media or Element folders. IDs and folder contents are available from cinegen_read.", { kind: external_exports.enum(["media", "element"]), action: external_exports.enum(["create", "update", "delete"]), folderId: id.optional(), name: id.optional(), parentId: id.optional() });
@@ -13865,8 +13865,26 @@ var TOOL_CATALOG = [
     }
   },
   {
+    name: "cinegen_studio_create",
+    description: "Create prepared image or video items in Spaces STUDIO mode, without generating or spending credits. Prefer this over cinegen_nodes create when the user wants Studio work. Items keep Studio prompt/settings metadata, appear in the Studio feed, and can later be opened on Canvas. Use cinegen_list_node_types for available model node types and controls; use cinegen_generate to actually generate media.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        spaceId: optionalString("Destination Space ID; defaults to the active Space."),
+        prompt: string4("Shot description saved in Studio."),
+        kind: { type: "string", enum: ["video", "image"] },
+        model: optionalString("Exact model node type or name from cinegen_list_node_types."),
+        inputs: { type: "object", description: "Optional model controls keyed by advertised input field IDs, including saved media reference URLs. Studio metadata is managed automatically; prompt takes precedence." },
+        elements: { type: "array", items: { type: "string" }, description: "Existing Element names to attach as references." },
+        count: { type: "integer", minimum: 1, maximum: 4 }
+      },
+      required: ["prompt"],
+      additionalProperties: false
+    }
+  },
+  {
     name: "cinegen_generate",
-    description: "Generate one or more images or videos in the open project. Each version becomes its own clip in the Space feed, exactly as if it had been started from the Studio. Returns immediately with node ids; poll cinegen_get_generations for the results.",
+    description: "Generate one or more images or videos in Spaces STUDIO mode in the open project. Each version becomes its own clip in the Space feed, exactly as if it had been started from the Studio. Returns immediately with node ids; poll cinegen_get_generations for the results.",
     inputSchema: {
       type: "object",
       properties: {
