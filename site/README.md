@@ -1,3 +1,9 @@
+# Retired Sites deployment
+
+Production moved to Vercel and the owner Cloudflare account on 2026-09-06. The old URL only redirects; its APIs return 410 and its runtime secrets were removed. See `../backend/README.md` and `../vercel/README.md` for current deployment instructions. Keep `lib/server/` and `drizzle/`: the standalone backend reuses those modules and schemas. The old D1/R2 copies are retained as rollback data, not used by CineGen.
+
+The following notes document the previous deployment.
+
 # CineGen Cloud Site
 
 This package publishes CineGen through Codex Sites without changing the Electron application. It imports the browser bridge from `web/src/` and the shared product UI from `src/`, so editor and timeline changes continue to flow to desktop, localhost web, and the hosted site.
