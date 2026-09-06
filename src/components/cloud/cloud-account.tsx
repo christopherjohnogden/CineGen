@@ -491,7 +491,7 @@ export function CloudAccountCard({ projectId, useSqlite }: { projectId?: string;
   return (
     <section className="sp-card" id="sp-section-cloud">
       <h3 className="sp-card__title">Cloud Account</h3>
-      <p className="sp-card__desc">Projects, scripts, shots, timelines, and edits sync through Firebase. Team members get the same projects on desktop and web, while API keys stay on their owner’s device.</p>
+      <p className="sp-card__desc">Projects, scripts, shots, timelines, and edits sync through your cloud account. Sign into the same account on desktop, the website, and your assistant connection to work on the same projects. Provider keys are managed separately for each connection.</p>
       <div className="cloud-account-card__row">
         <div className="cloud-account-card__identity">
           <span className={`cloud-auth__status-dot${user ? ' is-connected' : ''}`} />

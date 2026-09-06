@@ -89,6 +89,7 @@ class FakeD1Statement {
 }
 
 class FakeD1Database {
+  async batch(statements) { return Promise.all(statements.map(statement => statement.run())); }
   constructor() {
     this.libraries = new Map();
     this.providerConnections = new Map();
@@ -738,7 +739,7 @@ test("starts Topview sign-in and completes its asynchronous MCP generation flow"
     assert.deepEqual(omniSubmitCall.arguments.req.inputImages, [
       { fileId: "identity-reference-1", name: "Image1" },
     ]);
-    assert.match(omniSubmitCall.arguments.req.prompt, /<<<Image1>>> is an authoritative visual identity and appearance reference\./);
+    assert.match(omniSubmitCall.arguments.req.prompt, /<<<Image1>>> is a supplied visual reference\./);
     assert.match(omniSubmitCall.arguments.req.prompt, /The actor walks through the room/);
 
     const imageResponse = await rpc("generate", [{
@@ -800,6 +801,7 @@ test("requires the shared desktop MCP connection for hosted Topview", async () =
       headers: {
         "content-type": "application/json",
         "oai-authenticated-user-id": "owner-1",
+        "oai-authenticated-user-email": "christopherjohnogden@gmail.com",
       },
       body: JSON.stringify({ args }),
     }),
@@ -816,4 +818,30 @@ test("requires the shared desktop MCP connection for hosted Topview", async () =
     },
   });
   assert.equal(database.providerConnections.size, 0);
+});
+
+test('Vercel backend access verifies Firebase identity and retains the shared workspace',async()=>{
+  const worker=await loadWorker(),originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>Response.json({users:[{localId:'firebase-owner',email:'christopherjohnogden@gmail.com'}]});
+  try{
+    const response=await worker.fetch(new Request('https://cinegen-team.cogden.chatgpt.site/api/rpc/project/list',{method:'POST',headers:{'content-type':'application/json','x-cinegen-id-token':'valid-test-token','x-cinegen-origin':'https://cinegen-christopher-ogdens-projects-8fd5f6aa.vercel.app'},body:JSON.stringify({args:[]})}),testEnvironment({DB:new FakeD1Database(),MEDIA:{}}),executionContext);
+    assert.equal(response.status,200);
+    assert.deepEqual((await response.json()).result,[]);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test('invalid remote tokens cannot fall back to supplied Sites identity headers',async()=>{
+  const worker=await loadWorker(),originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>Response.json({error:{message:'INVALID_ID_TOKEN'}},{status:400});
+  try{
+    const response=await worker.fetch(new Request('https://cinegen-team.cogden.chatgpt.site/api/rpc/project/list',{method:'POST',headers:{'content-type':'application/json','x-cinegen-id-token':'bad','x-cinegen-origin':'https://cinegen-christopher-ogdens-projects-8fd5f6aa.vercel.app','oai-authenticated-user-id':'owner','oai-authenticated-user-email':'christopherjohnogden@gmail.com'},body:'{"args":[]}'}),testEnvironment({DB:new FakeD1Database(),MEDIA:{}}),executionContext);
+    assert.equal(response.status,401);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test('large direct uploads permit only the CineGen Vercel origins in preflight',async()=>{
+  const worker=await loadWorker();
+  const response=await worker.fetch(new Request('https://cinegen-team.cogden.chatgpt.site/api/uploads',{method:'OPTIONS',headers:{origin:'https://cinegen-christopher-ogdens-projects-8fd5f6aa.vercel.app'}}),testEnvironment(),executionContext);
+  assert.equal(response.status,204);
+  assert.equal(response.headers.get('access-control-allow-origin'),'https://cinegen-christopher-ogdens-projects-8fd5f6aa.vercel.app');
 });

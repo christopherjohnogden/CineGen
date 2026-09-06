@@ -1,4 +1,5 @@
 import { ClaudeMcpConnect } from './claude-mcp-connect';
+import { RemoteMcpConnect } from './remote-mcp-connect';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { renewalSummary } from '@/lib/providers/renewal';
 import type { DefaultTranscriptionEngine } from '@/lib/utils/api-key';
@@ -1354,6 +1355,7 @@ export function SettingsPage({ onBack, projectId, useSqlite }: SettingsPageProps
             <div className="sp-content__inner">
               <CloudAccountCard projectId={projectId} useSqlite={useSqlite} />
               <ClaudeMcpConnect />
+              <RemoteMcpConnect />
 
               {/* --- API Keys --- */}
               <section className="sp-card" id="sp-section-api-keys">

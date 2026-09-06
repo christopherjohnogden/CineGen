@@ -1,0 +1,14 @@
+{
+  "name": "cinegen-remote",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-05-22",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "ceb066f13b72491287d933b25d88eb28" }],
+  "durable_objects": { "bindings": [{ "name": "JOBS", "class_name": "GenerationJob" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GenerationJob"] }],
+  "vars": {
+    "PUBLIC_ORIGIN": "https://cinegen-remote.christopherjohnogden.workers.dev",
+    "ALLOWED_EMAILS": "christopherjohnogden@gmail.com,taylormichaelogden@gmail.com"
+  }
+}

@@ -274,11 +274,19 @@ export async function uploadFile(
   if (options.purpose) body.append('purpose', options.purpose);
   if (options.relativePath) body.append('relativePath', options.relativePath);
 
+  const uploadOrigin = import.meta.env.VITE_CINEGEN_UPLOAD_ORIGIN as string | undefined;
+  const uploadHeaders: Record<string,string> = { Accept: 'application/json' };
+  if (uploadOrigin) {
+    const { cloudAuth } = await import('../../../src/lib/cloud/firebase');
+    if (!cloudAuth.currentUser) throw new BrowserBridgeError('Sign in before uploading.');
+    uploadHeaders['X-CineGen-ID-Token'] = await cloudAuth.currentUser.getIdToken();
+    uploadHeaders['X-CineGen-Origin'] = window.location.origin;
+  }
   const result = await post<UploadResult>(
-    UPLOAD_URL,
+    uploadOrigin ? new URL(UPLOAD_URL,uploadOrigin).href : UPLOAD_URL,
     {
       method: 'POST',
-      headers: { Accept: 'application/json' },
+      headers: uploadHeaders,
       body,
     },
     'file upload',

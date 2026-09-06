@@ -1,5 +1,5 @@
 import { materializeElementLooks } from '@/lib/elements/variations';
-import { elementGenerationModelOptions } from '@/lib/elements/reference-generation';
+import { elementGenerationModelOptions } from '@/lib/elements/model-options';
 import { EDIT_SCHEMAS, showPatch, scenePatch, clipPatch, breakdownPatch } from '../../../mcp/edit-schemas.mjs';
 import type { McpHost, McpToolHandler } from './types';
 import { McpToolError } from './types';

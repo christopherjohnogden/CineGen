@@ -1,3 +1,6 @@
+import { authenticateRemoteRequest, isCineGenVercelOrigin } from '../lib/server/remote-access';
+import { handleHiggsfieldCallback } from '../lib/server/higgsfield-mcp';
+import { handleTopviewCallback } from '../lib/server/topview-mcp';
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
@@ -99,4 +102,20 @@ const worker = {
   },
 };
 
-export default worker;
+export default {
+  async fetch(request:Request,env:Env,ctx:ExecutionContext):Promise<Response>{
+    const origin=request.headers.get('origin')||'';
+    const crossOrigin=isCineGenVercelOrigin(origin);
+    if(request.method==='OPTIONS'&&crossOrigin)return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'POST, GET, HEAD, OPTIONS','Access-Control-Allow-Headers':'Content-Type, X-CineGen-ID-Token, X-CineGen-Origin','Access-Control-Max-Age':'600','Vary':'Origin'}});
+    let response:Response;
+    try {
+      const authenticated=await authenticateRemoteRequest(request);
+      const path=new URL(authenticated.url).pathname;
+      if(request.headers.has('x-cinegen-id-token')&&path==='/api/higgsfield/oauth/callback')response=await handleHiggsfieldCallback(authenticated,env,workspaceIdForRequest(authenticated));
+      else if(request.headers.has('x-cinegen-id-token')&&path==='/api/topview/oauth/callback')response=await handleTopviewCallback(authenticated,env,workspaceIdForRequest(authenticated));
+      else response=await worker.fetch(authenticated,env,ctx);
+    }catch(error){response=errorResponse(error);}
+    if(crossOrigin){response=new Response(response.body,response);response.headers.set('Access-Control-Allow-Origin',origin);response.headers.append('Vary','Origin');}
+    return response;
+  },
+};

@@ -2,7 +2,7 @@
   "name": "cinegen-desktop",
   "productName": "CineGen",
   "version": "1.0.1",
-  "description": "AI Film Production Studio — Desktop Application",
+  "description": "AI Film Production Studio \u2014 Desktop Application",
   "private": true,
   "main": "dist-electron/main.js",
   "type": "module",
@@ -18,7 +18,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:funding": "node scripts/cloud/owner-funding-smoke.mjs",
-    "screenshots": "npm run build && node scripts/take-screenshots.mjs"
+    "screenshots": "npm run build && node scripts/take-screenshots.mjs",
+    "build:vercel": "vite build --config vercel/vite.config.ts"
   },
   "build": {
     "appId": "com.cinegen.desktop",

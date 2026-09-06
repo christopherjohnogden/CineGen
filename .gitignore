@@ -39,3 +39,5 @@ studio-mobile-baseline.png
 
 # Local Claude / Cursor launch config
 .claude/launch.json
+.vercel
+.env*

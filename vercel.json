@@ -1,0 +1,41 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build:vercel",
+  "installCommand": "npm ci --ignore-scripts",
+  "outputDirectory": "vercel/dist",
+  "functions": {
+    "api/gateway.mjs": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/gateway?__route=/api/:path*"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "/api/gateway?__route=/media/:path*"
+    },
+    {
+      "source": "/((?!api/|media/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ]
+}

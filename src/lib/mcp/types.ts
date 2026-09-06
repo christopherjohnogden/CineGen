@@ -29,7 +29,7 @@ export interface McpHostState {
 }
 
 /** Typed app actions; only validated, named MCP operations can emit these. */
-export type McpAction = import('@/components/workspace/workspace-shell').WorkspaceAction;
+export type McpAction = import('./workspace-state').WorkspaceAction;
 
 export interface McpHost {
   getState(): McpHostState;
