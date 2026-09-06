@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-const BACKEND='https://cinegen-team.cogden.chatgpt.site';
+const BACKEND='https://cinegen-api.christopherjohnogden.workers.dev';
 const FIREBASE_KEY='AIzaSyDhxfLpKNqAMJWFCiUPaQiINUk2U2Wv9gA';
 const ALLOWED=new Set(['christopherjohnogden@gmail.com','taylormichaelogden@gmail.com']);
 export const config={api:{bodyParser:false}};

@@ -1,0 +1,11 @@
+{
+  "name": "cinegen-api",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-05-22",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "d1_databases": [{"binding":"DB","database_name":"cinegen-workspace","database_id":"312e74f8-4966-4eb3-a774-deea07296b35","migrations_dir":"../site/drizzle"}],
+  "r2_buckets": [{"binding":"MEDIA","bucket_name":"cinegen-workspace-media"}],
+  "observability": {"enabled":true},
+  "vars": {"PUBLIC_ORIGIN":"https://cinegen-api.christopherjohnogden.workers.dev"}
+}

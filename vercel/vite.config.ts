@@ -6,5 +6,5 @@ export default defineConfig({
   plugins:[react()],
   resolve:{alias:{'@':fileURLToPath(new URL('../src',import.meta.url))},dedupe:['react','react-dom']},
   build:{outDir:'dist',emptyOutDir:true},
-  define:{'import.meta.env.VITE_CINEGEN_UPLOAD_ORIGIN':JSON.stringify('https://cinegen-team.cogden.chatgpt.site')},
+  define:{'import.meta.env.VITE_CINEGEN_UPLOAD_ORIGIN':JSON.stringify('https://cinegen-api.christopherjohnogden.workers.dev')},
 });

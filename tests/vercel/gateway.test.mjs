@@ -20,7 +20,7 @@ test('session validates Firebase identity before issuing a protected cookie',asy
 });
 test('gateway forwards authenticated media ranges without trusting caller identity headers',async()=>{
   globalThis.fetch=async(url,options)=>{
-    assert.equal(String(url),'https://cinegen-team.cogden.chatgpt.site/media/clip.mp4');
+    assert.equal(String(url),'https://cinegen-api.christopherjohnogden.workers.dev/media/clip.mp4');
     assert.equal(options.headers.get('x-cinegen-id-token'),'test.token');
     assert.equal(options.headers.get('oai-authenticated-user-id'),null);
     assert.equal(options.headers.get('range'),'bytes=0-2');
