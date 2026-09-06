@@ -1,3 +1,4 @@
+import { restoreCloudMediaReferences } from './media-references';
 import {
   collection,
   deleteDoc,
@@ -297,7 +298,7 @@ export async function loadCloudProject<T = unknown>(projectId: string): Promise<
   const serialized = chunks.docs.map((chunk) => String(chunk.data().data ?? '')).join('');
   loadedRevisions.set(cloudKey(access.ownerId, projectId), revision);
   rememberCloudProject(projectId);
-  return JSON.parse(serialized) as T;
+  return restoreCloudMediaReferences(JSON.parse(serialized) as T);
 }
 
 export async function listCloudProjects(): Promise<AvailableProjectMeta[]> {

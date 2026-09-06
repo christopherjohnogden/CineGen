@@ -1,3 +1,4 @@
+import { resolveCloudMediaReference } from '@/lib/cloud/media-references';
 import {
   useCallback,
   useEffect,
@@ -822,7 +823,9 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   const [batchCount, setBatchCount] = useState(1);
   const [selectedClipIds, setSelectedClipIds] = useState<ReadonlySet<string>>(() => new Set());
   /** Files attached from disk. References in their own right, not Elements. */
-  const [attachedRefs, setAttachedRefs] = useState<AttachedReference[]>(draft.attachments);
+  const [attachedRefs, setAttachedRefs] = useState<AttachedReference[]>(() => draft.attachments.map(reference => ({
+    ...reference, url: resolveCloudMediaReference(reference.url, state.assets as unknown as Record<string, unknown>[]),
+  })));
   const [trimmingRefId, setTrimmingRefId] = useState<string | null>(null);
   const [dockPromptPx, setDockPromptPx] = useState(draft.dockPromptPx);
   const [dockBarPx, setDockBarPx] = useState(draft.dockBarPx);
@@ -1270,6 +1273,15 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
     setPrompt(recipe.prompt);
     if (recipe.presetId) setPresetId(recipe.presetId);
     setSelectedElementIds(resolvedIds);
+    const storedAttachments = node.data.config.__studioAttachedRefs;
+    if (Array.isArray(storedAttachments)) {
+      setAttachedRefs(storedAttachments.filter((url): url is string => typeof url === 'string').map((source) => {
+        const url = resolveCloudMediaReference(source, state.assets as unknown as Record<string, unknown>[]);
+        const asset = state.assets.find(candidate => candidate.url === url || candidate.fileRef === url);
+        return { id: asset?.id ?? generateId(), url, name: asset?.name ?? 'Reference', kind: asset?.type === 'video' ? 'video' : asset?.type === 'audio' ? 'audio' : 'image' };
+      }));
+    }
+
     setMissingReferences(missing);
     // Infer the mode from what actually resolved — landing in References with
     // nothing attached and no explanation was the bug being fixed here.

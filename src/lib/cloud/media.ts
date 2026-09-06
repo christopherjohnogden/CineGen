@@ -1,3 +1,4 @@
+import { mediaSourceHash as shortHash, restoreCloudMediaReferences } from './media-references';
 import {
   getDownloadURL,
   getMetadata,
@@ -78,15 +79,6 @@ function contentTypeFor(record: Record<string, unknown>, source: string): string
     jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
   };
   return extension ? known[extension] : undefined;
-}
-
-function shortHash(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
 }
 
 function fetchableSource(source: string): string {
@@ -213,7 +205,7 @@ export async function prepareStateForCloudMedia(
   emitStatus(failed > 0
     ? { status: 'waiting', completed, total: assets.length, error: `${failed} media file${failed === 1 ? '' : 's'} still need to upload.` }
     : { status: 'ready', completed, total: assets.length });
-  return cloned;
+  return restoreCloudMediaReferences(cloned);
 }
 
 /**
