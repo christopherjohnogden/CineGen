@@ -104,6 +104,8 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
+  assert.equal(initialized.result.serverInfo.version,'1.1.0');
+  assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_generate'));
@@ -120,6 +122,10 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
     assert.equal(result.result.isError,undefined,result.result.content?.[0]?.text);
     assert.equal(JSON.parse(result.result.content[0].text).saved,true);
     assert.match(raw.workflow.director.sourceText,/ALICE/);
+    const studio = await (await api.handleMcp(request('tools/call',{name:'cinegen_studio_create',arguments:{projectId:raw.project.id,prompt:'Sunrise over the mountains',kind:'image',model:'flux-dev'}}),env,ctx)).json();
+    assert.equal(studio.result.isError,undefined,studio.result.content?.[0]?.text);
+    assert.equal(JSON.parse(studio.result.content[0].text).saved,true);
+    assert.ok(api.hydrate(raw,{elements:[],folders:[]}).nodes.some(n=>n.data.config.__studioPromptBody==='Sunrise over the mountains'));
   }finally{api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
 });
 

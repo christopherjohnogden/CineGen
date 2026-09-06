@@ -20,7 +20,7 @@ const projectTool = { name:'cinegen_project',description:'List or create saved C
 async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Identity}) {
   const origin=request.headers.get('origin');
   if(origin && origin!==env.PUBLIC_ORIGIN) return new Response('Origin not allowed',{status:403});
-  const server = new Server({name:'cinegen',version:'1.0.0'},{capabilities:{tools:{}}});
+  const server = new Server({name:'cinegen',version:'1.1.0'},{capabilities:{tools:{}},instructions:'For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
   server.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[projectTool,...remoteTools,...generationTools]}));
   server.setRequestHandler(CallToolRequestSchema,async({params})=>{
     try {
