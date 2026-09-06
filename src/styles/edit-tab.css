@@ -4661,3 +4661,26 @@
   color: var(--text-tertiary, #5c5851);
 }
 .fcm__iterate .fcm__seg { flex: 1; max-width: 220px; }
+
+.timeline-overview { display: none; }
+@media (max-width: 767px) {
+  .edit-mobile-nav { box-sizing: border-box; width: 100%; justify-items: stretch; }
+  .edit-mobile-nav__button { display: flex; align-items: center; justify-content: center; text-align: center; }
+  .timeline-overview {
+    display: block; flex: 0 0 auto; box-sizing: border-box; width: calc(100% - 24px);
+    margin: 12px 12px 4px; padding: 10px; border: 1px solid var(--border-medium);
+    border-radius: 10px; background: var(--bg-elevated); color: var(--text-primary); text-align: left;
+  }
+  .timeline-overview__heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 11px; font-weight: 600; }
+  .timeline-overview__heading > span:last-child { color: var(--accent); font-size: 10px; font-weight: 400; }
+  .timeline-overview__map { position: relative; display: grid; gap: 3px; max-height: 100px; overflow: hidden; border-radius: 4px; background: var(--bg-base); }
+  .timeline-overview__lane { display: block; position: relative; height: 30px; background: #ffffff04; }
+  .timeline-overview__lane--audio { height: 14px; }
+  .timeline-overview__clip { position: absolute; top: 0; bottom: 0; box-sizing: border-box; overflow: hidden; border: 1px solid #d5a45260; border-radius: 3px; background: #5c492b; }
+  .timeline-overview__clip img { width: 100%; height: 100%; object-fit: cover; opacity: .8; }
+  .timeline-overview__clip > span { position: absolute; left: 3px; bottom: 2px; white-space: nowrap; color: #fff; font-size: 8px; text-shadow: 0 1px 3px #000; }
+  .timeline-overview__lane--audio .timeline-overview__clip { background: #354f45; border-color: #739b8260; }
+  .timeline-overview__playhead { position: absolute; top: 0; bottom: 0; width: 2px; transform: translateX(-1px); background: var(--accent); box-shadow: 0 0 0 1px #0008; }
+  .timeline-overview__empty { display: block; padding: 14px 8px; color: var(--text-secondary); font-size: 11px; text-align: center; }
+  .timeline-overview:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+}

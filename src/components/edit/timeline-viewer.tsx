@@ -1,3 +1,5 @@
+import { TimelineOverview } from './timeline-overview';
+import type { Timeline } from '@/types/timeline';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Asset } from '@/types/project';
 import { formatTimecode } from './time-ruler';
@@ -5,6 +7,9 @@ import { toFileUrl } from '@/lib/utils/file-url';
 import type { PlaybackProxyMode } from '@/lib/editor/playback-engine';
 
 interface TimelineViewerProps {
+  timeline?: Timeline;
+  assets?: Asset[];
+  onOpenTimeline?: () => void;
   videoContainerRef: (el: HTMLDivElement | null) => void;
   nativeSurfaceRef?: (el: HTMLDivElement | null) => void;
   nativeVideoEnabled?: boolean;
@@ -40,6 +45,7 @@ const StepForwardIcon = () => <Ico><polyline points="9 6 15 12 9 18" /></Ico>;
 const FRAME_DURATION = 1 / 24;
 
 export function TimelineViewer({
+  timeline, assets = [], onOpenTimeline,
   videoContainerRef,
   nativeSurfaceRef,
   nativeVideoEnabled = false,
@@ -187,6 +193,7 @@ export function TimelineViewer({
           />
         )}
       </div>
+      {timeline && onOpenTimeline && <TimelineOverview timeline={timeline} assets={assets} duration={duration} currentTime={currentTime} onOpen={onOpenTimeline} />}
       <div className="viewer-scrubber" ref={scrubRef} onMouseDown={handleScrubDown}>
         <div className="viewer-scrubber__track">
           <div className="viewer-scrubber__fill" style={{ width: `${scrubProgress * 100}%` }} />

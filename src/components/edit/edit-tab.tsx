@@ -988,6 +988,9 @@ export function EditTab({ llmJumpRequest = null }: { llmJumpRequest?: LlmJumpReq
         )}
 
         <TimelineViewer
+          timeline={timeline}
+          assets={state.assets}
+          onOpenTimeline={() => handleMobilePaneChange('timeline')}
           videoContainerRef={timelineNativeVideoEnabled ? (() => {}) : setVideoContainer}
           nativeSurfaceRef={timelineNativeSurfaceRef}
           nativeVideoEnabled={timelineNativeVideoEnabled}

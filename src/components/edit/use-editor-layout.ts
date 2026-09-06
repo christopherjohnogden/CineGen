@@ -7,7 +7,7 @@ const STORAGE_KEY = 'cinegen_editor_layout';
 function loadLayout(): EditorLayout {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULT_EDITOR_LAYOUT, ...JSON.parse(raw) };
+    if (raw) return { ...DEFAULT_EDITOR_LAYOUT, ...JSON.parse(raw), ...(window.matchMedia?.('(max-width: 767px)').matches ? { sourceViewerVisible: false } : {}) };
   } catch {}
   return DEFAULT_EDITOR_LAYOUT;
 }

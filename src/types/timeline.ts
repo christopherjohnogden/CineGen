@@ -107,7 +107,7 @@ export const DEFAULT_EDITOR_LAYOUT: EditorLayout = {
   leftPanelMode: 'full',
   viewerTimelineSplit: 0.55,
   sourceTimelineSplit: 0.5,
-  sourceViewerVisible: true,
+  sourceViewerVisible: false,
   rightPanelWidth: 280,
   inspectorVisible: false,
 };
