@@ -963,7 +963,7 @@ describe('Space Studio', () => {
     expect(within(menu).getByRole('menuitemradio', { name: 'Frames' })).toBeInTheDocument();
   });
 
-  it('treats a file attached from the bar as a reference and leaves the mode alone', async () => {
+  it('uploads images and videos from the References picker into generation', async () => {
     localStorage.removeItem('cinegen_studio_feed_view');
     workspaceHarness.state = makeState([]);
     (window as unknown as { electronAPI: unknown }).electronAPI = {
@@ -985,6 +985,10 @@ describe('Space Studio', () => {
     const input = screen.getByTestId('space-studio-attach-input');
     expect(input).toHaveAttribute('accept', 'image/*,video/*,audio/*');
     expect(input).toHaveAttribute('multiple');
+
+    fireEvent.click(screen.getByTestId('space-studio-elements-chip'));
+    fireEvent.click(screen.getByRole('button', { name: /Upload photos or videos/ }));
+    expect(input).toHaveAttribute('accept', 'image/*,video/*');
 
     // A whole set at once, mixed media — that is what a reference pack is.
     fireEvent.change(input, {

@@ -2099,15 +2099,15 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
     )
     : null;
 
-  const openAttachFor = (target: AttachTarget | null) => {
+  const openAttachFor = (target: AttachTarget | null, accept?: string) => {
     attachTargetRef.current = target;
     // The dialog opens on the same click, so the filter is written to the input
     // directly: a state change would land a render too late to be picked up.
     const input = attachInputRef.current;
     if (input) {
-      input.accept = target === 'edit'
+      input.accept = accept ?? (target === 'edit'
         ? 'video/*'
-        : target ? 'image/*' : 'image/*,video/*,audio/*';
+        : target ? 'image/*' : 'image/*,video/*,audio/*');
     }
     input?.click();
   };
@@ -2662,14 +2662,12 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
                 type="button"
                 className="space-studio__ref-empty"
                 data-testid="space-studio-add-reference"
-                disabled={!referencesActive || availableElements.length === 0}
+                disabled={!referencesActive}
                 onClick={() => setElementModalOpen(true)}
               >
                 <span className="space-studio__slot-icon" aria-hidden="true">+</span>
                 <span>
-                  {availableElements.length === 0
-                    ? 'Add reference images in Elements first'
-                    : 'Add references'}
+                  Add references
                 </span>
               </button>
             ) : (
@@ -2816,6 +2814,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
             onChange={(event) => {
               const target = attachTargetRef.current;
               const files = Array.from(event.target.files ?? []);
+              if (files.length > 0) setElementModalOpen(false);
               void (async () => {
                 // A frame slot takes exactly one file; a reference set takes many.
                 for (const file of target ? files.slice(0, 1) : files) {
@@ -3315,10 +3314,18 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
               </header>
 
               <div className="space-studio__modal-grid">
+                <button
+                  type="button"
+                  className="space-studio__reference-upload"
+                  onClick={() => openAttachFor(null, 'image/*,video/*')}
+                >
+                  <span aria-hidden="true">＋</span>
+                  <span>Upload photos or videos<small>Choose from your device</small></span>
+                </button>
                 {modalElements.length === 0 && (
                   <p className="space-studio__empty-note">
                     {availableElements.length === 0
-                      ? 'Add reference images in Elements to use them here.'
+                      ? 'Upload a reference above, or save images in Elements to reuse them here.'
                       : 'No element matches that search.'}
                   </p>
                 )}

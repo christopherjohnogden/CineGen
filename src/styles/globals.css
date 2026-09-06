@@ -23821,3 +23821,31 @@ input[type='range']::-moz-range-track {
 }
 
 .studio-trim__apply:disabled { opacity: .55; cursor: default; }
+
+/* Keep device uploads easy to reach in the Studio reference picker. */
+.space-studio__reference-upload {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  background: var(--accent-dim);
+  color: var(--text-primary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.space-studio__reference-upload > span:first-child { font-size: 24px; }
+.space-studio__reference-upload small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.space-studio__reference-upload:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
