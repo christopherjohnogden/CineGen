@@ -181,6 +181,19 @@ async function post<T>(
       }, timeoutMs)
     : undefined;
   try {
+    // Cloud-hosted RPCs can include large project snapshots. Send them directly
+    // to the authenticated Cloudflare backend rather than through a function's
+    // request/response body limit. Local and Sites builds retain same-origin RPC.
+    const backendOrigin = import.meta.env.VITE_CINEGEN_UPLOAD_ORIGIN as string | undefined;
+    if (backendOrigin && url.startsWith('/api/rpc/')) {
+      const { cloudAuth } = await import('../../../src/lib/cloud/firebase');
+      if (!cloudAuth.currentUser) throw new BrowserBridgeError('Sign in to CineGen.');
+      const headers = new Headers(init.headers);
+      headers.set('X-CineGen-ID-Token', await cloudAuth.currentUser.getIdToken());
+      headers.set('X-CineGen-Origin', window.location.origin);
+      init = { ...init, headers, credentials: 'omit' };
+      url = new URL(url, backendOrigin).href;
+    }
     const response = await fetch(url, {
       credentials: 'same-origin',
       ...init,

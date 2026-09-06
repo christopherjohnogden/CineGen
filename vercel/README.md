@@ -5,7 +5,7 @@ Project: https://vercel.com/christopher-ogdens-projects-8fd5f6aa/cinegen
 
 Vercel builds the shared CineGen UI using `npm run build:vercel`. The existing Sites/Cloudflare backend continues to own workspace project data, uploaded media and encrypted provider connections. Firebase remains the source of cloud projects shared with Desktop and remote MCP.
 
-Sign in using an approved CineGen Cloud account. The Vercel gateway verifies the Firebase token before setting an HttpOnly, Secure session cookie. Every backend request is revalidated on Cloudflare; caller-supplied identity headers are never forwarded. Large uploads go directly to Cloudflare with a Firebase token, and authenticated media playback uses the Vercel gateway with Range headers.
+Sign in using an approved CineGen Cloud account. The Vercel gateway verifies the Firebase token before setting an HttpOnly, Secure session cookie. Every backend request is revalidated on Cloudflare; caller-supplied identity headers are never forwarded. RPC calls and large uploads go directly to Cloudflare with a Firebase token, and authenticated media playback uses the Vercel gateway with Range headers.
 
 ## Deployment
 

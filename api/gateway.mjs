@@ -3,6 +3,12 @@ const BACKEND='https://cinegen-team.cogden.chatgpt.site';
 const FIREBASE_KEY='AIzaSyDhxfLpKNqAMJWFCiUPaQiINUk2U2Wv9gA';
 const ALLOWED=new Set(['christopherjohnogden@gmail.com','taylormichaelogden@gmail.com']);
 export const config={api:{bodyParser:false}};
+async function requestBody(req) {
+  if(req.body!==undefined)return typeof req.body==='string'||Buffer.isBuffer(req.body)?req.body:JSON.stringify(req.body);
+  const chunks=[];let bytes=0;
+  for await(const chunk of req){bytes+=Buffer.byteLength(chunk);if(bytes>4*1024*1024)throw new Error('Request too large.');chunks.push(Buffer.from(chunk));}
+  return Buffer.concat(chunks);
+}
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','private, no-store');
   res.setHeader('X-Content-Type-Options','nosniff');
@@ -17,7 +23,7 @@ export default async function handler(req,res) {
     if(path==='/api/session') {
       if(req.method==='DELETE'){res.setHeader('Set-Cookie','__Host-cinegen_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0');res.statusCode=204;res.end();return;}
       if(req.method!=='POST'){res.statusCode=405;res.end();return;}
-      let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>20000)throw new Error('Request too large.');}
+      const raw=String(await requestBody(req));if(raw.length>20000)throw new Error('Request too large.');
       const {idToken}=JSON.parse(raw);
       if(typeof idToken!=='string'||!/^[A-Za-z0-9_.-]+$/.test(idToken))throw new Error('Sign in again.');
       const verified=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key='+FIREBASE_KEY,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken})});
@@ -34,7 +40,7 @@ export default async function handler(req,res) {
     for(const key of ['content-type','accept','range','if-range'])if(req.headers[key])headers.set(key,req.headers[key]);
     const target=new URL(path,BACKEND);target.search=url.search;
     if(target.origin!==BACKEND)throw new Error('Invalid request path.');
-    const response=await fetch(target,{method:req.method,headers,redirect:'manual',...(!['GET','HEAD'].includes(req.method)?{body:Readable.toWeb(req),duplex:'half'}:{})});
+    const response=await fetch(target,{method:req.method,headers,redirect:'manual',signal:AbortSignal.timeout(240000),...(!['GET','HEAD'].includes(req.method)?{body:await requestBody(req)}:{})});
     res.statusCode=response.status;
     for(const key of ['content-type','content-length','content-range','accept-ranges','etag','location']){const value=response.headers.get(key);if(value)res.setHeader(key,value);}
     if(req.method==='HEAD'||!response.body){res.end();return;}
