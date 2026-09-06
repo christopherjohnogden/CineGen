@@ -26,6 +26,33 @@ function App(){
   },[]);
   async function login(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError('');const data=new FormData(event.currentTarget);try{await signInWithEmailAndPassword(cloudAuth,String(data.get('email')),String(data.get('password')));}catch{setError('Check your CineGen Cloud email and password.');}finally{setBusy(false);}}
   if(ready)return <WebApp/>;
-  return <main className="vg-login"><form onSubmit={login}><div className="vg-brand">CineGen</div><h1>Your studio, anywhere.</h1><p>Sign in with your CineGen Cloud account to open your projects and saved work.</p>{loading?<p>Connecting…</p>:<><label>Email<input name="email" type="email" autoComplete="username" required/></label><label>Password<input name="password" type="password" autoComplete="current-password" required/></label><button disabled={busy}>{busy?'Signing in…':'Open CineGen'}</button>{cloudAuth.currentUser&&<button type="button" className="vg-secondary" onClick={()=>void signOut(cloudAuth)}>Use another account</button>}</>}{error&&<p role="alert">{error}</p>}<small>Use the same cloud account as CineGen Desktop. Your ChatGPT sign-in may be different.</small></form></main>;
+  return (
+    <main className="vg-login">
+      <section className="vg-login__panel" aria-labelledby="signin-title">
+        <div className="vg-brand">
+          <img src="/cinegen-icon.png" width="64" height="64" alt="" />
+          <span>CINEGEN</span>
+        </div>
+        <p className="vg-login__eyebrow">AI Film Production Studio</p>
+        <h1 id="signin-title">Welcome back.</h1>
+        <p className="vg-login__intro">Sign in to your CineGen Cloud account.<br />Your projects and saved work are waiting.</p>
+        <form onSubmit={login} aria-busy={busy || loading}>
+          {loading ? <p className="vg-login__loading" role="status">Connecting to your studio…</p> : <>
+            <label htmlFor="signin-email">Email</label>
+            <input id="signin-email" name="email" type="email" autoComplete="username" placeholder="you@example.com" required />
+            <label htmlFor="signin-password">Password</label>
+            <input id="signin-password" name="password" type="password" autoComplete="current-password" required />
+            {error && <p className="vg-login__error" role="alert">{error}</p>}
+            <button className="vg-login__submit" disabled={busy}>
+              <span>{busy ? 'Signing in…' : 'Open CineGen'}</span>
+              <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </button>
+            {cloudAuth.currentUser && <button type="button" className="vg-secondary" onClick={() => void signOut(cloudAuth)}>Use another account</button>}
+          </>}
+        </form>
+        <footer className="vg-login__footer">One studio. Every device.</footer>
+      </section>
+    </main>
+  );
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><ErrorBoundary><App/></ErrorBoundary></StrictMode>);
