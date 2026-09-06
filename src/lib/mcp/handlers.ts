@@ -113,6 +113,8 @@ interface GenerationRequest {
   resolution?: string;
   spaceId?: string;
   view?: string;
+  inputs?: Record<string, unknown>;
+  prepareOnly?: boolean;
 }
 
 /**
@@ -134,7 +136,11 @@ function startGeneration(host: McpHost, request: GenerationRequest): string[] {
   const promptField = promptFieldFor(model);
   if (!promptField) throw new McpToolError(`${model.name} does not take a text prompt.`);
 
+  for (const key of Object.keys(request.inputs ?? {})) {
+    if (!model.inputs.some(field => field.id === key)) throw new McpToolError(`Unknown model input: ${key}`);
+  }
   const config: Record<string, unknown> = {
+    ...request.inputs,
     __studioGenerated: true,
     __studioCreatedAt: timestamp(),
     __studioOutputType: model.outputType,
@@ -185,7 +191,7 @@ function startGeneration(host: McpHost, request: GenerationRequest): string[] {
   }
   host.dispatch({ type: 'SET_NODES', nodes: nextNodes });
   host.dispatch({ type: 'SET_EDGES', edges: nextEdges });
-  for (const node of created) host.runNode(node.id, nextNodes, nextEdges);
+  if (!request.prepareOnly) for (const node of created) host.runNode(node.id, nextNodes, nextEdges);
   return created.map((node) => node.id);
 }
 
@@ -286,6 +292,21 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
           resolutions: model.inputs.find((field) => field.id === 'resolution')?.options?.map((option) => String(option.value)) ?? null,
         })),
       };
+    },
+
+    async cinegen_studio_create(args) {
+      const prompt = str(args, 'prompt', true);
+      const kind = str(args, 'kind') === 'image' ? 'image' : 'video';
+      const model = resolveModel(kind, str(args, 'model'));
+      if (args.inputs && (typeof args.inputs !== 'object' || Array.isArray(args.inputs))) throw new McpToolError('inputs must be an object.');
+      const nodeIds = startGeneration(host, {
+        model, prompt, elementIds: resolveElements(state(), strList(args, 'elements')),
+        count: int(args, 'count', 1, 1, MAX_BATCH),
+        spaceId: str(args, 'spaceId') || undefined,
+        inputs: args.inputs as Record<string, unknown> | undefined,
+        prepareOnly: true,
+      });
+      return { created: nodeIds.length, nodeIds, spaceId: str(args, 'spaceId') || state().activeSpaceId, view: 'studio', model: model.name, status: 'prepared', note: 'Saved in Spaces Studio. Generation has not started and no credits were spent. Open Studio to run or recreate these items; they can also be placed on Canvas. For unattended cloud generation use cinegen_generate.' };
     },
 
     async cinegen_generate(args) {

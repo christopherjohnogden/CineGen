@@ -39,9 +39,27 @@ export const TOOL_CATALOG = [
     },
   },
   {
+    name: 'cinegen_studio_create',
+    description: 'Create prepared image or video items in Spaces STUDIO mode, without generating or spending credits. Prefer this over cinegen_nodes create when the user wants Studio work. Items keep Studio prompt/settings metadata, appear in the Studio feed, and can later be opened on Canvas. Use cinegen_list_node_types for available model node types and controls; use cinegen_generate to actually generate media.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        spaceId: optionalString('Destination Space ID; defaults to the active Space.'),
+        prompt: string('Shot description saved in Studio.'),
+        kind: { type: 'string', enum: ['video', 'image'] },
+        model: optionalString('Exact model node type or name from cinegen_list_node_types.'),
+        inputs: { type: 'object', description: 'Optional model controls keyed by advertised input field IDs, including saved media reference URLs. Studio metadata is managed automatically; prompt takes precedence.' },
+        elements: { type: 'array', items: { type: 'string' }, description: 'Existing Element names to attach as references.' },
+        count: { type: 'integer', minimum: 1, maximum: 4 },
+      },
+      required: ['prompt'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'cinegen_generate',
     description:
-      'Generate one or more images or videos in the open project. Each version becomes its own clip in the Space feed, exactly as if it had been started from the Studio. Returns immediately with node ids; poll cinegen_get_generations for the results.',
+      'Generate one or more images or videos in Spaces STUDIO mode in the open project. Each version becomes its own clip in the Space feed, exactly as if it had been started from the Studio. Returns immediately with node ids; poll cinegen_get_generations for the results.',
     inputSchema: {
       type: 'object',
       properties: {

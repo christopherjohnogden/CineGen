@@ -179,3 +179,9 @@ The MCP tests cover catalogue parity, validation, approval and linking, Canvas
 placement, generation routing, timeline integrity, background jobs, project
 switching and results arriving after switching Spaces. Provider generation is
 mocked in tests; live paid generations are not part of verification.
+
+## Spaces Studio creation
+
+Use `cinegen_studio_create` to prepare Studio items without starting generation or spending credits. Supply a prompt, optional destination `spaceId`, model name/node type, `inputs` keyed by model field IDs, and optional Element names. Remote calls also require `projectId`. Use `cinegen_list_node_types` to discover preparation models and controls. These items carry Studio metadata, retain their prompt and settings, and can be placed on Canvas later.
+
+Use `cinegen_generate` for actual Studio generation. Remote unattended generation supports the models returned by the remote `cinegen_list_models` tool; preparation does not expand that provider support. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.

@@ -12,7 +12,7 @@ export const REMOTE_NAMES = new Set([
   'cinegen_get_context', 'cinegen_read', 'cinegen_capabilities', 'cinegen_get_generations',
   'cinegen_load_script', 'cinegen_set_breakdown', 'cinegen_set_shotlist', 'cinegen_approve_breakdown',
   'cinegen_create_element', 'cinegen_edit_element', 'cinegen_delete_element',
-  'cinegen_create_space', 'cinegen_space', 'cinegen_list_node_types', 'cinegen_nodes', 'cinegen_connect',
+  'cinegen_studio_create', 'cinegen_create_space', 'cinegen_space', 'cinegen_list_node_types', 'cinegen_nodes', 'cinegen_connect',
   'cinegen_edit_director', 'cinegen_delete_director_item', 'cinegen_take', 'cinegen_storyboard',
   'cinegen_framing', 'cinegen_asset', 'cinegen_folder', 'cinegen_timeline', 'cinegen_set_timeline',
 ]);
@@ -67,6 +67,6 @@ export async function editProject(raw: RecordValue, library: RecordValue, name: 
   });
   if (!REMOTE_NAMES.has(name) || !handlers[name]) throw new Error('This tool is not supported remotely.');
   const result = await handlers[name](args);
-  return { result: name==='cinegen_capabilities' ? { ...result as object, remote: true, directorAdapters:[], workflow:'Load script, prepare breakdown and shotlist, approve Elements, generate saved media with cinegen_generate, then attach saved assets to Elements, storyboard frames, takes or timelines. Call cinegen_list_models for supported cloud generation. Director batch generation requires the app.', limitations: ['Changes are saved to CineGen Cloud. Desktop rendering and arbitrary Canvas execution are unavailable.'], supportedTools:['cinegen_project',...REMOTE_NAMES,'cinegen_list_models','cinegen_generate','cinegen_get_jobs'], unavailable:['desktop rendering','native media extraction','interactive navigation','arbitrary Canvas execution'] } : result,
+  return { result: name==='cinegen_capabilities' ? { ...result as object, remote: true, directorAdapters:[], workflow:'For Spaces Studio creation use cinegen_studio_create (prepared items, no generation charges). For unattended Studio generation use cinegen_generate. Canvas-only nodes use cinegen_nodes. Load script, prepare breakdown and shotlist, approve Elements, generate saved media with cinegen_generate, then attach saved assets to Elements, storyboard frames, takes or timelines. Call cinegen_list_models for supported cloud generation. Director batch generation requires the app.', limitations: ['Changes are saved to CineGen Cloud. Desktop rendering and arbitrary Canvas execution are unavailable.'], supportedTools:['cinegen_project',...REMOTE_NAMES,'cinegen_list_models','cinegen_generate','cinegen_get_jobs'], unavailable:['desktop rendering','native media extraction','interactive navigation','arbitrary Canvas execution'] } : result,
     changed: actions.length>0, state:serialize(raw,state,sqlite), library:{...library,elements:state.elements,folders:state.elementFolders}, workspace:state };
 }

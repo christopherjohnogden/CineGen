@@ -379,3 +379,15 @@ describe('expanded MCP workflows', () => {
     await expect(h.handlers.cinegen_export({action:'start',fps:27})).rejects.toThrow(/Invalid arguments/);
   });
 });
+
+it('prepares Studio items with full model controls without running or placing them on Canvas', async () => {
+  const h = makeHost();
+  const result = await h.handlers.cinegen_studio_create({prompt:'Camera follows her.', model:'Seedance 2.5', inputs:{duration:'10',image_url:'https://example.com/reference.jpg'},count:2}) as any;
+  expect(result.status).toBe('prepared');
+  expect(h.runNode).not.toHaveBeenCalled();
+  expect(h.state.nodes).toHaveLength(2);
+  expect(h.state.nodes[0].data.config).toMatchObject({__studioGenerated:true,__studioPromptBody:'Camera follows her.',prompt:'Camera follows her.',duration:'10',image_url:'https://example.com/reference.jpg'});
+  expect(h.state.nodes[0].data.config.__studioCanvasPlaced).toBeUndefined();
+  expect(h.state.edges).toHaveLength(0);
+  await expect(h.handlers.cinegen_studio_create({prompt:'x',inputs:{__studioGenerated:false}})).rejects.toThrow('Unknown model input');
+});

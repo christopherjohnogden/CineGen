@@ -107,6 +107,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_generate'));
+  assert.ok(listed.result.tools.some(t=>t.name==='cinegen_studio_create' && t.inputSchema.required.includes('projectId')));
   globalThis.fetch=async()=>Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});
   const invalid=await (await api.handleMcp(request('tools/call',{name:'cinegen_load_script',arguments:{text:'Script'}}),env,ctx)).json();
   assert.equal(invalid.result.isError,true);assert.match(invalid.result.content[0].text,/projectId/);
@@ -120,4 +121,17 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
     assert.equal(JSON.parse(result.result.content[0].text).saved,true);
     assert.match(raw.workflow.director.sourceText,/ALICE/);
   }finally{api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
+});
+
+test('Studio creation persists prepared items through a cloud save and reload without provider requests',async()=>{
+  globalThis.fetch=async()=>{throw new Error('Studio preparation must not call a provider');};
+  const raw=api.createDefaultProjectState('Studio film');const library={elements:[],folders:[]};
+  const edited=await api.editProject(raw,library,'cinegen_studio_create',{prompt:'A lighthouse at dusk',kind:'image',model:'flux-dev',inputs:{image_size:'landscape_16_9'}});
+  const reopened=api.hydrate(JSON.parse(JSON.stringify(edited.state)),library);
+  const node=reopened.nodes.find(n=>n.data.config.__studioGenerated);
+  assert.ok(node);
+  assert.equal(node.data.config.__studioPromptBody,'A lighthouse at dusk');
+  assert.equal(node.data.config.image_size,'landscape_16_9');
+  assert.equal(node.data.config.__studioCanvasPlaced,undefined);
+  assert.equal(edited.result.status,'prepared');
 });
