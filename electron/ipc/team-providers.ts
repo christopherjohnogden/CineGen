@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, session } from 'electron';
 import { exportTopviewTeamConnection } from './topview.js';
 
 const LOCAL_WORKSPACE_ORIGIN = 'http://localhost:3000';
-const HOSTED_WORKSPACE_ORIGIN = 'https://cinegen-cloud-studio.cogden.chatgpt.site';
+const HOSTED_WORKSPACE_ORIGIN = 'https://cinegen-kappa.vercel.app';
 const TEAM_SESSION_PARTITION = 'persist:cinegen-team-workspace';
 const REQUEST_TIMEOUT_MS = 8_000;
 
@@ -79,7 +79,7 @@ async function rpcFetch<T>(
     const url = `${target.origin}/api/rpc/${encodeURIComponent(namespace)}/${encodeURIComponent(method)}`;
     const init: RequestInit = {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(target.source === 'hosted' ? { Origin: target.origin } : {}) },
       body: JSON.stringify({ args }),
       credentials: 'include',
       // RPC payloads can contain provider credentials. Never forward their
@@ -230,7 +230,7 @@ async function connectHostedWorkspace(): Promise<ProviderStatus> {
   });
   authWindow = window;
 
-  const signInUrl = `${HOSTED_WORKSPACE_ORIGIN}/signin-with-chatgpt?return_to=${encodeURIComponent('/')}`;
+  const signInUrl = HOSTED_WORKSPACE_ORIGIN;
   const connectionPromise = new Promise<ProviderStatus>((resolve, reject) => {
     let settled = false;
     let checking = false;
@@ -276,7 +276,7 @@ async function connectHostedWorkspace(): Promise<ProviderStatus> {
         pollTimer = null;
       }
       if (settled) return;
-      // A user can close the window immediately after ChatGPT accepts the
+      // A user can close the window immediately after CineGen accepts the
       // sign-in. Let any in-flight probe finish, then make one final serialized
       // check so a just-committed cookie is not mistaken for cancellation.
       void (async () => {
@@ -316,7 +316,7 @@ export function registerTeamProviderHandlers(): void {
   });
   ipcMain.handle('team-providers:connect', () => connectHostedWorkspace());
   ipcMain.handle('team-providers:disconnect', async () => {
-    await session.fromPartition(TEAM_SESSION_PARTITION).clearStorageData({ storages: ['cookies'] });
+    await session.fromPartition(TEAM_SESSION_PARTITION).clearStorageData({ storages: ['cookies', 'indexdb', 'localstorage'] });
     activeTarget = null;
     return emptyStatus();
   });
