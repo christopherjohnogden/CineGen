@@ -146,6 +146,10 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
   </div>;
   return <BaseNode nodeType="elevenLabsAudio" className="vox-node" title={data.label || 'ElevenLabs Audio'} selected={!!selected} isRunning={!!running} meta={running ? activity || 'Creating audio' : audioUrl ? 'Audio ready' : 'Voice studio'}>
     <div className="vox-studio nodrag nowheel">
+      {running && <div className="vox-prism" role="status">
+        <div className="vox-prism__wave" aria-hidden="true">{Array.from({ length: 13 }, (_, index) => <i key={index} />)}</div>
+        <strong>{activity || (busy ? 'Saving audio…' : 'Generating audio…')}</strong>
+      </div>}
       <fieldset disabled={!!running} className="vox-fields">
         <div className="vox-format" role="group" aria-label="Audio type"><button type="button" aria-pressed={!sound} onClick={() => edit({ kind: 'speech' })}><SpeakerLoudIcon /> Speech</button><button type="button" aria-pressed={sound} onClick={() => edit({ kind: 'sound' })}><MixerHorizontalIcon /> Sound effects</button></div>
         {!sound && <>
@@ -170,7 +174,6 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
         {sound && <label>Duration <span>Seconds · optional</span><input type="number" min="0.5" max="30" step="0.5" value={String(config.durationSeconds || '')} placeholder="Automatic" onChange={e => edit({ durationSeconds: e.target.value ? Number(e.target.value) : undefined })} /></label>}
       </fieldset>
       {audioUrl && <section className="vox-result" aria-label="Generated audio"><div className="vox-section-heading"><span><SpeakerLoudIcon /> Your audio</span><span>Ready</span></div><audio controls preload="metadata" src={audioUrl} aria-label="ElevenLabs audio result" /></section>}
-      {activity && <p className="vox-status" role="status">{activity}</p>}
       {notice && <p className="vox-status" role="status">{notice}</p>}
       {data.result?.error && <p role="alert" className="vox-error">{data.result.error}</p>}
       {error && <p role="alert" className="vox-error">{error}</p>}

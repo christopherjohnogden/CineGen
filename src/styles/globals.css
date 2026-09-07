@@ -24101,3 +24101,64 @@ input[type='range']::-moz-range-track {
 @media (prefers-reduced-motion: reduce) { .vox-studio *, .vox-studio *::before, .vox-studio *::after { transition: none !important; animation: none !important; } }
 .cinegen-node--semantic.vox-node .cinegen-node__body { padding: 0; }
 .vox-studio { padding-top: 16px; }
+
+/* Voice generation: a clockwise spectrum edge and a flowing prism of light. */
+.cinegen-node--semantic.vox-node.cinegen-node--running {
+  border-color: transparent;
+  background:
+    linear-gradient(180deg, #151820, #11141a) padding-box,
+    conic-gradient(from var(--_spectrum-angle), #ffd58a, #ff83b7, #b28bff, #66d9ff, #87efcc, #ffd58a) border-box;
+  box-shadow: -5px 0 22px #ba89ff16, 5px 0 22px #66d9ff16, 0 14px 34px #0004;
+  animation: copilot-spectrum-spin 5s linear infinite;
+}
+.vox-prism {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 15px;
+  min-height: 132px;
+  padding: 22px 14px;
+  margin-bottom: 18px;
+  border: 1px solid #ffffff1c;
+  border-radius: 11px;
+  background: #10141e;
+  box-shadow: inset 0 1px 0 #ffffff0b;
+}
+.vox-prism::before, .vox-prism::after {
+  content: "";
+  position: absolute;
+  inset: -65% -35%;
+  z-index: -1;
+  pointer-events: none;
+}
+.vox-prism::before {
+  background:
+    radial-gradient(ellipse at 20% 35%, #ff799e99, transparent 45%),
+    radial-gradient(ellipse at 80% 65%, #58d9ffb0, transparent 48%),
+    radial-gradient(ellipse at 65% 15%, #b58bffa8, transparent 45%),
+    radial-gradient(ellipse at 30% 85%, #ffcf7780, transparent 42%);
+  filter: blur(18px);
+  animation: vox-prism-drift 7s ease-in-out infinite alternate;
+}
+.vox-prism::after {
+  background: conic-gradient(from 40deg at 50% 50%, transparent 8%, #ffffff18 14%, transparent 21%, #98ffe529 35%, transparent 45%, #ffaddc30 65%, transparent 78%, #b8dcff26 91%, transparent);
+  mix-blend-mode: screen;
+  animation: vox-prism-turn 14s linear infinite;
+}
+.vox-prism strong { color: #fff6ed; font-size: 13px; font-weight: 550; letter-spacing: .01em; text-align: center; text-wrap: balance; text-shadow: 0 2px 12px #0a1026a0; }
+.vox-prism__wave { display: flex; align-items: center; gap: 4px; height: 33px; }
+.vox-prism__wave i { display: block; width: 3px; height: 24px; border-radius: 3px; background: #fff7ed; box-shadow: 0 0 12px #ddedff70; animation: vox-prism-wave 1.4s ease-in-out infinite alternate; }
+.vox-prism__wave i:nth-child(3n) { height: 33px; animation-delay: -.8s; }
+.vox-prism__wave i:nth-child(3n + 1) { height: 17px; animation-delay: -.4s; }
+.vox-prism__wave i:nth-child(4n) { height: 28px; animation-delay: -1.1s; }
+.vox-prism__wave i:first-child, .vox-prism__wave i:last-child { height: 10px; }
+@keyframes vox-prism-drift { from { transform: translate(-8%, -4%) rotate(-16deg) scale(1); } to { transform: translate(8%, 6%) rotate(20deg) scale(1.15); } }
+@keyframes vox-prism-turn { to { transform: rotate(360deg); } }
+@keyframes vox-prism-wave { from { transform: scaleY(.35); opacity: .55; } to { transform: scaleY(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .cinegen-node--semantic.vox-node.cinegen-node--running,
+  .vox-prism::before, .vox-prism::after, .vox-prism__wave i { animation: none !important; }
+}
