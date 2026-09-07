@@ -17,6 +17,7 @@ export interface DisplayItem {
   model?: string; provider?: string; createdAt?: string; error?: string; unavailableReason?: string;
   width?: number; height?: number; duration?: number; resolution?: string; aspectRatio?: string;
   references?: { id: string; title: string; url: string | null; previewUrl: string | null; kind: string; elementId?: string; imageId?: string; variationId?: string }[];
+  galleryImages?: DisplayItem[];
   elementCard?: boolean; elementType?: string; referenceCount?: number; variationName?: string;
   generationIndex?: number; batchIndex?: number; source?: string;
   presetId?: string; category?: string; subtitle?: string; diagram?: string; lens?: string;
@@ -141,7 +142,7 @@ function elementItems(state: McpHostState, args: Record<string, unknown>): Displ
         const key = `${look.id}:${image.url}`;
         if (seen.has(key)) return [];
         seen.add(key);
-        return [{ id: `${element.id}:${look.id}:${image.id}`, elementId: element.id, variationId: look.id, imageId: image.id,
+        return [{ id: `${element.id}:${look.id}:${image.id}`, elementId: element.id, variationId: look.id, variationName: look.name, imageId: image.id,
           title: `${element.name}${look.name ? ` · ${look.name}` : ''}`, kind: 'image' as const, status: 'complete', ...mediaFields(image.url, assetFor(state, image.url)?.thumbnailUrl),
           prompt: element.description, createdAt: image.createdAt, source: 'Element' }];
       }));
@@ -159,6 +160,9 @@ function elementCards(state: McpHostState, args: Record<string, unknown>): Displ
     return { id: `element:${element.id}:${look.id}`, title: element.name, kind: 'image', status: ready ? 'complete' : 'pending',
       ...mediaFields(cover?.url, cover?.thumbnailUrl), prompt: element.description, elementId: element.id,
       elementCard: true, elementType: element.type, variationId: look.id, variationName: look.name, referenceCount: references.length,
+      // Browsing includes every saved look; the generation reference pack stays
+      // scoped to the active look above, even while previewing another image.
+      galleryImages: images.filter(image => image.elementId === element.id && image.imageId),
       references: references.map(image => ({ id: image.id, imageId: image.imageId, variationId: image.variationId, elementId: element.id,
         title: image.title, kind: image.kind, url: image.url, previewUrl: image.previewUrl })),
       ...(!ready ? { unavailableReason: references.length ? 'Sync this Element’s references in CineGen to use them in chat.' : 'This Element has no reference images yet.' } : {}) };

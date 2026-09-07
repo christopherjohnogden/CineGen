@@ -161,11 +161,25 @@ describe('MCP media displays', () => {
     expect(first.items[0]).toMatchObject({ elementCard: true, elementType: 'vehicle', elementId: 'element-0', variationId: 'weathered', referenceCount: 3 });
     expect(first.items[0].references?.map(item => item.imageId)).toEqual(['front', 'side', 'back']);
     expect(first.items[0].references?.every(item => item.variationId === 'weathered')).toBe(true);
+    expect(first.items[0].galleryImages?.map(image => image.imageId)).toEqual(['clean-front', 'front', 'side', 'back']);
+    expect(first.items[0].galleryImages?.[0]).toMatchObject({ variationId: 'clean', variationName: 'Clean', url: cloud + '&clean=1' });
     const last = await handlers.cinegen_show_reference_elements({ offset: 18 }) as DisplayPage;
     expect(last.items).toHaveLength(9); expect(last.hasMore).toBe(false);
     expect(last.items[0].elementId).toBe('element-18');
     const images = await handlers.cinegen_show_reference_elements({ view: 'images', elementIds: ['element-0'] }) as DisplayPage;
     expect(images.total).toBe(4); expect(images.items.map(item => item.imageId)).toEqual(['clean-front', 'front', 'side', 'back']);
     expect(dispatch).not.toHaveBeenCalled();
+  });
+  it('keeps unavailable images in the Element gallery without leaking local paths or blocking the active look', async () => {
+    const { state, handlers } = setup();
+    state.elements = [{ id: 'vehicle', name: 'Vehicle', type: 'vehicle', description: '', images: [], activeVariationId: 'hero',
+      variations: [{ id: 'hero', name: 'Hero', kind: 'baseline', images: [{ id: 'front', url: cloud, source: 'upload', createdAt: 'now' }], createdAt: 'now', updatedAt: 'now' },
+        { id: 'old', name: 'Old look', kind: 'condition', images: [{ id: 'local', url: '/Users/private/reference.png', source: 'upload', createdAt: 'now' }], createdAt: 'now', updatedAt: 'now' }], createdAt: 'now', updatedAt: 'now' }] as any;
+    const result = await handlers.cinegen_show_reference_elements({}) as DisplayPage;
+    expect(result.items[0].status).toBe('complete');
+    expect(result.items[0].references).toHaveLength(1);
+    expect(result.items[0].galleryImages).toHaveLength(2);
+    expect(result.items[0].galleryImages?.[1]).toMatchObject({ imageId: 'local', url: null, previewUrl: null });
+    expect(JSON.stringify(result)).not.toContain('/Users/');
   });
 });

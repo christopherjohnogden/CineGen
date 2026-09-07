@@ -73,7 +73,7 @@ describe('deployed MCP viewer startup', () => {
   });
 
   it('serves the fixed script to hosts still using a cached resource URI', async () => {
-    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html']) {
+    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v5.html']) {
       expect(api.readMediaResource(uri).contents[0].uri).toBe(uri);
       const view = mount({ uri }); await view.initialize(); view.result();
       expect(view.document.querySelectorAll('.card')).toHaveLength(7);
@@ -196,11 +196,68 @@ describe('deployed MCP viewer startup', () => {
       references: page.items.slice(0, 3).map(item => ({ id: item.id, imageId: item.imageId, url: item.url })) };
     view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items: [item], total: 1 } } });
     (view.document.querySelector('.card-view') as HTMLButtonElement).click();
-    (view.document.querySelector('.card-use') as HTMLButtonElement).click();
+    expect(view.document.querySelector('.element-gallery')).not.toBeNull();
+    (view.document.querySelector('.element-actions .primary') as HTMLButtonElement).click();
     const request = view.host.postMessage.mock.calls.find(([m]) => m.method === 'ui/message')?.[0];
     const selection = JSON.parse(request.params.content[0].text.split('\n').at(-1));
     expect(selection.selections[0]).toMatchObject({ elementId: 'charger', variationId: 'weathered', url: null });
     expect(selection.selections[0].referenceImages.map((ref: any) => ref.imageId)).toEqual(['reference-0', 'reference-1', 'reference-2']);
     expect(selection.generationAuthorized).toBe(false);
+  });
+  it('browses all Element images with arrows, thumbnails and keyboard while preserving the active reference pack', async () => {
+    const view = mount(); await view.initialize({}, { message: { text: {} } });
+    const images = page.items.map((item, index) => ({ ...item, variationId: index < 3 ? 'hero' : 'weathered', variationName: index < 3 ? 'Hero' : 'Weathered' }));
+    const item = { ...page.items[0], elementCard: true, variationId: 'hero', variationName: 'Hero', referenceCount: 3, references: images.slice(0, 3), galleryImages: images };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items: [item], total: 1 } } });
+    const click = (selector: string) => (view.document.querySelector(selector) as HTMLButtonElement).click();
+    const count = () => view.document.querySelector('.gallery-count')?.textContent;
+    click('.card-view'); expect(count()).toBe('1 / 7');
+    expect(view.document.querySelectorAll('.gallery-thumbnail')).toHaveLength(7);
+    click('[aria-label="Previous image"]'); expect(count()).toBe('7 / 7');
+    expect(view.document.querySelector('.gallery-look')?.textContent).toBe('Weathered');
+    click('[aria-label="Next image"]'); expect(count()).toBe('1 / 7');
+    click('[aria-label="View image 4 · Weathered"]'); expect(count()).toBe('4 / 7');
+    view.document.querySelector('.gallery-stage')?.dispatchEvent(new view.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(count()).toBe('5 / 7');
+    expect(view.document.querySelector('.gallery-picture img')?.getAttribute('src')).toBe(images[4].previewUrl);
+    expect(view.document.querySelector('.element-use-note')?.textContent).toContain('3 references from Hero');
+    click('.use-gallery-image');
+    const message = view.host.postMessage.mock.calls.find(([m]) => m.method === 'ui/message')?.[0];
+    const selection = JSON.parse(message.params.content[0].text.split('\n').at(-1));
+    expect(selection.selections[0]).toMatchObject({ imageId: 'reference-4', variationId: 'weathered', url: images[4].url });
+    expect(selection.generationAuthorized).toBe(false);
+    view.send({ id: message.id, result: {} }); await vi.advanceTimersByTimeAsync(0);
+    expect(count()).toBe('5 / 7');
+    click('.back'); click('.card-view'); expect(count()).toBe('5 / 7');
+    expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
+  });
+  it('swipes horizontally without treating a vertical scroll or cancelled gesture as an image change', async () => {
+    const view = mount(); await view.initialize();
+    const item = { ...page.items[0], elementCard: true, references: page.items, galleryImages: page.items };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items: [item], total: 1 } } });
+    (view.document.querySelector('.card-view') as HTMLButtonElement).click();
+    const stage = view.document.querySelector('.gallery-stage')!;
+    const pointer = (type: string, x: number, y: number) => { const event = new view.window.MouseEvent(type, { clientX: x, clientY: y, bubbles: true }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } }); stage.dispatchEvent(event); };
+    const count = () => view.document.querySelector('.gallery-count')?.textContent;
+    pointer('pointerdown', 250, 100); pointer('pointerup', 100, 108); expect(count()).toBe('2 / 7');
+    pointer('pointerdown', 100, 100); pointer('pointerup', 130, 230); expect(count()).toBe('2 / 7');
+    pointer('pointerdown', 250, 100); pointer('pointercancel', 150, 100); pointer('pointerup', 100, 100); expect(count()).toBe('2 / 7');
+    pointer('pointerdown', 100, 100); pointer('pointerup', 250, 100); expect(count()).toBe('1 / 7');
+  });
+  it('handles single, unavailable and empty Element images without trapping navigation', async () => {
+    const view = mount(); await view.initialize();
+    const show = (images: any[]) => { const item = { ...page.items[0], elementCard: true, galleryImages: images, references: images, referenceCount: images.length }; view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items: [item], total: 1 } } }); if (view.document.querySelector('.card-view')) (view.document.querySelector('.card-view') as HTMLButtonElement).click(); };
+    show([page.items[0]]);
+    expect(view.document.querySelector('[aria-label="Next image"]')?.hasAttribute('hidden')).toBe(true);
+    show([page.items[0], { ...page.items[1], url: null, previewUrl: null }]);
+    (view.document.querySelector('[aria-label="Next image"]') as HTMLButtonElement).click();
+    expect(view.document.querySelector('.use-gallery-image')?.hasAttribute('disabled')).toBe(true);
+    (view.document.querySelector('[aria-label="Previous image"]') as HTMLButtonElement).click();
+    expect(view.document.querySelector('.use-gallery-image')?.hasAttribute('disabled')).toBe(false);
+    view.document.querySelector('.gallery-picture img')?.dispatchEvent(new view.window.Event('error'));
+    expect(view.document.querySelector('.gallery-picture')?.textContent).toContain('Preview unavailable');
+    expect(view.document.querySelector('[aria-label="Next image"]')).not.toBeNull();
+    show([]); expect(view.document.querySelector('.element-gallery')?.textContent).toContain('no images yet');
+    expect(view.document.querySelector('.use-gallery-image')?.hasAttribute('disabled')).toBe(true);
   });
 });
