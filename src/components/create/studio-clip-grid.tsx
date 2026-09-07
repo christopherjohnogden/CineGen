@@ -115,6 +115,8 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
   const menuRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [mediaFailed, setMediaFailed] = useState(false);
+  useEffect(() => setMediaFailed(false), [item.url]);
   const anyMenu = Boolean(menuStyle || statusStyle);
   const onCanvas = actions.isOnCanvas?.(item.id) ?? false;
 
@@ -198,8 +200,8 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
         onClick={() => (selectionActive && onToggleSelect ? onToggleSelect(item.id) : actions.onOpen(item.id))}
       >
         <span className="clip-tile__media">
-          {item.url && item.kind === 'image' && <img src={item.url} alt="" loading="lazy" />}
-          {item.url && item.kind === 'video' && (
+          {item.url && !mediaFailed && item.kind === 'image' && <img src={item.url} alt="" loading="lazy" onError={() => setMediaFailed(true)} />}
+          {item.url && !mediaFailed && item.kind === 'video' && (
             // eslint-disable-next-line jsx-a11y/media-has-caption
             <video
               ref={videoRef}
@@ -209,8 +211,10 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
               loop
               preload="metadata"
               onLoadedMetadata={primeFrame}
+              onError={() => setMediaFailed(true)}
             />
           )}
+          {mediaFailed && <span className="clip-tile__empty" role="status">Media unavailable<span>Open clip for details</span></span>}
           {!item.url && (
             <span className={`clip-tile__empty${busy ? ' is-busy' : ''}`}>
               {busy ? <span className="clip-tile__spinner" aria-hidden="true" /> : null}
@@ -219,7 +223,7 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
             </span>
           )}
         </span>
-        {item.url && item.kind === 'video' && <span className="clip-tile__play" aria-hidden="true">{PLAY}</span>}
+        {item.url && !mediaFailed && item.kind === 'video' && <span className="clip-tile__play" aria-hidden="true">{PLAY}</span>}
       </button>
 
       {onToggleSelect && (

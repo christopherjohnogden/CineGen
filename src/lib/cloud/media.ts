@@ -191,7 +191,9 @@ export async function prepareStateForCloudMedia(
   emitStatus({ status: 'uploading', completed: 0, total: assets.length });
   let completed = 0;
   let failed = 0;
+  const savedSources = new Map<string, string>();
   for (const asset of assets) {
+    const original = firstString(asset, ['sourceUrl', 'source_url', 'url', 'fileRef', 'file_ref', 'originalPath', 'original_path']);
     try {
       await syncAsset(uid, projectId, asset);
     } catch (error) {
@@ -203,6 +205,9 @@ export async function prepareStateForCloudMedia(
       }
       console.warn('[cloud] Media upload failed:', error);
     } finally {
+      // An original may be saved even if its separate thumbnail upload fails.
+      const saved = firstString(asset, ['sourceUrl', 'source_url', 'url']);
+      if (original && saved !== original && isFirebaseMediaUrl(saved)) savedSources.set(original, saved);
       completed += 1;
       emitStatus({ status: 'uploading', completed, total: assets.length });
     }
@@ -210,7 +215,14 @@ export async function prepareStateForCloudMedia(
   emitStatus(failed > 0
     ? { status: 'waiting', completed, total: assets.length, error: `${failed} media file${failed === 1 ? '' : 's'} still need to upload.` }
     : { status: 'ready', completed, total: assets.length });
-  return restoreCloudMediaReferences(cloned);
+  // Generation cards and graph inputs must use the same durable copy as the asset.
+  const replaceSavedSources = (value: unknown): unknown => {
+    if (typeof value === 'string') return savedSources.get(value) ?? value;
+    if (Array.isArray(value)) return value.map(replaceSavedSources);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceSavedSources(item)]));
+    return value;
+  };
+  return restoreCloudMediaReferences(replaceSavedSources(cloned));
 }
 
 /**

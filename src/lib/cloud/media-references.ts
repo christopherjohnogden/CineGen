@@ -12,7 +12,7 @@ export function mediaSourceHash(value: string): string {
 
 /** Recover the exact original uploaded by cloud media sync, never a name-only match. */
 export function resolveCloudMediaReference(source: string, assets: MediaRecord[]): string {
-  if (!/^(?:blob:|local-media:|file:|\/|[A-Za-z]:\\)/.test(source)) return source;
+  if (!/^(?:https?:|blob:|local-media:|file:|\/|[A-Za-z]:\\)/.test(source)) return source;
   const matches = new Set<string>();
   for (const asset of assets) {
     const remote = text(asset.sourceUrl) || text(asset.source_url) || text(asset.url);
