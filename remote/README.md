@@ -27,7 +27,7 @@ Use `cinegen_studio_create` to prepare Studio items without starting generation 
 
 Use `cinegen_generate` for actual Studio generation. Remote unattended generation uses Topview by default. Pass `provider: "higgsfield"` only when the user explicitly requests it. `cinegen_list_models` reads the connected provider catalog. Legacy fal jobs already queued before this change can finish, but new fal jobs are not exposed. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.
 
-## Creative library and inline displays (server 1.4.0)
+## Creative library and inline displays (server 1.4.1)
 
 - `cinegen_show_media`: the full project asset library plus Canvas uploads, including desktop imports. Image/video/audio filters, search, asset IDs, folders and pagination.
 - `cinegen_show_reference_elements`: Element reference images and continuity looks, with exact Element/variation/image IDs.
@@ -37,7 +37,9 @@ Use `cinegen_generate` for actual Studio generation. Remote unattended generatio
 - `cinegen_show_film_presets`: 12 illustrated shot, camera and lighting directions, with category/search filters and reusable prompt fragments. Diagrams are composition guides, not provider-generated examples.
 - `cinegen_send_to_studio`: a separate saved edit. Accepts `itemIds` from a viewer and a destination `spaceId`; resolves media against the authorized project, adds image/video references to its Studio feed, and reuses existing copies. It never generates or spends credits. Audio/presets can be handed to the assistant instead.
 
-Cloud calls require `projectId`. Display tools return readable text and `structuredContent` and advertise `ui://cinegen/media-viewer-v2.html` through `_meta.ui.resourceUri` and `openai/outputTemplate`. Both transports implement resources/list and resources/read. The stdio server version is 0.4.0.
+Cloud calls require `projectId`. Display tools return readable text and `structuredContent` and advertise `ui://cinegen/media-viewer-v3.html` through `_meta.ui.resourceUri` and `openai/outputTemplate`. Both transports implement resources/list and resources/read. The stdio server version is 0.4.1. Cached v1/v2 resource URIs also return the fixed viewer.
+
+The browser script is compiled separately by `scripts/build-mcp-viewer.mjs`, then embedded as a string. Both MCP build commands rebuild it automatically. Do not serialize a server function into HTML: Wrangler's name-preserving transform injects server-scope helpers that are unavailable inside the iframe. Startup regression tests run the resource after both minification and name preservation, including delayed/missing tool results and legacy ChatGPT globals. Missing connections/results show an error after 20 seconds, and late valid data can still recover the viewer.
 
 The widget has a scrollable gallery with a persistent selection bar, separate media/Elements/results/presets collections, video/audio playback, copy/use prompt actions, input references and available dimensions, aspect ratio, resolution and duration. It prefers existing cloud thumbnails/posters and lazily loads visible video cards; sources without a separate preview retain their original media. It does not create thumbnail files or download originals on the server for display.
 

@@ -1,4 +1,7 @@
 import { build } from 'esbuild';
+import { buildMcpViewer } from './build-mcp-viewer.mjs';
+
+await buildMcpViewer();
 
 // A standalone script can run with CineGen's bundled Electron/Node runtime.
 // No source checkout, npm install, or external Node executable is needed.
