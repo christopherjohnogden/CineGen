@@ -6,6 +6,10 @@ export function ElevenLabsConnection({ voiceId, onVoice, showVoices = true, disa
   voiceId?: string; onVoice?: (voice: ElevenLabsVoice) => void; showVoices?: boolean; disabled?: boolean;
 }) {
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [connection, setConnection] = useState<'mcp' | 'api-key'>();
+  const [manualKey, setManualKey] = useState(false);
+  const [attempt, setAttempt] = useState<string>();
+  const [authorizationUrl, setAuthorizationUrl] = useState('');
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState(false);
   const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
@@ -14,26 +18,60 @@ export function ElevenLabsConnection({ voiceId, onVoice, showVoices = true, disa
   const [error, setError] = useState('');
   const [settings, setSettings] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  useEffect(() => { let alive = true; elevenLabs.status().then(s => { if (alive) setConnected(s.connected); }).catch(e => { if (alive) { setConnected(false); setError(e.message); } }); return () => { alive = false; }; }, []);
+  useEffect(() => { let alive = true; elevenLabs.status().then(s => { if (alive) { setConnected(s.connected); setConnection(s.connection); } }).catch(e => { if (alive) { setConnected(false); setError(e.message); } }); return () => { alive = false; }; }, []);
   useEffect(() => {
     if (!connected || !showVoices) return;
     let alive = true;
     const timer = setTimeout(() => { elevenLabs.voices(search).then(r => { if (alive) { setVoices(r.voices); setCursor(r.cursor); setError(''); } }).catch(e => { if (alive) setError(e.message); }); }, 200);
     return () => { alive = false; clearTimeout(timer); };
-  }, [connected, showVoices, search]);
+  }, [connected, connection, showVoices, search]);
+  useEffect(() => {
+    if (!attempt) return;
+    let active = true, timer: ReturnType<typeof setTimeout>;
+    const deadline = Date.now() + 600000;
+    const check = async () => {
+      try {
+        const status = await elevenLabs.authStatus(attempt);
+        if (!active) return;
+        if (status.connected) { setConnected(true); setConnection('mcp'); setSettings(false); setAttempt(undefined); setAuthorizationUrl(''); setBusy(false); return; }
+        if (status.error) { setError(status.error); setAttempt(undefined); setBusy(false); return; }
+      } catch { /* A transient mobile connection failure does not restart sign-in. */ }
+      if (!active) return;
+      if (Date.now() >= deadline) { setError('Sign-in expired. Connect ElevenLabs again.'); setAttempt(undefined); setBusy(false); return; }
+      timer = setTimeout(() => void check(), 2000);
+    };
+    void check();
+    return () => { active = false; clearTimeout(timer); };
+  }, [attempt]);
+  async function connectMcp() {
+    // Open synchronously in the click handler, before any authentication request.
+    const popup = window.electronAPI?.elevenlabs ? null : window.open('about:blank', '_blank');
+    if (popup) { popup.opener = null; popup.document.title = 'Connect ElevenLabs'; popup.document.body.textContent = 'Opening ElevenLabs sign-in…'; }
+    setBusy(true); setError('');
+    try {
+      const login = await elevenLabs.authLogin();
+      setAttempt(login.attempt); setAuthorizationUrl(!popup && !window.electronAPI?.elevenlabs ? login.authorizationUrl : '');
+      if (popup) popup.location.replace(login.authorizationUrl);
+    } catch (e) { popup?.close(); setBusy(false); setError(e instanceof Error ? e.message : 'Connection failed.'); }
+  }
   async function connect() {
     setBusy(true); setError('');
-    try { await elevenLabs.connect(secret); setSecret(''); setConnected(true); setSettings(false); }
+    try { await elevenLabs.connect(secret); setSecret(''); setConnected(true); setConnection('api-key'); setSettings(false); }
     catch (e) { setError(e instanceof Error ? e.message : 'Connection failed.'); }
     finally { setBusy(false); }
   }
   return <div className="elevenlabs-connection nodrag nowheel">
-    <div className="elevenlabs-connection__heading"><span><span aria-hidden="true">Ⅱ</span> ElevenLabs</span><button type="button" disabled={disabled || busy} onClick={() => setSettings(v => !v)}>{connected ? 'Connected · Manage' : connected === null ? 'Checking…' : 'Connect'}</button></div>
+    <div className="elevenlabs-connection__heading"><span><span aria-hidden="true">Ⅱ</span> ElevenLabs</span><button type="button" disabled={disabled || busy} onClick={() => setSettings(v => !v)}>{connected ? connection === 'mcp' ? 'MCP connected · Manage' : 'Connected · Manage' : connected === null ? 'Checking…' : 'Connect'}</button></div>
     {(connected === false || settings) && <div className="elevenlabs-connection__setup">
-      <p className="character-voice__hint">Connect once to generate here using your ElevenLabs account. Your key is encrypted in CineGen cloud storage.</p>
-      <label>ElevenLabs API key<input type="password" autoComplete="off" className="element-modal__input" value={secret} disabled={disabled || busy} onChange={e => setSecret(e.target.value)} placeholder="Paste your ElevenLabs key" /></label>
-      <p className="character-voice__hint">Enable Voices read/write, Text to Speech, Voice Generation and Sound Effects for the features you use. Claude’s connector is a separate connection.</p>
-      <button className="character-voice__primary" type="button" disabled={!secret.trim() || busy || disabled} onClick={() => void connect()}>{busy ? 'Connecting…' : connected ? 'Update connection' : 'Connect ElevenLabs'}</button>
+      <p className="character-voice__hint">Sign in to ElevenLabs once to create and play audio here.</p>
+      <button className="character-voice__primary" type="button" disabled={busy || disabled} onClick={() => void connectMcp()}>{busy && attempt ? 'Waiting for ElevenLabs…' : connection === 'mcp' && connected ? 'Reconnect ElevenLabs' : 'Connect ElevenLabs'}</button>
+      {attempt && <p className="character-voice__hint">Finish signing in in the ElevenLabs tab, then return here. {authorizationUrl && <a href={authorizationUrl} target="_blank" rel="noreferrer">Open sign-in</a>} <button type="button" onClick={() => { void elevenLabs.authCancel(attempt).then(() => { setAttempt(undefined); setBusy(false); setAuthorizationUrl(''); }).catch(e => setError(e.message)); }}>Cancel</button></p>}
+      {!attempt && <button type="button" disabled={busy || disabled} onClick={() => setManualKey(v => !v)}>Use an API key instead</button>}
+      {manualKey && <>
+        <label>ElevenLabs API key<input type="password" autoComplete="off" className="element-modal__input" value={secret} disabled={disabled || busy} onChange={e => setSecret(e.target.value)} placeholder="Paste your ElevenLabs key" /></label>
+        <p className="character-voice__hint">Optional API connection for sound effects and voice design. Stored encrypted.</p>
+        <button className="character-voice__secondary" type="button" disabled={!secret.trim() || busy || disabled} onClick={() => void connect()}>Connect with API key</button>
+      </>}
       {connected && <button className="character-voice__secondary" type="button" disabled={busy || disabled} onClick={() => { setBusy(true); void elevenLabs.disconnect().then(() => { setConnected(false); setVoices([]); }).catch(e => setError(e.message)).finally(() => setBusy(false)); }}>Disconnect</button>}
     </div>}
     {connected && showVoices && <div className="elevenlabs-connection__voices">

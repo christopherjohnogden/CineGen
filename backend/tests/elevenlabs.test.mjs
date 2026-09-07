@@ -5,7 +5,7 @@ await build({ entryPoints: ['site/lib/server/elevenlabs.ts'], outfile: 'backend/
 const { createElevenLabs, audioRequest, elevenLabsPayload } = await import('../dist/elevenlabs-test.mjs');
 function fixture() {
   const jobs = new Map(), media = new Map(), locks = new Map(); let connection;
-  const db = { prepare(sql) { return { values: [], bind(...values) { this.values = values; return this; }, async first() { return sql.includes('elevenlabs_audio_jobs') ? jobs.get(this.values[1]) || null : connection || null; }, async all() { return { results: connection ? [{ ...connection, provider: 'workspace-secret:elevenlabs' }] : [] }; }, async run() {
+  const db = { prepare(sql) { return { values: [], bind(...values) { this.values = values; return this; }, async first() { if (sql.includes('elevenlabs_oauth_')) return null; return sql.includes('elevenlabs_audio_jobs') ? jobs.get(this.values[1]) || null : connection || null; }, async all() { return { results: connection ? [{ ...connection, provider: 'workspace-secret:elevenlabs' }] : [] }; }, async run() {
     const v = this.values;
     if (sql.startsWith('INSERT INTO elevenlabs_audio_save_locks')) { if (locks.has(v[1]) && locks.get(v[1]) >= v[3]) return { meta: { changes: 0 } }; locks.set(v[1],v[2]); }
     if (sql.startsWith('DELETE FROM elevenlabs_audio_save_locks') && locks.get(v[1]) === v[2]) locks.delete(v[1]);

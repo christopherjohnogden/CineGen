@@ -3,6 +3,7 @@ import { decodeMediaPath,errorResponse,success,workspaceIdForRequest } from '../
 import { serveMedia,uploadMedia } from '../../site/lib/server/media-store';
 import { handleRpc } from '../../site/lib/server/rpc-router';
 import { handleHiggsfieldCallback } from '../../site/lib/server/higgsfield-mcp';
+import { handleElevenLabsOAuth } from '../../site/lib/server/elevenlabs-mcp';
 import { handleTopviewCallback } from '../../site/lib/server/topview-mcp';
 export default {
   async fetch(request:Request,env:any):Promise<Response>{
@@ -13,6 +14,8 @@ export default {
     if(request.method==='OPTIONS')return cors?new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'POST, GET, HEAD, OPTIONS','Access-Control-Allow-Headers':'Content-Type, X-CineGen-ID-Token, X-CineGen-Origin','Access-Control-Max-Age':'600','Vary':'Origin'}}):new Response('Origin not allowed',{status:403});
     let response:Response;
     try{
+      const oauthResponse = await handleElevenLabsOAuth(request, env);
+      if (oauthResponse) return oauthResponse;
       // Unlike Sites, a public Worker has no trusted upstream identity headers.
       if(!request.headers.get('x-cinegen-id-token'))return Response.json({ok:false,error:{code:'AUTH_REQUIRED',message:'Sign in to CineGen.'}},{status:401,headers:{'cache-control':'no-store',...(cors?{'Access-Control-Allow-Origin':origin,'Vary':'Origin'}:{})}});
       const identityToken = request.headers.get('x-cinegen-id-token')!;

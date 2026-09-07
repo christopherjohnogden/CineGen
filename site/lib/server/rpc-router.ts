@@ -10,6 +10,7 @@ import {
   importMedia,
   persistRemoteMedia,
 } from "./media-store";
+import { createElevenLabsMcp } from './elevenlabs-mcp';
 import { createElevenLabs } from "./elevenlabs";
 import { createElementsLibraryStore } from "./elements-library-store";
 import { createHiggsfieldMcp } from "./higgsfield-mcp";
@@ -77,6 +78,10 @@ export async function handleRpc(
     if (params.namespace === 'elevenlabs') {
       const elevenlabs = createElevenLabs(runtimeEnv, workspaceId, identity);
       switch (params.method) {
+        case 'authLogin': result = await createElevenLabsMcp(runtimeEnv, workspaceId).authLogin(); break;
+        case 'authCancel': result = await createElevenLabsMcp(runtimeEnv, workspaceId).authCancel(args[0]); break;
+        case 'authStatus': result = await createElevenLabsMcp(runtimeEnv, workspaceId).authStatus(args[0]); break;
+        case 'mcpTools': result = await (await createElevenLabsMcp(runtimeEnv, workspaceId).session()).tools(); break;
         case 'accountStatus': result = await elevenlabs.accountStatus(); break;
         case 'connect': result = await elevenlabs.connect(args[0]); break;
         case 'disconnect': result = await elevenlabs.disconnect(); break;
