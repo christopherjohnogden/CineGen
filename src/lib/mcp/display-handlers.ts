@@ -16,7 +16,8 @@ export interface DisplayItem {
   requestId?: string; spaceId?: string; spaceName?: string; folderId?: string; folderName?: string;
   model?: string; provider?: string; createdAt?: string; error?: string; unavailableReason?: string;
   width?: number; height?: number; duration?: number; resolution?: string; aspectRatio?: string;
-  references?: { id: string; title: string; url: string | null; previewUrl: string | null; kind: string; elementId?: string }[];
+  references?: { id: string; title: string; url: string | null; previewUrl: string | null; kind: string; elementId?: string; imageId?: string; variationId?: string }[];
+  elementCard?: boolean; elementType?: string; referenceCount?: number; variationName?: string;
   generationIndex?: number; batchIndex?: number; source?: string;
   presetId?: string; category?: string; subtitle?: string; diagram?: string; lens?: string;
 }
@@ -46,7 +47,7 @@ function spacesFor(state: McpHostState) {
     : [{ id: state.activeSpaceId, name: 'Space', nodes: state.nodes, edges: state.edges }];
 }
 function page(title: string, mode: DisplayPage['mode'], items: DisplayItem[], name: string, args: Record<string, unknown>, state: McpHostState): DisplayPage {
-  const limit = mode === 'job' ? 1 : Number(args.limit ?? 12), offset = mode === 'job' ? 0 : Number(args.offset ?? 0);
+  const limit = mode === 'job' ? 1 : Number(args.limit ?? 9), offset = mode === 'job' ? 0 : Number(args.offset ?? 0);
   return { title, mode, items: items.slice(offset, offset + limit), total: items.length, offset, limit,
     hasMore: offset + limit < items.length, refresh: { name, arguments: args },
     spaces: spacesFor(state).filter(s => s.id).map(({ id, name }) => ({ id, name })), activeSpaceId: state.activeSpaceId,
@@ -148,6 +149,21 @@ function elementItems(state: McpHostState, args: Record<string, unknown>): Displ
         unavailableReason: 'This Element has no reference images yet.' }];
     });
 }
+function elementCards(state: McpHostState, args: Record<string, unknown>): DisplayItem[] {
+  const images = elementItems(state, args);
+  return state.elements.filter(element => images.some(image => image.elementId === element.id)).map<DisplayItem>(raw => {
+    const element = materializeElementLooks(raw), look = element.variations!.find(look => look.id === element.activeVariationId)!;
+    const references = images.filter(image => image.elementId === element.id && image.variationId === look.id);
+    const cover = references.find(image => image.previewUrl) ?? references.find(image => image.url);
+    const ready = Boolean(cover) && references.every(image => image.url);
+    return { id: `element:${element.id}:${look.id}`, title: element.name, kind: 'image', status: ready ? 'complete' : 'pending',
+      ...mediaFields(cover?.url, cover?.thumbnailUrl), prompt: element.description, elementId: element.id,
+      elementCard: true, elementType: element.type, variationId: look.id, variationName: look.name, referenceCount: references.length,
+      references: references.map(image => ({ id: image.id, imageId: image.imageId, variationId: image.variationId, elementId: element.id,
+        title: image.title, kind: image.kind, url: image.url, previewUrl: image.previewUrl })),
+      ...(!ready ? { unavailableReason: references.length ? 'Sync this Element’s references in CineGen to use them in chat.' : 'This Element has no reference images yet.' } : {}) };
+  });
+}
 function libraryItems(state: McpHostState, args: Record<string, unknown>): DisplayItem[] {
   const items: DisplayItem[] = state.assets.map(asset => ({ id: `asset:${asset.id}`, assetId: asset.id, title: asset.name, kind: asset.type,
     status: asset.status === 'processing' ? 'pending' : 'complete', ...mediaFields(displayUrl(asset.url) || asset.sourceUrl || asset.url, asset.thumbnailUrl),
@@ -226,7 +242,7 @@ export function createDisplayHandlers(host: McpHost): Record<string, McpToolHand
       return page('Film presets', 'presets', items, tool.name, args, state);
     }
     if (tool.name === 'cinegen_show_generation_batch') return page('Batch review', 'batch', batchItems(state, args.jobs as Record<string, unknown>[]), tool.name, args, state);
-    if (tool.name === 'cinegen_show_reference_elements') return page('Reference Elements', 'elements', elementItems(state, args), tool.name, args, state);
+    if (tool.name === 'cinegen_show_reference_elements') return page('Reference Elements', 'elements', args.view === 'images' ? elementItems(state, args) : elementCards(state, args), tool.name, args, state);
     if (tool.name === 'cinegen_job_display') {
       if (!args.nodeId) throw new McpToolError('Use nodeId to view this result on desktop. requestId lookup is available on the cloud MCP server.');
       const items = generationItems(state, { ...args, nodeIds: [args.nodeId], includeHidden: true });

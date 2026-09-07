@@ -73,7 +73,7 @@ describe('deployed MCP viewer startup', () => {
   });
 
   it('serves the fixed script to hosts still using a cached resource URI', async () => {
-    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html']) {
+    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html']) {
       expect(api.readMediaResource(uri).contents[0].uri).toBe(uri);
       const view = mount({ uri }); await view.initialize(); view.result();
       expect(view.document.querySelectorAll('.card')).toHaveLength(7);
@@ -153,7 +153,8 @@ describe('deployed MCP viewer startup', () => {
     (view.document.querySelectorAll('.card-view')[3] as HTMLButtonElement).click();
     expect(view.document.querySelectorAll('.card.is-selected')).toHaveLength(1);
     expect(content().scrollTop).toBe(217);
-    expect(view.document.querySelector('.selection-count')?.textContent).toBe('1 selected');
+    expect(view.document.querySelector('.card-use')?.textContent).toBe('Use');
+    expect(view.document.querySelector('.selection-bar')).toBeNull();
     (view.document.querySelectorAll('.tile-preview')[3] as HTMLButtonElement).click();
     expect(view.document.querySelector('.detail h2')?.textContent).toContain('1970 Charger R/T — 4');
     (view.document.querySelector('.back') as HTMLButtonElement).click();
@@ -166,7 +167,7 @@ describe('deployed MCP viewer startup', () => {
   it('sends the selected image IDs once without authorizing a generation', async () => {
     const view = mount(); await view.initialize({}, { message: { text: {} } }); view.result();
     (view.document.querySelectorAll('.card-view')[2] as HTMLButtonElement).click();
-    (view.document.querySelector('.selection-main .primary') as HTMLButtonElement).click();
+    (view.document.querySelector('.card-use') as HTMLButtonElement).click();
     const message = view.host.postMessage.mock.calls.find(([m]) => m.method === 'ui/message')?.[0];
     const selection = JSON.parse(message.params.content[0].text.split('\n').at(-1));
     expect(selection.selections.map((item: any) => item.imageId)).toEqual(['reference-2']);
@@ -174,5 +175,32 @@ describe('deployed MCP viewer startup', () => {
     expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
     view.send({ id: message.id, result: {} }); await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelectorAll('.is-selected')).toHaveLength(0);
+  });
+  it('shows at most nine cards and uses exact nine-item offsets for the page dots', async () => {
+    const view = mount(); await view.initialize();
+    const items = Array.from({ length: 24 }, (_, i) => ({ ...page.items[0], id: `ref-${i}`, title: `Reference ${i}` }));
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items, total: 27, limit: 24, hasMore: true } } });
+    expect(view.document.querySelectorAll('.card')).toHaveLength(9);
+    expect(view.document.querySelectorAll('.page-dot')).toHaveLength(3);
+    (view.document.querySelector('[aria-label="Page 3 of 3"]') as HTMLButtonElement).click();
+    const call = view.host.postMessage.mock.calls.find(([m]) => m.method === 'tools/call')?.[0];
+    expect(call.params.arguments).toMatchObject({ offset: 18, limit: 9, elementIds: ['charger'] });
+    view.send({ id: call.id, result: { structuredContent: { ...page, items: items.slice(18), total: 27, offset: 18, limit: 9, hasMore: false } } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelector('[aria-label="Next page"]')?.hasAttribute('disabled')).toBe(true);
+    expect(view.document.querySelector('[aria-label="Page 3 of 3"]')?.getAttribute('aria-current')).toBe('page');
+  });
+  it('uses an Element’s full active look instead of treating its cover as the selected reference', async () => {
+    const view = mount(); await view.initialize({}, { message: { text: {} } });
+    const item = { ...page.items[0], elementCard: true, elementId: 'charger', variationId: 'weathered', referenceCount: 3,
+      references: page.items.slice(0, 3).map(item => ({ id: item.id, imageId: item.imageId, url: item.url })) };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items: [item], total: 1 } } });
+    (view.document.querySelector('.card-view') as HTMLButtonElement).click();
+    (view.document.querySelector('.card-use') as HTMLButtonElement).click();
+    const request = view.host.postMessage.mock.calls.find(([m]) => m.method === 'ui/message')?.[0];
+    const selection = JSON.parse(request.params.content[0].text.split('\n').at(-1));
+    expect(selection.selections[0]).toMatchObject({ elementId: 'charger', variationId: 'weathered', url: null });
+    expect(selection.selections[0].referenceImages.map((ref: any) => ref.imageId)).toEqual(['reference-0', 'reference-1', 'reference-2']);
+    expect(selection.generationAuthorized).toBe(false);
   });
 });

@@ -128,12 +128,12 @@ describe('MCP media displays', () => {
   });
   it('provides distinct film directions without generation, and returns complete reference identifiers', async () => {
     const { state, handlers, dispatch, runNode } = setup();
-    const presets = await handlers.cinegen_show_film_presets({}) as DisplayPage;
+    const presets = await handlers.cinegen_show_film_presets({ limit: 24 }) as DisplayPage;
     expect(presets.total).toBe(12); expect(new Set(presets.items.map(item => item.diagram)).size).toBe(12);
     const camera = await handlers.cinegen_show_film_presets({ category: 'camera', search: 'orbit' }) as DisplayPage;
     expect(camera.items[0]).toMatchObject({ presetId: 'gentle-orbit', kind: 'preset', category: 'camera' });
     state.elements = [{ id: 'hero', name: 'Hero', type: 'character', description: 'Lead', images: [{ id: 'front', url: cloud, source: 'upload', createdAt: 'now' }], createdAt: 'now', updatedAt: 'now' }];
-    const refs = await handlers.cinegen_show_reference_elements({}) as DisplayPage;
+    const refs = await handlers.cinegen_show_reference_elements({ view: 'images' }) as DisplayPage;
     expect(refs.items[0].elementId).toBe('hero'); expect(refs.items[0].variationId).toBeTruthy(); expect(refs.items[0].imageId).toBe('front');
     expect(dispatch).not.toHaveBeenCalled(); expect(runNode).not.toHaveBeenCalled();
   });
@@ -148,5 +148,24 @@ describe('MCP media displays', () => {
     expect(shown.items[0]).toMatchObject({ thumbnailUrl: cloud + '&thumb=1', width: 1920, height: 1080, resolution: '2K', aspectRatio: '16:9' });
     expect(shown.items[0].references).toEqual([expect.objectContaining({ url: reference, previewUrl: reference })]);
     expect(JSON.stringify(shown)).not.toContain('/local/');
+  });
+  it('pages Element cards by Element and preserves the exact active look reference pack', async () => {
+    const { state, handlers, dispatch } = setup();
+    state.elements = Array.from({ length: 27 }, (_, i) => ({ id: `element-${i}`, name: `Vehicle ${i}`, type: 'vehicle', description: 'Vehicle reference',
+      images: [], activeVariationId: 'weathered', variations: [
+        { id: 'clean', name: 'Clean', kind: 'baseline', images: [{ id: 'clean-front', url: cloud + '&clean=1', source: 'upload', createdAt: 'now' }], createdAt: 'now', updatedAt: 'now' },
+        { id: 'weathered', name: 'Weathered', kind: 'condition', images: ['front', 'side', 'back'].map(id => ({ id, url: cloud + '&view=' + id, source: 'upload', createdAt: 'now' })), createdAt: 'now', updatedAt: 'now' }],
+      createdAt: 'now', updatedAt: 'now' })) as any;
+    const first = await handlers.cinegen_show_reference_elements({}) as DisplayPage;
+    expect(first.total).toBe(27); expect(first.items).toHaveLength(9); expect(first.hasMore).toBe(true);
+    expect(first.items[0]).toMatchObject({ elementCard: true, elementType: 'vehicle', elementId: 'element-0', variationId: 'weathered', referenceCount: 3 });
+    expect(first.items[0].references?.map(item => item.imageId)).toEqual(['front', 'side', 'back']);
+    expect(first.items[0].references?.every(item => item.variationId === 'weathered')).toBe(true);
+    const last = await handlers.cinegen_show_reference_elements({ offset: 18 }) as DisplayPage;
+    expect(last.items).toHaveLength(9); expect(last.hasMore).toBe(false);
+    expect(last.items[0].elementId).toBe('element-18');
+    const images = await handlers.cinegen_show_reference_elements({ view: 'images', elementIds: ['element-0'] }) as DisplayPage;
+    expect(images.total).toBe(4); expect(images.items.map(item => item.imageId)).toEqual(['clean-front', 'front', 'side', 'back']);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });

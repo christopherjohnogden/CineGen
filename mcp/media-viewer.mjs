@@ -11,6 +11,6 @@ const meta = {
 };
 export const MEDIA_RESOURCE = { uri: MEDIA_RESOURCE_URI, name: 'CineGen creative library', description: 'Interactive media, references, film presets and batch review.', mimeType: MEDIA_MIME_TYPE, _meta: meta };
 export function readMediaResource(uri) {
-  if (![MEDIA_RESOURCE_URI, 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v1.html'].includes(uri)) throw new Error('Unknown CineGen UI resource.');
+  if (![MEDIA_RESOURCE_URI, 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v1.html'].includes(uri)) throw new Error('Unknown CineGen UI resource.');
   return { contents: [{ uri, mimeType: MEDIA_MIME_TYPE, _meta: meta, text: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>CineGen Creative Library</title><style>${css}</style></head><body><main id="app"><div class="brand">CINEGEN</div><p class="loading" role="status">Loading your library…</p><div class="skeleton"></div></main><script>${MEDIA_VIEWER_SCRIPT}</script></body></html>` }] };
 }
