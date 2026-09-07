@@ -1,15 +1,16 @@
 // Self-contained MCP Apps UI. All data access goes through the authenticated
 // host bridge; no credentials, arbitrary HTML, or provider calls live here.
 function mountViewer() {
-  const root = document.getElementById('app'), pending = new Map(), chosen = new Map();
+  const root = document.getElementById('app'), pending = new Map(), chosen = new Map(), scrollPositions = new Map();
   let sequence = 0, hostOrigin = '*', ready = false, capabilities = {}, current, selected = null, busy = false, timer, startupTimer, disposed = false, polls = 0, destination = '', message = '', manualSelection = '', viewKey = '';
+  let hostContext = {}, lastSize = '', studioExpanded = false;
   const knownTools = new Set(['cinegen_show_generations', 'cinegen_show_reference_elements', 'cinegen_job_display', 'cinegen_show_media', 'cinegen_show_generation_batch', 'cinegen_show_film_presets']);
   const statusNames = { complete: 'Ready', running: 'Generating', submitting: 'Starting', queued: 'Queued', pending: 'Prepared', saving: 'Saving to CineGen', needs_attention: 'Needs attention', failed: 'Failed', not_found: 'Not found' };
   const activeStatuses = new Set(['running', 'submitting', 'queued', 'saving']);
   const element = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const svgElement = (tag, attrs = {}) => { const el = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, String(value)); return el; };
   const icon = (name) => {
-    const paths = { play: 'M8 5l11 7-11 7z', image: 'M3 3h18v18H3z M3 16l5-5 5 5 3-3 5 5 M8 7h.01', audio: 'M9 18V5l11-2v13 M9 8l11-2 M9 18a3 3 0 1 1-3-3h3 M20 16a3 3 0 1 1-3-3h3', check: 'M5 12l4 4L19 6', plus: 'M12 5v14 M5 12h14', arrow: 'M5 12h14 M13 6l6 6-6 6', back: 'M19 12H5 M11 6l-6 6 6 6', refresh: 'M20 7v5h-5 M4 17v-5h5 M5 7a8 8 0 0 1 13-2l2 3 M4 16l2 3a8 8 0 0 0 13-2', external: 'M14 3h7v7 M21 3L10 14 M10 3H3v18h18v-7', copy: 'M8 8h13v13H8z M16 8V3H3v13h5', close: 'M6 6l12 12 M18 6L6 18', film: 'M3 3h18v18H3z M7 3v18 M17 3v18 M3 8h4 M3 16h4 M17 8h4 M17 16h4', search: 'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6' };
+    const paths = { eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0', down: 'M6 9l6 6 6-6', play: 'M8 5l11 7-11 7z', image: 'M3 3h18v18H3z M3 16l5-5 5 5 3-3 5 5 M8 7h.01', audio: 'M9 18V5l11-2v13 M9 8l11-2 M9 18a3 3 0 1 1-3-3h3 M20 16a3 3 0 1 1-3-3h3', check: 'M5 12l4 4L19 6', plus: 'M12 5v14 M5 12h14', arrow: 'M5 12h14 M13 6l6 6-6 6', back: 'M19 12H5 M11 6l-6 6 6 6', refresh: 'M20 7v5h-5 M4 17v-5h5 M5 7a8 8 0 0 1 13-2l2 3 M4 16l2 3a8 8 0 0 0 13-2', external: 'M14 3h7v7 M21 3L10 14 M10 3H3v18h18v-7', copy: 'M8 8h13v13H8z M16 8V3H3v13h5', close: 'M6 6l12 12 M18 6L6 18', film: 'M3 3h18v18H3z M7 3v18 M17 3v18 M3 8h4 M3 16h4 M17 8h4 M17 16h4', search: 'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6' };
     const svg = svgElement('svg', { viewBox: '0 0 24 24', width: 17, height: 17, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' });
     svg.append(svgElement('path', { d: paths[name] || paths.image })); return svg;
   };
@@ -25,10 +26,28 @@ function mountViewer() {
       pending.set(id, { resolve, reject, timeout }); window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, hostOrigin);
     });
   }
+  function applyHostContext(context = {}) {
+    hostContext = { ...hostContext, ...context };
+    const dimensions = hostContext.containerDimensions || {};
+    const limit = dimensions.height ?? dimensions.maxHeight ?? window.openai?.maxHeight;
+    const height = Number.isFinite(limit) && limit > 0 ? Math.min(620, limit) : 620;
+    root.style.setProperty('--viewer-height', `${height}px`);
+    const inset = hostContext.safeAreaInsets?.bottom;
+    root.style.setProperty('--safe-bottom', `${Number.isFinite(inset) ? Math.max(0, Math.min(40, inset)) : 0}px`);
+    reportSize();
+  }
   function reportSize() {
-    const height = Math.ceil(root.getBoundingClientRect().height);
-    if (ready) notify('ui/notifications/size-changed', { width: document.documentElement.clientWidth, height });
+    // Request the desired size, not the height of an initially tiny iframe.
+    // CSS also constrains the layout to the actual viewport if the host clips it.
+    const height = current ? parseFloat(root.style.getPropertyValue('--viewer-height')) || 620 : Math.ceil(root.getBoundingClientRect().height);
+    const width = document.documentElement.clientWidth, key = `${ready}:${width}:${height}`;
+    if (key === lastSize || disposed) return; lastSize = key;
+    if (ready) notify('ui/notifications/size-changed', { width, height });
     window.openai?.notifyIntrinsicHeight?.(height);
+  }
+  function updateScrollHint() {
+    const content = root.querySelector('.content'), hint = root.querySelector('.scroll-hint');
+    if (content && hint) hint.hidden = content.scrollHeight <= content.clientHeight + content.scrollTop + 12;
   }
   function showError(error) {
     if (disposed) return;
@@ -186,15 +205,23 @@ function mountViewer() {
   }
   function actionBar(items) {
     const bar = element('section', 'selection-bar'); bar.setAttribute('aria-label', 'Selection actions');
-    const allPresets = items.every(item => item.presetId), allMedia = items.every(item => !item.presetId && safeUrl(item.url));
-    bar.append(element('span', 'selection-count', `${items.length} selected`), button('Clear', () => { chosen.clear(); render(); }, 'link'));
-    if (allPresets || allMedia) bar.append(button(allPresets ? 'Use these directions' : 'Use as reference', () => sendSelection(items), 'primary', 'arrow'));
-    else bar.append(button('Use selection', () => sendSelection(items), 'primary', 'arrow'));
-    if (items.every(item => safeUrl(item.url) && ['image', 'video'].includes(item.kind)) && current.spaces?.length) {
+    const allPresets = items.every(item => item.presetId);
+    const row = element('div', 'selection-main'), summary = element('div', 'selection-summary');
+    const count = element('span', 'selection-count', items.length ? `${items.length} selected` : current.mode === 'presets' ? 'Choose a direction' : 'Choose your references'); count.setAttribute('role', 'status');
+    summary.append(count);
+    if (items.length) summary.append(button('Clear selection', () => { chosen.clear(); studioExpanded = false; render(); }, 'link'));
+    else summary.append(element('span', 'selection-help', 'Tap thumbnails to select'));
+    const use = button(items.length && allPresets ? 'Use directions' : 'Use selected', () => sendSelection(items), 'primary', 'arrow');
+    use.disabled = busy || !items.length; row.append(summary, use); bar.append(row);
+    if (items.length && items.every(item => safeUrl(item.url) && ['image', 'video'].includes(item.kind)) && current.spaces?.length) {
+      const disclosure = button('Add to Studio instead', () => { studioExpanded = !studioExpanded; render(); }, 'studio-toggle', 'plus');
+      disclosure.setAttribute('aria-expanded', String(studioExpanded)); disclosure.setAttribute('aria-controls', 'studio-destination'); bar.append(disclosure);
+      if (!studioExpanded) return bar;
+      const studio = element('div', 'studio-destination'); studio.id = 'studio-destination';
       const label = element('label', 'destination', 'Studio Space');
       const select = element('select'); select.setAttribute('aria-label', 'Destination Studio Space'); select.disabled = busy;
       for (const space of current.spaces) { const option = element('option', '', space.name); option.value = space.id; select.append(option); }
-      select.value = destination; select.onchange = () => { destination = select.value; }; label.append(select); bar.append(label, button('Send to Studio', () => sendToStudio(items), '', 'plus'));
+      select.value = destination; select.onchange = () => { destination = select.value; }; label.append(select); studio.append(label, button('Send to Studio', () => sendToStudio(items), '', 'plus')); bar.append(studio);
     }
     return bar;
   }
@@ -241,46 +268,73 @@ function mountViewer() {
   }
   function render() {
     if (!current) return;
-    const nextKey = `${current.mode}:${current.offset}:${selected || ''}`, scrollTop = viewKey === nextKey ? root.querySelector('.content')?.scrollTop || 0 : 0;
+    const previousContent = root.querySelector('.content'), activeKey = document.activeElement?.dataset?.focusId;
+    if (viewKey && previousContent) scrollPositions.set(viewKey, previousContent.scrollTop);
+    const nextKey = JSON.stringify([current.projectId, current.mode, current.refresh.arguments, selected]);
+    const scrollTop = scrollPositions.get(nextKey) || 0, sameView = viewKey === nextKey;
     viewKey = nextKey;
-    root.querySelectorAll('video,audio').forEach(view => { view.pause(); view._observer?.disconnect(); }); root.replaceChildren();
-    const header = element('header'), identity = element('div'); identity.append(element('div', 'brand', 'CINEGEN / CREATIVE LIBRARY'), element('h1', '', current.mode === 'job' ? 'Result viewer' : current.title));
-    const reload = button(busy ? 'Loading…' : 'Refresh', () => { polls = 0; refresh(); }, 'small', 'refresh'); reload.dataset.refresh = ''; header.append(identity, reload); root.append(header);
+    if (scrollPositions.size > 50) scrollPositions.delete(scrollPositions.keys().next().value);
+    root.querySelectorAll('video,audio').forEach(view => { view.pause(); view._observer?.disconnect(); }); root.replaceChildren(); root.classList.add('is-ready');
+    const header = element('header'), identity = element('div', 'identity'), logomark = element('span', 'logomark'); logomark.append(icon('film'));
+    const titles = { elements: 'Reference library', media: 'Asset library', generations: 'Generations', batch: 'Batch review', job: 'Result viewer', presets: 'Film direction' };
+    const wordmark = element('div'); wordmark.append(element('div', 'brand', 'CINEGEN'), element('h1', '', titles[current.mode] || current.title)); identity.append(logomark, wordmark);
+    const reload = button('', () => { polls = 0; refresh(); }, 'icon-button', 'refresh'); reload.setAttribute('aria-label', 'Refresh library'); reload.title = 'Refresh library'; reload.dataset.refresh = ''; header.append(identity, reload); root.append(header);
     const nav = element('nav', 'collections'); nav.setAttribute('aria-label', 'CineGen collections');
-    for (const [title, name, mode] of [['Results', 'cinegen_show_generations', 'generations'], ['Media', 'cinegen_show_media', 'media'], ['Elements', 'cinegen_show_reference_elements', 'elements'], ['Film presets', 'cinegen_show_film_presets', 'presets']]) {
+    for (const [title, name, mode] of [['Results', 'cinegen_show_generations', 'generations'], ['Assets', 'cinegen_show_media', 'media'], ['Elements', 'cinegen_show_reference_elements', 'elements'], ['Presets', 'cinegen_show_film_presets', 'presets']]) {
       const tab = button(title, () => refresh({}, false, name), current.mode === mode ? 'current' : ''); tab.setAttribute('aria-current', current.mode === mode ? 'page' : 'false'); nav.append(tab);
     }
     root.append(nav);
-    if (message) { const notice = element('p', 'notice', message); notice.setAttribute('role', 'status'); root.append(notice); }
     const item = current.mode === 'job' ? current.items[0] : current.items.find(item => item.id === selected);
-    const content = element('div', 'content'); content.setAttribute('aria-label', 'Browse collection'); root.append(content);
+    if (!item) {
+      const toolbar = element('div', 'toolbar'); toolbar.append(filters());
+      const info = element('div', 'collection-info'), noun = current.mode === 'presets' ? 'directions' : current.mode === 'elements' ? 'references' : 'assets';
+      info.append(element('p', 'meta', current.total > current.items.length ? `${current.offset + 1}–${current.offset + current.items.length} of ${current.total} ${noun}` : `${current.total} ${noun}`));
+      if (current.items.some(selectable)) info.append(button('Select page', () => { for (const item of current.items.filter(selectable)) if (chosen.size < 24) chosen.set(item.id, item); render(); }, 'link'));
+      toolbar.append(info); root.append(toolbar);
+    }
+    const shell = element('div', 'scroll-shell'), content = element('div', 'content');
+    content.setAttribute('aria-label', item ? 'Media preview and details' : 'Browse collection'); content.setAttribute('role', 'region'); content.tabIndex = 0;
+    content.addEventListener('scroll', updateScrollHint, { passive: true }); shell.append(content); root.append(shell);
+    if (message) {
+      const feedback = element('div', 'feedback'), notice = element('p', '', message); notice.setAttribute('role', 'status');
+      const dismiss = button('', () => { message = ''; render(); }, 'icon-button', 'close'); dismiss.setAttribute('aria-label', 'Dismiss message');
+      feedback.append(notice, dismiss); shell.append(feedback);
+    }
+    if (manualSelection) { const area = element('textarea', 'copy-fallback'); area.readOnly = true; area.value = manualSelection; area.setAttribute('aria-label', 'Selection to paste into chat'); content.append(area); }
     if (item) content.append(details(item));
     else {
-      content.append(filters()); const info = element('div', 'collection-info');
-      info.append(element('p', 'meta', `${current.total} ${current.mode === 'presets' ? 'directions · illustrated guides' : current.mode === 'elements' ? 'references' : 'items'}${chosen.size ? ` · ${chosen.size} selected` : ''}`));
-      if (current.items.some(selectable)) info.append(button('Select page', () => { for (const item of current.items.filter(selectable)) if (chosen.size < 24) chosen.set(item.id, item); render(); }, 'link'));
-      content.append(info);
       const grid = element('div', `grid ${busy ? 'is-loading' : ''}`); grid.setAttribute('aria-busy', String(busy));
       if (!current.items.length) { const empty = element('div', 'empty'); empty.append(icon('film'), element('h2', '', 'Nothing here yet'), element('p', '', current.refresh.arguments.search ? 'Try another search or clear your filters.' : current.mode === 'media' ? 'Import and sync files in CineGen to browse them here.' : 'Your saved media will appear here.')); grid.append(empty); }
-      for (const item of current.items) {
-        const card = element('article', `card ${chosen.has(item.id) ? 'is-selected' : ''}`), view = button('', () => { selected = item.id; render(); }, 'card-view'); view.setAttribute('aria-label', `View ${item.title}`); view.append(media(item, false));
-        const body = element('div', 'card-body'); body.append(element('span', 'kind', `${item.batchIndex ? String(item.batchIndex).padStart(2, '0') + ' / ' : ''}${item.category || item.kind}`), element('h2', '', item.title));
-        if (item.subtitle || item.spaceName || item.folderName || item.source) body.append(element('p', 'meta', item.subtitle || item.spaceName || item.folderName || item.source));
-        if (!item.presetId) body.append(badge(item)); view.append(body); card.append(view);
-        if (selectable(item)) { const pick = button(chosen.has(item.id) ? 'Selected' : 'Select', () => toggle(item), 'pick', chosen.has(item.id) ? 'check' : 'plus'); pick.setAttribute('aria-label', `Select ${item.title}`); pick.setAttribute('aria-pressed', String(chosen.has(item.id))); card.append(pick); }
+      current.items.forEach((item, index) => {
+        const number = current.offset + index + 1, isSelected = chosen.has(item.id), canSelect = selectable(item);
+        const card = element('article', `card ${isSelected ? 'is-selected' : ''}`);
+        const pick = button('', () => canSelect ? toggle(item) : (selected = item.id, render()), 'card-view');
+        pick.setAttribute('aria-label', `${canSelect ? 'Select' : 'View'} ${item.title} · ${number}`);
+        if (canSelect) pick.setAttribute('aria-pressed', String(isSelected)); pick.dataset.focusId = `pick:${item.id}`;
+        const picture = media(item, false); picture.classList.add('tile-image'); pick.append(picture);
+        if (canSelect) { const mark = element('span', 'selection-mark'); mark.setAttribute('aria-hidden', 'true'); if (isSelected) mark.append(icon('check')); picture.append(mark); }
+        const kind = element('span', 'tile-kind', item.category || item.kind); kind.prepend(icon(item.kind === 'video' ? 'play' : item.kind === 'audio' ? 'audio' : item.presetId ? 'film' : 'image')); picture.append(kind);
+        const body = element('div', 'card-body'), title = element('h2', '', item.title.split(' · ')[0]); title.title = item.title; body.append(title);
+        const subtitle = item.title.includes(' · ') ? item.title.split(' · ').slice(1).join(' · ') : item.subtitle || item.folderName || item.spaceName || item.resolution || '';
+        const meta = element('div', 'tile-meta'); meta.append(element('span', 'tile-subtitle', subtitle || (item.presetId ? 'Creative direction' : item.kind === 'video' && item.duration ? `${item.duration.toFixed(1)} sec` : 'Reference')),
+          element('span', 'tile-number', String(number).padStart(2, '0'))); body.append(meta);
+        if (!item.presetId && item.status !== 'complete') body.append(badge(item)); pick.append(body); card.append(pick);
+        const preview = button('', () => { selected = item.id; render(); }, 'tile-preview', 'eye'); preview.setAttribute('aria-label', `Preview ${item.title} · ${number}`); preview.title = 'Preview and details'; preview.dataset.focusId = `preview:${item.id}`; card.append(preview);
         if (item.error) card.append(element('p', 'card-error', item.error)); grid.append(card);
-      }
+      });
       content.append(grid);
       if (current.offset > 0 || current.hasMore) {
-        const footer = element('footer'), prev = button('Previous', () => refresh({ offset: Math.max(0, current.offset - current.limit) }), '', 'back'), next = button('Next', () => refresh({ offset: current.offset + current.limit }), '', 'arrow');
+        const footer = element('footer', 'pagination'), prev = button('Previous', () => refresh({ offset: Math.max(0, current.offset - current.limit) }), '', 'back'), next = button('Next', () => refresh({ offset: current.offset + current.limit }), '', 'arrow');
         prev.disabled = busy || current.offset === 0; next.disabled = busy || !current.hasMore;
-        footer.append(prev, element('span', 'meta', `${Math.min(current.offset + 1, current.total)}–${current.offset + current.items.length} of ${current.total}`), next); content.append(footer);
+        footer.append(prev, element('span', 'meta', `${Math.min(current.offset + 1, current.total)}–${current.offset + current.items.length} / ${current.total}`), next); content.append(footer);
       }
     }
-    content.scrollTop = scrollTop;
-    if (chosen.size) root.append(actionBar([...chosen.values()]));
-    if (manualSelection) { const area = element('textarea', 'copy-fallback'); area.readOnly = true; area.value = manualSelection; area.setAttribute('aria-label', 'Selection to paste into chat'); root.append(area); }
-    reportSize();
+    const hint = button('Scroll for more', () => content.scrollBy({ top: Math.max(120, content.clientHeight * .7), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }), 'scroll-hint', 'down');
+    hint.hidden = true; shell.append(hint);
+    root.append(actionBar([...chosen.values()]));
+    content.scrollTop = manualSelection ? 0 : scrollTop;
+    if (activeKey && sameView) [...root.querySelectorAll('[data-focus-id]')].find(el => el.dataset.focusId === activeKey)?.focus({ preventScroll: true });
+    reportSize(); updateScrollHint();
   }
   window.addEventListener('message', event => {
     if (event.source !== window.parent || event.data?.jsonrpc !== '2.0' || hostOrigin !== '*' && event.origin !== hostOrigin) return;
@@ -290,16 +344,19 @@ function mountViewer() {
       if (msg.error) entry.reject(new Error(msg.error.message || 'The chat host rejected this request.')); else entry.resolve(msg.result);
       if (hostOrigin === '*' && event.origin && event.origin !== 'null') hostOrigin = event.origin; return;
     }
+    if (msg.method === 'ui/notifications/host-context-changed') applyHostContext(msg.params);
     if (msg.method === 'ui/notifications/tool-result') receive(msg.params);
     if (msg.method === 'ui/notifications/tool-cancelled') showError('Loading was cancelled.');
     if (msg.method === 'ui/resource-teardown') { disposed = true; clearTimeout(timer); clearTimeout(startupTimer); root.querySelectorAll('video,audio').forEach(view => { view.pause(); view._observer?.disconnect(); }); for (const entry of pending.values()) clearTimeout(entry.timeout); pending.clear(); window.parent.postMessage({ jsonrpc: '2.0', id: msg.id, result: {} }, hostOrigin); }
   });
   startupTimer = setTimeout(() => { if (!current) showError('The chat connection did not deliver your library.'); }, 20000);
-  window.addEventListener('openai:set_globals', event => { if (event.detail?.globals?.toolOutput) receive(event.detail.globals.toolOutput); });
+  window.addEventListener('openai:set_globals', event => { applyHostContext(); if (event.detail?.globals?.toolOutput) receive(event.detail.globals.toolOutput); });
   if (window.openai?.toolOutput) receive(window.openai.toolOutput);
-  new ResizeObserver(reportSize).observe(root);
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.0.1' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
-    .then(result => { capabilities = result.hostCapabilities || {}; ready = true; notify('ui/notifications/initialized', {}); reportSize(); })
+  applyHostContext();
+  new ResizeObserver(() => { reportSize(); updateScrollHint(); }).observe(root);
+  window.addEventListener('resize', () => { reportSize(); updateScrollHint(); });
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.1.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+    .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }
 

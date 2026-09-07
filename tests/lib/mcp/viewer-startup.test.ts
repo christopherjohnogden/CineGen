@@ -45,10 +45,10 @@ function mount({ preloaded = false, uri = api.MEDIA_RESOURCE.uri } = {}) {
   const send = (data: any, source: any = host) => window.dispatchEvent(new window.MessageEvent('message', {
     source, origin: 'https://chat.example', data: { jsonrpc: '2.0', ...data },
   }));
-  const initialize = async () => {
+  const initialize = async (hostContext = {}, hostCapabilities = {}) => {
     const call = host.postMessage.mock.calls.find(([message]) => message.method === 'ui/initialize')?.[0];
     expect(call).toBeDefined();
-    send({ id: call.id, result: { protocolVersion: '2026-01-26', hostCapabilities: {}, hostInfo: { name: 'Fixture host', version: '1' } } });
+    send({ id: call.id, result: { protocolVersion: '2026-01-26', hostCapabilities, hostContext, hostInfo: { name: 'Fixture host', version: '1' } } });
     await vi.advanceTimersByTimeAsync(0);
   };
   const result = () => send({ method: 'ui/notifications/tool-result', params: { structuredContent: page } });
@@ -73,7 +73,7 @@ describe('deployed MCP viewer startup', () => {
   });
 
   it('serves the fixed script to hosts still using a cached resource URI', async () => {
-    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html']) {
+    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html']) {
       expect(api.readMediaResource(uri).contents[0].uri).toBe(uri);
       const view = mount({ uri }); await view.initialize(); view.result();
       expect(view.document.querySelectorAll('.card')).toHaveLength(7);
@@ -130,5 +130,49 @@ describe('deployed MCP viewer startup', () => {
     await vi.advanceTimersByTimeAsync(21000);
     expect(view.document.querySelector('[role="alert"]')).toBeNull();
     expect(view.host.postMessage).toHaveBeenCalledWith({ jsonrpc: '2.0', id: 'close', result: {} }, 'https://chat.example');
+  });
+
+  it('uses host height limits and responds to orientation/context changes without resizing loops', async () => {
+    const view = mount(); await view.initialize({ containerDimensions: { maxHeight: 420 } }); view.result();
+    expect(view.document.querySelector('#app')?.getAttribute('style')).toContain('--viewer-height: 420px');
+    const sizes = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'ui/notifications/size-changed');
+    expect(sizes().at(-1)?.[0].params.height).toBe(420);
+    const count = sizes().length;
+    view.send({ method: 'ui/notifications/host-context-changed', params: { containerDimensions: { maxHeight: 420 } } });
+    expect(sizes()).toHaveLength(count);
+    view.send({ method: 'ui/notifications/host-context-changed', params: { containerDimensions: { height: 360 }, safeAreaInsets: { bottom: 12 } } });
+    expect(sizes().at(-1)?.[0].params.height).toBe(360);
+    expect(view.document.querySelector('#app')?.getAttribute('style')).toContain('--safe-bottom: 12px');
+  });
+
+  it('selects exact references directly and preserves scroll when returning from a preview', async () => {
+    const view = mount(); await view.initialize(); view.result();
+    const content = () => view.document.querySelector('.content') as HTMLElement;
+    expect(content().getAttribute('tabindex')).toBe('0');
+    content().scrollTop = 217;
+    (view.document.querySelectorAll('.card-view')[3] as HTMLButtonElement).click();
+    expect(view.document.querySelectorAll('.card.is-selected')).toHaveLength(1);
+    expect(content().scrollTop).toBe(217);
+    expect(view.document.querySelector('.selection-count')?.textContent).toBe('1 selected');
+    (view.document.querySelectorAll('.tile-preview')[3] as HTMLButtonElement).click();
+    expect(view.document.querySelector('.detail h2')?.textContent).toContain('1970 Charger R/T — 4');
+    (view.document.querySelector('.back') as HTMLButtonElement).click();
+    expect(content().scrollTop).toBe(217);
+    expect(view.document.querySelectorAll('.card-view')[3].getAttribute('aria-pressed')).toBe('true');
+    (view.document.querySelectorAll('.card-view')[3] as HTMLButtonElement).click();
+    expect(view.document.querySelectorAll('.is-selected')).toHaveLength(0);
+  });
+
+  it('sends the selected image IDs once without authorizing a generation', async () => {
+    const view = mount(); await view.initialize({}, { message: { text: {} } }); view.result();
+    (view.document.querySelectorAll('.card-view')[2] as HTMLButtonElement).click();
+    (view.document.querySelector('.selection-main .primary') as HTMLButtonElement).click();
+    const message = view.host.postMessage.mock.calls.find(([m]) => m.method === 'ui/message')?.[0];
+    const selection = JSON.parse(message.params.content[0].text.split('\n').at(-1));
+    expect(selection.selections.map((item: any) => item.imageId)).toEqual(['reference-2']);
+    expect(selection.generationAuthorized).toBe(false);
+    expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
+    view.send({ id: message.id, result: {} }); await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelectorAll('.is-selected')).toHaveLength(0);
   });
 });
