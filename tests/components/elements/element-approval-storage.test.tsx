@@ -9,6 +9,15 @@ import { ElementModal } from '@/components/elements/element-modal';
 const element = { id:'mug',name:'Mug',type:'prop' as const,description:'Ceramic',images:[{id:'ref',url:'https://provider/image',source:'generated' as const,createdAt:''}],createdAt:'',updatedAt:'' };
 afterEach(cleanup);
 describe('Element modal approval storage', () => {
+  it('saves a character voice separately from its casting brief and leaves props unchanged', async () => {
+    const save=vi.fn();persist.mockImplementation(async draft=>draft);
+    render(<ElementModal element={{...element,type:'character'}} projectId="project" onSave={save} onClose={()=>{}} />);
+    fireEvent.change(screen.getByLabelText('How does this character sound?'),{target:{value:'A warm Southern drawl, quiet and deliberate.'}});
+    fireEvent.click(screen.getByText('Approve element'));fireEvent.click(screen.getByRole('button',{name:'Save element'}));
+    await waitFor(()=>expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0].voice.description).toBe('A warm Southern drawl, quiet and deliberate.');
+    expect(save.mock.calls[0][0].description).toBe('Ceramic');
+  });
   it('uses the shared ingest function before saving approved views', async () => {
     const save=vi.fn();
     persist.mockImplementation(async draft=>({...draft,images:[{...draft.images[0],url:'https://project/image'}]}));

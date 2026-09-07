@@ -1,4 +1,4 @@
-import { EDIT_TOOL_CATALOG } from './edit-schemas.mjs';
+import { EDIT_TOOL_CATALOG, elementVoice } from './edit-schemas.mjs';
 import { DISPLAY_TOOLS, DISPLAY_ACTION_TOOLS } from './display-tools.mjs';
 /**
  * The CineGen MCP tool catalogue.
@@ -137,6 +137,7 @@ export const TOOL_CATALOG = [
         type: { type: 'string', enum: ['character', 'location', 'prop', 'vehicle'], description: 'Defaults to character.' },
         description: optionalString('What it looks like. This is what a model reads when the Element is used as a reference.'),
         imageUrl: optionalString('An https image URL to attach as its first reference image.'),
+        voice: elementVoice.toJSONSchema(),
       },
       required: ['name'],
       additionalProperties: false,

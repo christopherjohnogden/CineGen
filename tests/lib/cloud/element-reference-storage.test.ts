@@ -7,6 +7,15 @@ const image = { id:'image',url:'https://provider/short',source:'generated' as co
 const element = { id:'mug',name:'Mug',type:'prop' as const,description:'',images:[image],variations:[{id:'base',name:'Base',kind:'baseline' as const,description:'',images:[image],createdAt:'',updatedAt:''}],createdAt:'',updatedAt:'' };
 afterEach(()=>{delete (window as unknown as {electronAPI?:unknown}).electronAPI;});
 describe('durable Element storage',()=>{
+  it('saves voice audio with the audio storage path, preserving the character voice', async () => {
+    const save=vi.fn(async()=>({path:'/project/media/voice.wav',downloaded:true}));
+    (window as unknown as {electronAPI:unknown}).electronAPI={media:{persistGeneratedAsset:save}};
+    const character={...element,type:'character' as const,images:[],variations:[],voice:{description:'Warm',voiceId:'chosen',referenceAudio:{...image,url:'https://eleven.example/sample.wav'}}};
+    const saved=await prepareElementReferences(character,'project');
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({assetType:'audio',remoteUrl:'https://eleven.example/sample.wav'}));
+    expect(saved.voice?.referenceAudio?.url).toBe('local-media://file/project/media/voice.wav');
+    expect(saved.voice?.voiceId).toBe('chosen');
+  });
   it('persists a local project copy and reuses it across baseline and flat projections',async()=>{
     const save=vi.fn(async()=>({path:'/project/media/reference.png',downloaded:true}));
     (window as unknown as {electronAPI:unknown}).electronAPI={media:{persistGeneratedAsset:save}};

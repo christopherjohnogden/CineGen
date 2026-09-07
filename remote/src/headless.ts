@@ -9,6 +9,7 @@ import type { RecordValue } from './firebase';
 
 // Only advertise operations the headless host can actually finish and persist.
 export const REMOTE_NAMES = new Set([
+  'cinegen_audio',
   'cinegen_show_generations', 'cinegen_show_reference_elements', 'cinegen_job_display',
   'cinegen_show_media', 'cinegen_show_generation_batch', 'cinegen_show_film_presets', 'cinegen_send_to_studio',
   'cinegen_get_context', 'cinegen_read', 'cinegen_capabilities', 'cinegen_get_generations',
@@ -50,17 +51,19 @@ export function serialize(raw: RecordValue, state: WorkspaceState, sqlite = true
     elements: state.elements,
   };
 }
-export async function editProject(raw: RecordValue, library: RecordValue, name: string, args: RecordValue, sqlite = true) {
+export async function editProject(raw: RecordValue, library: RecordValue, name: string, args: RecordValue, sqlite = true, persistAudio?: (source: string, assetId: string) => Promise<string>) {
   let state = hydrate(raw, library, sqlite); const actions: McpAction[] = [];
   const handlers = createMcpHandlers({
     getState:()=>state, projectName: raw.project.name,
     dispatch:action=>{ state=workspaceReducer(state,action); actions.push(action); },
     runNode:()=>{ throw new Error('Use cinegen_generate for a durable cloud generation. Running arbitrary Canvas graphs requires the app.'); },
     appAction:async(action,payload)=>{
+      if (action === 'persist_audio' && persistAudio) return persistAudio(String(payload.source), String(payload.assetId));
       if (action==='persist_element') {
         const element=(payload as any).element;
         const saved=new Set([...state.assets.map(a=>a.url),...state.elements.flatMap(e=>[...e.images,...(e.variations??[]).flatMap(v=>v.images)].map(i=>i.url))]);
-        const images=[...(element.images??[]),...(element.variations??[]).flatMap((v:any)=>v.images??[])];
+        for (const el of state.elements) if (el.voice?.referenceAudio) saved.add(el.voice.referenceAudio.url);
+        const images=[...(element.voice?.referenceAudio ? [element.voice.referenceAudio] : []),...(element.images??[]),...(element.variations??[]).flatMap((v:any)=>v.images??[])];
         if(images.some((i:any)=>!saved.has(i.url)||!String(i.url).startsWith('https://')))throw new Error('Use an image already saved in this project or Elements library. Generate it with cinegen_generate or import it in CineGen first.');
         return element;
       }

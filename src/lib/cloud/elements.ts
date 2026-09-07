@@ -7,6 +7,12 @@ import { getProjectCollaboration, resolveProjectCreationTeam } from './collabora
 import { isFirebaseMediaUrl, prepareElementsLibraryForCloudMedia } from './media';
 
 const MAX_LIBRARY_BYTES = 850_000;
+/** Reuses project media persistence without inserting a temporary Element. */
+export async function prepareAudioReference(source: string, projectId: string, assetId: string): Promise<string> {
+  const now = new Date().toISOString();
+  const saved = await prepareElementReferences({ id: assetId, name: 'Voice sample', type: 'character', description: '', images: [], voice: { description: '', referenceAudio: { id: assetId, url: source, source: 'upload', createdAt: now } }, createdAt: now, updatedAt: now }, projectId);
+  return saved.voice!.referenceAudio!.url;
+}
 const loadedRevisions = new Map<string, number>();
 
 export interface ElementsLibraryOptions {
@@ -39,6 +45,7 @@ export function restoreSavedElementReferences(
       if (!existing) return element;
       const savedImages = new Map([
         ...existing.images,
+        ...(existing.voice?.referenceAudio ? [existing.voice.referenceAudio] : []),
         ...(existing.variations ?? []).flatMap(look => look.images),
       ].filter(image => isFirebaseMediaUrl(image.url)).map(image => [image.id, image]));
       const restoreImages = (images: Element['images']) => images.map(image => {
@@ -48,6 +55,7 @@ export function restoreSavedElementReferences(
       });
       return {
         ...element,
+        ...(element.voice?.referenceAudio ? { voice: { ...element.voice, referenceAudio: restoreImages([element.voice.referenceAudio])[0] } } : {}),
         images: restoreImages(element.images),
         variations: element.variations?.map(look => ({ ...look, images: restoreImages(look.images) })),
       };
@@ -237,14 +245,14 @@ export async function prepareElementReferences(
   }
   const durable = structuredClone(element);
   const sources = new Map<string, string>();
-  for (const image of new Set([...durable.images, ...(durable.variations ?? []).flatMap(look => look.images)])) {
+  for (const image of new Set([...durable.images, ...(durable.variations ?? []).flatMap(look => look.images), ...(durable.voice?.referenceAudio ? [durable.voice.referenceAudio] : [])])) {
     const existing = sources.get(image.url);
     if (existing) { image.url = existing; continue; }
     const source = image.url;
     const api = window.electronAPI?.media?.persistGeneratedAsset;
     if (!api) throw new Error('Project reference storage is unavailable. Sign in to the cloud or use CineGen Desktop.');
     const remote = /^(https?:|data:)/i.test(source);
-    const result = await api({ projectId, assetId: `${element.id}-reference-${image.id}`, assetType: 'image', ...(remote ? { remoteUrl: source } : { localPathHint: source }) });
+    const result = await api({ projectId, assetId: `${element.id}-reference-${image.id}`, assetType: image === durable.voice?.referenceAudio ? 'audio' : 'image', ...(remote ? { remoteUrl: source } : { localPathHint: source }) });
     if ('error' in result) throw new Error(result.error);
     if (!result.path) throw new Error('Reference storage returned no saved file.');
     image.url = `local-media://file${result.path}`;

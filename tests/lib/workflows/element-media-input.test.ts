@@ -10,6 +10,7 @@ const elements: Element[] = [
   {
     id: 'el-peter',
     name: 'Peter',
+    voice: { description: 'Low, warm and deliberate.' },
     type: 'character',
     description: '',
     images: [
@@ -79,6 +80,7 @@ describe('stacked Element media inputs', () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({
       model: 'gpt_image_2',
       outputType: 'image',
+      prompt: expect.not.stringContaining('Low, warm and deliberate.'),
       medias: [
         { value: 'local-media://peter-front.png', role: 'image' },
         { value: 'local-media://peter-profile.png', role: 'image' },
@@ -117,6 +119,7 @@ describe('stacked Element media inputs', () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({
       model: 'seedance_2_5',
       outputType: 'video',
+      prompt: expect.stringContaining('Peter: Low, warm and deliberate.'),
       medias: [
         { value: 'local-media://peter-front.png', role: 'image' },
         { value: 'local-media://peter-profile.png', role: 'image' },

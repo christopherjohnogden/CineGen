@@ -1,3 +1,4 @@
+import { normalizeElementVoice } from '@/lib/elements/voice';
 import { createEditHandlers } from './edit-handlers';
 import { createDisplayHandlers } from './display-handlers';
 import { placeStudioNodeOnCanvas } from '@/lib/studio/canvas-placement';
@@ -271,6 +272,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
           type: element.type,
           imageCount: element.images?.length ?? 0,
           description: element.description?.slice(0, 200) ?? '',
+          voice: element.voice,
         })),
         timelines: s.timelines.map((timeline) => ({
           id: timeline.id,
@@ -403,11 +405,12 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
         name,
         type: type as Element['type'],
         description: str(args, 'description'),
+        voice: type === 'character' ? normalizeElementVoice(args.voice) : undefined,
         images: imageUrl ? [{ id: generateId(), url: imageUrl, createdAt: now, source: 'generated' }] : [],
         createdAt: now,
         updatedAt: now,
       };
-      const durable = imageUrl
+      const durable = imageUrl || element.voice?.referenceAudio
         ? await host.appAction?.('persist_element', { element }) as Element | undefined
         : element;
       if (!durable) throw new McpToolError('Reference storage requires the desktop app.');

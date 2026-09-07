@@ -1,3 +1,5 @@
+import { persistGeneratedMedia, downloadGeneratedMedia } from '../../shared/generated-media.mjs';
+import { voiceElementsForPrompt, withCharacterVoices } from '../../src/lib/elements/voice';
 import { OAuthProvider, type OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
@@ -24,7 +26,7 @@ const projectTool = { name:'cinegen_project',description:'List or create saved C
 async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Identity}) {
   const origin=request.headers.get('origin');
   if(origin && origin!==env.PUBLIC_ORIGIN) return new Response('Origin not allowed',{status:403});
-  const server = new Server({name:'cinegen',version:'1.6.12'},{capabilities:{tools:{},resources:{}},instructions:DISPLAY_INSTRUCTIONS+' '+'Preserve user prompts in full. Never shorten or rewrite a prompt to fit a provider limit without user approval. CineGen has no global 4,000-character generation limit; audioReferenceConnection.promptMaxCharacters applies only to the indicated Topview audio-reference route. Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. Topview Seedance 2.5 accepts image, video, and audio input references together. Use inputs.audio_references for MP3/WAV URLs and inputs.image_url for images/videos. The connected Topview Canvas route requires at least one image or video alongside audio; generate_audio controls output sound, not reference support. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
+  const server = new Server({name:'cinegen',version:'1.7.0'},{capabilities:{tools:{},resources:{}},instructions:DISPLAY_INSTRUCTIONS+' '+'Character Elements can carry voice descriptions, ElevenLabs voice IDs and saved audio samples. Use the user’s ElevenLabs MCP to design voices and create speech or sound effects. cinegen_audio prepares Canvas audio briefs and attaches finished downloadable audio to CineGen. This is an explicit ElevenLabs workflow, not a fal.ai fallback. Read the character voice before writing dialogue; pass elementIds to cinegen_generate so saved voice direction is included in video prompts. Preserve user prompts in full. Never shorten or rewrite a prompt to fit a provider limit without user approval. CineGen has no global 4,000-character generation limit; audioReferenceConnection.promptMaxCharacters applies only to the indicated Topview audio-reference route. Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. Topview Seedance 2.5 accepts image, video, and audio input references together. Use inputs.audio_references for MP3/WAV URLs and inputs.image_url for images/videos. The connected Topview Canvas route requires at least one image or video alongside audio; generate_audio controls output sound, not reference support. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [MEDIA_RESOURCE] }));
   server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => readMediaResource(params.uri));
   server.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[projectTool,...remoteTools,...generationTools]}));
@@ -101,12 +103,21 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
       }
       else if(params.name==='cinegen_generate'||params.name==='cinegen_get_jobs') {
         const projectId=safeId(args.projectId),requestId=safeId(args.requestId);
-        await store.load(projectId);
+        const loadedGeneration = await store.load(projectId);
         let prepared;
         if(params.name==='cinegen_generate') {
           args.provider=requestedProvider(args.provider);
           const catalog=await connectedModels(auth.token,args.provider);
           prepared=prepareProviderGeneration(args,catalog.models);
+          const elements = loadedGeneration.library.elements ?? [];
+          if (Array.isArray(args.elementIds) && args.elementIds.some((id:string) => !elements.some((el:any) => el.id === id))) throw new Error('Unknown character Element. Read the project Elements first.');
+          if (prepared.model.outputType === 'video') {
+            const voiced = withCharacterVoices(prepared.prompt, voiceElementsForPrompt(prepared.prompt, elements, args.elementIds ?? []));
+            prepared.params.prompt = voiced;
+            const field = prepared.model.inputs.find(f => f.id === 'prompt' || f.falParam === 'prompt');
+            if (field) prepared.config[field.id] = voiced;
+            prepared.config.__studioElementIds = args.elementIds ?? [];
+          }
         }
         const job=env.JOBS.get(env.JOBS.idFromName(`${identity.uid}:${projectId}:${requestId}`));
         const response=await job.fetch(`https://job/${params.name==='cinegen_get_jobs'?'read':'start'}`,{method:'POST',body:JSON.stringify({identity,args,prepared})});
@@ -134,7 +145,15 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
       } else {
         const loaded=await store.load(safeId(args.projectId));
         const {projectId,...toolArgs}=args;
-        const edited=await editProject(loaded.state,loaded.library,params.name,toolArgs,loaded.metadata.useSqlite!==false);
+        const edited=await editProject(loaded.state,loaded.library,params.name,toolArgs,loaded.metadata.useSqlite!==false,async (source, assetId) => {
+          // Download once, identify the actual audio type, then stream into project storage.
+          const media = await downloadGeneratedMedia(source, 'elevenlabs');
+          const mime = media.headers.get('content-type')?.split(';')[0]?.toLowerCase();
+          const ext = ({'audio/mpeg':'mp3','audio/mp3':'mp3','audio/wav':'wav','audio/x-wav':'wav','audio/wave':'wav','audio/mp4':'m4a','audio/ogg':'ogg','audio/flac':'flac','audio/aac':'aac'} as Record<string,string>)[mime || ''];
+          if (!ext) { await media.body?.cancel(); throw new Error('ElevenLabs must provide downloadable audio, not a share page. Use an MP3 or WAV download URL.'); }
+          try { return await persistGeneratedMedia({source, token:store.token,ownerId:loaded.ownerId,projectId:safeId(projectId),assetId,type:'audio',provider:'elevenlabs',audioExtension:ext}, async () => media); }
+          finally { if (!media.bodyUsed) await media.body?.cancel().catch(() => {}); }
+        });
         const revision=edited.changed ? await store.save(loaded,edited.state,edited.library) : loaded.metadata.currentRevision;
         result={result:edited.result,projectId,revision,saved:edited.changed};
       }
@@ -148,7 +167,7 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
 const defaultHandler={async fetch(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url);
   if(url.origin!==env.PUBLIC_ORIGIN) return new Response('Unknown host',{status:400});
-  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1,version:'1.6.12',displayTools:remoteTools.filter(t=>isDisplayTool(t.name)).map(t=>t.name)});
+  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1,version:'1.7.0',displayTools:remoteTools.filter(t=>isDisplayTool(t.name)).map(t=>t.name)});
   if(url.pathname==='/') return page(`<h1>CineGen Connect</h1><p>Work on your saved CineGen projects from Claude or ChatGPT, even while your Mac is closed.</p><label>Connection URL</label><code>${html(env.PUBLIC_ORIGIN)}/mcp</code><p>Add this URL as a custom connector, then sign in with your CineGen Cloud account.</p><small>Sign into the same cloud account in CineGen on desktop and the website to see your saved work. Local-only projects must sync first.</small>`);
   if(url.pathname!=='/authorize') return new Response('Not found',{status:404});
   try {

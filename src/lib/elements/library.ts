@@ -8,6 +8,7 @@ import type {
   ElementVariationKind,
   ElementsLibrary,
 } from '../../types/elements';
+import { normalizeElementVoice } from './voice';
 
 export function emptyElementsLibrary(): ElementsLibrary {
   return { version: 1, folders: [], elements: [] };
@@ -36,6 +37,7 @@ export function normalizeElement(raw: unknown): Element | null {
     name: typeof row.name === 'string' ? row.name : 'Untitled',
     type,
     description: typeof row.description === 'string' ? row.description : '',
+    voice: type === 'character' ? normalizeElementVoice(row.voice) : undefined,
     images: normalizeImages(row.images),
     variations: variations.length ? variations : undefined,
     activeVariationId,

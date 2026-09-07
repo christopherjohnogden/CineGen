@@ -2,6 +2,11 @@ import type { NodeTypeDefinition, PortDefinition } from '@/types/workflow';
 import { ALL_MODELS } from '@/lib/fal/models';
 
 const UTILITY_NODES: Record<string, NodeTypeDefinition> = {
+  elevenLabsAudio: {
+    type: 'elevenLabsAudio', label: 'ElevenLabs Audio', category: 'utility',
+    inputs: [], outputs: [{ id: 'audio', type: 'audio', label: 'audio' }],
+    defaultData: { kind: 'speech', text: '', direction: '', elementId: '', audioUrl: '' },
+  },
   prompt: {
     type: 'prompt',
     label: 'Prompt',

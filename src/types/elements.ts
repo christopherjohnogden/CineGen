@@ -7,6 +7,17 @@ export interface ElementImage {
   source: 'upload' | 'generated';
 }
 
+/** A character's vocal identity, shared by all of its continuity looks. */
+export interface ElementVoice {
+  description: string;
+  provider?: 'elevenlabs';
+  voiceId?: string;
+  voiceName?: string;
+  sampleText?: string;
+  /** A saved audio reference, never an account credential. */
+  referenceAudio?: ElementImage;
+}
+
 export type ElementVariationKind = 'baseline' | 'wardrobe' | 'condition' | 'time' | 'custom';
 
 /**
@@ -40,6 +51,7 @@ export interface Element {
   description: string;
   images: ElementImage[];
   /** Optional continuity looks. Legacy elements continue to use `images`. */
+  voice?: ElementVoice;
   variations?: ElementVariation[];
   /** Default look used by Director and anywhere a look is not chosen explicitly. */
   activeVariationId?: string;

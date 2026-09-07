@@ -14,6 +14,8 @@ import {
 import { ElementImageUpload } from './element-image-upload';
 import { ElementGenerate } from './element-generate';
 import { ElementDescriptionAssistant } from './element-description-assistant';
+import { ElementVoiceEditor } from './element-voice';
+import { normalizeElementVoice } from '@/lib/elements/voice';
 
 const ELEMENT_TYPES: Array<{ id: ElementType; label: string; department: string; brief: string }> = [
   { id: 'character', label: 'Character', department: 'Casting', brief: 'Identity, performance presence, wardrobe and physical continuity.' },
@@ -51,6 +53,7 @@ function variationThumbnail(variation: ElementVariation): string | undefined {
 }
 
 interface ElementSaveData {
+  voice?: Element['voice'];
   id: string;
   name: string;
   type: ElementType;
@@ -83,6 +86,8 @@ export function ElementModal({ projectId, element, defaults, onSave, onDelete, o
   const [name, setName] = useState(element?.name ?? defaults?.name ?? '');
   const [type, setType] = useState<ElementType>(element?.type ?? defaults?.type ?? 'character');
   const [description, setDescription] = useState(element?.description ?? defaults?.description ?? '');
+  const [voice, setVoice] = useState(element?.voice);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [variations, setVariations] = useState<ElementVariation[]>(initialVariations);
   const [activeVariationId, setActiveVariationId] = useState(
     element?.activeVariationId && initialVariations.some((variation) => variation.id === element.activeVariationId)
@@ -193,11 +198,11 @@ export function ElementModal({ projectId, element, defaults, onSave, onDelete, o
   }), [pendingGeneratedImages, selectedVariationId, variations]);
 
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || voiceBusy) return;
     const active = materializedVariations.find((variation) => variation.id === activeVariationId) ?? materializedVariations[0];
     setSaving(true); setSaveError('');
     try {
-      const draft: Element = { id: draftId, name: name.trim(), type, description: description.trim(), images: active.images, variations: materializedVariations, activeVariationId: active.id, createdAt: element?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const draft: Element = { id: draftId, name: name.trim(), type, description: description.trim(), voice: type === 'character' ? normalizeElementVoice(voice) : undefined, images: active.images, variations: materializedVariations, activeVariationId: active.id, createdAt: element?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() };
       const durable = projectId ? await prepareElementReferences(draft, projectId) : draft;
       onSave({ ...durable, variations: durable.variations!, activeVariationId: durable.activeVariationId! });
     } catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
@@ -210,6 +215,7 @@ export function ElementModal({ projectId, element, defaults, onSave, onDelete, o
   const previousStep = () => setStep(MODAL_STEPS[Math.max(stepIndex - 1, 0)].id);
   const primaryDisabled = !name.trim()
     || saving
+    || voiceBusy
     || generationBusy
     || (type === 'character' && step === 'reference' && !isContinuityVariation && activeImageTab !== 'approved' && characterWorkflowState === 'in-progress');
 
@@ -285,6 +291,7 @@ export function ElementModal({ projectId, element, defaults, onSave, onDelete, o
                   <textarea id="element-description" className="element-modal__textarea element-studio__brief" value={description} onChange={(event) => setDescription(event.target.value)} placeholder={type === 'character' ? 'Describe age range, physical presence, face, build, movement and defining features. Keep wardrobe out until casting is approved.' : 'Describe silhouette, materials, scale, color, era and the details that must stay consistent.'} rows={5} />
                   <ElementDescriptionAssistant name={name} type={type} description={description} onApply={setDescription} />
                 </div>
+                {type === 'character' && <ElementVoiceEditor name={name} elementId={element?.id} voice={voice} onChange={setVoice} onBusy={setVoiceBusy} />}
               </section>
             )}
 
@@ -483,6 +490,7 @@ export function ElementModal({ projectId, element, defaults, onSave, onDelete, o
                       : <div className="element-studio__review-empty"><ElementTypeIcon type={type} /><span>Add a reference image before production use</span></div>}
                     <div><span>{selectedType.department}</span><h4>{name || 'Untitled element'}</h4><p>{description || 'No creative brief yet.'}</p></div>
                   </div>
+                  {type === 'character' && normalizeElementVoice(voice) && <div className="character-voice"><h4>Character voice</h4><p>{voice?.description || voice?.voiceName || 'ElevenLabs voice linked'}</p>{voice?.referenceAudio && <audio controls preload="metadata" src={voice.referenceAudio.url} aria-label="Character voice sample" />}</div>}
                   <div className="element-studio__review-looks">
                     <div className="element-studio__review-looks-head"><strong>Continuity manifest</strong><span>{variations.length} {variations.length === 1 ? 'look' : 'looks'}</span></div>
                     {materializedVariations.map((variation) => (

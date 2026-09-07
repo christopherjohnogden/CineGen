@@ -1,4 +1,5 @@
 import { PromptNode } from './prompt-node';
+import { ElevenLabsAudioNode } from './elevenlabs-audio-node';
 import { AssetOutputNode } from './asset-output-node';
 import { MultiPromptNode } from './multi-prompt-node';
 import { CompositionPlanNode } from './composition-plan-node';
@@ -23,6 +24,7 @@ const modelEntries = getAllModelNodeTypes().reduce<Record<string, typeof ModelNo
 export const nodeTypes: Record<string, React.ComponentType<any>> = {
   group: GroupNode,
   prompt: PromptNode,
+  elevenLabsAudio: ElevenLabsAudioNode,
   assetOutput: AssetOutputNode,
   multiPrompt: MultiPromptNode,
   shotPrompt: MultiPromptNode,

@@ -18,6 +18,7 @@ export interface ElementBuildRequest {
   name?: string;
   type?: Element['type'];
   description?: string;
+  voice?: Element['voice'];
   reference: ReferenceBuild;
   variations?: Array<{ name: string; kind: ElementVariationKind; description: string; reference: ReferenceBuild }>;
 }
@@ -33,6 +34,8 @@ export async function buildElementDraft(
     description: request.description ?? '', images: [], createdAt: now, updatedAt: now,
   }));
   draft = { ...draft, name: request.name ?? draft.name, type: request.type ?? draft.type, description: request.description ?? draft.description };
+  if (request.voice !== undefined) draft.voice = request.voice;
+  if (draft.type !== 'character') delete draft.voice;
   if (!draft.name.trim()) throw new Error('An Element name is required.');
   const validate = (ref: ReferenceBuild) => {
     if (ref.mode === 'upload') {

@@ -1,3 +1,5 @@
+import { normalizeElementVoice } from '@/lib/elements/voice';
+import { elevenLabsAudioBrief } from '@/lib/elevenlabs/audio-brief';
 import { materializeElementLooks } from '@/lib/elements/variations';
 import { elementGenerationModelOptions } from '@/lib/elements/model-options';
 import { EDIT_SCHEMAS, showPatch, scenePatch, clipPatch, breakdownPatch } from '../../../mcp/edit-schemas.mjs';
@@ -47,6 +49,34 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
   };
   const activate = (id: string) => { host.dispatch({ type: 'SET_ACTIVE_SPACE', spaceId: id }); };
   const raw: Record<string, McpToolHandler> = {
+    async cinegen_audio(a) {
+      const target = a.nodeId || a.action === 'prepare' ? space(a.spaceId) : undefined;
+      const character = a.elementId ? found(state().elements, a.elementId, 'Element') : undefined;
+      if (character && character.type !== 'character') throw new McpToolError('A voice belongs to a character Element.');
+      if (a.action === 'prepare') {
+        const node = createWorkflowNodeFromSpec({ nodeType: 'elevenLabsAudio', label: (a.name as string) || `${character?.name || 'ElevenLabs'} audio`, config: { text: a.text ?? character?.voice?.sampleText ?? '', direction: a.direction ?? '', kind: a.kind ?? 'speech', elementId: character?.id ?? '' } }, { x: 100 + target!.nodes.length * 24, y: 100 });
+        activate(target!.id); host.dispatch({ type: 'SET_NODES', nodes: [...target!.nodes, node] });
+        return { nodeId: node.id, spaceId: target!.id, status: 'awaiting_audio', brief: elevenLabsAudioBrief(node.data.config, character, { nodeId: node.id, spaceId: target!.id }) };
+      }
+      const node = a.nodeId ? found(target!.nodes, a.nodeId, 'audio node') : undefined;
+      if (node && node.data.type !== 'elevenLabsAudio') throw new McpToolError('Choose an ElevenLabs Audio node.');
+      if (!node && !character) throw new McpToolError('Specify a nodeId or a character elementId.');
+      if (a.action === 'read') return { node, voice: character?.voice, brief: node ? elevenLabsAudioBrief(node.data.config, state().elements.find(el => el.id === node.data.config.elementId), { nodeId: node.id, spaceId: target!.id }) : undefined };
+      if (node && a.expectedText !== undefined && node.data.config.text !== a.expectedText) throw new McpToolError('The audio brief changed. Read it before attaching this take.');
+      const source = required(a.audioUrl, 'audioUrl');
+      const existing = state().assets.find(asset => asset.type === 'audio' && (asset.url === source || asset.metadata?.elevenLabsSourceUrl === source));
+      const assetId = existing?.id ?? generateId();
+      const url = existing?.url ?? await app('persist_audio', { source, assetId }) as string;
+      if (node && JSON.stringify(found(space(target!.id).nodes, node.id, 'audio node')) !== JSON.stringify(node)) throw new McpToolError('The audio node changed while saving. Read it and attach this same audio again.');
+      if (character && JSON.stringify(found(state().elements, character.id, 'Element')) !== JSON.stringify(character)) throw new McpToolError('The character changed while saving. Read it and attach this same audio again.');
+      if (!existing) host.dispatch({ type: 'ADD_ASSET', asset: { id: assetId, name: String(a.name || node?.data.label || `${character?.name || 'ElevenLabs'} voice`), type: 'audio', url, sourceUrl: url, metadata: { elevenLabsSourceUrl: source }, createdAt: timestamp() } });
+      if (node) {
+        activate(target!.id);
+        host.dispatch({ type: 'SET_NODES', nodes: space(target!.id).nodes.map(n => n.id === node.id ? { ...n, data: { ...n.data, config: { ...n.data.config, audioUrl: url, audioAssetId: assetId }, result: { status: 'complete', url } } } : n) });
+      }
+      if (character) host.dispatch({ type: 'UPDATE_ELEMENT', elementId: character.id, updates: { voice: { description: '', ...character.voice, provider: 'elevenlabs', referenceAudio: { id: assetId, url, source: 'generated', createdAt: timestamp() } }, updatedAt: timestamp() } });
+      return { saved: true, assetId, url, nodeId: node?.id, elementId: character?.id };
+    },
     async cinegen_capabilities() {
       return {
         displays: { tools: DISPLAY_TOOLS.map(tool => tool.name), resourceUri: MEDIA_RESOURCE_URI, readOnly: true, actions: ['cinegen_send_to_studio'], note: 'Viewers support media selection, ordered batch review, uploaded assets, film presets and playback in MCP Apps-compatible clients. Send to Studio is a separate saved edit and never generates. Local-only media must sync before it can be used in chat.' },
@@ -107,13 +137,14 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
       const patch = a.patch as Partial<Element>;
       if (patch.activeVariationId) found(patch.variations ?? materializeElementLooks(element).variations!, patch.activeVariationId, 'variation');
       let next = materializeElementLooks({ ...element, ...patch });
+      next.voice = next.type === 'character' ? normalizeElementVoice(next.voice) : undefined;
       if (patch.images && !patch.variations) {
         next = { ...next, images: patch.images, variations: next.variations!.map(look => look.id === next.activeVariationId ? { ...look, images: patch.images! } : look) };
       }
       uniqueIds(next.images, 'image'); uniqueIds(next.variations ?? [], 'variation');
       if (next.activeVariationId) found(next.variations ?? [], next.activeVariationId, 'variation');
       if (next.folderId) found(state().elementFolders ?? [], next.folderId, 'Element folder');
-      if (patch.images || patch.variations) {
+      if (patch.images || patch.variations || patch.voice?.referenceAudio) {
         next = await app('persist_element', { element: next }) as Element;
         const latest = found(state().elements, element.id, 'Element');
         if (JSON.stringify(latest) !== JSON.stringify(element)) throw new McpToolError('Element changed while saving references. Read it and retry.');

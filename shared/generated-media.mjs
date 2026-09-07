@@ -20,8 +20,9 @@ export function isTopviewSignedDownload(source) {
   } catch { return false; }
 }
 
-export function generatedMediaLocation(ownerId, projectId, assetId, type) {
-  const name = `users/${ownerId}/projects/${projectId}/media/${assetId}/generated.${type === 'video' ? 'mp4' : 'png'}`;
+export function generatedMediaLocation(ownerId, projectId, assetId, type, audioExtension = 'mp3') {
+  if (type === 'audio' && !['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'].includes(audioExtension)) throw new Error('Unsupported audio format.');
+  const name = `users/${ownerId}/projects/${projectId}/media/${assetId}/generated.${type === 'audio' ? audioExtension : type === 'video' ? 'mp4' : 'png'}`;
   const root = `https://firebasestorage.googleapis.com/v0/b/${GENERATED_MEDIA_BUCKET}/o`;
   return { name, root, objectUrl: `${root}/${encodeURIComponent(name)}` };
 }
@@ -58,8 +59,8 @@ export async function downloadGeneratedMedia(source, provider = 'topview') {
 }
 
 /** Stream to Firebase; return only its durable URL, never media bytes to callers. */
-export async function persistGeneratedMedia({ source, token, ownerId, projectId, assetId, type, provider = 'fal' }, download = downloadGeneratedMedia) {
-  const { name, root, objectUrl } = generatedMediaLocation(ownerId, projectId, assetId, type);
+export async function persistGeneratedMedia({ source, token, ownerId, projectId, assetId, type, provider = 'fal', audioExtension = 'mp3' }, download = downloadGeneratedMedia) {
+  const { name, root, objectUrl } = generatedMediaLocation(ownerId, projectId, assetId, type, audioExtension);
   const signal = AbortSignal.timeout(240000);
   const existing = await fetch(objectUrl, { headers: { authorization: `Firebase ${token}` }, signal });
   let metadata;
@@ -71,7 +72,7 @@ export async function persistGeneratedMedia({ source, token, ownerId, projectId,
       await media.body?.cancel(); throw new Error('Generated media exceeds the 90 MB cloud upload limit.');
     }
     const contentType = media.headers.get('content-type')?.split(';')[0] || `${type}/${type === 'video' ? 'mp4' : 'png'}`;
-    if (!/^(image|video)\/[a-zA-Z0-9.+-]+$/.test(contentType) || !contentType.startsWith(type + '/')) {
+    if (!/^(image|video|audio)\/[a-zA-Z0-9.+-]+$/.test(contentType) || !contentType.startsWith(type + '/')) {
       await media.body?.cancel(); throw new Error('Provider returned an unexpected media type.');
     }
     const boundary = crypto.randomUUID(), encoder = new TextEncoder(), reader = media.body.getReader();

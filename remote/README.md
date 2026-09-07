@@ -27,7 +27,7 @@ Use `cinegen_studio_create` to prepare Studio items without starting generation 
 
 Use `cinegen_generate` for actual Studio generation. Remote unattended generation uses Topview by default. Pass `provider: "higgsfield"` only when the user explicitly requests it. `cinegen_list_models` reads the connected provider catalog. Legacy fal jobs already queued before this change can finish, but new fal jobs are not exposed. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.
 
-## Creative library and inline displays (server 1.6.12)
+## Creative library and inline displays (server 1.7.0)
 
 Active video jobs fill the player with flowing multicolor light, a clockwise spectrum border, and a compact glass status label until output is ready. Queued, starting and saving jobs retain their actual status labels; prepared or failed jobs do not animate. Reduced-motion preferences show the same colors without animation. Active video details show elapsed time from the recorded run start (or creation/submission time on older jobs), updating locally each second and catching up after backgrounding. Missing timestamps do not produce a fabricated timer.
 
@@ -39,7 +39,7 @@ Active video jobs fill the player with flowing multicolor light, a clockwise spe
 - `cinegen_show_film_presets`: 12 illustrated shot, camera and lighting directions, with category/search filters and reusable prompt fragments. Diagrams are composition guides, not provider-generated examples.
 - `cinegen_send_to_studio`: a separate saved edit. Accepts `itemIds` from a viewer and a destination `spaceId`; resolves media against the authorized project, adds image/video references to its Studio feed, and reuses existing copies. It never generates or spends credits. Audio/presets can be handed to the assistant instead.
 
-Cloud calls require `projectId`. Display tools return readable text and `structuredContent` and advertise `ui://cinegen/media-viewer-v13.html` through `_meta.ui.resourceUri` and `openai/outputTemplate`. Both transports implement resources/list and resources/read. The stdio server version is 0.6.11. Cached v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12 resource URIs also return the fixed viewer.
+Cloud calls require `projectId`. Display tools return readable text and `structuredContent` and advertise `ui://cinegen/media-viewer-v13.html` through `_meta.ui.resourceUri` and `openai/outputTemplate`. Both transports implement resources/list and resources/read. The stdio server version is 0.7.0. Cached v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12 resource URIs also return the fixed viewer.
 
 The browser script is compiled separately by `scripts/build-mcp-viewer.mjs`, then embedded as a string. Both MCP build commands rebuild it automatically. Do not serialize a server function into HTML: Wrangler's name-preserving transform injects server-scope helpers that are unavailable inside the iframe. Startup regression tests run the resource after both minification and name preservation, including delayed/missing tool results and legacy ChatGPT globals. Missing connections/results show an error after 20 seconds, and late valid data can still recover the viewer.
 
@@ -60,3 +60,15 @@ After an update, refresh/reconnect the CineGen connector and start a fresh chat 
 If Topview's signed Canvas download returns HTTP 403 from Cloudflare, the remote job immediately retries transferring the same finished asset through the existing Vercel Node gateway (`/api/generated-media/save`). That route verifies the Firebase identity and project access, accepts only Topview's signed download origin, rejects redirects, and streams the file into the same deterministic Firebase Storage object. It returns only the saved URL; Vercel does not retain a media copy. Existing saved objects are reused on retries. Neither transfer path submits a provider generation. Deploy the gateway before the remote worker.
 
 `cinegen_get_jobs` can resume saving older `needs_attention` results using the original provider receipt, without another render or charge. The read-only display tools remain read-only.
+
+## Character voices and ElevenLabs
+
+Character Elements support `voice`: `description`, `provider: "elevenlabs"`, `voiceId`, `voiceName`, `sampleText`, and a saved `referenceAudio`. Set it with `cinegen_create_element` or `cinegen_edit_element` (`patch.voice`; null clears it). The profile stays with the character across continuity looks. Video prompts automatically include the vocal direction for referenced characters. Cloud `cinegen_generate` accepts `elementIds`; image and audio reference URLs still belong in the model's advertised inputs.
+
+The user's ElevenLabs MCP generates the audio in Claude. CineGen does not borrow Claude's credentials or route these tasks through fal.ai. `cinegen_audio` supports:
+
+- `prepare`: create an `elevenLabsAudio` Canvas node with `text`, `direction`, `kind` (`speech` or `sound`) and optional `elementId`. Returns the full ElevenLabs brief and node ID without starting a generation.
+- `read`: inspect the node and associated character voice before generation.
+- `attach`: give the existing `nodeId` and a downloadable HTTPS `audioUrl`. CineGen streams the audio to Firebase, adds a media asset and completes the node. Optional `elementId` saves the same audio as a character voice sample. `expectedText` protects against attaching a take to a changed dialogue brief. Retrying attachment reuses an already saved asset instead of generating again.
+
+A Claude-local file or sandbox link is not a public audio URL: upload that audio in CineGen, or use the downloadable HTTPS result from ElevenLabs. Audio output connects to a model's audio-reference port; a voice description alone is creative guidance, not a guarantee of voice identity or lip sync.

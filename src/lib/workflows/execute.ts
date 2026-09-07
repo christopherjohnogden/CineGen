@@ -1,3 +1,4 @@
+import { withCharacterVoices, voiceElementsForPrompt } from '@/lib/elements/voice';
 import type { Node, Edge } from '@xyflow/react';
 import { topologicalSort } from './topo-sort';
 import { NODE_REGISTRY, resolveElementNodeIds, resolveElementNodeVariationIds } from './node-registry';
@@ -63,6 +64,8 @@ export interface WorkflowDispatch {
 
 /** Data shape output by an Element node. */
 interface ElementData {
+  id?: string;
+  voice?: Element['voice'];
   frontalImageUrl: string;
   referenceImageUrls: string[];
   allUrls: string[];
@@ -779,6 +782,8 @@ function expandElementReference(
       allUrls: images.map((img) => img.url),
       name: el.name,
       type: el.type,
+      id: el.id,
+      voice: el.voice,
     });
   }
   return stack;
@@ -794,6 +799,10 @@ function resolveUtilityOutputs(
   const output: Record<string, unknown> = {};
   for (const port of outputs) {
     switch (nodeType) {
+      case 'elevenLabsAudio':
+        if (!data.config.audioUrl) throw new Error('The ElevenLabs audio is not ready. Create it with your ElevenLabs MCP in Claude, then attach the result or upload the audio to this node.');
+        output.audio = data.config.audioUrl;
+        break;
       case 'prompt':
         output[port.id] = data.config.prompt;
         break;
@@ -1252,6 +1261,19 @@ async function executeModelNode(
       falInputs.prompt = qwenMultiImagePrompt(falInputs.prompt, promptPictures);
     } else if (typeof falInputs.prompt === 'string' && connectedElements.length > 0) {
       falInputs.prompt = resolveElementMentions(falInputs.prompt, connectedElements, useKieMentions);
+    }
+
+    if (modelDef.outputType === 'video' && typeof falInputs.prompt === 'string') {
+      const library = dispatch.getElements();
+      const ids = [...connectedElements.flatMap(el => el.id ? [el.id] : []),
+        ...(Array.isArray(data.config.__studioElementIds) ? data.config.__studioElementIds.filter((id): id is string => typeof id === 'string') : [])];
+      // Media ports also accept Element stacks; retain their voice identity.
+      for (const value of Object.values(portInputs).flat(Infinity)) {
+        if (value && typeof value === 'object' && 'id' in value && typeof value.id === 'string') ids.push(value.id);
+      }
+      const voices = voiceElementsForPrompt(falInputs.prompt, library, ids);
+      falInputs.prompt = withCharacterVoices(falInputs.prompt, voices);
+      if (Array.isArray(falInputs.multi_prompt)) falInputs.multi_prompt = falInputs.multi_prompt.map(shot => ({ ...shot, prompt: withCharacterVoices(shot.prompt, voices) }));
     }
 
     if (modelDef.nodeType === 'wizper' || modelDef.nodeType === 'whisper-cloud') {

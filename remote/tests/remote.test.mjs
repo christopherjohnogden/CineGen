@@ -29,6 +29,26 @@ test('a failed batch does not mutate the persisted input snapshot',async()=>{
   assert.equal(JSON.stringify(raw),before);
 });
 
+test('ElevenLabs audio prepares without charging, attaches durably, and survives reopening',async()=>{
+  const raw=api.createDefaultProjectState('Voice film');const library={version:1,elements:[],folders:[]};
+  const created=await api.editProject(raw,library,'cinegen_create_element',{name:'Alice',voice:{description:'Warm and soft',provider:'elevenlabs',voiceId:'chosen-voice',sampleText:'Hello there.'}});
+  const character=created.library.elements[0];
+  const prepared=await api.editProject(created.state,created.library,'cinegen_audio',{action:'prepare',elementId:character.id});
+  assert.match(prepared.result.brief,/chosen-voice/);assert.match(prepared.result.brief,/Hello there/);
+  let calls=0;const savedUrl='https://firebasestorage.googleapis.com/v0/b/cinegen-734ba.firebasestorage.app/o/voice.mp3?alt=media';
+  const persist=async(source)=>{calls++;assert.equal(source,'https://eleven.example/sample.mp3');return savedUrl;};
+  const attached=await api.editProject(prepared.state,prepared.library,'cinegen_audio',{action:'attach',nodeId:prepared.result.nodeId,spaceId:prepared.result.spaceId,elementId:character.id,audioUrl:'https://eleven.example/sample.mp3',expectedText:'Hello there.'},true,persist);
+  assert.equal(calls,1);const reopened=api.hydrate(JSON.parse(JSON.stringify(attached.state)),JSON.parse(JSON.stringify(attached.library)));
+  assert.equal(reopened.assets[0].type,'audio');assert.equal(reopened.assets[0].url,savedUrl);
+  assert.equal(reopened.elements[0].voice.referenceAudio.url,savedUrl);
+  assert.equal(reopened.elements[0].voice.voiceId,'chosen-voice');
+  assert.equal(reopened.nodes.find(n=>n.id===prepared.result.nodeId).data.result.status,'complete');
+  const again=await api.editProject(attached.state,attached.library,'cinegen_audio',{action:'attach',nodeId:prepared.result.nodeId,spaceId:prepared.result.spaceId,audioUrl:'https://eleven.example/sample.mp3'},true,persist);
+  assert.equal(calls,1);assert.equal(api.hydrate(again.state,again.library).assets.length,1);
+  await assert.rejects(api.editProject(attached.state,attached.library,'cinegen_audio',{action:'attach',nodeId:prepared.result.nodeId,spaceId:prepared.result.spaceId,audioUrl:'https://eleven.example/sample.mp3',expectedText:'An old line'},true,persist),/brief changed/);
+  assert.ok(api.remoteTools.find(t=>t.name==='cinegen_audio'));
+});
+
 test('cloud writes compare both project and changed library revisions atomically',async()=>{
   let sent;
   globalThis.fetch=async(url,options)=>{sent=JSON.parse(options.body);return Response.json({writeResults:[]});};
@@ -107,7 +127,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.6.12');
+  assert.equal(initialized.result.serverInfo.version,'1.7.0');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -291,6 +311,11 @@ test('MCP lists Topview by default and sends authenticated Topview jobs without 
     const started=await invoke('cinegen_generate',{projectId:raw.project.id,requestId:'default',model:'topview-image-seedream-4-5',inputs:{prompt:'A sunrise'}});
     assert.equal(started.result.isError,undefined,started.result.content[0].text);
     assert.equal(queued.args.provider,'topview');assert.equal(queued.prepared.provider,'topview');assert.equal(queued.identity.falKey,undefined);
+    api.CloudStore.prototype.load=async()=>({state:raw,library:{elements:[{id:'hero',name:'Mara',type:'character',voice:{description:'Soft and smoky'}}]},metadata:{}});
+    const video=await invoke('cinegen_generate',{projectId:raw.project.id,requestId:'voice-video',model:'topview-video-seedance-2-5',elementIds:['hero'],inputs:{prompt:'She speaks.'}});
+    assert.equal(video.result.isError,undefined,video.result.content[0].text);
+    assert.match(queued.prepared.params.prompt,/Mara: Soft and smoky/);
+    assert.equal(queued.prepared.prompt,'She speaks.');
     assert.ok(!calls.some(u=>/fal\.run|higgsfield/.test(u)));
   }finally{api.CloudStore.prototype.load=originalLoad;}
 });

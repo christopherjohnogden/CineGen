@@ -276,6 +276,9 @@ export async function prepareElementsLibraryForCloudMedia(
     variationId?: string;
   }> = [];
   for (const element of cloned.elements) {
+    if (element.voice?.referenceAudio) {
+      references.push({ image: element.voice.referenceAudio, elementId: element.id, elementName: `${element.name}-voice`, variationId: 'voice' });
+    }
     for (const image of element.images) {
       references.push({ image, elementId: element.id, elementName: element.name });
     }

@@ -1,4 +1,4 @@
-import { prepareElementReferences } from '@/lib/cloud/elements';
+import { prepareElementReferences, prepareAudioReference } from '@/lib/cloud/elements';
 import { buildElementDraft, type ElementBuildRequest } from '@/lib/elements/build-element';
 import type { Element } from '@/types/elements';
 import { flushSync } from 'react-dom';
@@ -76,6 +76,10 @@ export function useMcpBridge(
       if (action === 'persist_element') {
         if (!options.projectId) throw new Error('Open a project before saving references.');
         return prepareElementReferences(args.element as Element, options.projectId);
+      }
+      if (action === 'persist_audio') {
+        if (!options.projectId) throw new Error('Open a project before saving audio.');
+        return prepareAudioReference(String(args.source), options.projectId, String(args.assetId));
       }
       if (action === 'approve_element') return approveDraft(String(args.jobId));
       if (action === 'build_element') {
