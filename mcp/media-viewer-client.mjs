@@ -225,7 +225,12 @@ function mountViewer() {
     // Light fills the player; CSS moves the color layers without rebuilding
     // the viewer or interfering with its job polling and video controls.
     stage.append(element('div', 'prism-spectrum'), element('div', 'prism-refraction'));
-    loading.append(stage, element('p', 'generation-label', statusNames[status]));
+    const edge = element('div', 'prism-edge'); edge.setAttribute('aria-hidden', 'true');
+    const label = element('p', 'generation-label'), signal = element('span', 'generation-signal');
+    signal.setAttribute('aria-hidden', 'true');
+    signal.append(element('span'), element('span'), element('span'));
+    label.append(signal, element('span', 'generation-label-text', statusNames[status]));
+    loading.append(stage, edge, label);
     return loading;
   }
   function media(item, detail) {
@@ -605,7 +610,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.2' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.3' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

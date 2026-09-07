@@ -24,7 +24,7 @@ const projectTool = { name:'cinegen_project',description:'List or create saved C
 async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Identity}) {
   const origin=request.headers.get('origin');
   if(origin && origin!==env.PUBLIC_ORIGIN) return new Response('Origin not allowed',{status:403});
-  const server = new Server({name:'cinegen',version:'1.6.6'},{capabilities:{tools:{},resources:{}},instructions:DISPLAY_INSTRUCTIONS+' '+'Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
+  const server = new Server({name:'cinegen',version:'1.6.7'},{capabilities:{tools:{},resources:{}},instructions:DISPLAY_INSTRUCTIONS+' '+'Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [MEDIA_RESOURCE] }));
   server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => readMediaResource(params.uri));
   server.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[projectTool,...remoteTools,...generationTools]}));
@@ -148,7 +148,7 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
 const defaultHandler={async fetch(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url);
   if(url.origin!==env.PUBLIC_ORIGIN) return new Response('Unknown host',{status:400});
-  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1,version:'1.6.6',displayTools:remoteTools.filter(t=>isDisplayTool(t.name)).map(t=>t.name)});
+  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1,version:'1.6.7',displayTools:remoteTools.filter(t=>isDisplayTool(t.name)).map(t=>t.name)});
   if(url.pathname==='/') return page(`<h1>CineGen Connect</h1><p>Work on your saved CineGen projects from Claude or ChatGPT, even while your Mac is closed.</p><label>Connection URL</label><code>${html(env.PUBLIC_ORIGIN)}/mcp</code><p>Add this URL as a custom connector, then sign in with your CineGen Cloud account.</p><small>Sign into the same cloud account in CineGen on desktop and the website to see your saved work. Local-only projects must sync first.</small>`);
   if(url.pathname!=='/authorize') return new Response('Not found',{status:404});
   try {
