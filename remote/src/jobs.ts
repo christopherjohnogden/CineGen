@@ -44,6 +44,34 @@ interface Job extends RecordValue { identity:Identity & {falKey?:string}; prepar
 function publicJob(j:Job) { return {requestId:j.args.requestId,projectId:j.args.projectId,nodeId:j.nodeId,status:j.status,provider:j.args.provider??'fal',createdAt:j.createdAt,url:j.url??null,error:j.error??null}; }
 function falUrl(value:string) { const url=new URL(value);if(url.origin!=='https://queue.fal.run')throw new Error('Invalid provider response URL.');return url.href; }
 
+export async function downloadGeneratedMedia(source:string, provider='topview') {
+  let url=new URL(source);
+  const signal=AbortSignal.timeout(60000);
+  for(let redirects=0;redirects<=5;redirects++) {
+    // Workers additionally enforces globally routable destinations with
+    // global_fetch_strictly_public, including DNS resolution on every hop.
+    if(url.protocol!=='https:'||url.username||url.password||url.hostname.includes(':')
+      ||/^[0-9.]+$/.test(url.hostname)||/^(localhost)$|\.(localhost|local|internal)$/.test(url.hostname)
+      ||(provider==='fal'&&!(url.hostname.endsWith('.fal.media')||url.hostname==='fal.media'||url.hostname.endsWith('.fal.ai')))) {
+      throw new Error('Provider returned an unsupported media location.');
+    }
+    const response=await fetch(url.href,{redirect:'manual',signal});
+    if([301,302,303,307,308].includes(response.status)) {
+      const location=response.headers.get('location');
+      await response.body?.cancel();
+      if(!location)throw new Error(`Generated media redirect has no destination (HTTP ${response.status}).`);
+      if(redirects===5)throw new Error('Generated media exceeded the download redirect limit.');
+      url=new URL(location,url);continue;
+    }
+    if(!response.ok||!response.body) {
+      await response.body?.cancel();
+      throw new Error(`Generated media download failed (HTTP ${response.status}).`);
+    }
+    return response;
+  }
+  throw new Error('Generated media download did not finish.');
+}
+
 async function persistMedia(source:string,store:CloudStore,ownerId:string,projectId:string,assetId:string,type:string,provider = 'fal') {
   const url=new URL(source);
   if(url.protocol!=='https:'||url.username||url.password||(provider==='fal'&&!(url.hostname.endsWith('.fal.media')||url.hostname==='fal.media'||url.hostname.endsWith('.fal.ai')))) throw new Error('Provider returned an unsupported media location.');
@@ -55,12 +83,11 @@ async function persistMedia(source:string,store:CloudStore,ownerId:string,projec
   if(existing.ok) metadata=await existing.json() as RecordValue;
   else {
     if(existing.status!==404) throw new Error(`Media storage is unavailable (${existing.status}).`);
-    const media=await fetch(url.href,{redirect:'manual'});
-    if(!media.ok||!media.body) throw new Error('Generated media could not be downloaded.');
+    const media=await downloadGeneratedMedia(url.href,provider);
     if(Number(media.headers.get('content-length')??0)>90*1024*1024) throw new Error('Generated media exceeds the 90 MB cloud upload limit.');
     const contentType=media.headers.get('content-type')?.split(';')[0]||`${type}/${type==='video'?'mp4':'png'}`;
     if(!/^(image|video)\/[a-zA-Z0-9.+-]+$/.test(contentType)) throw new Error('Provider returned an unexpected media type.');
-    const boundary=crypto.randomUUID(); const encoder=new TextEncoder();const reader=media.body.getReader();let phase=0;let bytes=0;
+    const boundary=crypto.randomUUID(); const encoder=new TextEncoder();const reader=media.body!.getReader();let phase=0;let bytes=0;
     const body=new ReadableStream({async pull(controller){
       if(phase===0){phase=1;controller.enqueue(encoder.encode(`--${boundary}\r\nContent-Type: application/json; charset=utf-8\r\n\r\n${JSON.stringify({name,contentType,metadata:{projectId,assetId}})}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`));return;}
       const chunk=await reader.read();
@@ -87,7 +114,7 @@ export class GenerationJob extends DurableObject {
       // A provider result already exists: refresh authorization and retry only
       // persistence. Never reopen queued/submitting jobs or send another paid request.
       if(job && job.sourceUrl && ['needs_attention','failed'].includes(job.status) && body.identity.refreshToken) {
-        job.identity=body.identity;job.status='saving';job.attempts=0;delete job.error;
+        job.identity=body.identity;job.status='saving';job.attempts=0;
         await this.ctx.storage.put('job',job);
         await this.ctx.storage.setAlarm(Date.now()+100);
       }
@@ -156,6 +183,15 @@ export class GenerationJob extends DurableObject {
       }
       if(job.status==='saving') {
         let loaded=await store.load(job.args.projectId);
+        const savingState=hydrate(loaded.state,loaded.library,loaded.metadata.useSqlite!==false);
+        const savingSpace=savingState.spaces.find(s=>s.nodes.some(n=>n.id===job.nodeId));
+        const savingNode=savingSpace?.nodes.find(n=>n.id===job.nodeId);
+        const progressMessage='Saving generated media…';
+        if(savingNode && savingNode.data.result?.progressMessage!==progressMessage) {
+          savingNode.data.result={status:'running',progressMessage};
+          if(savingSpace!.id===savingState.activeSpaceId)savingState.nodes=savingSpace!.nodes;
+          await store.save(loaded,serialize(loaded.state,savingState,loaded.metadata.useSqlite!==false));
+        }
         job.url??=await persistMedia(job.sourceUrl,store,loaded.ownerId,job.args.projectId,job.nodeId,prepared.model.outputType,job.args.provider??'fal');
         await this.ctx.storage.put('job',job);
         // Reload after uploading: another client may have edited the timeline while the file transferred.
@@ -185,6 +221,7 @@ export class GenerationJob extends DurableObject {
       }catch{/* The job status remains available even if project access was revoked. */}
     }
     if(['complete','failed','needs_attention'].includes(job.status)) { job.identity={...job.identity,refreshToken:'',falKey:''}; }
+    console.info('generation_progress', { requestId: job.args.requestId, nodeId: job.nodeId, status: job.status, attempts: job.attempts, hasSource: Boolean(job.sourceUrl), hasSavedMedia: Boolean(job.url), error: typeof job.error === 'string' ? job.error.replace(/https?:\/\/[^\s]+/g, '[url]').slice(0, 500) : undefined });
     await this.ctx.storage.put('job',job);
     if(!['complete','failed','needs_attention'].includes(job.status))await this.ctx.storage.setAlarm(Date.now()+(job.status==='running'?5000:30000));
   }

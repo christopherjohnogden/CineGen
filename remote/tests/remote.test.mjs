@@ -93,7 +93,7 @@ test('background generation saves durable media and native project state after a
     // No client calls and a new instance: persisted alarms own the rest of the work.
     await new api.GenerationJob(ctx,{}).alarm();assert.equal(values.get('job').status,'running');
     await new api.GenerationJob(ctx,{}).alarm();assert.equal(values.get('job').status,'complete');
-    assert.equal(submitted,1);assert.equal(saved,2);
+    assert.equal(submitted,1);assert.equal(saved,3);
     const reopened=api.hydrate(raw,{elements:[],folders:[]});
     assert.equal(reopened.assets.length,1);assert.match(reopened.assets[0].url,/firebasestorage.googleapis.com/);
     assert.equal(reopened.spaces[0].nodes[0].data.result.status,'complete');
@@ -106,7 +106,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.2.2');
+  assert.equal(initialized.result.serverInfo.version,'1.2.3');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -251,4 +251,25 @@ test('MCP lists Topview by default and sends authenticated Topview jobs without 
     assert.equal(queued.args.provider,'topview');assert.equal(queued.prepared.provider,'topview');assert.equal(queued.identity.falKey,undefined);
     assert.ok(!calls.some(u=>/fal\.run|higgsfield/.test(u)));
   }finally{api.CloudStore.prototype.load=originalLoad;}
+});
+
+
+test('provider downloads follow validated HTTPS CDN redirects without forwarding credentials',async()=>{
+  const seen=[];
+  globalThis.fetch=async(url,options)=>{
+    seen.push(String(url));assert.equal(options.redirect,'manual');assert.equal(options.headers,undefined);
+    return seen.length===1 ? new Response(null,{status:302,headers:{location:'https://cdn.example/image.png'}}) : new Response('image',{headers:{'content-type':'image/png'}});
+  };
+  const result=await api.downloadGeneratedMedia('https://provider.example/result');
+  assert.equal(await result.text(),'image');assert.equal(seen.length,2);
+});
+test('provider downloads reject unsafe redirects, loops and report actual HTTP failures',async()=>{
+  for(const destination of ['http://cdn.example/image','https://127.0.0.1/image','https://user:secret@cdn.example/image','https://localhost/image']) {
+    let calls=0;globalThis.fetch=async()=>{calls++;return new Response(null,{status:302,headers:{location:destination}});};
+    await assert.rejects(api.downloadGeneratedMedia('https://provider.example/result'),/unsupported media/);assert.equal(calls,1);
+  }
+  globalThis.fetch=async()=>new Response(null,{status:302,headers:{location:'/loop'}});
+  await assert.rejects(api.downloadGeneratedMedia('https://provider.example/result'),/redirect limit/);
+  globalThis.fetch=async()=>new Response(null,{status:403});
+  await assert.rejects(api.downloadGeneratedMedia('https://provider.example/result'),/HTTP 403/);
 });
