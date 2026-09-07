@@ -14,7 +14,7 @@ export interface DisplayItem {
   thumbnailUrl?: string | null; posterUrl?: string | null;
   nodeId?: string; assetId?: string; elementId?: string; variationId?: string; imageId?: string;
   requestId?: string; spaceId?: string; spaceName?: string; folderId?: string; folderName?: string;
-  model?: string; provider?: string; createdAt?: string; error?: string; unavailableReason?: string;
+  model?: string; provider?: string; createdAt?: string; startedAt?: number; error?: string; unavailableReason?: string;
   width?: number; height?: number; duration?: number; resolution?: string; aspectRatio?: string;
   references?: { id: string; title: string; url: string | null; previewUrl: string | null; kind: string; elementId?: string; imageId?: string; variationId?: string }[];
   galleryImages?: DisplayItem[];
@@ -125,6 +125,7 @@ function generationItems(state: McpHostState, args: Record<string, unknown>): Di
           provider: model?.provider, spaceId: space.id, spaceName: space.name, references: inputReferences(state, config, model, space, node.id),
           source: node.data.type === 'filePicker' ? 'Canvas upload' : 'Generation',
           createdAt: text(config.__studioCreatedAt) || asset?.createdAt,
+          startedAt: historical ? undefined : positive(node.data.result?.progressStartedAt),
           ...(!historical && node.data.result?.error ? { error: node.data.result.error } : {}) });
       }
     }
@@ -262,7 +263,8 @@ export function displayJobSnapshot(job: Record<string, unknown>, existing?: Disp
   const base = existing?.items[0];
   const item: DisplayItem = { id: text(job.nodeId) || text(job.requestId), title: base?.title || 'Generation', kind: base?.kind || (job.kind === 'video' ? 'video' : 'image'),
     prompt: base?.prompt || '', ...base, nodeId: text(job.nodeId), requestId: text(job.requestId),
-    status: text(job.status), ...mediaFields(job.url, job.url ? base?.thumbnailUrl : undefined), createdAt: text(job.createdAt), provider: text(job.provider),
+    status: text(job.status), ...mediaFields(job.url, job.url ? base?.thumbnailUrl : undefined), createdAt: text(job.createdAt),
+    startedAt: positive(Date.parse(text(job.createdAt))) ?? base?.startedAt, provider: text(job.provider),
     error: text(job.error) || undefined, unavailableReason: job.status === 'not_found' ? 'This job was not found.' : undefined };
   const args = { projectId: job.projectId, requestId: job.requestId };
   return { ...existing, title: item.title, mode: 'job', items: [item], total: 1, offset: 0, limit: 1, hasMore: false, refresh: { name: 'cinegen_job_display', arguments: args } };

@@ -138,12 +138,13 @@ describe('deployed MCP viewer startup', () => {
 
   it('revalidates a cached running batch while its detail is open and shows the finished video', async () => {
     const view = mount(); await view.initialize();
-    const running = { ...page, mode: 'batch', items: [{ id: 'video-job', title: 'Seedance 2.5', kind: 'video', status: 'running', url: null }], total: 1,
+    const running = { ...page, mode: 'batch', items: [{ id: 'video-job', title: 'Seedance 2.5', kind: 'video', status: 'running', url: null, createdAt: new Date(Date.now() - 85000).toISOString() }], total: 1,
       refresh: { name: 'cinegen_show_generation_batch', arguments: { projectId: 'fixture', jobs: [{ requestId: 'existing-paid-job' }] } } };
     view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: running } });
     (view.document.querySelector('.tile-preview') as HTMLButtonElement).click();
     expect(view.document.querySelector('.selection-bar')).toBeNull();
-    expect(view.document.querySelector('.result-player .generation-loading')?.textContent).toBe('Generating');
+    expect(view.document.querySelector('.result-player .generation-label-text')?.textContent).toBe('Generating');
+    expect(view.document.querySelector('.generation-clock')?.textContent).toBe('1:25');
     expect(view.document.querySelector('.result-player .generation-prism')).not.toBeNull();
     await vi.advanceTimersByTimeAsync(1);
     const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
@@ -154,6 +155,7 @@ describe('deployed MCP viewer startup', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelector('.detail video')?.getAttribute('src')).toContain('finished.mp4');
     expect(view.document.querySelector('.generation-loading')).toBeNull();
+    expect(view.document.querySelector('.generation-clock')).toBeNull();
     expect(view.document.querySelector('.status')?.textContent).toBe('Ready');
     const video = view.document.querySelector('video');
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
@@ -162,6 +164,46 @@ describe('deployed MCP viewer startup', () => {
     view.send({ id: calls()[1][0].id, result: { structuredContent: done } }); await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelector('video')).toBe(video);
     expect(view.host.postMessage.mock.calls.some(([m]) => m.params?.name === 'cinegen_generate')).toBe(false);
+  });
+
+  it('keeps elapsed time across polls and backgrounding without rebuilding the player or making extra requests', async () => {
+    const view = mount(); vi.setSystemTime(new Date('2026-09-07T16:00:00Z')); await view.initialize();
+    const data = { ...page, mode: 'job', items: [{ id: 'elapsed-video', title: 'Seedance 2.5', kind: 'video', status: 'running', url: null,
+      createdAt: '2026-09-06T10:00:00Z', startedAt: Date.now() - 125000 }], total: 1,
+      refresh: { name: 'cinegen_job_display', arguments: { nodeId: 'elapsed-video' } } };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
+    const clock = view.document.querySelector('.generation-clock') as HTMLTimeElement;
+    const player = view.document.querySelector('.result-player');
+    expect(clock.textContent).toBe('2:05');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(clock.textContent).toBe('2:06');
+    const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
+    expect(calls()).toHaveLength(1);
+    view.send({ id: calls()[0][0].id, result: { structuredContent: data } }); await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelector('.generation-clock')).toBe(clock);
+    expect(view.document.querySelector('.result-player')).toBe(player);
+    expect(clock.closest('[role="timer"]')?.getAttribute('aria-live')).toBe('off');
+    Object.defineProperty(view.document, 'visibilityState', { value: 'hidden', configurable: true });
+    view.document.dispatchEvent(new view.window.Event('visibilitychange'));
+    vi.setSystemTime(Date.now() + 61 * 60000);
+    expect(clock.textContent).toBe('2:06');
+    Object.defineProperty(view.document, 'visibilityState', { value: 'visible', configurable: true });
+    view.document.dispatchEvent(new view.window.Event('visibilitychange'));
+    expect(clock.textContent).toBe('1:03:06'); expect(clock.dateTime).toBe('PT3786S');
+    view.send({ id: 'teardown-elapsed', method: 'ui/resource-teardown', params: {} });
+    const count = calls().length;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(clock.textContent).toBe('1:03:06'); expect(calls()).toHaveLength(count);
+  });
+
+  it.each([undefined, 'invalid-date', '2026-09-07T17:00:00Z'])('handles absent, invalid and future job times: %s', async createdAt => {
+    const view = mount(); vi.setSystemTime(new Date('2026-09-07T16:00:00Z')); await view.initialize();
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, mode: 'job', total: 1,
+      items: [{ id: 'video-time', title: 'Seedance 2.5', kind: 'video', status: 'saving', url: null, createdAt }],
+      refresh: { name: 'cinegen_job_display', arguments: { nodeId: 'video-time' } },
+    } } });
+    expect(view.document.querySelector('.generation-clock')?.textContent ?? null).toBe(createdAt?.startsWith('2026') ? '0:00' : null);
+    expect(view.document.querySelector('.generation-label-text')?.textContent).toBe('Saving to CineGen');
   });
 
   it.each([

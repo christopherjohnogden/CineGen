@@ -56,6 +56,16 @@ describe('MCP media displays', () => {
     expect(snapshot.items[0]).toMatchObject({ status: 'saving', url: null, previewUrl: null, kind: 'video', error: 'Source unavailable' });
     expect(snapshot.refresh.arguments).toEqual({ projectId: 'project', requestId: 'job' });
   });
+  it('exposes the actual run start instead of an older prepared-item creation date', async () => {
+    const { state, handlers } = setup();
+    const startedAt = Date.parse('2026-09-07T15:58:00Z');
+    state.nodes = [node('timed', 'video', { result: { status: 'running', progressStartedAt: startedAt } }) as any];
+    const shown = await handlers.cinegen_job_display({ nodeId: 'timed' }) as DisplayPage;
+    expect(shown.items[0]).toMatchObject({ startedAt, createdAt: '2026-09-07T03:00:00Z' });
+    const durable = displayJobSnapshot({ projectId: 'project', requestId: 'job', nodeId: 'timed', status: 'saving', url: null,
+      createdAt: '2026-09-07T15:59:00Z' }, shown);
+    expect(durable.items[0].startedAt).toBe(Date.parse('2026-09-07T15:59:00Z'));
+  });
   it('keeps a readable fallback and declares one real UI resource for all display tools', async () => {
     const { handlers } = setup();
     const data = await handlers.cinegen_show_generations({}) as DisplayPage;

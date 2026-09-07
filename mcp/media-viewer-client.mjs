@@ -9,7 +9,7 @@ function mountViewer() {
   let moreRequest = null, moreError = '';
   const visibleItems = () => current.items;
   const scroller = () => document.scrollingElement || document.documentElement;
-  let lastRefresh = 0;
+  let lastRefresh = 0, elapsedTimer;
   const knownTools = new Set(['cinegen_show_generations', 'cinegen_show_reference_elements', 'cinegen_job_display', 'cinegen_show_media', 'cinegen_show_generation_batch', 'cinegen_show_film_presets']);
   const statusNames = { complete: 'Ready', running: 'Generating', submitting: 'Starting', queued: 'Queued', pending: 'Prepared', saving: 'Saving to CineGen', needs_attention: 'Needs attention', failed: 'Failed', not_found: 'Not found' };
   const activeStatuses = new Set(['running', 'submitting', 'queued', 'saving']);
@@ -149,6 +149,7 @@ function mountViewer() {
     }
   }
   function resume() {
+    updateElapsedTimes();
     if (!disposed && current && document.visibilityState !== 'hidden' && Date.now() - lastRefresh > 5000) void refresh({}, true);
   }
   async function copyText(value) {
@@ -218,18 +219,40 @@ function mountViewer() {
     add('path', { d: 'M29 41V29h12 M359 29h12v12 M371 184v12h-12 M41 196H29v-12', fill: 'none', stroke: '#c5ad81', 'stroke-width': 2 });
     frame.append(svg); return frame;
   }
-  function generationPrism(status) {
+  function updateElapsedTimes() {
+    clearTimeout(elapsedTimer);
+    if (disposed || document.visibilityState === 'hidden') return;
+    const clocks = root.querySelectorAll('.generation-clock'), now = Date.now();
+    for (const clock of clocks) {
+      const seconds = Math.max(0, Math.floor((now - Number(clock.dataset.startedAt)) / 1000));
+      const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
+      const text = `${hours ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes}:${String(seconds % 60).padStart(2, '0')}`;
+      if (clock.textContent !== text) { clock.textContent = text; clock.dateTime = `PT${seconds}S`; }
+    }
+    // Only update the timer text; never rebuild the player or poll the server.
+    if (clocks.length) elapsedTimer = setTimeout(updateElapsedTimes, 1000 - now % 1000);
+  }
+  function generationPrism(item, detail) {
     const loading = element('div', 'generation-loading');
-    loading.setAttribute('role', 'status');
     const stage = element('div', 'generation-prism'); stage.setAttribute('aria-hidden', 'true');
     // Light fills the player; CSS moves the color layers without rebuilding
     // the viewer or interfering with its job polling and video controls.
     stage.append(element('div', 'prism-spectrum'), element('div', 'prism-refraction'));
     const edge = element('div', 'prism-edge'); edge.setAttribute('aria-hidden', 'true');
-    const label = element('p', 'generation-label'), signal = element('span', 'generation-signal');
+    const label = element('p', 'generation-label'), line = element('span', 'generation-label-line'), signal = element('span', 'generation-signal');
+    line.setAttribute('role', 'status');
     signal.setAttribute('aria-hidden', 'true');
     signal.append(element('span'), element('span'), element('span'));
-    label.append(signal, element('span', 'generation-label-text', statusNames[status]));
+    line.append(signal, element('span', 'generation-label-text', statusNames[item.status])); label.append(line);
+    // Older cloud jobs carry their submission time as createdAt. Never invent
+    // a zero-based start for records that have no usable timestamp.
+    const startedAt = Number.isFinite(item.startedAt) && item.startedAt > 0 ? item.startedAt : Date.parse(item.createdAt);
+    if (detail && Number.isFinite(startedAt) && startedAt > 0) {
+      const elapsed = element('span', 'generation-elapsed'), clock = element('time', 'generation-clock');
+      elapsed.setAttribute('role', 'timer'); elapsed.setAttribute('aria-live', 'off');
+      clock.dataset.startedAt = String(startedAt);
+      elapsed.append(clock, element('span', '', 'elapsed')); label.append(elapsed);
+    }
     loading.append(stage, edge, label);
     return loading;
   }
@@ -240,7 +263,7 @@ function mountViewer() {
     const isPoster = !detail && item.kind === 'video' && thumbnail;
     const source = !detail && item.kind === 'image' ? thumbnail || url : isPoster ? thumbnail : url;
     if (item.kind === 'video' && activeStatuses.has(item.status) && !url && !safeUrl(item.url)) {
-      frame.append(generationPrism(item.status)); return frame;
+      frame.append(generationPrism(item, detail)); return frame;
     }
     if (!source || !detail && item.kind === 'audio') {
       frame.append(icon(item.kind === 'audio' ? 'audio' : item.kind === 'video' ? 'play' : 'image'));
@@ -584,7 +607,7 @@ function mountViewer() {
     const strip = root.querySelector('.gallery-thumbnails'), thumbnail = strip?.querySelector('[aria-pressed="true"]');
     if (thumbnail) strip.scrollLeft = Math.max(0, thumbnail.offsetLeft - strip.offsetLeft - (strip.clientWidth - thumbnail.offsetWidth) / 2);
     if (activeKey && sameView) [...root.querySelectorAll('[data-focus-id]')].find(el => el.dataset.focusId === activeKey)?.focus({ preventScroll: true });
-    reportSize(); updateScrollHint(); setTimeout(maybeLoadMore, 0);
+    updateElapsedTimes(); reportSize(); updateScrollHint(); setTimeout(maybeLoadMore, 0);
   }
   window.addEventListener('message', event => {
     if (event.source !== window.parent || event.data?.jsonrpc !== '2.0' || hostOrigin !== '*' && event.origin !== hostOrigin) return;
@@ -597,7 +620,7 @@ function mountViewer() {
     if (msg.method === 'ui/notifications/host-context-changed') applyHostContext(msg.params);
     if (msg.method === 'ui/notifications/tool-result') receive(msg.params);
     if (msg.method === 'ui/notifications/tool-cancelled') showError('Loading was cancelled.');
-    if (msg.method === 'ui/resource-teardown') { disposed = true; clearTimeout(timer); clearTimeout(startupTimer); root.querySelectorAll('video,audio').forEach(view => { view.pause(); view._observer?.disconnect(); }); for (const entry of pending.values()) clearTimeout(entry.timeout); pending.clear(); window.parent.postMessage({ jsonrpc: '2.0', id: msg.id, result: {} }, hostOrigin); }
+    if (msg.method === 'ui/resource-teardown') { disposed = true; clearTimeout(timer); clearTimeout(startupTimer); clearTimeout(elapsedTimer); root.querySelectorAll('video,audio').forEach(view => { view.pause(); view._observer?.disconnect(); }); for (const entry of pending.values()) clearTimeout(entry.timeout); pending.clear(); window.parent.postMessage({ jsonrpc: '2.0', id: msg.id, result: {} }, hostOrigin); }
   });
   startupTimer = setTimeout(() => { if (!current) showError('The chat connection did not deliver your library.'); }, 20000);
   window.addEventListener('openai:set_globals', event => { applyHostContext(); if (event.detail?.globals?.toolOutput) receive(event.detail.globals.toolOutput); });
@@ -607,10 +630,11 @@ function mountViewer() {
   window.addEventListener('scroll', () => { updateScrollHint(); maybeLoadMore(); }, { passive: true });
   document.addEventListener('visibilitychange', resume);
   window.addEventListener('pageshow', resume);
+  window.addEventListener('pagehide', () => clearTimeout(elapsedTimer));
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.3' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.4' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }
