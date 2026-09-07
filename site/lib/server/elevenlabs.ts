@@ -65,8 +65,16 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
     const who = identityRequired();
     const stored = await env.MEDIA.get(mediaKey(j.request_id));
     if (!stored) return result(j);
+    // A node, another device and an MCP poll may all recover the same take.
+    // Serialize copying that take into Firebase so its download token cannot race.
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS elevenlabs_audio_save_locks (workspace_id TEXT NOT NULL, request_id TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(workspace_id, request_id))').run();
+    const lease = Date.now() + 300000;
+    const lock = await env.DB.prepare('INSERT INTO elevenlabs_audio_save_locks (workspace_id, request_id, expires_at) VALUES (?, ?, ?) ON CONFLICT(workspace_id, request_id) DO UPDATE SET expires_at = excluded.expires_at WHERE expires_at < ?').bind(workspaceId, j.request_id, lease, Date.now()).run();
+    if (!lock.meta.changes) { await stored.body.cancel().catch(() => {}); return result((await get(j.request_id)) || j); }
     const p = JSON.parse(j.input_json) as ElevenLabsAudioRequest;
     try {
+      const current = await get(j.request_id);
+      if (current?.status === 'complete') return result(current);
       const url = await persistGeneratedMedia({ source: '', token: who.token, ownerId: who.uid, projectId: p.projectId!, assetId: j.request_id, type: 'audio', provider: 'elevenlabs', audioExtension: 'mp3' }, async () => new Response(stored.body, { headers: { 'content-type': 'audio/mpeg', 'content-length': String(stored.size) } }));
       await update(j.request_id, 'complete', url, null);
       return { requestId: j.request_id, assetId: j.request_id, status: 'complete', url };
@@ -74,7 +82,10 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
       const error = cause instanceof Error ? cause.message : 'Audio could not be saved.';
       await update(j.request_id, 'saving', null, error);
       return { requestId: j.request_id, assetId: j.request_id, status: 'saving', error: `${error} Check again to finish saving this same audio.` };
-    } finally { if (!stored.bodyUsed) await stored.body.cancel().catch(() => {}); }
+    } finally {
+      if (!stored.bodyUsed) await stored.body.cancel().catch(() => {});
+      await env.DB.prepare('DELETE FROM elevenlabs_audio_save_locks WHERE workspace_id = ? AND request_id = ? AND expires_at = ?').bind(workspaceId, j.request_id, lease).run();
+    }
   };
   return {
     async accountStatus() { return { connected: Boolean(await vault.get('elevenlabs')), provider: 'elevenlabs' }; },

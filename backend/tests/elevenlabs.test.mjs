@@ -4,9 +4,11 @@ import assert from 'node:assert/strict';
 await build({ entryPoints: ['site/lib/server/elevenlabs.ts'], outfile: 'backend/dist/elevenlabs-test.mjs', bundle: true, platform: 'browser', format: 'esm' });
 const { createElevenLabs, audioRequest, elevenLabsPayload } = await import('../dist/elevenlabs-test.mjs');
 function fixture() {
-  const jobs = new Map(), media = new Map(); let connection;
+  const jobs = new Map(), media = new Map(), locks = new Map(); let connection;
   const db = { prepare(sql) { return { values: [], bind(...values) { this.values = values; return this; }, async first() { return sql.includes('elevenlabs_audio_jobs') ? jobs.get(this.values[1]) || null : connection || null; }, async all() { return { results: connection ? [{ ...connection, provider: 'workspace-secret:elevenlabs' }] : [] }; }, async run() {
     const v = this.values;
+    if (sql.startsWith('INSERT INTO elevenlabs_audio_save_locks')) { if (locks.has(v[1]) && locks.get(v[1]) >= v[3]) return { meta: { changes: 0 } }; locks.set(v[1],v[2]); }
+    if (sql.startsWith('DELETE FROM elevenlabs_audio_save_locks') && locks.get(v[1]) === v[2]) locks.delete(v[1]);
     if (sql.includes('INSERT INTO provider_connections')) connection = { token_ciphertext: v[2], updated_at: v[3] };
     if (sql.includes('DELETE FROM provider_connections')) connection = null;
     if (sql.includes('INSERT OR IGNORE INTO elevenlabs_audio_jobs')) { if (jobs.has(v[1])) return { meta: { changes: 0 } }; jobs.set(v[1], { request_id: v[1], input_json: v[2], status: v[3], updated_at: v[4], url: null, error: null }); }
@@ -115,4 +117,26 @@ test('voice design returns durable playable previews and saving a selected previ
     await assert.rejects(f.service.design({ description, text: 'Too short.' }), /100–1,000/);
     assert.equal(requests.length, 2, 'invalid previews do not make paid API calls');
   } finally { globalThis.fetch = previous; }
+});
+
+test('a recovery poll cannot upload over an in-flight save of the same audio', async () => {
+  const f = fixture(), previous = globalThis.fetch; let uploads = 0, resumeUpload, enteredUpload;
+  const started = new Promise(r => { enteredUpload = r; });
+  const hold = new Promise(r => { resumeUpload = r; });
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes('/v2/voices')) return Response.json({ voices: [] });
+    if (u.startsWith('https://api.elevenlabs.io/')) return new Response(new Uint8Array([73, 68, 51]), { headers: { 'content-type': 'audio/mpeg' } });
+    if (!init.method) return new Response('', { status: 404 });
+    uploads++; await new Response(init.body).arrayBuffer(); enteredUpload(); await hold;
+    return Response.json({ downloadTokens: 'one-token' });
+  };
+  try {
+    await f.service.connect({ secret: 'fixture' });
+    const generation = f.service.generate(req); await started;
+    const whileSaving = await f.service.job({ requestId: req.requestId });
+    assert.equal(whileSaving.status, 'saving'); assert.equal(uploads, 1);
+    resumeUpload(); const completed = await generation;
+    assert.equal(completed.status, 'complete'); assert.deepEqual(await f.service.job({ requestId: req.requestId }), completed); assert.equal(uploads, 1);
+  } finally { resumeUpload(); globalThis.fetch = previous; }
 });
