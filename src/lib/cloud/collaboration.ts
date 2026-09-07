@@ -261,7 +261,7 @@ async function migrateLegacyProject(access: StoredProjectAccess, user: User): Pr
 }
 
 export async function ensureProjectAccess(projectId: string, user: User): Promise<ProjectAccess> {
-  await registerCloudIdentity(user);
+  // Opening an existing project must not wait for an unrelated identity write.
   const ref = accessRef(projectId);
   const current = await getDoc(ref);
 

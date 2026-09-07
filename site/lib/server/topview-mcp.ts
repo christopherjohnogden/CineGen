@@ -2039,7 +2039,7 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       let documents: unknown = [];
 
       if (!taskId) {
-        const config = await callTool(session, "topview_get_generation_config", { type: outputType, taskType });
+        const config = await callTool(session, "topview_get_generation_config", { type: outputType, taskType, refresh: true });
         const uploaded: UploadedMedia[] = [];
         for (const input of inputs) uploaded.push(await uploadMedia(session, input, env, workspaceId));
         if (!boardId) boardId = await chooseBoard(session) ?? "";

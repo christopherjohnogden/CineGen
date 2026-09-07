@@ -36,10 +36,14 @@ function mount({ preloaded = false, uri = api.MEDIA_RESOURCE.uri } = {}) {
   const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://widget.example/' });
   windows.push(dom);
   const window = dom.window;
+  window.Date = Date as any;
   const host = { postMessage: vi.fn() };
   Object.defineProperty(window, 'parent', { value: host });
   window.ResizeObserver = class { observe() {} disconnect() {} } as any;
   window.console.error = vi.fn();
+  Object.defineProperty(window.HTMLElement.prototype, 'getBoundingClientRect', { value() { return { height: 800, width: 390 }; } });
+  Object.defineProperty(window.document, 'visibilityState', { value: 'visible', configurable: true });
+  window.HTMLMediaElement.prototype.pause = vi.fn();
   if (preloaded) (window as any).openai = { toolOutput: page };
   for (const script of window.document.scripts) window.eval(script.textContent!);
   const send = (data: any, source: any = host) => window.dispatchEvent(new window.MessageEvent('message', {
@@ -132,6 +136,57 @@ describe('deployed MCP viewer startup', () => {
     expect(view.host.postMessage).toHaveBeenCalledWith({ jsonrpc: '2.0', id: 'close', result: {} }, 'https://chat.example');
   });
 
+  it('revalidates a cached running batch while its detail is open and shows the finished video', async () => {
+    const view = mount(); await view.initialize();
+    const running = { ...page, mode: 'batch', items: [{ id: 'video-job', title: 'Seedance 2.5', kind: 'video', status: 'running', url: null }], total: 1,
+      refresh: { name: 'cinegen_show_generation_batch', arguments: { projectId: 'fixture', jobs: [{ requestId: 'existing-paid-job' }] } } };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: running } });
+    (view.document.querySelector('.tile-preview') as HTMLButtonElement).click();
+    expect(view.document.querySelector('.selection-bar')).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
+    expect(calls()).toHaveLength(1);
+    expect(calls()[0][0].params).toEqual({ name: running.refresh.name, arguments: running.refresh.arguments });
+    const done = { ...running, items: [{ ...running.items[0], status: 'complete', url: 'https://firebasestorage.googleapis.com/finished.mp4', previewUrl: 'https://firebasestorage.googleapis.com/finished.mp4' }] };
+    view.send({ id: calls()[0][0].id, result: { structuredContent: done } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelector('.detail video')?.getAttribute('src')).toContain('finished.mp4');
+    expect(view.document.querySelector('.status')?.textContent).toBe('Ready');
+    const video = view.document.querySelector('video');
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+    view.window.dispatchEvent(new view.window.Event('pageshow'));
+    expect(calls()).toHaveLength(2);
+    view.send({ id: calls()[1][0].id, result: { structuredContent: done } }); await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelector('video')).toBe(video);
+    expect(view.host.postMessage.mock.calls.some(([m]) => m.params?.name === 'cinegen_generate')).toBe(false);
+  });
+
+  it('keeps checking beyond five minutes, retries connection failures, and resumes after backgrounding', async () => {
+    const view = mount(); await view.initialize();
+    const running = { ...page, items: [{ ...page.items[0], status: 'running' }] };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: running } });
+    const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
+    for (let i = 0; i < 43; i++) {
+      await vi.advanceTimersByTimeAsync(i ? 8000 : 1);
+      expect(calls()).toHaveLength(i + 1);
+      view.send({ id: calls().at(-1)[0].id, ...(i === 2 ? { error: { message: 'Network lost' } } : { result: { structuredContent: running } }) });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    Object.defineProperty(view.document, 'visibilityState', { value: 'hidden', configurable: true });
+    await vi.advanceTimersByTimeAsync(16000); expect(calls()).toHaveLength(43);
+    Object.defineProperty(view.document, 'visibilityState', { value: 'visible', configurable: true });
+    view.document.dispatchEvent(new view.window.Event('visibilitychange')); expect(calls()).toHaveLength(44);
+  });
+
+  it('lets mobile hosts expand to the full document instead of trapping details in nested scrolling', async () => {
+    const view = mount(); await view.initialize({ platform: 'mobile' }); view.result();
+    const sizes = view.host.postMessage.mock.calls.filter(([m]) => m.method === 'ui/notifications/size-changed');
+    expect(sizes.at(-1)[0].params.height).toBe(800);
+    const content = view.document.querySelector('.content')!;
+    expect(view.window.getComputedStyle(content).overflowY).not.toBe('auto');
+    expect(view.window.getComputedStyle(view.document.documentElement).overflowY).toBe('auto');
+  });
+
   it('uses host height limits and responds to orientation/context changes without resizing loops', async () => {
     const view = mount(); await view.initialize({ containerDimensions: { maxHeight: 420 } }); view.result();
     expect(view.document.querySelector('#app')?.getAttribute('style')).toContain('--viewer-height: 420px');
@@ -147,8 +202,8 @@ describe('deployed MCP viewer startup', () => {
 
   it('selects exact references directly and preserves scroll when returning from a preview', async () => {
     const view = mount(); await view.initialize(); view.result();
-    const content = () => view.document.querySelector('.content') as HTMLElement;
-    expect(content().getAttribute('tabindex')).toBe('0');
+    const content = () => view.document.documentElement;
+    expect(view.document.querySelector('.content')?.hasAttribute('tabindex')).toBe(false);
     content().scrollTop = 217;
     (view.document.querySelectorAll('.card-view')[3] as HTMLButtonElement).click();
     expect(view.document.querySelectorAll('.card.is-selected')).toHaveLength(1);
@@ -181,11 +236,11 @@ describe('deployed MCP viewer startup', () => {
     const items = Array.from({ length: 27 }, (_, i) => ({ ...page.items[0], id: `ref-${i}`, title: `Reference ${i}` }));
     const data = { ...page, items: items.slice(0, 9), total: 27, limit: 9, hasMore: true };
     view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
-    const content = view.document.querySelector('.content') as HTMLElement;
+    const content = view.document.documentElement;
     Object.defineProperties(content, { clientHeight: { value: 400 }, scrollHeight: { value: 800, configurable: true } });
     content.scrollTop = 280;
-    content.dispatchEvent(new view.window.Event('scroll'));
-    content.dispatchEvent(new view.window.Event('scroll'));
+    view.window.dispatchEvent(new view.window.Event('scroll'));
+    view.window.dispatchEvent(new view.window.Event('scroll'));
     const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
     expect(calls()).toHaveLength(1);
     expect(calls()[0][0].params.arguments).toMatchObject({ offset: 9, limit: 9, elementIds: ['charger'] });
@@ -193,28 +248,29 @@ describe('deployed MCP viewer startup', () => {
     view.send({ id: calls()[0][0].id, result: { structuredContent: { ...data, items: items.slice(9, 18), offset: 9 } } });
     await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelectorAll('.card')).toHaveLength(18);
-    expect(view.document.querySelector('.content')).toBe(content);
+    expect(view.document.documentElement).toBe(content);
     expect(content.scrollTop).toBe(280);
     expect(view.document.querySelector('.pagination')).toBeNull();
-    content.scrollTop = 730; content.dispatchEvent(new view.window.Event('scroll'));
+    content.scrollTop = 730; view.window.dispatchEvent(new view.window.Event('scroll'));
     expect(calls()).toHaveLength(2);
     expect(calls()[1][0].params.arguments.offset).toBe(18);
     view.send({ id: calls()[1][0].id, result: { structuredContent: { ...data, items: items.slice(18), offset: 18, hasMore: false } } });
     await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelectorAll('.card')).toHaveLength(27);
     expect(view.document.querySelector('.library-count')?.textContent).toBe('27 of 27');
-    content.dispatchEvent(new view.window.Event('scroll')); expect(calls()).toHaveLength(2);
+    view.window.dispatchEvent(new view.window.Event('scroll')); expect(calls()).toHaveLength(2);
   });
   it('keeps failed loading retryable and ignores an old page after changing collections', async () => {
     const view = mount(); await view.initialize();
     const data = { ...page, hasMore: true, total: 30 };
     view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
-    const content = view.document.querySelector('.content') as HTMLElement;
+    const content = view.document.documentElement;
     Object.defineProperties(content, { clientHeight: { value: 400 }, scrollHeight: { value: 410 } });
-    content.dispatchEvent(new view.window.Event('scroll'));
+    content.scrollTop = 5;
+    view.window.dispatchEvent(new view.window.Event('scroll'));
     const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
     view.send({ id: calls()[0][0].id, error: { message: 'Connection lost' } }); await vi.advanceTimersByTimeAsync(0);
-    content.dispatchEvent(new view.window.Event('scroll')); expect(calls()).toHaveLength(1);
+    view.window.dispatchEvent(new view.window.Event('scroll')); expect(calls()).toHaveLength(1);
     expect(view.document.querySelector('.library-footer')?.textContent).toContain('Retry');
     (view.document.querySelector('.library-footer button') as HTMLButtonElement).click();
     expect(calls()).toHaveLength(2);

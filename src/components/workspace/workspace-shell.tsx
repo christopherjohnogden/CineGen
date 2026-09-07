@@ -310,7 +310,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const liveStateRef = useRef(state);
   liveStateRef.current = state;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadedRef = useRef(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const savePendingRef = useRef(false);
   const projectNameRef = useRef('Project');
   const initialAssetIdsRef = useRef<Set<string> | null>(null);
@@ -1048,20 +1048,23 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   }, [hydrationComplete, projectId, settingsVersion, state.assets, wrappedDispatch]);
 
   useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
+    const controller = new AbortController();
+    let disposed = false;
+    setHydrationComplete(false);
     setHydrationError(null);
 
     const handleHydrationError = (error: unknown) => {
+      if (disposed) return;
       console.error('[workspace] Failed to load project:', error);
       setHydrationError(error instanceof Error ? error.message : 'The project data could not be restored.');
     };
 
     const loadProjectWithDeadline = <T,>(sqlite: boolean): Promise<T> => {
-      const projectLoad = loadAvailableProject<T>(projectId, sqlite);
+      const projectLoad = loadAvailableProject<T>(projectId, sqlite, controller.signal);
       return new Promise<T>((resolve, reject) => {
         const timeoutId = window.setTimeout(() => {
-          reject(new Error('The cloud project took too long to respond. Check your connection or go back and sign in again.'));
+          controller.abort();
+          reject(new Error('The cloud project took too long to respond. Please try again.'));
         }, PROJECT_LOAD_TIMEOUT_MS);
         projectLoad.then(
           (value) => {
@@ -1085,6 +1088,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         projectId,
         projectName: projectNameRef.current,
       }).then((library) => {
+        if (disposed) return;
         historyDispatch({
           type: 'SET_ELEMENTS_LIBRARY',
           elements: library.elements,
@@ -1092,6 +1096,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         });
         elementsLibraryReadyRef.current = true;
       }).catch((error) => {
+        if (disposed) return;
         console.warn('[workspace] Elements library will retry on the next project open:', error);
         setAppToast({
           id: crypto.randomUUID(),
@@ -1105,6 +1110,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
       // ---------- SQLite hydration path ----------
       loadProjectWithDeadline<Record<string, unknown>>(true)
         .then(async (raw) => {
+          if (disposed) return;
           const dbState = raw;
           // Capture project name for save path
           const projectRow = dbState.project as Record<string, unknown> | undefined;
@@ -1164,11 +1170,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           loadElementsLibraryAfterProject();
         })
         .catch(handleHydrationError)
-        .finally(() => setHydrationComplete(true));
+        .finally(() => { if (!disposed) setHydrationComplete(true); });
     } else {
       // ---------- JSON file hydration path ----------
       loadProjectWithDeadline<ProjectSnapshot>(false)
         .then(async (snapshot) => {
+          if (disposed) return;
           if (snapshot.project?.name) projectNameRef.current = snapshot.project.name;
           const nodes = (snapshot.workflow?.nodes ?? []) as Node<WorkflowNodeData>[];
           const edges = (snapshot.workflow?.edges ?? []) as Edge[];
@@ -1211,9 +1218,10 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           loadElementsLibraryAfterProject();
         })
         .catch(handleHydrationError)
-        .finally(() => setHydrationComplete(true));
+        .finally(() => { if (!disposed) setHydrationComplete(true); });
     }
-  }, []);
+    return () => { disposed = true; controller.abort(); };
+  }, [projectId, useSqlite, loadAttempt]);
 
   useEffect(() => {
     if (!hydrationComplete || hydrationError) return;
@@ -1344,7 +1352,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   }, [state, hydrationComplete, hydrationError, projectId, useSqlite]);
 
   useEffect(() => {
-    // `loadedRef` only means the load was *started* — it is set before the
+    // A load attempt only means hydration was started — wait for the
     // project resolves. Saving on that flag alone lets a failed or timed-out
     // hydration write the empty initial state (and the 'Project' name default)
     // over the real cloud project. Only ever persist state we actually loaded.
@@ -1439,7 +1447,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         {hydrationError ? (
           <WorkspaceLoadingState
             error={hydrationError}
-            onRetry={() => window.location.reload()}
+            onRetry={() => { setHydrationComplete(false); setHydrationError(null); setLoadAttempt(attempt => attempt + 1); }}
             onBack={onBackToHome}
           />
         ) : !hydrationComplete ? (

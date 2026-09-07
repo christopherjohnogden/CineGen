@@ -12,6 +12,7 @@ vi.mock('@/lib/cloud/firebase', () => ({ cloudDb: {}, waitForCloudAuth: async ()
 vi.mock('@/lib/cloud/media', () => ({ prepareStateForCloudMedia: vi.fn() }));
 vi.mock('@/lib/cloud/media-references', () => ({ restoreCloudMediaReferences: (v: unknown) => v }));
 vi.mock('@/lib/cloud/collaboration', () => ({ ensureProjectAccess: async () => ({ ownerId: 'owner' }) }));
+vi.mock('@/lib/cloud/project-reader', () => ({ readCloudProject: async () => ({ ownerId: 'owner', revision: 'initial', state: { assets: [] } }) }));
 import { loadCloudProject, watchCloudProject } from '@/lib/cloud/projects';
 const response = (value: unknown) => ({ docs: [{ data: () => ({ data: JSON.stringify(value) }) }] });
 const emit = (revision: string) => mock.listener({ metadata: { hasPendingWrites: false }, data: () => ({ currentRevision: revision }) });

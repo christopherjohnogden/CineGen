@@ -2,12 +2,14 @@
 // host bridge; no credentials, arbitrary HTML, or provider calls live here.
 function mountViewer() {
   const root = document.getElementById('app'), pending = new Map(), chosen = new Map(), scrollPositions = new Map(), galleryPositions = new Map();
-  let sequence = 0, hostOrigin = '*', ready = false, capabilities = {}, current, selected = null, busy = false, timer, startupTimer, disposed = false, polls = 0, destination = '', message = '', manualSelection = '', viewKey = '';
+  let sequence = 0, hostOrigin = '*', ready = false, capabilities = {}, current, selected = null, busy = false, timer, startupTimer, disposed = false, destination = '', message = '', manualSelection = '', viewKey = '';
   let hostContext = {}, lastSize = '', studioExpanded = false;
   let collectionsOpen = false, filtersOpen = false, multiSelect = false;
   const pageSize = 9;
   let moreRequest = null, moreError = '';
   const visibleItems = () => current.items;
+  const scroller = () => document.scrollingElement || document.documentElement;
+  let lastRefresh = 0;
   const knownTools = new Set(['cinegen_show_generations', 'cinegen_show_reference_elements', 'cinegen_job_display', 'cinegen_show_media', 'cinegen_show_generation_batch', 'cinegen_show_film_presets']);
   const statusNames = { complete: 'Ready', running: 'Generating', submitting: 'Starting', queued: 'Queued', pending: 'Prepared', saving: 'Saving to CineGen', needs_attention: 'Needs attention', failed: 'Failed', not_found: 'Not found' };
   const activeStatuses = new Set(['running', 'submitting', 'queued', 'saving']);
@@ -45,14 +47,21 @@ function mountViewer() {
   function reportSize() {
     // Request the desired size, not the height of an initially tiny iframe.
     // CSS also constrains the layout to the actual viewport if the host clips it.
-    const height = current ? parseFloat(root.style.getPropertyValue('--viewer-height')) || 620 : Math.ceil(root.getBoundingClientRect().height);
+    const naturalHeight = Math.ceil(root.getBoundingClientRect().height);
+    const mobile = hostContext.platform === 'mobile' || /iPhone|iPad|Android/i.test(navigator.userAgent);
+    const dimensions = hostContext.containerDimensions || {};
+    const limit = dimensions.height ?? dimensions.maxHeight ?? window.openai?.maxHeight;
+    // Mobile hosts can scroll the chat itself when given our full document
+    // height. Fixed-height hosts use the iframe's native document scroll.
+    const desired = current && !mobile ? Math.min(naturalHeight, parseFloat(root.style.getPropertyValue('--viewer-height')) || 620) : naturalHeight;
+    const height = Number.isFinite(limit) && limit > 0 ? Math.min(desired, limit) : desired;
     const width = document.documentElement.clientWidth, key = `${ready}:${width}:${height}`;
     if (key === lastSize || disposed) return; lastSize = key;
     if (ready) notify('ui/notifications/size-changed', { width, height });
     window.openai?.notifyIntrinsicHeight?.(height);
   }
   function updateScrollHint() {
-    const content = root.querySelector('.content'), hint = root.querySelector('.scroll-hint');
+    const content = scroller(), hint = root.querySelector('.scroll-hint');
     if (content && hint) hint.hidden = content.scrollHeight <= content.clientHeight + content.scrollTop + 12;
   }
   function showError(error) {
@@ -86,7 +95,7 @@ function mountViewer() {
       clearTimeout(startupTimer); message = '';
       if (current && current.projectId !== data.projectId) { chosen.clear(); galleryPositions.clear(); selected = null; destination = ''; }
       current = data; moreRequest = null; moreError = ''; destination ||= data.activeSpaceId || data.spaces?.[0]?.id || '';
-      render(); schedule();
+      render(); schedule(true);
     } catch (error) { showError(error.message); }
   }
   async function callTool(name, args) {
@@ -100,24 +109,47 @@ function mountViewer() {
     try { if (ready) unwrap(await request('ui/open-link', { url })); else if (window.openai?.openExternal) window.openai.openExternal({ href: url }); else window.open(url, '_blank', 'noopener,noreferrer'); }
     catch (error) { showError(error.message); }
   }
-  function schedule() {
+  function schedule(immediate = false) {
     clearTimeout(timer);
-    if (!current || polls >= 40 || !current.items.some(item => activeStatuses.has(item.status))) return;
-    timer = setTimeout(async () => { if (document.visibilityState === 'hidden' || selected) { schedule(); return; } polls++; await refresh({}, true); }, 8000);
+    if (disposed || !current || !current.items.some(item => activeStatuses.has(item.status))) return;
+    timer = setTimeout(() => {
+      if (document.visibilityState === 'hidden' || !ready && !window.openai?.callTool) { schedule(); return; }
+      void refresh({}, true);
+    }, immediate ? 0 : 8000);
   }
   async function refresh(changes = {}, automatic = false, toolName = current?.refresh.name) {
-    if (!current || busy || !knownTools.has(toolName)) return;
-    busy = true; message = ''; if (!automatic) render();
+    if (disposed || !current || busy || moreRequest || !knownTools.has(toolName)) { schedule(); return; }
+    const source = current;
+    busy = true; if (!automatic) { message = ''; render(); }
+    let changed = !automatic;
     try {
-      const args = toolName === current.refresh.name ? { ...current.refresh.arguments, ...changes }
-        : { ...(current.projectId ? { projectId: current.projectId } : {}), ...changes };
-      const data = resultData(await callTool(toolName, args)); if (!data) throw new Error('CineGen returned an unreadable view.');
-      current = data; moreRequest = null; moreError = ''; if (!automatic) selected = null;
-      // Refresh selected media on this page to avoid sending a replaced URL.
+      const args = toolName === source.refresh.name ? { ...source.refresh.arguments, ...changes }
+        : { ...(source.projectId ? { projectId: source.projectId } : {}), ...changes };
+      const data = resultData(await callTool(toolName, args));
+      if (disposed || current !== source) return;
+      if (!data) throw new Error('CineGen returned an unreadable view.');
+      lastRefresh = Date.now();
+      // Keep extra pages while refreshing the original result snapshot.
+      const merged = automatic && source.items.length > source.limit && source.refresh.name === data.refresh.name
+        ? { ...data, items: [...data.items, ...source.items.filter(item => !data.items.some(next => next.id === item.id))], nextOffset: source.nextOffset, hasMore: source.hasMore }
+        : data;
+      const detailId = selected || (current.mode === 'job' ? current.items[0]?.id : null);
+      const before = detailId ? source.items.find(item => item.id === detailId) : source.items;
+      const after = detailId ? merged.items.find(item => item.id === detailId) : merged.items;
+      changed ||= JSON.stringify(before) !== JSON.stringify(after) || Boolean(message);
+      current = merged; moreError = ''; message = ''; if (!automatic) selected = null;
       for (const item of current.items) if (chosen.has(item.id)) chosen.set(item.id, item);
+    } catch (error) {
+      if (!disposed && current === source) { message = `Could not update this view. ${error.message}`; changed = true; }
+    } finally {
+      busy = false;
+      // Unchanged polls must not rebuild a playing video or interrupt a swipe.
+      if (!disposed && changed) render();
       schedule();
-    } catch (error) { message = error.message; }
-    finally { busy = false; render(); }
+    }
+  }
+  function resume() {
+    if (!disposed && current && document.visibilityState !== 'hidden' && Date.now() - lastRefresh > 5000) void refresh({}, true);
   }
   async function copyText(value) {
     try { await navigator.clipboard.writeText(value); message = 'Copied.'; render(); }
@@ -381,6 +413,7 @@ function mountViewer() {
     const count = element('span', 'library-count', `${current.offset ? `${current.offset + 1}–` : ''}${current.offset + current.items.length} of ${current.total}`);
     const status = element('span', 'library-status', moreRequest ? 'Loading more…' : current.hasMore ? 'Scroll to browse' : 'All loaded'); status.setAttribute('role', 'status');
     footer.append(count, status);
+    if (current.hasMore && !moreError) footer.append(button(moreRequest ? 'Loading…' : 'Load more', () => loadMore(), 'small'));
     if (current.offset > 0) footer.append(button('Back to start', () => refresh({ offset: 0, limit: pageSize }), 'small'));
     if (moreError) { status.textContent = 'Could not load more'; footer.title = moreError; footer.append(button('Retry', () => { moreError = ''; loadMore(); }, 'small')); }
     return footer;
@@ -388,8 +421,8 @@ function mountViewer() {
   function updateLibraryFooter() { root.querySelector('.library-footer')?.replaceWith(libraryFooter()); }
   function maybeLoadMore() {
     if (disposed || !current || selected || current.mode === 'job' || !current.hasMore || busy || moreRequest || moreError || !ready && !window.openai?.callTool) return;
-    const content = root.querySelector('.content');
-    if (content?.clientHeight > 0 && content.scrollHeight - content.scrollTop - content.clientHeight < 160) loadMore();
+    const content = scroller();
+    if (content.scrollTop > 0 && content.clientHeight > 0 && content.scrollHeight - content.scrollTop - content.clientHeight < 160) loadMore();
   }
   async function loadMore() {
     if (disposed || !current?.hasMore || busy || moreRequest) return;
@@ -408,12 +441,12 @@ function mountViewer() {
       if (grid) added.forEach((item, index) => grid.append(mediaCard(item, source.items.length + index)));
     } catch (error) { if (!disposed && current === source && moreRequest === token) moreError = error.message; }
     finally {
-      if (moreRequest === token) { moreRequest = null; if (!disposed) { updateLibraryFooter(); updateScrollHint(); maybeLoadMore(); } }
+      if (moreRequest === token) { moreRequest = null; if (!disposed) { updateLibraryFooter(); reportSize(); updateScrollHint(); maybeLoadMore(); } }
     }
   }
   function render() {
     if (!current) return;
-    const previousContent = root.querySelector('.content'), activeKey = document.activeElement?.dataset?.focusId;
+    const previousContent = scroller(), activeKey = document.activeElement?.dataset?.focusId;
     if (viewKey && previousContent) scrollPositions.set(viewKey, previousContent.scrollTop);
     const nextKey = JSON.stringify([current.projectId, current.mode, current.refresh.arguments, selected]);
     const scrollTop = scrollPositions.get(nextKey) || 0, sameView = viewKey === nextKey;
@@ -426,7 +459,7 @@ function mountViewer() {
     title.setAttribute('aria-expanded', String(collectionsOpen)); title.setAttribute('aria-controls', 'collection-menu'); heading.append(title);
     const controls = element('div', 'header-controls');
     if (!item) { const search = button('', () => { filtersOpen = !filtersOpen; render(); if (filtersOpen) root.querySelector('input[type="search"]')?.focus(); }, 'icon-button', 'search'); search.setAttribute('aria-label', 'Search and filter'); search.setAttribute('aria-expanded', String(filtersOpen)); controls.append(search); }
-    const reload = button('', () => { polls = 0; refresh(); }, 'logomark', 'film'); reload.setAttribute('aria-label', 'Refresh library'); reload.title = 'CineGen · Refresh'; controls.append(reload); header.append(heading, controls); root.append(header);
+    const reload = button('', () => { refresh(); }, 'logomark', 'film'); reload.setAttribute('aria-label', 'Refresh library'); reload.title = 'CineGen · Refresh'; controls.append(reload); header.append(heading, controls); root.append(header);
     const nav = element('nav', 'collection-menu'); nav.id = 'collection-menu'; nav.hidden = !collectionsOpen; nav.setAttribute('aria-label', 'CineGen collections');
     for (const [label, name, mode] of [['Results', 'cinegen_show_generations', 'generations'], ['Assets', 'cinegen_show_media', 'media'], ['Elements', 'cinegen_show_reference_elements', 'elements'], ['Film presets', 'cinegen_show_film_presets', 'presets']]) {
       const tab = button(label, () => { collectionsOpen = false; selected = null; refresh({ offset: 0, limit: pageSize, ...(mode === 'elements' ? { view: 'elements', elementIds: undefined, type: undefined, search: undefined } : {}) }, false, name); }, current.mode === mode ? 'current' : '');
@@ -441,7 +474,7 @@ function mountViewer() {
       toolbar.append(info); root.append(toolbar);
     }
     const shell = element('div', 'scroll-shell'), content = element('div', 'content');
-    content.setAttribute('aria-label', item ? 'Media preview and details' : 'Browse collection'); content.setAttribute('role', 'region'); content.tabIndex = 0;
+    content.setAttribute('aria-label', item ? 'Media preview and details' : 'Browse collection'); content.setAttribute('role', 'region');
     content.addEventListener('scroll', () => { updateScrollHint(); maybeLoadMore(); }, { passive: true }); shell.append(content); root.append(shell);
     if (message) {
       const feedback = element('div', 'feedback'), notice = element('p', '', message); notice.setAttribute('role', 'status');
@@ -461,8 +494,8 @@ function mountViewer() {
     const hint = element('span', 'scroll-hint', 'Scroll for more'); hint.prepend(icon('down')); hint.setAttribute('aria-hidden', 'true');
     hint.hidden = true; shell.append(hint);
     if (item?.elementCard) root.append(elementActions(item));
-    else if (multiSelect || item) root.append(actionBar([...chosen.values()]));
-    content.scrollTop = manualSelection ? 0 : scrollTop;
+    else if (multiSelect || item && chosen.size) root.append(actionBar([...chosen.values()]));
+    scroller().scrollTop = manualSelection ? 0 : scrollTop;
     root.querySelector('.gallery-picture')?._restore?.();
     const strip = root.querySelector('.gallery-thumbnails'), thumbnail = strip?.querySelector('[aria-pressed="true"]');
     if (thumbnail) strip.scrollLeft = Math.max(0, thumbnail.offsetLeft - strip.offsetLeft - (strip.clientWidth - thumbnail.offsetWidth) / 2);
@@ -487,9 +520,14 @@ function mountViewer() {
   if (window.openai?.toolOutput) receive(window.openai.toolOutput);
   applyHostContext();
   new ResizeObserver(() => { reportSize(); updateScrollHint(); }).observe(root);
+  window.addEventListener('scroll', () => { updateScrollHint(); maybeLoadMore(); }, { passive: true });
+  document.addEventListener('visibilitychange', resume);
+  window.addEventListener('pageshow', resume);
+  window.addEventListener('online', resume);
+  window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.4.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
-    .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.5.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+    .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }
 

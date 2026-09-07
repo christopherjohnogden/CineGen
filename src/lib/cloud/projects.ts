@@ -1,3 +1,4 @@
+import { readCloudProject } from './project-reader';
 import { reportCloudSyncFailure, reportCloudSyncSuccess } from './sync-status';
 import { restoreCloudMediaReferences } from './media-references';
 import {
@@ -283,21 +284,15 @@ export function saveCloudProject(projectId: string, state: unknown, useSqlite: b
   });
 }
 
-export async function loadCloudProject<T = unknown>(projectId: string): Promise<T> {
+export async function loadCloudProject<T = unknown>(projectId: string, signal?: AbortSignal): Promise<T> {
   const user = await waitForCloudAuth();
   if (!user) throw new Error('Sign in to CineGen Cloud to open this project.');
-  const access = await ensureProjectAccess(projectId, user);
-  const projectRef = doc(cloudDb, 'users', access.ownerId, 'projects', projectId);
-  const project = await getDoc(projectRef);
-  if (!project.exists()) throw new Error(`Cloud project ${projectId} was not found.`);
-  const revision = String(project.data().currentRevision ?? '');
-  if (!revision) throw new Error('This cloud project does not contain a saved revision.');
-  const chunksRef = collection(projectRef, 'revisions', revision, 'chunks');
-  const chunks = await getDocs(query(chunksRef, orderBy(documentId())));
-  const serialized = chunks.docs.map((chunk) => String(chunk.data().data ?? '')).join('');
-  loadedRevisions.set(cloudKey(access.ownerId, projectId), revision);
+  const { ownerId, revision, state } = await readCloudProject(user, projectId, signal);
+  signal?.throwIfAborted();
+  const restored = restoreCloudMediaReferences(state as T);
+  loadedRevisions.set(cloudKey(ownerId, projectId), revision);
   rememberCloudProject(projectId);
-  return restoreCloudMediaReferences(JSON.parse(serialized) as T);
+  return restored;
 }
 
 // Listen to revision metadata; download a snapshot only when another client changes it.
@@ -450,8 +445,8 @@ function reportCloudSyncError(error: unknown): void {
   reportCloudSyncFailure(error, 'project');
 }
 
-export async function loadAvailableProject<T = unknown>(projectId: string, useSqlite: boolean): Promise<T> {
-  if (await hasAccessibleCloudProject(projectId)) return loadCloudProject<T>(projectId);
+export async function loadAvailableProject<T = unknown>(projectId: string, useSqlite: boolean, signal?: AbortSignal): Promise<T> {
+  if (await hasAccessibleCloudProject(projectId)) return loadCloudProject<T>(projectId, signal);
   const local = await (useSqlite
     ? window.electronAPI.db.loadProject(projectId)
     : window.electronAPI.project.load(projectId)) as T;

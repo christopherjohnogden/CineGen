@@ -48,8 +48,15 @@ export function prepareProviderGeneration(args: RecordValue, available = provide
       if (!Number.isFinite(value) || (field.schemaType === 'integer' && !Number.isInteger(value))) throw new Error(`Invalid number for ${field.id}`);
       if ((field.min !== undefined && value < field.min) || (field.max !== undefined && value > field.max)) throw new Error(`Out of range: ${field.id}`);
     }
+    if (field.id === 'resolution' && field.options) {
+      const pixels = (v: unknown) => /^\d+p?$/i.test(String(v).trim()) ? String(v).trim().replace(/p$/i, '') : null;
+      const requested = pixels(value);
+      const option = field.options.find(o => String(o.value) === String(value))
+        ?? (requested ? field.options.find(o => pixels(o.value) === requested) : undefined);
+      if (option) value = option.value;
+    }
     if (field.fieldType === 'toggle' && typeof value !== 'boolean') throw new Error(`Expected true or false for ${field.id}`);
-    if (field.options && !field.options.some(o => String(o.value) === String(value))) throw new Error(`Unsupported value for ${field.id}`);
+    if (field.options && !field.options.some(o => String(o.value) === String(value))) throw new Error(`Unsupported value for ${field.id}=${String(value)}. ${model.name} allows: ${field.options.map(o => o.value).join(", ")}. Refresh cinegen_list_models for current provider options.`);
     if (['image', 'video', 'audio', 'media'].includes(field.portType)) {
       for (const media of Array.isArray(value) ? value : [value]) {
         if (typeof media !== 'string' || !media.startsWith('https://')) throw new Error(`Use saved HTTPS media URLs for ${field.id}`);

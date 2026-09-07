@@ -106,7 +106,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.6.2');
+  assert.equal(initialized.result.serverInfo.version,'1.6.3');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -152,6 +152,20 @@ test('Topview is the default and Higgsfield cannot be selected implicitly',()=>{
   const p=api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{prompt:'Camera follows her',image_url:['https://example.com/shot.mp4']}});
   assert.equal(p.provider,'topview');assert.equal(p.params.waitForCompletion,false);
   assert.equal(p.params.medias[0].role,'video');
+});
+
+test('Seedance accepts 1080 and 1080p only when the live catalog permits that resolution',()=>{
+  const catalog=(resolutions)=>({configs:[{outputType:'video',taskType:'omni_reference',config:{models:[{displayName:'Seedance 2.5',submitModel:'Seedance 2.5',defaultSubmitParameters:{resolution:720,duration:4,aspectRatio:'16:9'},submitParameterOptions:{resolution:resolutions,duration:[4,30],aspectRatio:['16:9']}}]}}]});
+  for(const options of [[480,720,1080],['480p','720p','1080p']]) {
+    const models=api.providerModels('topview','video',catalog(options));
+    for(const resolution of [1080,'1080','1080p']) {
+      const prepared=api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{prompt:'A moving camera',duration:30,resolution}},models);
+      assert.equal(String(prepared.params.resolution),String(options[2]));
+      assert.equal(prepared.params.durationSec,30);
+    }
+  }
+  const models=api.providerModels('topview','video',catalog([480,720]));
+  assert.throws(()=>api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{prompt:'A moving camera',resolution:'1080p'}},models),/allows: 480, 720/);
 });
 
 for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4-5'],['topview','video','topview-video-seedance-2-5'],['higgsfield','image','hf-cinematic-studio-2-5']]) {
