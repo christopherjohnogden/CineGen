@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { saveGeneratedMediaOnNode } from '../vercel/lib/generated-media-save.mjs';
 const BACKEND='https://cinegen-api.christopherjohnogden.workers.dev';
 const FIREBASE_KEY='AIzaSyDhxfLpKNqAMJWFCiUPaQiINUk2U2Wv9gA';
 const ALLOWED=new Set(['christopherjohnogden@gmail.com','taylormichaelogden@gmail.com']);
@@ -17,6 +18,21 @@ export default async function handler(req,res) {
     const path=url.searchParams.get('__route')||url.pathname;
     url.searchParams.delete('__route');
     const origin='https://'+req.headers.host;
+    if(path==='/api/generated-media/save') {
+      res.setHeader('Content-Type','application/json');
+      if(req.method!=='POST'){res.statusCode=405;res.end();return;}
+      try {
+        // Explicit bearer authentication permits the remote worker to call this
+        // route; browser cookies alone never authorize a transfer.
+        const token=req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_.-]+)$/)?.[1];
+        if(!token){res.statusCode=401;res.end(JSON.stringify({ok:false,error:{message:'Sign in to CineGen.'}}));return;}
+        const raw=String(await requestBody(req));
+        if(raw.length>20000){res.statusCode=413;res.end();return;}
+        const result=await saveGeneratedMediaOnNode(JSON.parse(raw),token,ALLOWED,FIREBASE_KEY);
+        res.end(JSON.stringify({ok:true,result}));
+      }catch(error){res.statusCode=[400,401,403].includes(error.status)?error.status:502;res.end(JSON.stringify({ok:false,error:{message:error.message?.replace(/https?:\/\/[^\s]+/g,'[media]')||'Saving generated media failed.'}}));}
+      return;
+    }
     if(!['GET','HEAD'].includes(req.method)&&req.headers.origin!==origin) {
       res.statusCode=403;res.end(JSON.stringify({ok:false,error:{message:'Origin not allowed.'}}));return;
     }

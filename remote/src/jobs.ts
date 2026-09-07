@@ -1,3 +1,4 @@
+import { GeneratedMediaDownloadError, isTopviewSignedDownload, persistGeneratedMedia, generatedMediaLocation } from '../../shared/generated-media.mjs';
 import { prepareProviderGeneration, providerRpc } from './providers';
 import { DurableObject } from 'cloudflare:workers';
 import { MODEL_REGISTRY, resolveVideoModelEndpoint, sanitizeVideoInputsForEndpoint } from '../../src/lib/fal/models';
@@ -44,63 +45,30 @@ interface Job extends RecordValue { identity:Identity & {falKey?:string}; prepar
 function publicJob(j:Job) { return {requestId:j.args.requestId,projectId:j.args.projectId,nodeId:j.nodeId,status:j.status,provider:j.args.provider??'fal',createdAt:j.createdAt,url:j.url??null,error:j.error??null}; }
 function falUrl(value:string) { const url=new URL(value);if(url.origin!=='https://queue.fal.run')throw new Error('Invalid provider response URL.');return url.href; }
 
-export async function downloadGeneratedMedia(source:string, provider='topview') {
-  let url=new URL(source);
-  const signal=AbortSignal.timeout(60000);
-  for(let redirects=0;redirects<=5;redirects++) {
-    // Workers additionally enforces globally routable destinations with
-    // global_fetch_strictly_public, including DNS resolution on every hop.
-    if(url.protocol!=='https:'||url.username||url.password||url.hostname.includes(':')
-      ||/^[0-9.]+$/.test(url.hostname)||/^(localhost)$|\.(localhost|local|internal)$/.test(url.hostname)
-      ||(provider==='fal'&&!(url.hostname.endsWith('.fal.media')||url.hostname==='fal.media'||url.hostname.endsWith('.fal.ai')))) {
-      throw new Error('Provider returned an unsupported media location.');
-    }
-    const response=await fetch(url.href,{redirect:'manual',signal});
-    if([301,302,303,307,308].includes(response.status)) {
-      const location=response.headers.get('location');
-      await response.body?.cancel();
-      if(!location)throw new Error(`Generated media redirect has no destination (HTTP ${response.status}).`);
-      if(redirects===5)throw new Error('Generated media exceeded the download redirect limit.');
-      url=new URL(location,url);continue;
-    }
-    if(!response.ok||!response.body) {
-      const detail=(await response.text()).match(/<Code>([^<]+)<\/Code>/)?.[1] ?? '';
-      console.warn('media_download_denied',{status:response.status,host:url.hostname,path:url.pathname,queryKeys:[...url.searchParams.keys()],hasSignature:url.searchParams.has('Signature'),detail});
-      throw new Error(`Generated media download failed (HTTP ${response.status}, host ${url.hostname}${detail ? `, ${detail}` : ''}).`);
-    }
-    return response;
-  }
-  throw new Error('Generated media download did not finish.');
-}
+export { downloadGeneratedMedia } from '../../shared/generated-media.mjs';
 
-async function persistMedia(source:string,store:CloudStore,ownerId:string,projectId:string,assetId:string,type:string,provider = 'fal') {
-  const url=new URL(source);
-  if(url.protocol!=='https:'||url.username||url.password||(provider==='fal'&&!(url.hostname.endsWith('.fal.media')||url.hostname==='fal.media'||url.hostname.endsWith('.fal.ai')))) throw new Error('Provider returned an unsupported media location.');
-  const bucket='cinegen-734ba.firebasestorage.app';
-  const name=`users/${ownerId}/projects/${projectId}/media/${assetId}/generated.${type==='video'?'mp4':'png'}`;
-  const root=`https://firebasestorage.googleapis.com/v0/b/${bucket}/o`;
-  const existing=await fetch(`${root}/${encodeURIComponent(name)}`,{headers:{authorization:`Firebase ${store.token}`}});
-  let metadata:RecordValue;
-  if(existing.ok) metadata=await existing.json() as RecordValue;
-  else {
-    if(existing.status!==404) throw new Error(`Media storage is unavailable (${existing.status}).`);
-    const media=await downloadGeneratedMedia(url.href,provider);
-    if(Number(media.headers.get('content-length')??0)>90*1024*1024) throw new Error('Generated media exceeds the 90 MB cloud upload limit.');
-    const contentType=media.headers.get('content-type')?.split(';')[0]||`${type}/${type==='video'?'mp4':'png'}`;
-    if(!/^(image|video)\/[a-zA-Z0-9.+-]+$/.test(contentType)) throw new Error('Provider returned an unexpected media type.');
-    const boundary=crypto.randomUUID(); const encoder=new TextEncoder();const reader=media.body!.getReader();let phase=0;let bytes=0;
-    const body=new ReadableStream({async pull(controller){
-      if(phase===0){phase=1;controller.enqueue(encoder.encode(`--${boundary}\r\nContent-Type: application/json; charset=utf-8\r\n\r\n${JSON.stringify({name,contentType,metadata:{projectId,assetId}})}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`));return;}
-      const chunk=await reader.read();
-      if(chunk.done){controller.enqueue(encoder.encode(`\r\n--${boundary}--`));controller.close();return;}
-      bytes+=chunk.value.byteLength;if(bytes>90*1024*1024){await reader.cancel();controller.error(new Error('Generated media is too large.'));return;}controller.enqueue(chunk.value);
-    },cancel(){return reader.cancel();}});
-    const upload=await fetch(`${root}?name=${encodeURIComponent(name)}`,{method:'POST',headers:{authorization:`Firebase ${store.token}`,'X-Goog-Upload-Protocol':'multipart','content-type':`multipart/related; boundary=${boundary}`},body});
-    if(!upload.ok) throw new Error(`Saving generated media failed (${upload.status}).`);
-    metadata=await upload.json() as RecordValue;
+async function persistMedia(source:string, store:CloudStore, ownerId:string, projectId:string, assetId:string, type:string, provider = 'fal') {
+  try {
+    return await persistGeneratedMedia({source, token:store.token, ownerId, projectId, assetId, type, provider});
+  } catch(error) {
+    // Topview's signed Canvas assets can be refused specifically from Workers.
+    // Transfer the same asset via Node immediately; never submit a generation.
+    if(provider!=='topview' || !(error instanceof GeneratedMediaDownloadError)
+      || error.status!==403 || !isTopviewSignedDownload(source)) throw error;
+    const response=await fetch('https://cinegen-film.vercel.app/api/generated-media/save', {
+      method:'POST',headers:{authorization:`Bearer ${store.token}`,'content-type':'application/json'},
+      body:JSON.stringify({source,ownerId,projectId,assetId,type}),
+      redirect:'manual',signal:AbortSignal.timeout(240000),
+    });
+    const saved=await response.json() as RecordValue;
+    if(!response.ok || !saved.ok) throw new Error(saved.error?.message || `Saving generated media failed (${response.status}).`);
+    const expected=generatedMediaLocation(ownerId,projectId,assetId,type).objectUrl;
+    const url=new URL(saved.result?.url);
+    if(url.origin+url.pathname!==expected || url.searchParams.get('alt')!=='media' || !url.searchParams.get('token')) {
+      throw new Error('Media transfer returned an unexpected saved location.');
+    }
+    return url.href;
   }
-  if(!metadata.downloadTokens) throw new Error('Media was stored but its download URL is unavailable.');
-  return `${root}/${encodeURIComponent(name)}?alt=media&token=${encodeURIComponent(metadata.downloadTokens.split(',')[0])}`;
 }
 
 export class GenerationJob extends DurableObject {
@@ -236,7 +204,7 @@ export class GenerationJob extends DurableObject {
         const store=new CloudStore(auth.token,auth.uid), loaded=await store.load(job.args.projectId);
         const state=hydrate(loaded.state,loaded.library,loaded.metadata.useSqlite!==false);
         const space=state.spaces.find(s=>s.nodes.some(n=>n.id===job.nodeId));
-        if(space){space.nodes.find(n=>n.id===job.nodeId)!.data.result=job.status==='saving' ? {status:'running',progressStage:'saving',progressMessage:'Image finished. Retrying save…',error:job.error} : {status:'error',progressStage:job.status,error:job.error};if(space.id===state.activeSpaceId)state.nodes=space.nodes;await store.save(loaded,serialize(loaded.state,state,loaded.metadata.useSqlite!==false));}
+        if(space){space.nodes.find(n=>n.id===job.nodeId)!.data.result=job.status==='saving' ? {status:'running',progressStage:'saving',progressMessage:'Generation finished. Retrying save…',error:job.error} : {status:'error',progressStage:job.status,error:job.error};if(space.id===state.activeSpaceId)state.nodes=space.nodes;await store.save(loaded,serialize(loaded.state,state,loaded.metadata.useSqlite!==false));}
       }catch{/* The job status remains available even if project access was revoked. */}
     }
     if(['complete','failed','needs_attention'].includes(job.status)) { job.identity={...job.identity,refreshToken:'',falKey:''}; }

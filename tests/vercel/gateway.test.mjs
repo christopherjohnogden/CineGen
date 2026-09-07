@@ -11,6 +11,10 @@ test('gateway rejects writes from another origin and private reads without a ses
   assert.equal((await nativeFetch(base+'/api/gateway?__route=/api/session',{method:'POST',headers:{origin:'https://other.example'},body:'{}'})).status,403);
   assert.equal((await nativeFetch(base+'/api/gateway?__route=/api/rpc/project/list')).status,401);
 });
+test('server media transfer requires an explicit bearer token, even with a browser session cookie',async()=>{
+  const r=await nativeFetch(base+'/api/gateway?__route=/api/generated-media/save',{method:'POST',headers:{cookie:'__Host-cinegen_session=test.token'},body:'{}'});
+  assert.equal(r.status,401);
+});
 test('session validates Firebase identity before issuing a protected cookie',async()=>{
   globalThis.fetch=async()=>Response.json({users:[{localId:'owner',email:'christopherjohnogden@gmail.com'}]});
   try{

@@ -107,7 +107,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.6.11');
+  assert.equal(initialized.result.serverInfo.version,'1.6.12');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -190,8 +190,9 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
     let failDownload=provider==='topview'&&kind==='image', recovering=false;
     api.CloudStore.prototype.load=async()=>({state:structuredClone(raw),library:{elements:[],folders:[]},metadata:{useSqlite:true},ownerId:'owner'});
     api.CloudStore.prototype.save=async(_,state)=>{raw=structuredClone(state);};
-    const source=`https://provider-cdn.example/media.${kind==='video'?'mp4':'png'}`;
     const canvasVideo=provider==='topview'&&kind==='video';
+    const source=canvasVideo?'https://du9d8548ooqnc.cloudfront.net/task%2Foutput.mp4?Policy=policy&Signature=signature&Key-Pair-Id=key':`https://provider-cdn.example/media.${kind==='video'?'mp4':'png'}`;
+    let nodeTransfers=0;
     const taskReceipt=canvasVideo?'cinegen-canvas:'+btoa(JSON.stringify({canvasId:'canvas_1',nodeId:'node_output',taskId:'provider_task'})).replace(/=+$/,''):'task-1';
     globalThis.fetch=async(url,options)=>{
       const u=String(url);
@@ -204,7 +205,13 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
         if(canvasVideo){assert.deepEqual(p.medias.map(media=>media.role),['image','audio']);assert.match(p.commandId,/^cinegen-/);}
         return Response.json({ok:true,result:provider==='topview'?{taskId:taskReceipt,taskType:canvasVideo?'omni_reference':'text_to_image',model:p.model,status:'running'}:{url:source}});
       }
-      if(u===source || u==='https://provider-cdn.example/alternative.png'){assert.equal(options.redirect,'manual');if(failDownload)throw new Error('Simulated persistence failure');if(recovering&&u===source)return new Response(null,{status:403});return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':kind==='video'?'video/mp4':'image/png'}});}
+      if(u==='https://cinegen-film.vercel.app/api/generated-media/save'){
+        nodeTransfers++;assert.equal(options.headers.authorization,'Bearer firebase-token');
+        const transfer=JSON.parse(options.body);assert.equal(transfer.source,source);assert.equal(transfer.ownerId,'owner');assert.equal(transfer.projectId,raw.project.id);
+        const path=`users/owner/projects/${raw.project.id}/media/${values.get('job').nodeId}/generated.mp4`;
+        return Response.json({ok:true,result:{url:`https://firebasestorage.googleapis.com/v0/b/cinegen-734ba.firebasestorage.app/o/${encodeURIComponent(path)}?alt=media&token=download`}});
+      }
+      if(u===source || u==='https://provider-cdn.example/alternative.png'){assert.equal(options.redirect,'manual');if(canvasVideo)return new Response(null,{status:403});if(failDownload)throw new Error('Simulated persistence failure');if(recovering&&u===source)return new Response(null,{status:403});return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':kind==='video'?'video/mp4':'image/png'}});}
       if(u.includes('firebasestorage')&&options.method==='POST'){await new Response(options.body).arrayBuffer();return Response.json({downloadTokens:'download'});}
       if(u.includes('firebasestorage'))return new Response('',{status:404});
       throw new Error(`Unexpected provider call: ${u}`);
@@ -233,7 +240,7 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
         await new api.GenerationJob(ctx,{}).alarm();
         assert.ok(polls>1);assert.equal(values.get('job').sourceUrl,'https://provider-cdn.example/alternative.png');
       }
-      assert.equal(values.get('job').status,'complete');assert.equal(submissions,1);
+      assert.equal(values.get('job').status,'complete');assert.equal(submissions,1);assert.equal(nodeTransfers,canvasVideo?1:0);
       const reopened=api.hydrate(raw,{elements:[],folders:[]});
       assert.equal(reopened.assets.length,1);assert.equal(reopened.nodes[0].data.config.__studioGenerated,true);
       assert.equal(reopened.nodes[0].data.result.status,'complete');

@@ -27,7 +27,7 @@ Use `cinegen_studio_create` to prepare Studio items without starting generation 
 
 Use `cinegen_generate` for actual Studio generation. Remote unattended generation uses Topview by default. Pass `provider: "higgsfield"` only when the user explicitly requests it. `cinegen_list_models` reads the connected provider catalog. Legacy fal jobs already queued before this change can finish, but new fal jobs are not exposed. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.
 
-## Creative library and inline displays (server 1.6.11)
+## Creative library and inline displays (server 1.6.12)
 
 Active video jobs fill the player with flowing multicolor light, a clockwise spectrum border, and a compact glass status label until output is ready. Queued, starting and saving jobs retain their actual status labels; prepared or failed jobs do not animate. Reduced-motion preferences show the same colors without animation. Active video details show elapsed time from the recorded run start (or creation/submission time on older jobs), updating locally each second and catching up after backgrounding. Missing timestamps do not produce a fabricated timer.
 
@@ -54,3 +54,9 @@ Active work refreshes immediately on mount and every eight seconds while visible
 Project data uses the existing OAuth and Firebase authorization. UI resources contain no account data or credentials. Local paths are omitted; media must sync before chat can use it. Previews load only from declared provider/storage domains; other HTTPS sources have an Open media action. No arbitrary-URL proxy is introduced.
 
 After an update, refresh/reconnect the CineGen connector and start a fresh chat if the old chat retains cached tools. Widget rendering and selection support depend on the host: [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview). The cloud Worker update does not require a Mac reinstall; local stdio handlers need an app build containing the changes.
+
+## Generated media transfers
+
+If Topview's signed Canvas download returns HTTP 403 from Cloudflare, the remote job immediately retries transferring the same finished asset through the existing Vercel Node gateway (`/api/generated-media/save`). That route verifies the Firebase identity and project access, accepts only Topview's signed download origin, rejects redirects, and streams the file into the same deterministic Firebase Storage object. It returns only the saved URL; Vercel does not retain a media copy. Existing saved objects are reused on retries. Neither transfer path submits a provider generation. Deploy the gateway before the remote worker.
+
+`cinegen_get_jobs` can resume saving older `needs_attention` results using the original provider receipt, without another render or charge. The read-only display tools remain read-only.
