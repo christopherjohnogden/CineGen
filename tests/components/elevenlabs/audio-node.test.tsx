@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ElevenLabsAudioNode } from '@/components/create/nodes/elevenlabs-audio-node';
-const env = vi.hoisted(() => ({ flow: {} as any, dispatch: vi.fn(), run: vi.fn(), design: vi.fn(), saveVoice: vi.fn(), enhance: vi.fn(), node: null as any }));
+const env = vi.hoisted(() => ({ flow: {} as any, dispatch: vi.fn(), run: vi.fn(), design: vi.fn(), saveVoice: vi.fn(), enhance: vi.fn(), node: null as any, flush: () => {} }));
 vi.mock('@xyflow/react', () => ({ useReactFlow: () => env.flow }));
 vi.mock('@/components/create/nodes/base-node', () => ({ BaseNode: ({ children }: any) => <div>{children}</div> }));
 vi.mock('@/components/create/workflow-canvas', () => ({ useRunNode: () => env.run }));
@@ -10,12 +10,15 @@ vi.mock('@/components/workspace/workspace-shell', () => ({ useWorkspace: () => (
 vi.mock('@/components/elevenlabs/connection', () => ({ ElevenLabsConnection: () => <div>Connected voice library</div> }));
 vi.mock('@/lib/elevenlabs/client', () => ({ elevenLabs: { design: (...a: any[]) => env.design(...a), saveVoice: (...a: any[]) => env.saveVoice(...a) } }));
 vi.mock('@/lib/elevenlabs/enhance', () => ({ enhanceAudioText: (...a: any[]) => env.enhance(...a) }));
-function Harness({ initial }: { initial: Record<string, unknown> }) {
+function Harness({ initial, deferred = false }: { initial: Record<string, unknown>; deferred?: boolean }) {
   const [data, setData] = useState<any>({ type: 'elevenLabsAudio', config: initial });
   const current = useRef(data); current.current = data;
+  const queue = useRef<any[]>([]);
   env.node = current;
   const getNode = useCallback(() => ({ data: current.current }), []);
-  const updateNodeData = useCallback((_id: string, patch: any) => { current.current = { ...current.current, ...(typeof patch === 'function' ? patch({ data: current.current }) : patch) }; setData(current.current); }, []);
+  const apply = useCallback((patch: any) => { current.current = { ...current.current, ...(typeof patch === 'function' ? patch({ data: current.current }) : patch) }; setData(current.current); }, []);
+  const updateNodeData = useCallback((_id: string, patch: any) => { if (deferred) queue.current.push(patch); else apply(patch); }, [apply, deferred]);
+  env.flush = () => { const patch = queue.current.shift(); if (patch) apply(patch); };
   env.flow = { getNode, updateNodeData };
   return <ElevenLabsAudioNode {...{ id: 'audio', data, selected: false } as any} />;
 }
@@ -59,4 +62,44 @@ it('does not overwrite newer edits with a late enhancer response', async () => {
   await act(async () => finish('Enhanced warm direction'));
   expect(env.node.current.config.direction).toBe('cold and clipped');
   expect(screen.getByRole('alert')).toHaveTextContent('Your text changed');
+});
+
+it.each([
+  { label: 'Describe the voice', field: 'voiceDescription', initial: { voiceMode: 'design' } },
+  { label: 'Voice name', field: 'voiceDesignName', initial: { voiceMode: 'design' } },
+  { label: 'Voice preview script', field: 'voiceSampleText', initial: { voiceMode: 'design' } },
+  { label: 'Library description', field: 'voiceSaveDescription', initial: { voiceMode: 'design', voicePreviewDescription: 'A'.repeat(501), voicePreviews: [{ id: 'a', url: 'https://audio.example/a.mp3' }] } },
+  { label: 'Dialogue', field: 'text', initial: {} },
+  { label: 'Sound brief', field: 'text', initial: { kind: 'sound' } },
+  { label: 'Performance direction', field: 'direction', initial: { directionOpen: true } },
+])('keeps middle-of-text edits and the caret in $label while Canvas batches updates', ({ label, field, initial }) => {
+  render(<Harness deferred initial={{ ...initial, [field]: 'Warm voice' }} />);
+  const input = screen.getByLabelText(label, { selector: 'textarea, input', exact: false }) as HTMLTextAreaElement;
+  input.focus();
+  fireEvent.change(input, { target: { value: 'Warm low voice', selectionStart: 9, selectionEnd: 9 } });
+  // The graph has not acknowledged this input yet. React must not restore its old value.
+  expect(env.node.current.config[field]).toBe('Warm voice');
+  expect(input.value).toBe('Warm low voice');
+  expect(input.selectionStart).toBe(9);
+  // A second edit can arrive before the graph acknowledges the first.
+  fireEvent.change(input, { target: { value: 'Warm low, calm voice', selectionStart: 15, selectionEnd: 15 } });
+  act(() => env.flush());
+  expect(input.value).toBe('Warm low, calm voice');
+  expect(input.selectionStart).toBe(15);
+  act(() => env.flush());
+  expect(env.node.current.config[field]).toBe('Warm low, calm voice');
+  expect(input.selectionStart).toBe(15);
+  expect(document.activeElement).toBe(input);
+});
+
+it('accepts a restored description after local typing has been saved', () => {
+  render(<Harness deferred initial={{ voiceMode: 'design', voiceDescription: 'Warm voice' }} />);
+  const input = screen.getByLabelText('Describe the voice');
+  fireEvent.change(input, { target: { value: 'Warm low voice' } });
+  act(() => env.flush());
+  act(() => {
+    env.flow.updateNodeData('audio', { config: { ...env.node.current.config, voiceDescription: 'Restored character voice' } });
+    env.flush();
+  });
+  expect(input).toHaveValue('Restored character voice');
 });

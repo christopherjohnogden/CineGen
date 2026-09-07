@@ -4,6 +4,7 @@ import { SpeakerLoudIcon, MixerHorizontalIcon, MagicWandIcon, UploadIcon, Reload
 import { enhanceAudioText } from '@/lib/elevenlabs/enhance';
 import type { ElevenLabsPreview } from '@/lib/elevenlabs/types';
 import { BaseNode } from './base-node';
+import { useNodeConfigDraft } from './use-node-config-draft';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import { elevenLabs } from '@/lib/elevenlabs/client';
 import { useRunNode } from '@/components/create/workflow-canvas';
@@ -25,9 +26,10 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
   const enhancement = useRef<AbortController | null>(null);
   const stateRef = useRef(state); stateRef.current = state;
   useEffect(() => () => enhancement.current?.abort(), []);
-  const config = data.config;
+  const [config, editDraft] = useNodeConfigDraft(data.config);
   const character = state.elements.find(el => el.id === config.elementId);
   const update = (patch: Record<string, unknown>) => {
+    editDraft(patch);
     updateNodeData(id, node => ({ config: { ...(node.data as WorkflowNodeData).config, ...patch } }));
   };
   const edit = (patch: Record<string, unknown>) => { update({ ...patch, enhanceUndo: undefined }); setNotice(''); };
