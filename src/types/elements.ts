@@ -14,6 +14,7 @@ export interface ElementVoice {
   voiceId?: string;
   voiceName?: string;
   sampleText?: string;
+  sampleLanguage?: string;
   /** A saved audio reference, never an account credential. */
   referenceAudio?: ElementImage;
 }

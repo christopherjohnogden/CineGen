@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { ElementVoice } from '@/types/elements';
 import type { ElevenLabsPreview } from '@/lib/elevenlabs/types';
 import { elevenLabs } from '@/lib/elevenlabs/client';
+import { waitForElevenLabsAudio } from '@/lib/elevenlabs/wait';
 import { ElevenLabsConnection } from '@/components/elevenlabs/connection';
 import { getApiKey } from '@/lib/utils/api-key';
 
@@ -34,13 +35,13 @@ export function ElementVoiceEditor({ name, voice, onChange, onBusy }: {
   async function design() {
     await work(async () => {
       const description = voice?.description || '';
-      const result = await elevenLabs.design(description, voice?.sampleText);
+      const result = await elevenLabs.design(description, voice?.sampleText, voice?.sampleLanguage || 'en');
       setPreviews(result.previews); setPreviewDescription(description);
     }, 'Designing voice previews…');
   }
   async function choose(preview: ElevenLabsPreview) {
     await work(async () => {
-      const saved = await elevenLabs.saveVoice(preview.id, name.trim() || 'Character voice', previewDescription);
+      const saved = await elevenLabs.saveVoice(preview.id, name.trim() || 'Character voice', previewDescription, preview.viewStateId);
       update({ provider: 'elevenlabs', voiceId: saved.id, voiceName: saved.name, referenceAudio: { id: crypto.randomUUID(), url: preview.url, source: 'generated', createdAt: new Date().toISOString() } });
       setPreviews([]); setSampleRequest(undefined);
     }, 'Saving this voice…');
@@ -48,7 +49,7 @@ export function ElementVoiceEditor({ name, voice, onChange, onBusy }: {
   async function sample() {
     await work(async () => {
       const requestId = sampleRequest || crypto.randomUUID(); setSampleRequest(requestId);
-      const result = sampleRequest ? await elevenLabs.job(requestId) : await elevenLabs.generate({ requestId, kind: 'speech', text: voice?.sampleText || '', voiceId: voice?.voiceId });
+      const result = await waitForElevenLabsAudio(sampleRequest ? await elevenLabs.job(requestId) : await elevenLabs.generate({ requestId, kind: 'speech', text: voice?.sampleText || '', voiceId: voice?.voiceId }));
       if (!result.url || result.status !== 'complete') throw new Error(result.error || 'Still creating this sample. Check again to retrieve the same take.');
       update({ referenceAudio: { id: result.assetId, url: result.url, createdAt: new Date().toISOString(), source: 'generated' } });
       setSampleRequest(undefined);
@@ -66,8 +67,12 @@ export function ElementVoiceEditor({ name, voice, onChange, onBusy }: {
         <label className="element-modal__label" htmlFor="character-voice-sample">Sample dialogue</label>
         <textarea id="character-voice-sample" className="element-modal__textarea" rows={3} value={voice?.sampleText ?? ''} onChange={e => { update({ sampleText: e.target.value }); setSampleRequest(undefined); }} placeholder="The line you want to hear in their voice…" />
         {voice?.voiceId && <button className="character-voice__primary" type="button" disabled={!voice.sampleText?.trim() || busy} onClick={() => void sample()}>{sampleRequest ? 'Check this voice sample' : 'Generate voice sample'}</button>}
-        <button className="character-voice__secondary" type="button" disabled={!voice?.description?.trim() || busy} onClick={() => void design()}>Design voices from description</button>
-        <p className="character-voice__hint">Listen to previews and choose a voice here. For voice design, write 100–1,000 characters of sample dialogue, or leave it empty. Generation uses your ElevenLabs credits.</p>
+        <label className="element-modal__label" htmlFor="character-voice-language">Voice design language</label>
+        <select id="character-voice-language" className="element-modal__input" value={voice?.sampleLanguage || 'en'} onChange={e => update({ sampleLanguage: e.target.value })}>
+          <option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="pt">Portuguese</option><option value="ja">Japanese</option><option value="zh">Chinese</option><option value="ko">Korean</option><option value="it">Italian</option><option value="hi">Hindi</option><option value="ar">Arabic</option>
+        </select>
+        <button className="character-voice__secondary" type="button" disabled={!voice?.description?.trim() || !voice.sampleText?.trim() || busy} onClick={() => void design()}>Design voices from description</button>
+        <p className="character-voice__hint">Listen to previews and choose a voice here. For voice design, write 100–1,000 characters of sample dialogue and choose its language. Generation uses your ElevenLabs credits.</p>
         {previews.map((preview, index) => <div className="elevenlabs-voice-preview" key={preview.id}><span>Voice {index + 1}</span><audio controls preload="metadata" src={preview.url} aria-label={`Voice preview ${index + 1}`} /><button className="character-voice__primary" type="button" disabled={busy} onClick={() => void choose(preview)}>Use this voice</button></div>)}
         {voice?.referenceAudio && <div className="character-voice__sample"><audio controls preload="metadata" src={voice.referenceAudio.url} aria-label={`${name || 'Character'} voice sample`} /><button type="button" onClick={() => update({ referenceAudio: undefined })}>Remove sample</button></div>}
         <input ref={input} type="file" accept="audio/*,.mp3,.wav,.m4a" hidden onChange={e => { void upload(e.target.files?.[0]); e.target.value = ''; }} />

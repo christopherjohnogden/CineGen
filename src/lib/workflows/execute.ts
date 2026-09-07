@@ -1,4 +1,5 @@
 import { elevenLabs } from '@/lib/elevenlabs/client';
+import { waitForElevenLabsAudio } from '@/lib/elevenlabs/wait';
 import { audioRequestFromNode } from '@/lib/elevenlabs/request';
 import { withCharacterVoices, voiceElementsForPrompt } from '@/lib/elements/voice';
 import type { Node, Edge } from '@xyflow/react';
@@ -680,7 +681,7 @@ async function runNodes(
       dispatch.setNodeRunning(nodeId, true);
       dispatch.setNodeResult(nodeId, { status: 'running', audioRequestId: request.requestId, progressStartedAt: Date.now(), ...(typeof existingUrl === 'string' ? { url: existingUrl } : {}) });
       try {
-        const generated = await elevenLabs.generate(request);
+        const generated = await waitForElevenLabsAudio(await elevenLabs.generate(request));
         if (generated.status !== 'complete' || !generated.url) throw new Error(generated.error || 'This take is still processing. Check again to retrieve the same audio.');
         dispatch.setNodeResult(nodeId, { status: 'complete', url: generated.url, audioRequestId: generated.requestId });
         dispatch.addAsset({ id: generated.assetId, name: node.data.label || 'ElevenLabs audio', type: 'audio', url: generated.url, createdAt: new Date().toISOString() });

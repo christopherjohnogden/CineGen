@@ -15,6 +15,7 @@ export function normalizeElementVoice(raw: unknown): ElementVoice | undefined {
     ...(text('voiceId') ? { voiceId: text('voiceId') } : {}),
     ...(text('voiceName') ? { voiceName: text('voiceName') } : {}),
     ...(text('sampleText') ? { sampleText: text('sampleText') } : {}),
+    ...(text('sampleLanguage') ? { sampleLanguage: text('sampleLanguage') } : {}),
     ...(referenceAudio ? { referenceAudio } : {}),
   };
 }

@@ -15,4 +15,4 @@ export interface ElevenLabsAudioResult {
   assetId: string;
   error?: string;
 }
-export interface ElevenLabsPreview { id: string; url: string }
+export interface ElevenLabsPreview { id: string; url: string; viewStateId?: string }

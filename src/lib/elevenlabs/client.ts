@@ -24,6 +24,6 @@ export const elevenLabs = {
   voices: (search = '', cursor?: string) => elevenLabsRpc<{ voices: ElevenLabsVoice[]; cursor?: string }>('voices', { search, cursor }),
   generate: (params: ElevenLabsAudioRequest) => elevenLabsRpc<ElevenLabsAudioResult>('generate', params),
   job: (requestId: string) => elevenLabsRpc<ElevenLabsAudioResult>('job', { requestId }),
-  design: (description: string, text?: string) => elevenLabsRpc<{ previews: ElevenLabsPreview[]; text: string }>('design', { description, text }),
-  saveVoice: (id: string, name: string, description: string) => elevenLabsRpc<ElevenLabsVoice>('saveVoice', { id, name, description }),
+  design: (description: string, text?: string, language?: string) => elevenLabsRpc<{ previews: ElevenLabsPreview[]; text: string }>('design', { description, text, language }),
+  saveVoice: (id: string, name: string, description: string, viewStateId?: string) => elevenLabsRpc<ElevenLabsVoice>('saveVoice', { id, name, description, viewStateId }),
 };

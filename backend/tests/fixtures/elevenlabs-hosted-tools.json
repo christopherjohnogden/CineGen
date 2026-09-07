@@ -1,0 +1,244 @@
+[
+  {
+    "name": "creative_generate_speech",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "voice_id": {
+          "type": "string",
+          "description": "Pick the voice that fits what the user described \u2014 their own words about the speaker, the language, the mood, the medium \u2014 from creative_list_voices. When they gave no hint at all, still pick one: a clear, natural, general-purpose voice. Do not ask them to choose first; the result renders with a voice switcher they can use to change it, and each change keeps the earlier takes. A voice_id only ever comes from creative_list_voices or the user \u2014 never from memory or invention."
+        },
+        "view_state_id": {
+          "type": "string",
+          "description": "Set by the speech view when the user switches voice \u2014 never set this yourself. It files the new generation into that view as another take, next to the ones already there. An id that is not a speech view of this workspace simply starts a fresh one."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "What to generate."
+        },
+        "flow_id": {
+          "type": "string",
+          "description": "The flow to act on, as returned by creative_create_flow or creative_generate_in_flow. Omit it for a one-off generation and a new flow is created. Always pass it when this generation will be combined with another: nodes on different flows cannot be connected, so allocate one with creative_create_flow up front and reuse it."
+        },
+        "model_id": {
+          "type": "string",
+          "enum": [
+            "eleven_flash_v2_5",
+            "eleven_multilingual_v2",
+            "eleven_turbo_v2_5",
+            "eleven_v3",
+            "eleven_v4"
+          ],
+          "description": "The model to generate with. Use eleven_multilingual_v2 unless the user asks for something specific. Go looking for a different one when the request implies something the default may not do \u2014 a specific resolution or aspect, rendered text, a long duration, a named style or a named provider. creative_get_flow_node_types lists what this workspace can actually run; creative_get_model_guide explains how to prompt one. Pick by what the request needs: eleven_v3 for inline audio direction tags such as [whispering] or [laughs softly]."
+        },
+        "generations_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "default": 4,
+          "description": "How many variations to produce, so the user can pick. Defaults to 4 so the user can pick from several options \u2014 keep it at 4 unless the user asks for a specific number. Costs scale with the count."
+        },
+        "estimate_only": {
+          "type": "boolean",
+          "default": false,
+          "description": "Return the credit cost and any blocking node errors without generating anything. Worth doing before a long video or several variations, so the user can approve the spend first."
+        },
+        "context": {
+          "type": "string",
+          "description": "Why are you calling this tool? Briefly describe the user's goal."
+        }
+      },
+      "required": [
+        "prompt",
+        "model_id",
+        "voice_id",
+        "context"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "creative_get_flow_run_status",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "flow_id": {
+          "type": "string",
+          "description": "The flow to act on, as returned by creative_create_flow or creative_generate_in_flow. Omit it for a one-off generation and a new flow is created. Always pass it when this generation will be combined with another: nodes on different flows cannot be connected, so allocate one with creative_create_flow up front and reuse it."
+        },
+        "session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 20,
+          "description": "The session_ids returned when the run started. A run of several variations reports one session per variation; pass them all so the status covers the whole run."
+        },
+        "context": {
+          "type": "string",
+          "description": "Why are you calling this tool? Briefly describe the user's goal."
+        }
+      },
+      "required": [
+        "flow_id",
+        "session_ids",
+        "context"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "creative_list_voices",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "search": {
+          "type": "string",
+          "description": "Optional search over voice names and descriptions."
+        },
+        "context": {
+          "type": "string",
+          "description": "Why are you calling this tool? Briefly describe the user's goal."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "context"
+      ]
+    }
+  },
+  {
+    "name": "creative_design_voice",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "voice_description": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 1000,
+          "description": "What the voice should sound like \u2014 age, accent, tone, pacing, emotion. From the user's own words, never invented."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 100,
+          "maxLength": 1000,
+          "description": "The line the previews will speak. Obtained from the user, never invented or auto-generated \u2014 this is what they will judge the voice by."
+        },
+        "language": {
+          "type": "string",
+          "description": "ISO language code for text. From the user, never guessed from voice_description alone."
+        },
+        "model_id": {
+          "type": "string",
+          "enum": [
+            "eleven_ttv_v3",
+            "eleven_multilingual_ttv_v2"
+          ],
+          "default": "eleven_ttv_v3",
+          "description": "The voice design model. Use eleven_ttv_v3 unless the user asks for the older multilingual model."
+        },
+        "loudness": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "default": 0.5,
+          "description": "Target loudness, from -1 (quietest) to 1 (loudest)."
+        },
+        "guidance_scale": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 5,
+          "description": "How closely the previews follow voice_description versus sounding natural. Higher follows the description more strictly."
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "Fixes the randomness so a repeat call reproduces the same previews. Omit for a fresh set each time."
+        },
+        "quality": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "description": "Higher quality gives a better voice but less variety. Only accepted with eleven_multilingual_ttv_v2; passing it with eleven_ttv_v3 is rejected."
+        },
+        "should_enhance": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to enhance the generated previews. Leave at the default unless the user asks otherwise."
+        },
+        "view_state_id": {
+          "type": "string",
+          "description": "Set by the voice-design view when the user edits the line and hits Regenerate \u2014 never set this yourself. It replaces that view's previews with the new round instead of minting a separate view. Regenerating still spends credits like any other call to this tool: if you genuinely want another round, call this tool again with no view_state_id rather than passing this."
+        },
+        "context": {
+          "type": "string",
+          "description": "Why are you calling this tool? Briefly describe the user's goal."
+        }
+      },
+      "required": [
+        "voice_description",
+        "text",
+        "language",
+        "context"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "creative_save_designed_voice",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "generated_voice_id": {
+          "type": "string",
+          "description": "The preview to keep, from creative_design_voice's previews[].generated_voice_id \u2014 never invented."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Display name for the new voice in the workspace's library."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 500,
+          "description": "Description shown alongside the voice in the library."
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional labels (e.g. accent, gender, age) stored with the voice; string values only. Max 20 entries, keys <=20 chars, values <=50 chars."
+        },
+        "discarded_voice_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "description": "generated_voice_ids of the other previews the user did not pick, from the same creative_design_voice call."
+        },
+        "view_state_id": {
+          "type": "string",
+          "description": "The id of the voice-design view this save belongs to, as returned by creative_design_voice \u2014 never set this yourself. Refuses the call rather than saving a second voice if this view already saved one."
+        },
+        "context": {
+          "type": "string",
+          "description": "Why are you calling this tool? Briefly describe the user's goal."
+        }
+      },
+      "required": [
+        "generated_voice_id",
+        "name",
+        "description",
+        "context"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

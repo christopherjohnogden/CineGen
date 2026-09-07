@@ -1,6 +1,6 @@
 import { SiteHttpError, requireRecord, assertId } from './common';
 import { createWorkspaceProviderVault } from './workspace-provider-vault';
-import { openMcpAudio, returnedAudio } from './elevenlabs-mcp-audio';
+import { openMcpAudio, returnedAudio, audioRun, runFailure, toolData, type McpAudioRun } from './elevenlabs-mcp-audio';
 import { createElevenLabsMcp } from './elevenlabs-mcp';
 import { persistGeneratedMedia } from '../../../shared/generated-media.mjs';
 import type { ElevenLabsAudioRequest, ElevenLabsAudioResult } from '../../../src/lib/elevenlabs/types';
@@ -10,6 +10,8 @@ type Identity = { token: string; uid: string };
 type Job = { request_id: string; input_json: string; status: ElevenLabsAudioResult['status']; url: string | null; error: string | null; updated_at: number };
 const API = 'https://api.elevenlabs.io';
 const TABLE = `CREATE TABLE IF NOT EXISTS elevenlabs_audio_jobs (workspace_id TEXT NOT NULL, request_id TEXT NOT NULL, input_json TEXT NOT NULL, status TEXT NOT NULL, url TEXT, error TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(workspace_id, request_id))`;
+type ProviderRun = { run_json: string; next_poll_at: number };
+const RUNS = 'CREATE TABLE IF NOT EXISTS elevenlabs_audio_runs (workspace_id TEXT NOT NULL, request_id TEXT NOT NULL, run_json TEXT NOT NULL, next_poll_at INTEGER NOT NULL, locked_until INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(workspace_id, request_id))';
 const MAX_AUDIO = 32 * 1024 * 1024;
 
 export function audioRequest(value: unknown): ElevenLabsAudioRequest {
@@ -49,6 +51,12 @@ async function api(key: string, path: string, body?: unknown): Promise<Response>
     throw new SiteHttpError(response.status === 401 ? 401 : 502, message || `ElevenLabs could not complete the request (${response.status}).`, 'ELEVENLABS_ERROR');
   }
   return response;
+}
+
+function audioExtension(mime: string) {
+  const ext: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/wave': 'wav', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/ogg': 'ogg', 'audio/flac': 'flac', 'audio/aac': 'aac' };
+  if (!ext[mime]) throw new Error('ElevenLabs returned an unsupported audio format.');
+  return ext[mime];
 }
 
 export async function mcpAudioResponse(result: unknown): Promise<Response> {
@@ -103,7 +111,9 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
     try {
       const current = await get(j.request_id);
       if (current?.status === 'complete') return result(current);
-      const url = await persistGeneratedMedia({ source: '', token: who.token, ownerId: who.uid, projectId: p.projectId!, assetId: j.request_id, type: 'audio', provider: 'elevenlabs', audioExtension: 'mp3' }, async () => new Response(stored.body, { headers: { 'content-type': 'audio/mpeg', 'content-length': String(stored.size) } }));
+      const mime = stored.httpMetadata?.contentType || 'audio/mpeg';
+      const extension = audioExtension(mime);
+      const url = await persistGeneratedMedia({ source: '', token: who.token, ownerId: who.uid, projectId: p.projectId!, assetId: j.request_id, type: 'audio', provider: 'elevenlabs', audioExtension: extension }, async () => new Response(stored.body, { headers: { 'content-type': mime, 'content-length': String(stored.size) } }));
       await update(j.request_id, 'complete', url, null);
       return { requestId: j.request_id, assetId: j.request_id, status: 'complete', url };
     } catch (cause) {
@@ -114,6 +124,81 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
       if (!stored.bodyUsed) await stored.body.cancel().catch(() => {});
       await env.DB.prepare('DELETE FROM elevenlabs_audio_save_locks WHERE workspace_id = ? AND request_id = ? AND expires_at = ?').bind(workspaceId, j.request_id, lease).run();
     }
+  };
+  const storeAudio = async (id: string, response: Response): Promise<ElevenLabsAudioResult> => {
+    if (!response.headers.get('content-type')?.startsWith('audio/') || !response.body) { await response.body?.cancel(); throw new Error('ElevenLabs did not return an audio file.'); }
+    if (Number(response.headers.get('content-length')) > MAX_AUDIO) { await response.body.cancel(); throw new Error('This audio exceeds the 32 MB limit.'); }
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = []; let size = 0;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        size += value.byteLength;
+        if (size > MAX_AUDIO) throw new Error('This audio exceeds the 32 MB limit.');
+        chunks.push(value);
+      }
+    } finally { await reader.cancel().catch(() => {}); }
+    if (!size) throw new Error('ElevenLabs returned an empty audio file.');
+    // R2 requires a known-length body. Bound the audio before assembling it.
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    await env.MEDIA.put(mediaKey(id), bytes, { httpMetadata: { contentType: response.headers.get('content-type')!.split(';')[0] } });
+    await update(id, 'saving', null, null);
+    return save((await get(id))!);
+  };
+  const getRun = async (id: string) => {
+    await env.DB.prepare(RUNS).run();
+    return env.DB.prepare('SELECT run_json, next_poll_at FROM elevenlabs_audio_runs WHERE workspace_id = ? AND request_id = ?').bind(workspaceId, id).first<ProviderRun>();
+  };
+  const rememberRun = async (id: string, run: McpAudioRun, data: any) => {
+    await env.DB.prepare(RUNS).run();
+    const next = Date.now() + pollDelay(data);
+    await env.DB.prepare('INSERT INTO elevenlabs_audio_runs (workspace_id, request_id, run_json, next_poll_at) VALUES (?, ?, ?, ?)').bind(workspaceId, id, JSON.stringify(run), next).run();
+  };
+  const pollDelay = (data: any) => Math.max(1, Math.min(60, Number(data.poll_after_seconds) || 5)) * 1000;
+  const resume = async (j: Job): Promise<ElevenLabsAudioResult> => {
+    if (j.status === 'complete') return result(j);
+    if (await env.MEDIA.head(mediaKey(j.request_id))) return save(j);
+    if (j.status === 'error') return result(j);
+    const run = await getRun(j.request_id);
+    if (!run) {
+      if (j.status === 'generating' && Date.now() - j.updated_at > 240000) {
+        await update(j.request_id, 'error', null, 'The audio request was interrupted. Check ElevenLabs history before starting another take; it may have been charged.');
+        return result((await get(j.request_id))!);
+      }
+      return result(j);
+    }
+    if (Date.now() < run.next_poll_at) return result(j);
+    // Devices and MCP may poll together. One lease owns the status/download,
+    // while a separate save lease protects the durable Firebase copy.
+    const lease = Date.now() + 300000;
+    const locked = await env.DB.prepare('UPDATE elevenlabs_audio_runs SET locked_until = ? WHERE workspace_id = ? AND request_id = ? AND locked_until < ? AND next_poll_at <= ?').bind(lease, workspaceId, j.request_id, Date.now(), Date.now()).run();
+    if (!locked.meta.changes) return result((await get(j.request_id)) || j);
+    let next = Date.now() + 5000;
+    let status: 'generating' | 'saving' = j.status === 'saving' ? 'saving' : 'generating';
+    try {
+      const current = (await get(j.request_id))!;
+      if (current.status === 'complete' || current.status === 'error') return result(current);
+      const data = await (await openMcpAudio(env, workspaceId)).poll(JSON.parse(run.run_json));
+      next = Date.now() + pollDelay(data);
+      const failure = runFailure(data);
+      if (failure) { await update(j.request_id, 'error', null, failure); return result((await get(j.request_id))!); }
+      const hasAudio = data.media?.some((m: any) => m.kind === 'audio' && (m.master_url || m.url)) || data.generations?.some((g: any) => g.modality === 'audio' && g.content_url);
+      if (data.all_completed || hasAudio) {
+        status = 'saving';
+        await update(j.request_id, status, null, null);
+        // Re-fetch status on a failed download: media URLs are short-lived.
+        return await storeAudio(j.request_id, await mcpAudioResponse(data));
+      }
+      await update(j.request_id, status, null, null);
+    } catch (cause) {
+      // The provider run is durable. Connection/download errors never submit a
+      // replacement take and can be recovered by the next read-only job check.
+      await update(j.request_id, status, null, cause instanceof Error ? cause.message : 'Could not check this audio take.');
+    } finally {
+      await env.DB.prepare('UPDATE elevenlabs_audio_runs SET next_poll_at = ?, locked_until = 0 WHERE workspace_id = ? AND request_id = ? AND locked_until = ?').bind(next, workspaceId, j.request_id, lease).run();
+    }
+    return result((await get(j.request_id))!);
   };
   return {
     async accountStatus() { const oauth = await mcp.connected(); return { connected: oauth || Boolean(await vault.get('elevenlabs')), provider: 'elevenlabs', connection: oauth ? 'mcp' : 'api-key' }; },
@@ -140,7 +225,7 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
       const existing = await get(p.requestId);
       if (existing) {
         if (existing.input_json !== input) throw new SiteHttpError(409, 'This request already belongs to another take. Start a new take for changed dialogue.');
-        return existing.status === 'saving' ? save(existing) : result(existing);
+        return resume(existing);
       }
       const useMcp = await mcp.connected();
       const apiKey = useMcp ? undefined : await key();
@@ -149,26 +234,19 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
       const locked = await env.DB.prepare('INSERT OR IGNORE INTO elevenlabs_audio_jobs (workspace_id, request_id, input_json, status, updated_at) VALUES (?, ?, ?, ?, ?)').bind(workspaceId, p.requestId, input, 'generating', Date.now()).run();
       if (!locked.meta.changes) return result((await get(p.requestId))!);
       try {
-        const response = mcpGenerate ? await mcpAudioResponse(await mcpGenerate()) : await api(apiKey!, p.kind === 'sound' ? '/v1/sound-generation?output_format=mp3_44100_128' : `/v1/text-to-speech/${encodeURIComponent(p.voiceId!)}?output_format=mp3_44100_128`, elevenLabsPayload(p));
-        if (!response.headers.get('content-type')?.startsWith('audio/') || !response.body) { await response.body?.cancel(); throw new Error('ElevenLabs did not return an audio file.'); }
-        if (Number(response.headers.get('content-length')) > MAX_AUDIO) { await response.body.cancel(); throw new Error('This audio exceeds the 32 MB limit.'); }
-        const reader = response.body.getReader();
-        const chunks: Uint8Array[] = []; let size = 0;
-        try {
-          for (;;) {
-            const { value, done } = await reader.read(); if (done) break;
-            size += value.byteLength;
-            if (size > MAX_AUDIO) throw new Error('This audio exceeds the 32 MB limit.');
-            chunks.push(value);
+        let mcpResult: unknown;
+        if (mcpGenerate) {
+          mcpResult = await mcpGenerate();
+          const data = toolData(mcpResult), run = audioRun(mcpResult);
+          if (run) {
+            await rememberRun(p.requestId, run, data);
+            const failure = runFailure(data);
+            if (failure) { await update(p.requestId, 'error', null, failure); }
+            return result((await get(p.requestId))!);
           }
-        } finally { await reader.cancel().catch(() => {}); }
-        if (!size) throw new Error('ElevenLabs returned an empty audio file.');
-        // R2 requires a known-length body. Bound the audio before assembling it.
-        const bytes = new Uint8Array(size); let offset = 0;
-        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-        await env.MEDIA.put(mediaKey(p.requestId), bytes, { httpMetadata: { contentType: 'audio/mpeg' } });
-        await update(p.requestId, 'saving', null, null);
-        return save((await get(p.requestId))!);
+        }
+        const response = mcpGenerate ? await mcpAudioResponse(mcpResult) : await api(apiKey!, p.kind === 'sound' ? '/v1/sound-generation?output_format=mp3_44100_128' : `/v1/text-to-speech/${encodeURIComponent(p.voiceId!)}?output_format=mp3_44100_128`, elevenLabsPayload(p));
+        return await storeAudio(p.requestId, response);
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : 'Audio generation was interrupted.';
         // A transport failure has an unknown billing outcome. Never auto-submit again.
@@ -180,9 +258,7 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
       const p = requireRecord(value, 'Audio job');
       const j = await get(assertId(p.requestId, 'audio request ID'));
       if (!j) throw new SiteHttpError(404, 'This audio request was not submitted. Generate it when ready.', 'AUDIO_NOT_FOUND');
-      if (j.status === 'saving' || (j.status === 'error' && await env.MEDIA.head(mediaKey(j.request_id)))) return save(j);
-      if (j.status === 'generating' && Date.now() - j.updated_at > 240000) return { ...result(j), status: 'error', error: 'The audio request was interrupted. Check ElevenLabs history before starting another take; it may have been charged.' };
-      return result(j);
+      return resume(j);
     },
     async design(value: unknown) {
       const who = identityRequired(), p = requireRecord(value, 'Voice design');
@@ -190,14 +266,15 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
       if (description.length < 20 || description.length > 1000) throw new SiteHttpError(400, 'Describe the voice in 20–1,000 characters.');
       const text = typeof p.text === 'string' ? p.text.trim() : '';
       if (text && (text.length < 100 || text.length > 1000)) throw new SiteHttpError(400, 'For voice design, use 100–1,000 characters of sample dialogue, or leave it empty for an automatic sample.');
-      const data = await mcp.connected() ? await (await openMcpAudio(env, workspaceId)).design(description, text) : await (await api(await key(), '/v1/text-to-voice/design', { voice_description: description, model_id: 'eleven_ttv_v3', ...(text ? { text } : { auto_generate_text: true }) })).json() as any;
+      const data = await mcp.connected() ? await (await openMcpAudio(env, workspaceId)).design(description, text, typeof p.language === 'string' ? p.language : undefined) : await (await api(await key(), '/v1/text-to-voice/design', { voice_description: description, model_id: 'eleven_ttv_v3', ...(text ? { text } : { auto_generate_text: true }) })).json() as any;
       const previews = [];
       for (const preview of data.previews || []) {
-        if (!preview.generated_voice_id || typeof preview.audio_base_64 !== 'string') continue;
-        if (preview.audio_base_64.length > 24 * 1024 * 1024) throw new Error('Voice preview is too large.');
-        const bytes = Uint8Array.from(atob(preview.audio_base_64), c => c.charCodeAt(0));
-        const url = await persistGeneratedMedia({ source: '', token: who.token, ownerId: who.uid, projectId: 'voice-library', assetId: crypto.randomUUID(), type: 'audio', provider: 'elevenlabs', audioExtension: 'mp3' }, async () => new Response(bytes, { headers: { 'content-type': 'audio/mpeg' } }));
-        previews.push({ id: preview.generated_voice_id, url });
+        if (!preview.generated_voice_id || (!preview.audio_base_64 && !preview.audio_url)) continue;
+        const response = await mcpAudioResponse(preview);
+        const mime = response.headers.get('content-type')?.split(';')[0] || '';
+        const extension = audioExtension(mime);
+        const url = await persistGeneratedMedia({ source: '', token: who.token, ownerId: who.uid, projectId: 'voice-library', assetId: crypto.randomUUID(), type: 'audio', provider: 'elevenlabs', audioExtension: extension }, async () => response);
+        previews.push({ id: preview.generated_voice_id, url, ...(data.view_state_id ? { viewStateId: data.view_state_id } : {}) });
       }
       if (!previews.length) throw new Error('ElevenLabs did not return voice previews.');
       return { previews, text: data.text || text };
@@ -207,8 +284,10 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
       const id = assertId(p.id, 'generated voice ID');
       const name = typeof p.name === 'string' ? p.name.trim() : '';
       if (!name) throw new SiteHttpError(400, 'Give this voice a name.');
-      const data = await mcp.connected() ? await (await openMcpAudio(env, workspaceId)).saveVoice(id, name, String(p.description || '')) : await (await api(await key(), '/v1/text-to-voice', { voice_name: name, voice_description: String(p.description || ''), generated_voice_id: id })).json() as any;
-      return { id: data.voice_id, name: data.name || name };
+      const data = await mcp.connected() ? await (await openMcpAudio(env, workspaceId)).saveVoice(id, name, String(p.description || ''), typeof p.viewStateId === 'string' ? p.viewStateId : undefined) : await (await api(await key(), '/v1/text-to-voice', { voice_name: name, voice_description: String(p.description || ''), generated_voice_id: id })).json() as any;
+      const savedId = data.saved_voice_id || data.voice_id;
+      if (!savedId) throw new Error('ElevenLabs did not return the saved voice. Check your voice library before saving again.');
+      return { id: savedId, name: data.saved_voice_name || data.name || name };
     },
   };
 }
