@@ -4,7 +4,7 @@ import type { Element, ElementFolder, ElementsLibrary } from '@/types/elements';
 import { normalizeLibrary } from '@/lib/elements/library';
 import { cloudDb, waitForCloudAuth } from './firebase';
 import { getProjectCollaboration, resolveProjectCreationTeam } from './collaboration';
-import { prepareElementsLibraryForCloudMedia } from './media';
+import { isFirebaseMediaUrl, prepareElementsLibraryForCloudMedia } from './media';
 
 const MAX_LIBRARY_BYTES = 850_000;
 const loadedRevisions = new Map<string, number>();
@@ -22,6 +22,37 @@ interface LibraryTarget {
 function updatedAt(value: Element): number {
   const parsed = Date.parse(value.updatedAt || value.createdAt || '');
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Reference IDs identify immutable images; edits and removals still come from the requested library. */
+export function restoreSavedElementReferences(
+  requestedValue: unknown,
+  savedValue: unknown,
+): ElementsLibrary {
+  const requested = normalizeLibrary(requestedValue);
+  const saved = normalizeLibrary(savedValue);
+  const savedElements = new Map(saved.elements.map(element => [element.id, element]));
+  return {
+    ...requested,
+    elements: requested.elements.map(element => {
+      const existing = savedElements.get(element.id);
+      if (!existing) return element;
+      const savedImages = new Map([
+        ...existing.images,
+        ...(existing.variations ?? []).flatMap(look => look.images),
+      ].filter(image => isFirebaseMediaUrl(image.url)).map(image => [image.id, image]));
+      const restoreImages = (images: Element['images']) => images.map(image => {
+        const durable = savedImages.get(image.id);
+        return durable && durable.createdAt === image.createdAt && durable.source === image.source
+          && !isFirebaseMediaUrl(image.url) ? { ...image, url: durable.url } : image;
+      });
+      return {
+        ...element,
+        images: restoreImages(element.images),
+        variations: element.variations?.map(look => ({ ...look, images: restoreImages(look.images) })),
+      };
+    }),
+  };
 }
 
 /** Union two device libraries without losing newer edits or duplicating project folders. */
@@ -61,7 +92,8 @@ export function mergeElementsLibraries(
     if (!existing || updatedAt(element) >= updatedAt(existing)) elements.set(element.id, element);
   }
 
-  return normalizeLibrary({ version: 1, folders, elements: [...elements.values()] });
+  const merged = { version: 1, folders, elements: [...elements.values()] };
+  return restoreSavedElementReferences(restoreSavedElementReferences(merged, cloud), device);
 }
 
 function readStoredLibrary(data: Record<string, unknown>): ElementsLibrary {
@@ -102,13 +134,17 @@ async function saveCloudLibrary(
 ): Promise<ElementsLibrary> {
   const context = resolved ?? await resolveTarget(options.projectId);
   if (!context) return library;
+  const ref = doc(cloudDb, 'teams', context.target.teamId);
+  const expectedRevision = loadedRevisions.get(context.target.teamId);
+  // Another device may already have saved this image after our local library was loaded.
+  const snapshot = await getDoc(ref);
+  if (!snapshot.exists()) throw new Error('The CineGen team workspace was not found.');
+  const requested = restoreSavedElementReferences(library, readStoredLibrary(snapshot.data()));
   const durable = await prepareElementsLibraryForCloudMedia(
-    normalizeLibrary(library),
+    requested,
     context.userId,
     options.projectId || `elements-${context.target.teamId}`,
   );
-  const ref = doc(cloudDb, 'teams', context.target.teamId);
-  const expectedRevision = loadedRevisions.get(context.target.teamId);
   let saved = durable;
   let savedRevision = 0;
 
@@ -147,6 +183,7 @@ export async function loadAvailableElementsLibrary(
   });
   if (!context) return device;
 
+  let available = device;
   try {
     const snapshot = await getDoc(doc(cloudDb, 'teams', context.target.teamId));
     if (!snapshot.exists()) return device;
@@ -155,15 +192,18 @@ export async function loadAvailableElementsLibrary(
     const cloud = readStoredLibrary(data);
     loadedRevisions.set(context.target.teamId, revision);
     const merged = mergeElementsLibraries(cloud, device);
+    available = merged;
     const synced = JSON.stringify(merged) === JSON.stringify(cloud)
       ? cloud
       : await saveCloudLibrary(merged, options, context);
     await window.electronAPI.elements.saveLibrary(synced);
+    reportCloudSyncSuccess('elements');
     return synced;
   } catch (error) {
     console.warn('[cloud] Shared Elements library could not be loaded:', error);
     reportSyncError(error);
-    return device;
+    // A pending local upload must not hide Elements that were successfully read from the cloud.
+    return available;
   }
 }
 

@@ -39,7 +39,7 @@ function firstString(record: Record<string, unknown>, keys: string[]): string {
   return '';
 }
 
-function isFirebaseMediaUrl(value: string): boolean {
+export function isFirebaseMediaUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return url.hostname === STORAGE_HOST || url.hostname.endsWith('.firebasestorage.app');
