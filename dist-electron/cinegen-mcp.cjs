@@ -13942,7 +13942,7 @@ var TOOL_CATALOG = [
   },
   {
     name: "cinegen_list_models",
-    description: "List Topview generation models by default (Higgsfield only when explicitly requested), with the provider and what each one accepts (duration, references, frames). Use it before cinegen_generate when the user names a look or a model.",
+    description: "List Topview generation models by default (Higgsfield only when explicitly requested), including image, video, and audio reference inputs. Seedance 2.5 accepts all three; audio references are input guidance, separate from generated sound. Use before cinegen_generate.",
     inputSchema: {
       type: "object",
       properties: {
@@ -13963,7 +13963,7 @@ var TOOL_CATALOG = [
         prompt: string4("Shot description saved in Studio."),
         kind: { type: "string", enum: ["video", "image"] },
         model: optionalString("Exact model node type or name from cinegen_list_node_types."),
-        inputs: { type: "object", description: "Optional model controls keyed by advertised input field IDs, including saved media reference URLs. Studio metadata is managed automatically; prompt takes precedence." },
+        inputs: { type: "object", description: "Model controls and reference URLs keyed by advertised field IDs. For Topview Seedance 2.5: image_url accepts image/video URLs; audio_references accepts an array of MP3/WAV audio URLs. These are input references, separate from generate_audio. Studio metadata is managed automatically; prompt takes precedence." },
         elements: { type: "array", items: { type: "string" }, description: "Existing Element names to attach as references." },
         count: { type: "integer", minimum: 1, maximum: 4 }
       },
@@ -13983,6 +13983,7 @@ var TOOL_CATALOG = [
         prompt: string4("What to generate. Write it as a shot description: subject, action, camera, lighting, mood."),
         kind: { type: "string", enum: ["video", "image"], description: "Defaults to video." },
         model: optionalString('Model name or node type, e.g. "Seedance 2.5". Defaults to the project default for the kind.'),
+        inputs: { type: "object", description: "Model input fields from cinegen_list_models. Seedance 2.5 accepts image/video URLs in image_url and MP3/WAV URLs in audio_references. May combine all three. Prompt and explicit controls above take precedence." },
         elements: {
           type: "array",
           items: { type: "string" },
@@ -14235,7 +14236,7 @@ async function handle(message) {
     result(id3, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false }, resources: {} },
-      serverInfo: { name: "cinegen", version: "0.6.8" },
+      serverInfo: { name: "cinegen", version: "0.6.9" },
       instructions: DISPLAY_INSTRUCTIONS + " Use Topview as the default generation provider. Use Higgsfield only when the user explicitly requests it, with no automatic fallback. Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing \u2014 breakdowns, shot lists, prompts \u2014 and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Use cinegen_element_models and cinegen_build_element for durable Element reference packs; review the completed draft with the user before cinegen_approve_element. Poll cinegen_get_jobs for background Director and Element actions."
     });
     return;

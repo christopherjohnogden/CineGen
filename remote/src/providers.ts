@@ -1,5 +1,6 @@
 import { ALL_MODELS } from '../../src/lib/fal/models';
 import { buildTopviewModelRegistry, topviewRequestedModel, type TopviewGenerationCatalog } from '../../src/lib/topview/model-catalog';
+import { topviewVideoSubmitRoute } from '../../src/lib/topview/reference-capabilities';
 import type { RecordValue } from './firebase';
 
 export type GenerationProvider = 'topview' | 'higgsfield';
@@ -29,7 +30,17 @@ export function providerModels(provider: GenerationProvider, kind?: unknown, cat
 export async function connectedModels(token: string, provider: GenerationProvider, kind?: unknown) {
   const status = await providerRpc(token, provider, 'accountStatus');
   const catalog = provider === 'topview' ? await providerRpc(token, provider, 'modelCatalog') : undefined;
-  return { connected: status.connected !== false, models: providerModels(provider, kind, catalog as TopviewGenerationCatalog | undefined) };
+  let audioReferenceConnection: RecordValue | undefined;
+  if (provider === 'topview') {
+    try {
+      const transport = topviewVideoSubmitRoute(catalog?.toolSchemas?.topview_generate_video,
+        { taskType: 'omni_reference', inputAudios: [{}] }, status.authMode === 'api_key');
+      audioReferenceConnection = { ready: true, transport, billing: transport === 'api' ? 'Topview API credits' : 'Topview MCP plan' };
+    } catch (error) {
+      audioReferenceConnection = { ready: false, reason: (error as Error).message };
+    }
+  }
+  return { connected: status.connected !== false, audioReferenceConnection, models: providerModels(provider, kind, catalog as TopviewGenerationCatalog | undefined) };
 }
 
 export function prepareProviderGeneration(args: RecordValue, available = providerModels(requestedProvider(args.provider))) {

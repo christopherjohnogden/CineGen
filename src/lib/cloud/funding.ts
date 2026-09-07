@@ -51,7 +51,8 @@ const AUDIO_REFERENCE_EXTENSIONS = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', '
  * the field it arrived in — otherwise a clip is submitted as a still image.
  */
 function referenceRoleFor(value: string, fallback: string): string {
-  const path = value.split(/[?#]/)[0];
+  let path = value.split(/[?#]/)[0];
+  try { path = decodeURIComponent(path); } catch { /* Legacy URLs may contain literal percent signs. */ }
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
   if (VIDEO_REFERENCE_EXTENSIONS.includes(ext)) return 'video';
   if (AUDIO_REFERENCE_EXTENSIONS.includes(ext)) return 'audio';
@@ -81,6 +82,8 @@ export function workflowMediaInputs(inputs: Record<string, unknown>, outputType:
   add(inputs.first_frame_url, 'start_image');
   add(inputs.reference_audio, 'audio');
   add(inputs.audio_url, 'audio');
+  add(inputs.audio_urls, 'audio');
+  add(inputs.video_urls, 'video');
   add(inputs.end_frame, 'end_image');
   add(inputs.end_frame_url, 'end_image');
   return media

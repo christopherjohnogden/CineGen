@@ -27,7 +27,7 @@ import {
 import { executeFromNode, type WorkflowDispatch } from '@/lib/workflows/execute';
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { toFileUrl } from '@/lib/utils/file-url';
-import { getMediaTypeForFile, resolveMediaFileUrl, getLocalPathForFile } from '@/lib/utils/media-file';
+import { getMediaTypeForFile, resolveMediaFileUrl, getLocalPathForFile, detectMediaTypeFromExt } from '@/lib/utils/media-file';
 import { nextStudioSlot } from '@/lib/studio/layout';
 import { isPlacedOnCanvas } from '@/lib/studio/canvas-placement';
 import { isStudioMedia, studioFeedModel, type StudioTransfer } from '@/lib/studio/canvas-import';
@@ -1307,12 +1307,13 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     setPrompt(recipe.prompt);
     if (recipe.presetId) setPresetId(recipe.presetId);
     setSelectedElementIds(resolvedIds);
-    const storedAttachments = node.data.config.__studioAttachedRefs;
+    const storedAttachments = node.data.config.__studioAttachedRefs ?? [];
+    const audioReferences = new Set(Array.isArray(node.data.config.audio_references) ? node.data.config.audio_references : []);
     if (Array.isArray(storedAttachments)) {
       setAttachedRefs(storedAttachments.filter((url): url is string => typeof url === 'string').map((source) => {
         const url = resolveCloudMediaReference(source, state.assets as unknown as Record<string, unknown>[]);
         const asset = state.assets.find(candidate => candidate.url === url || candidate.fileRef === url);
-        return { id: asset?.id ?? generateId(), url, name: asset?.name ?? 'Reference', kind: asset?.type === 'video' ? 'video' : asset?.type === 'audio' ? 'audio' : 'image' };
+        return { id: asset?.id ?? generateId(), url, name: asset?.name ?? 'Reference', kind: audioReferences.has(source) || asset?.type === 'audio' || detectMediaTypeFromExt(url.split(/[?#]/)[0]) === 'audio' ? 'audio' : asset?.type === 'video' || detectMediaTypeFromExt(url.split(/[?#]/)[0]) === 'video' ? 'video' : 'image' };
       }));
     }
 
@@ -1362,7 +1363,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     event.preventDefault();
     if (launchLockRef.current || isUploadingReference) return;
     if (attachedRefs.some((reference) => reference.url.startsWith('blob:'))) {
-      setFormError('This reference is a temporary preview. Remove it and upload the photo or video again before generating.');
+      setFormError('This reference is a temporary preview. Remove it and upload the media file again before generating.');
       return;
     }
 
@@ -1388,6 +1389,11 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       ? selectedElementIds.filter((id) => availableElements.some((element) => element.id === id))
       : [];
     const selectedReferenceField = referenceFieldFor(selectedModel);
+    const audioReferenceField = selectedModel.inputs.find(field => field.mediaRole === 'audio' && field.multiple);
+    if (attachedRefs.some(reference => reference.kind === 'audio') && !audioReferenceField && selectedModel.provider === 'topview') {
+      setFormError(`${selectedModel.name} does not accept audio references. Choose Seedance 2.5 for images, video, and audio together.`);
+      return;
+    }
     if (elementIds.length > 0 && !selectedReferenceField) {
       setFormError('This model does not accept Element references.');
       return;
@@ -1495,12 +1501,16 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       modelConfig.__studioPresetName = activePreset.name;
     }
     const attachedUrls = attachedRefs.map((reference) => reference.url);
+    const audioUrls = audioReferenceField ? attachedRefs.filter(reference => reference.kind === 'audio').map(reference => reference.url) : [];
+    const visualUrls = attachedUrls.filter(url => !audioUrls.includes(url));
     // The clip leads the reference list so it reads as what the edit is about,
     // with the Elements after it as what to change it into.
     const editUrl = editVideo ? toFileUrl(editVideo.fileRef || editVideo.url) : '';
     const referenceUrls = editUrl
-      ? [editUrl, ...attachedUrls.filter((url) => url !== editUrl)]
-      : attachedUrls;
+      ? [editUrl, ...visualUrls.filter((url) => url !== editUrl)]
+      : visualUrls;
+    if (audioUrls.length && audioReferenceField) modelConfig[audioReferenceField.id] = audioUrls;
+    if (attachedUrls.length) modelConfig.__studioAttachedRefs = attachedUrls;
     if ((elementIds.length > 0 || referenceUrls.length > 0) && selectedReferenceField) {
       modelConfig[selectedReferenceField.id] = {
         elementIds,
@@ -1856,8 +1866,9 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
         showNotice(`${file.name} is the ${target === 'start' ? 'first' : 'last'} frame.`);
         return;
       }
-      // An attachment is a reference. Switching the shot to Frames behind the
-      // user's back was the wrong call: the mode is theirs to choose.
+      // A file added via References must be sent as guidance, including audio.
+      if (kind === 'audio' || kind === 'video') setOutputKind('video');
+      setVideoMode('references');
       setAttachedRefs((current) => (
         current.length >= MAX_ATTACHED_REFERENCES || current.some((entry) => entry.url === url)
           ? current
@@ -3388,10 +3399,10 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
                 <button
                   type="button"
                   className="space-studio__reference-upload"
-                  onClick={() => openAttachFor(null, 'image/*,video/*')}
+                  onClick={() => openAttachFor(null, 'image/*,video/*,audio/*')}
                 >
                   <span aria-hidden="true">＋</span>
-                  <span>Upload photos or videos<small>Choose from your device</small></span>
+                  <span>Upload images, video, or audio<small>Choose from your device</small></span>
                 </button>
                 {modalElements.length === 0 && (
                   <p className="space-studio__empty-note">

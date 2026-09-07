@@ -5,6 +5,8 @@ import {
   requireRecord,
 } from "./common";
 
+import { topviewAcceptsAudioReferences, topviewVideoSubmitRoute, topviewAudioApiRequest } from "@/lib/topview/reference-capabilities";
+
 const PROVIDER = "topview";
 const MCP_URL = "https://mcp.topview.ai/mcp";
 const MCP_RESOURCE = "https://mcp.topview.ai";
@@ -814,6 +816,17 @@ async function callTool(session: McpSession, name: string, req: JsonRecord): Pro
       `Your Topview account does not currently expose ${name}.`,
       "TOPVIEW_TOOL_UNAVAILABLE",
     );
+  }
+  // The standalone MCP gateway currently omits inputAudios. Only an existing
+  // API-key connection may use REST; never replace an MCP-plan connection or
+  // change which account/credit balance is used behind the user's back.
+  if (name === "topview_generate_video" && topviewVideoSubmitRoute(tool.inputSchema, req, Boolean(session.uid)) === 'api') {
+    const response = await fetchJson('https://api.topview.ai/v1/common_task/omni_reference/task/submit', {
+      method: 'POST', headers: { authorization: `Bearer ${session.token}`, 'Topview-Uid': session.uid!, 'content-type': 'application/json' },
+      body: JSON.stringify(topviewAudioApiRequest(req)), signal: AbortSignal.timeout(90_000), redirect: 'manual',
+    }, 'Topview could not submit the audio-reference video.');
+    if (String(response.code) !== '200') throw new SiteHttpError(502, friendlyToolError(response, 'Topview could not submit the audio-reference video.', true), 'TOPVIEW_TOOL_ERROR');
+    return response;
   }
   const called = await mcpRequest(session.token, {
     jsonrpc: "2.0",
@@ -1649,6 +1662,9 @@ function buildRequest(args: {
     const images = args.media.filter((entry) => entry.kind === "image");
     const videos = args.media.filter((entry) => entry.kind === "video");
     const audios = args.media.filter((entry) => entry.kind === "audio");
+    if (audios.length && !topviewAcceptsAudioReferences(model)) {
+      throw new SiteHttpError(422, `Topview model '${String(model.submitModel)}' does not support audio references.`, "TOPVIEW_PARAMETERS_INVALID");
+    }
     const inputImages = images.map((entry, index) => ({ fileId: entry.fileId, name: `Image${index + 1}` }));
     const inputVideos = videos.map((entry, index) => ({ fileId: entry.fileId, name: `Video${index + 1}` }));
     const inputAudios = audios.map((entry, index) => ({ fileId: entry.fileId, name: `Audio${index + 1}` }));
@@ -1850,7 +1866,7 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         configs,
         tools: session.tools.map((tool) => tool.name),
         toolSchemas: Object.fromEntries(session.tools
-          .filter((tool) => ["topview_get_generation_config", "topview_generate_audio", "topview_generate_music", "topview_generate_voice", "topview_clone_voice", "topview_query_task"].includes(tool.name))
+          .filter((tool) => ["topview_get_generation_config", "topview_generate_video", "topview_generate_audio", "topview_generate_music", "topview_generate_voice", "topview_clone_voice", "topview_query_task"].includes(tool.name))
           .map((tool) => [tool.name, tool.inputSchema])),
         fetchedAt: new Date().toISOString(),
       };

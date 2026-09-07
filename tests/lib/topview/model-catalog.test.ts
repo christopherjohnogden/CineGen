@@ -137,8 +137,11 @@ describe('Topview live model catalog', () => {
     const seedance = fallback['topview-video-seedance-2-5'];
 
     expect(seedance.inputs.map((field) => field.id)).toEqual(
-      expect.arrayContaining(['duration', 'aspect_ratio', 'resolution']),
+      expect.arrayContaining(['duration', 'aspect_ratio', 'resolution', 'audio_references']),
     );
+    expect(seedance.inputs.find(field => field.id === 'audio_references')).toMatchObject({
+      portType: 'audio', multiple: true, mediaRole: 'audio', falParam: 'audio_urls',
+    });
   });
 
   it('submits the actual selected Topview model name', () => {

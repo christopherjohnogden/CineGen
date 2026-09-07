@@ -106,7 +106,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.6.8');
+  assert.equal(initialized.result.serverInfo.version,'1.6.9');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -395,4 +395,14 @@ test('ordered cloud batch reads snapshots, isolates missing jobs and retains dur
     const paged=await send({jobs,offset:2,limit:1});assert.equal(paged.structuredContent.items[0].batchIndex,3);assert.equal(paged.structuredContent.allFound,false);
     const mismatch=await send({jobs:[{requestId:'done',nodeId:'wrong'}]});assert.equal(mismatch.structuredContent.items[0].status,'not_found');
   }finally{api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
+});
+
+test('Topview Seedance exposes and preserves mixed references including extensionless audio',()=>{
+  const prepared=api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{prompt:'Match the beat.',image_url:['https://example.com/hero.png','https://example.com/motion.mp4'],audio_references:['https://example.com/media/opaque-id?token=test']}});
+  assert.deepEqual(prepared.params.medias,[
+    {value:'https://example.com/hero.png',role:'image'},
+    {value:'https://example.com/motion.mp4',role:'video'},
+    {value:'https://example.com/media/opaque-id?token=test',role:'audio'},
+  ]);
+  assert.deepEqual(prepared.config.audio_references,['https://example.com/media/opaque-id?token=test']);
 });

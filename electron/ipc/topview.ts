@@ -6,6 +6,7 @@ import { request as httpsRequest } from 'node:https';
 import fs from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
+import { topviewAcceptsAudioReferences, topviewVideoSubmitRoute } from '@/lib/topview/reference-capabilities';
 import {
   minimumEvenFrameSize,
   probeVideoFrameSize,
@@ -851,7 +852,7 @@ export function buildTopviewVideoRequest(args: {
         instructions.push(`<<<${name}>>> is ${meaning}.`);
       }
     }
-    if (inputAudios.length && !advertisesField(model, 'inputAudios')) {
+    if (inputAudios.length && !topviewAcceptsAudioReferences(model)) {
       throw new Error(`Topview model "${submitModel}" does not accept audio reference elements for omni-reference video.`);
     }
     prompt = `${instructions.join('\n')} Follow the supplied references for the subjects, wardrobe, props, materials, colour, setting, and requested motion.\n\n${prompt}`;
@@ -1337,6 +1338,7 @@ class TopviewMcpService {
   private async callTool(session: McpSession, name: string, req: JsonRecord): Promise<unknown> {
     const tool = session.tools.find((entry) => entry.name === name);
     if (!tool) throw new Error(`Your Topview account does not currently expose ${name}.`);
+    if (name === 'topview_generate_video') topviewVideoSubmitRoute(tool.inputSchema, req, false);
     const called = await this.mcpRequest(session.token, {
       jsonrpc: '2.0', id: `call-${crypto.randomUUID()}`, method: 'tools/call', params: {
         name,
@@ -1533,7 +1535,7 @@ class TopviewMcpService {
       configs,
       tools: session.tools.map((tool) => tool.name),
       toolSchemas: Object.fromEntries(session.tools
-        .filter((tool) => ['topview_get_generation_config', 'topview_generate_audio', 'topview_generate_music', 'topview_generate_voice', 'topview_clone_voice', 'topview_query_task'].includes(tool.name))
+        .filter((tool) => ['topview_get_generation_config', 'topview_generate_video', 'topview_generate_audio', 'topview_generate_music', 'topview_generate_voice', 'topview_clone_voice', 'topview_query_task'].includes(tool.name))
         .map((tool) => [tool.name, tool.inputSchema])),
       fetchedAt: new Date().toISOString(),
     };

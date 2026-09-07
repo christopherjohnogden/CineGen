@@ -21,6 +21,7 @@ const seedance = {
   responseMapping: { path: 'url' },
   inputs: [
     { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
+    { id: 'audio_references', portType: 'audio', label: 'Audio References', required: false, falParam: 'audio_urls', fieldType: 'port', multiple: true, mediaRole: 'audio' },
     { id: 'image_url', portType: 'media', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image' },
     { id: 'extra_images', portType: 'media', label: 'More References', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 30, mediaRole: 'image' },
     { id: 'duration', portType: 'number', label: 'Duration', required: false, falParam: 'duration', fieldType: 'select', default: '4', options: [{ value: '4', label: '4' }] },
@@ -118,5 +119,22 @@ describe('files attached in the Studio composer', () => {
 
     const request = submit.mock.calls[0][0] as { medias?: Array<{ value: string; role: string }> };
     expect(request.medias).toEqual([{ value: VIDEO, role: 'video' }]);
+  });
+
+  it('retains a mixed pack from MCP including extensionless audio, and from Canvas edges', async () => {
+    const audio = 'https://media.example/assets/opaque-audio-id?token=test';
+    await executeFromNode('solo-1', soloNode({ prompt: 'Match the music.',
+      extra_images: [VIDEO, SHEET], audio_references: [audio],
+    }), [], dispatch());
+    expect(submit.mock.calls[0][0].medias).toEqual(expect.arrayContaining([
+      { value: VIDEO, role: 'video' }, { value: SHEET, role: 'image' }, { value: audio, role: 'audio' },
+    ]));
+    submit.mockClear();
+    const nodes = [...soloNode({ prompt: 'Match the music.' }), {
+      id: 'audio', type: 'filePicker', position: { x: 0, y: 0 },
+      data: { type: 'filePicker', label: 'Music', config: { fileUrl: audio, fileType: 'audio' } },
+    }] as Node<WorkflowNodeData>[];
+    await executeFromNode('solo-1', nodes, [{ id: 'audio-edge', source: 'audio', target: 'solo-1', sourceHandle: 'media', targetHandle: 'audio_references' }], dispatch());
+    expect(submit.mock.calls[0][0].medias).toContainEqual({ value: audio, role: 'audio' });
   });
 });

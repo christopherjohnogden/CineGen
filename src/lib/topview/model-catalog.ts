@@ -1,4 +1,5 @@
 import type { ModelDefinition, ModelInputField } from '@/types/workflow';
+import { topviewAcceptsAudioReferences } from './reference-capabilities';
 
 export type TopviewCatalogOutput = 'image' | 'video' | 'audio';
 
@@ -29,6 +30,7 @@ type CatalogModel = {
   /** True when Topview described this model. Offline fallbacks keep the generic controls. */
   live?: boolean;
   nativeAudio?: boolean;
+  audioReferences?: boolean;
 };
 
 const FALLBACK_IMAGE_MODELS = [
@@ -168,6 +170,7 @@ function mergeCatalog(catalog?: TopviewGenerationCatalog | null): CatalogModel[]
       };
       existing.catalogType ??= entry.catalogType ?? entry.taskType;
       existing.taskTypes.add(entry.taskType);
+      if (entry.taskType === 'omni_reference') existing.audioReferences = topviewAcceptsAudioReferences(model);
       if (typeof model.submitModel === 'string') existing.submitModel = model.submitModel;
       if (isRecord(model.defaultSubmitParameters)) {
         existing.defaults = { ...existing.defaults, ...model.defaultSubmitParameters };
@@ -293,6 +296,7 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
   const soundValues = model.options.get('sound') ?? [];
   const supportsAudio = model.nativeAudio === true || soundValues.some((value) => String(value).toLowerCase() === 'on');
   const supportsOmniReference = model.taskTypes.size === 0 || model.taskTypes.has('omni_reference');
+  const acceptsAudioReferences = supportsOmniReference && (model.audioReferences ?? topviewAcceptsAudioReferences(model));
   const supportsImageToVideo = model.taskTypes.size === 0 || model.taskTypes.has('image_to_video');
   const taskLabels = [...model.taskTypes].map((task) => task.replaceAll('_', ' ')).join(' · ');
   const inputs: ModelInputField[] = [
@@ -305,9 +309,14 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
       // Omni-reference accepts stills, clips and audio: the submit builder sorts
       // them into inputImages / inputVideos / inputAudios by role. A 'media' port
       // is what lets a video output connect on the canvas without a false warning.
-      { id: 'image_url', portType: 'media', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image' },
-      { id: 'extra_images', portType: 'media', label: 'More References', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 30, mediaRole: 'image' },
+      { id: 'image_url', portType: 'media', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image', description: acceptsAudioReferences ? 'Image, video, and audio references. Use audio_references for audio URLs without a file extension.' : 'Image and video references.' },
+      { id: 'extra_images', portType: 'media', label: 'More References', required: false, falParam: 'image_urls', fieldType: 'element-list', max: 30, mediaRole: 'image', description: acceptsAudioReferences ? 'Additional images, videos, audio, or Elements.' : 'Additional images, videos, or Elements.' },
     );
+    if (acceptsAudioReferences) inputs.push({
+      id: 'audio_references', portType: 'audio', label: 'Audio References', required: false,
+      falParam: 'audio_urls', fieldType: 'port', multiple: true, mediaRole: 'audio',
+      description: 'Input audio guidance, separate from Generate Audio. Seedance 2.5 accepts up to 10 MP3/WAV files, 2–30 seconds each and 30 seconds total.',
+    });
   } else if (supportsImageToVideo) {
     // Models without omni-reference retain the legacy image_url handle as their start frame.
     inputs.push({ id: 'image_url', portType: 'image', label: 'Start Frame', required: false, falParam: 'image_url', fieldType: 'port', mediaRole: 'start_image' });
@@ -343,7 +352,7 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
     nodeType: `topview-video-${topviewModelSlug(model.displayName)}`,
     name: model.displayName,
     category: 'video',
-    description: `Topview video generation${supportsAudio ? ' with native audio' : ''}${taskLabels ? ` · ${taskLabels}` : ''}`,
+    description: `Topview video generation${acceptsAudioReferences ? ' with image, video, and audio input references' : ''}${supportsAudio ? ' with native audio' : ''}${taskLabels ? ` · ${taskLabels}` : ''}`,
     outputType: 'video',
     provider: 'topview',
     responseMapping: { path: 'url' },

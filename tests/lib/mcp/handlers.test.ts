@@ -12,6 +12,7 @@ const models = vi.hoisted(() => {
     provider: 'topview', outputType: 'video', responseMapping: { path: 'video.url' },
     inputs: [
       { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
+    { id: 'audio_references', portType: 'audio', label: 'Audio References', required: false, falParam: 'audio_urls', fieldType: 'port', multiple: true, mediaRole: 'audio' },
       { id: 'image_url', portType: 'image', label: 'References', required: false, falParam: 'reference_images', fieldType: 'port', multiple: true, mediaRole: 'image' },
       { id: 'duration', portType: 'number', label: 'Duration', required: false, falParam: 'duration', fieldType: 'select', options: [{ value: '5', label: '5' }, { value: '10', label: '10' }] },
       { id: 'resolution', portType: 'text', label: 'Resolution', required: false, falParam: 'resolution', fieldType: 'select', options: [{ value: '720p', label: '720p' }] },
@@ -177,9 +178,20 @@ describe('MCP tools', () => {
   it('lists what each model accepts so the model can choose one', async () => {
     const listed = await harness.handlers.cinegen_list_models({ kind: 'video' }) as { models: Array<Record<string, unknown>> };
     const seedance = listed.models.find((entry) => entry.name === 'Seedance 2.5');
-    expect(seedance).toMatchObject({ provider: 'Topview AI', takesReferences: true, durations: ['5', '10'] });
+    expect(seedance).toMatchObject({ provider: 'Topview AI', takesReferences: true, takesAudioReferences: true, durations: ['5', '10'] });
     const omni = listed.models.find((entry) => entry.name === 'Gemini Omni Flash');
     expect(omni?.durations).toBeNull();
+  });
+
+  it('generates with Elements and uploaded audio/video without overwriting either reference set', async () => {
+    await harness.handlers.cinegen_generate({ prompt: 'Move to the rhythm.', elements: ['Hazmat'],
+      inputs: { image_url: ['https://media.example/motion.mp4'], audio_references: ['https://media.example/music.wav'] },
+    });
+    const config = harness.state.nodes[0].data.config;
+    expect(config.image_url).toMatchObject({ elementIds: ['el-hazmat'], urls: ['https://media.example/motion.mp4'] });
+    expect(config.audio_references).toEqual(['https://media.example/music.wav']);
+    expect(config.__studioVideoMode).toBe('references');
+    expect(config.__studioAttachedRefs).toHaveLength(2);
   });
 
   it('reports generations with their status and media', async () => {

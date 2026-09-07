@@ -154,11 +154,25 @@ function startGeneration(host: McpHost, request: GenerationRequest): string[] {
   if (request.elementIds.length > 0) {
     const referenceField = referenceFieldFor(model);
     if (!referenceField) throw new McpToolError(`${model.name} does not take reference images. Pick a model that does, or drop the elements.`);
-    config[referenceField.id] = { elementIds: request.elementIds, elementVariationIds: {} };
+    const previous = config[referenceField.id];
+    const urls = Array.isArray(previous) ? previous : typeof previous === 'string' ? [previous]
+      : previous && typeof previous === 'object' ? (previous as Record<string, unknown>).urls : undefined;
+    config[referenceField.id] = { elementIds: request.elementIds, elementVariationIds: {}, ...(Array.isArray(urls) ? { urls } : {}) };
     config.__studioElementIds = request.elementIds;
     config.__studioElementNames = request.elementIds.map((id) => (
       state.elements.find((element) => element.id === id)?.name ?? ''
     ));
+    config.__studioVideoMode = 'references';
+  }
+
+  const attached = model.inputs.filter(field => ['image', 'video', 'audio', 'media'].includes(field.portType)
+    && !['start_image', 'end_image'].includes(field.mediaRole ?? '')).flatMap(field => {
+      const value = request.inputs?.[field.id];
+      return (Array.isArray(value) ? value : typeof value === 'string' ? [value] : [])
+        .filter((url): url is string => typeof url === 'string' && Boolean(url.trim()));
+    });
+  if (attached.length) {
+    config.__studioAttachedRefs = [...new Set(attached)];
     config.__studioVideoMode = 'references';
   }
 
@@ -293,6 +307,8 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
           takesReferences: Boolean(referenceFieldFor(model)),
           takesFrames: Boolean(startFieldFor(model)),
           takesEndFrame: Boolean(endFieldFor(model)),
+          takesAudioReferences: model.inputs.some(field => field.mediaRole === 'audio'),
+          inputs: model.inputs,
           durations: model.inputs.find((field) => field.id === 'duration')?.options?.map((option) => String(option.value)) ?? null,
           resolutions: model.inputs.find((field) => field.id === 'resolution')?.options?.map((option) => String(option.value)) ?? null,
         })),
@@ -321,6 +337,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
       const elementIds = resolveElements(state(), strList(args, 'elements'));
       const count = int(args, 'count', 1, 1, MAX_BATCH);
       const durationRaw = args.durationSec;
+      if (args.inputs && (typeof args.inputs !== 'object' || Array.isArray(args.inputs))) throw new McpToolError('inputs must be an object.');
 
       const nodeIds = startGeneration(host, {
         model,
@@ -332,6 +349,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
         resolution: str(args, 'resolution') || undefined,
         spaceId: str(args, 'spaceId') || undefined,
         view: str(args, 'view') || undefined,
+        inputs: args.inputs as Record<string, unknown> | undefined,
       });
 
       if (args.view && host.appAction) {

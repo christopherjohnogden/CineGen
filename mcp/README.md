@@ -187,6 +187,12 @@ Use `cinegen_studio_create` to prepare Studio items without starting generation 
 Use `cinegen_generate` for actual Studio generation. Topview is the default for preparation and generation. Pass `provider: "higgsfield"` only when the user explicitly requests Higgsfield. Remote generation uses the existing CineGen website connections and does not require a fal key. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.
 
 
-### Creative library (stdio 0.6.8 / remote 1.6.8)
+### Creative library (stdio 0.6.9 / remote 1.6.9)
 
 The shared MCP Apps viewer now browses uploaded assets, exact ordered batches, reference Elements and illustrated film presets. Users can send exact selections/prompts back to chat or add existing image/video references to a Studio Space without generating. See [the remote display documentation](../remote/README.md#creative-library-and-inline-displays-server-168) for tool arguments, host compatibility and media limitations. The widget resource is `ui://cinegen/media-viewer-v13.html`; cached v1/v2/v3/v4/v5/v6/v7/v8/v9/v10/v11/v12 URIs also serve the fixed viewer. The browser script is built separately from the server to keep deployment transforms from breaking widget startup.
+
+### Seedance audio references
+
+Topview Seedance 2.5 accepts image, video, and audio guidance. `cinegen_list_models` now advertises `audio_references` (an array of MP3/WAV URLs), alongside the existing mixed `image_url` / `extra_images` inputs. Audio guidance is separate from `generate_audio` (output sound). Studio preparation, generation, and Canvas execution retain the references; Studio's device picker includes audio.
+
+The Topview standalone MCP gateway currently omits audio from its submit schema, despite the model/API supporting it. Cloud generation uses the official Omni Reference API **only with an existing API-key connection**, using that connection's API credits. An MCP-plan connection fails explicitly before a paid submission instead of dropping the audio or changing accounts/billing. `cinegen_list_models.audioReferenceConnection` reports this distinction. No automatic switch to Higgsfield or another credit balance occurs.

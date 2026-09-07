@@ -43,6 +43,29 @@ const videoConfig = {
 };
 
 describe('Topview MCP video adapter', () => {
+  it('accepts Seedance audio guidance without confusing it with generated sound', () => {
+    const model = { ...videoConfig.models[0], nativeAudio: false,
+      requiredSubmitFields: ['taskType', 'model', 'prompt'],
+      raw: { parameters: { supportHybridUploadsRef: { audios: true, maxAudios: 10 } } },
+    };
+    const built = buildTopviewVideoRequest({ config: { models: [model] }, taskType: 'omni_reference',
+      params: { prompt: 'Sync the movement to the rhythm.', model: model.submitModel }, boardId: 'board_1',
+      references: [
+        { value: '/tmp/hero.png', role: 'image', fileId: 'image-id' },
+        { value: '/tmp/motion.mp4', role: 'video', fileId: 'video-id' },
+        { value: '/tmp/music.wav', role: 'audio', fileId: 'audio-id' },
+      ],
+    });
+    expect(built.req.inputImages).toEqual([{ fileId: 'image-id', name: 'Image1' }]);
+    expect(built.req.inputVideos).toEqual([{ fileId: 'video-id', name: 'Video1' }]);
+    expect(built.req.inputAudios).toEqual([{ fileId: 'audio-id', name: 'Audio1' }]);
+    expect(built.req.prompt).toContain('<<<Audio1>>>');
+    model.raw.parameters.supportHybridUploadsRef.audios = false;
+    expect(() => buildTopviewVideoRequest({ config: { models: [model] }, taskType: 'omni_reference',
+      params: { prompt: 'Use audio', model: model.submitModel }, boardId: 'board_1',
+      references: [{ value: '/tmp/music.wav', role: 'audio', fileId: 'audio-id' }],
+    })).toThrow(/does not accept audio/);
+  });
   it('reads the official MCP and API credit response shapes', () => {
     expect(topviewCreditBalance({ result: { remainCredit: 69.53 } })).toBe(69.53);
     expect(topviewCreditBalance({ remain_credit: '42.5' })).toBe(42.5);

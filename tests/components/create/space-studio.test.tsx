@@ -87,6 +87,7 @@ const models = vi.hoisted(() => {
       responseMapping: { path: 'video.url' },
       inputs: [
         prompt,
+        { id: 'audio_references', portType: 'audio', label: 'Audio References', required: false, falParam: 'audio_urls', fieldType: 'port', multiple: true, mediaRole: 'audio' },
         {
           id: 'image_url',
           portType: 'image',
@@ -998,7 +999,7 @@ describe('Space Studio', () => {
     expect(within(menu).getByRole('menuitemradio', { name: 'Frames' })).toBeInTheDocument();
   });
 
-  it('uploads images and videos from the References picker into generation', async () => {
+  it('uploads images, videos, and audio from the References picker into generation', async () => {
     localStorage.removeItem('cinegen_studio_feed_view');
     workspaceHarness.state = makeState([]);
     (window as unknown as { electronAPI: unknown }).electronAPI = {
@@ -1022,8 +1023,8 @@ describe('Space Studio', () => {
     expect(input).toHaveAttribute('multiple');
 
     fireEvent.click(screen.getByTestId('space-studio-elements-chip'));
-    fireEvent.click(screen.getByRole('button', { name: /Upload photos or videos/ }));
-    expect(input).toHaveAttribute('accept', 'image/*,video/*');
+    fireEvent.click(screen.getByRole('button', { name: /Upload images, video, or audio/ }));
+    expect(input).toHaveAttribute('accept', 'image/*,video/*,audio/*');
 
     // A whole set at once, mixed media — that is what a reference pack is.
     fireEvent.change(input, {
@@ -1031,11 +1032,12 @@ describe('Space Studio', () => {
         files: [
           new File(['x'], 'jordan.png', { type: 'image/png' }),
           new File(['x'], 'jordan-travis.mp4', { type: 'video/mp4' }),
+          new File(['x'], 'rhythm.wav', { type: 'audio/wav' }),
         ],
       },
     });
 
-    expect(await screen.findByText('jordan-travis.mp4 added as a reference.')).toBeInTheDocument();
+    expect(await screen.findByText('rhythm.wav added as a reference.')).toBeInTheDocument();
     // The video used to stop at "saved to Assets"; both are references now.
     expect(screen.getAllByRole('button', { name: 'Remove jordan.png' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'Remove jordan-travis.mp4' }).length).toBeGreaterThan(0);
@@ -1050,6 +1052,8 @@ describe('Space Studio', () => {
       .find((action) => action.type === 'SET_NODES') as { nodes: Array<{ data: { config: Record<string, unknown> } }> };
     const reference = setNodes.nodes[0].data.config.image_url as { urls?: string[] };
     expect(reference.urls).toHaveLength(2);
+    expect(setNodes.nodes[0].data.config.audio_references).toEqual(['local-media://file/Users/chris/Movies/rhythm.wav']);
+    expect(setNodes.nodes[0].data.config.__studioAttachedRefs).toHaveLength(3);
     expect(reference.urls?.[0]).toContain('jordan.png');
     expect(reference.urls?.[1]).toContain('jordan-travis.mp4');
 

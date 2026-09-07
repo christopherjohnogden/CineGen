@@ -970,7 +970,12 @@ async function executeModelNode(
     for (const field of modelDef.inputs) {
       if (field.fieldType === 'element-list') {
         const items = elementListData.get(field.id);
-        if (!items || items.length === 0) continue;
+        if (!items || items.length === 0) {
+          // MCP callers may supply URL arrays directly instead of Element IDs.
+          const urls = data.config[field.id];
+          if (Array.isArray(urls) && urls.every(url => typeof url === 'string')) falInputs[field.falParam] = urls;
+          continue;
+        }
 
         if (nodeType === RUNPOD_QWEN_IMAGE_EDIT_SESSION_NODE_TYPE) {
           // Qwen accepts up to three separate images. Give every selected
