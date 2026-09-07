@@ -11,6 +11,7 @@ export function requestedProvider(value: unknown): GenerationProvider {
 
 /** Calls the same authenticated provider connection used by the CineGen website. */
 export async function providerRpc(token: string, provider: GenerationProvider, method: string, params?: unknown): Promise<RecordValue> {
+  if(provider==='topview' && method==='generate' && params && typeof params==='object') params={...params,downloadSource:'origin'};
   const response = await fetch(`https://cinegen-api.christopherjohnogden.workers.dev/api/rpc/${provider}/${method}`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-cinegen-id-token': token, 'x-cinegen-origin': 'https://cinegen-film.vercel.app' },
     body: JSON.stringify({ args: params === undefined ? [] : [params] }),

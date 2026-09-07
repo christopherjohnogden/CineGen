@@ -65,6 +65,7 @@ export async function downloadGeneratedMedia(source:string, provider='topview') 
     }
     if(!response.ok||!response.body) {
       const detail=(await response.text()).match(/<Code>([^<]+)<\/Code>/)?.[1] ?? '';
+      console.warn('media_download_denied',{status:response.status,host:url.hostname,path:url.pathname,queryKeys:[...url.searchParams.keys()],hasSignature:url.searchParams.has('Signature'),detail});
       throw new Error(`Generated media download failed (HTTP ${response.status}, host ${url.hostname}${detail ? `, ${detail}` : ''}).`);
     }
     return response;
@@ -188,7 +189,7 @@ export class GenerationJob extends DurableObject {
         const savingNode=savingSpace?.nodes.find(n=>n.id===job.nodeId);
         const progressMessage='Saving generated media…';
         if(savingNode && savingNode.data.result?.progressMessage!==progressMessage) {
-          savingNode.data.result={status:'running',progressMessage};
+          savingNode.data.result={status:'running',progressStage:'saving',progressMessage,...(job.error?{error:job.error}:{})};
           if(savingSpace!.id===savingState.activeSpaceId)savingState.nodes=savingSpace!.nodes;
           await store.save(loaded,serialize(loaded.state,savingState,loaded.metadata.useSqlite!==false));
         }
@@ -196,7 +197,8 @@ export class GenerationJob extends DurableObject {
           let sources=[job.sourceUrl];
           if(job.args.provider==='topview' && job.providerTask && (job.attempts>0||job.refreshSource)) {
             const refreshed=await providerRpc(auth.token,'topview','generate',job.providerTask);
-            sources=[...new Set([refreshed.url,...(Array.isArray(refreshed.urls)?refreshed.urls:[]),job.sourceUrl].filter((url):url is string=>typeof url==='string'&&url.startsWith('https://')))];
+            const fresh=[...new Set([refreshed.url,...(Array.isArray(refreshed.urls)?refreshed.urls:[])].filter((url):url is string=>typeof url==='string'&&url.startsWith('https://')))];
+            if(fresh.length){sources=fresh;job.sourceUrl=fresh[0];await this.ctx.storage.put('job',job);}
           }
           for(let index=0;index<sources.length;index++) {
             try {job.url=await persistMedia(sources[index],store,loaded.ownerId,job.args.projectId,job.nodeId,prepared.model.outputType,job.args.provider??'fal');job.sourceUrl=sources[index];break;}
@@ -222,14 +224,14 @@ export class GenerationJob extends DurableObject {
       job.attempts++;job.error=e instanceof Error?e.message:'Generation interrupted.';
       if(job.status==='submitting'||job.attempts>=12)job.status='needs_attention';
     }
-    if(['failed','needs_attention'].includes(job.status)) {
+    if(['failed','needs_attention'].includes(job.status) || (job.status==='saving'&&job.error)) {
       try {
         const auth=await refreshIdentity(job.identity.refreshToken);
         if(auth.uid!==job.identity.uid)throw new Error('Identity changed');
         const store=new CloudStore(auth.token,auth.uid), loaded=await store.load(job.args.projectId);
         const state=hydrate(loaded.state,loaded.library,loaded.metadata.useSqlite!==false);
         const space=state.spaces.find(s=>s.nodes.some(n=>n.id===job.nodeId));
-        if(space){space.nodes.find(n=>n.id===job.nodeId)!.data.result={status:'error',error:job.error};if(space.id===state.activeSpaceId)state.nodes=space.nodes;await store.save(loaded,serialize(loaded.state,state,loaded.metadata.useSqlite!==false));}
+        if(space){space.nodes.find(n=>n.id===job.nodeId)!.data.result=job.status==='saving' ? {status:'running',progressStage:'saving',progressMessage:'Image finished. Retrying save…',error:job.error} : {status:'error',progressStage:job.status,error:job.error};if(space.id===state.activeSpaceId)state.nodes=space.nodes;await store.save(loaded,serialize(loaded.state,state,loaded.metadata.useSqlite!==false));}
       }catch{/* The job status remains available even if project access was revoked. */}
     }
     if(['complete','failed','needs_attention'].includes(job.status)) { job.identity={...job.identity,refreshToken:'',falKey:''}; }

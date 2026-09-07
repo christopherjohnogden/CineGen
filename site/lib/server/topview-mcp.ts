@@ -2079,7 +2079,7 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
           const polled = await callTool(session, "topview_query_task", {
             taskType,
             taskId,
-            needCloudFrontUrl: true,
+            needCloudFrontUrl: params.downloadSource !== "origin",
             // Persist the original signed URL; shortened links can lose download authorization.
             shortenUrls: false,
           });
@@ -2111,7 +2111,7 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         const polled = await callTool(session, "topview_query_task", {
           taskType,
           taskId,
-          needCloudFrontUrl: true,
+          needCloudFrontUrl: params.downloadSource !== "origin",
           shortenUrls: false,
         });
         documents = parseToolDocuments(polled);

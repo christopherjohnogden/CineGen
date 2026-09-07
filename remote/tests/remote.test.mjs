@@ -168,7 +168,7 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
       if(u.includes('securetoken'))return Response.json({project_id:'48352992061',id_token:'firebase-token',user_id:'owner',refresh_token:'refresh'});
       if(u===`https://cinegen-api.christopherjohnogden.workers.dev/api/rpc/${provider}/generate`){
         assert.equal(options.headers['x-cinegen-id-token'],'firebase-token');
-        const p=JSON.parse(options.body).args[0];assert.equal(p.outputType,kind);
+        const p=JSON.parse(options.body).args[0];assert.equal(p.outputType,kind);if(provider==='topview')assert.equal(p.downloadSource,'origin');
         if(p.taskId){polls++;assert.equal(p.taskId,'task-1');return Response.json({ok:true,result:{url:source,urls:[source,'https://provider-cdn.example/alternative.png'],status:'success'}});}
         submissions++;assert.equal(p.prompt,'Golden hour');
         return Response.json({ok:true,result:provider==='topview'?{taskId:'task-1',taskType:kind==='video'?'text_to_video':'text_to_image',model:p.model,status:'running'}:{url:source}});
@@ -188,7 +188,11 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
         for(let i=1;i<12;i++)await new api.GenerationJob(ctx,{}).alarm();
         assert.equal(values.get('job').status,'needs_attention');
         assert.equal(values.get('job').identity.refreshToken,'');
+        const failedView=await api.editProject(raw,{elements:[],folders:[]},'cinegen_get_generations',{});
+        assert.equal(failedView.result.generations[0].status,'needs_attention');
         assert.equal(values.get('job').sourceUrl,source);
+        const nodeResult=api.hydrate(raw,{elements:[],folders:[]}).nodes[0].data.result;
+        assert.equal(nodeResult.progressStage,'needs_attention');
         const foreign=await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/read',{method:'POST',body:JSON.stringify({identity:{...identity,uid:'other'},args})}));
         assert.equal(foreign.status,403);
         assert.equal(values.get('job').status,'needs_attention');

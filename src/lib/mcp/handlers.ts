@@ -209,7 +209,8 @@ function generationUrls(node: Node<WorkflowNodeData>): string[] {
 function describeGeneration(node: Node<WorkflowNodeData>) {
   const model = getModelDefinition(node.data.type);
   const urls = generationUrls(node);
-  const status = node.data.result?.status === 'error'
+  const stage=node.data.result?.progressStage;
+  const status = stage==='saving'||stage==='needs_attention' ? stage : node.data.result?.status === 'error'
     ? 'failed'
     : node.data.result?.status === 'running'
       ? 'running'
