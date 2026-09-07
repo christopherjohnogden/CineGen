@@ -13855,10 +13855,11 @@ var TOOL_CATALOG = [
   },
   {
     name: "cinegen_list_models",
-    description: "List the generation models available for a kind of output, with the provider and what each one accepts (duration, references, frames). Use it before cinegen_generate when the user names a look or a model.",
+    description: "List Topview generation models by default (Higgsfield only when explicitly requested), with the provider and what each one accepts (duration, references, frames). Use it before cinegen_generate when the user names a look or a model.",
     inputSchema: {
       type: "object",
       properties: {
+        provider: { type: "string", enum: ["topview", "higgsfield"], description: "Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically." },
         kind: { type: "string", enum: ["video", "image"], description: "Which kind of model to list. Defaults to video." }
       },
       additionalProperties: false
@@ -13870,6 +13871,7 @@ var TOOL_CATALOG = [
     inputSchema: {
       type: "object",
       properties: {
+        provider: { type: "string", enum: ["topview", "higgsfield"], description: "Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically." },
         spaceId: optionalString("Destination Space ID; defaults to the active Space."),
         prompt: string4("Shot description saved in Studio."),
         kind: { type: "string", enum: ["video", "image"] },
@@ -13888,6 +13890,7 @@ var TOOL_CATALOG = [
     inputSchema: {
       type: "object",
       properties: {
+        provider: { type: "string", enum: ["topview", "higgsfield"], description: "Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically." },
         spaceId: optionalString("Destination Space ID; defaults to the active Space."),
         view: { type: "string", enum: ["studio", "canvas"], description: "Show results in Studio or place them on Canvas." },
         prompt: string4("What to generate. Write it as a shot description: subject, action, camera, lighting, mood."),
@@ -14072,7 +14075,7 @@ async function handle(message) {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "cinegen", version: "0.2.0" },
-      instructions: "Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing \u2014 breakdowns, shot lists, prompts \u2014 and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Use cinegen_element_models and cinegen_build_element for durable Element reference packs; review the completed draft with the user before cinegen_approve_element. Poll cinegen_get_jobs for background Director and Element actions."
+      instructions: "Use Topview as the default generation provider. Use Higgsfield only when the user explicitly requests it, with no automatic fallback. Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing \u2014 breakdowns, shot lists, prompts \u2014 and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Use cinegen_element_models and cinegen_build_element for durable Element reference packs; review the completed draft with the user before cinegen_approve_element. Poll cinegen_get_jobs for background Director and Element actions."
     });
     return;
   }

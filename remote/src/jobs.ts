@@ -1,3 +1,4 @@
+import { prepareProviderGeneration, providerRpc } from './providers';
 import { DurableObject } from 'cloudflare:workers';
 import { MODEL_REGISTRY, resolveVideoModelEndpoint, sanitizeVideoInputsForEndpoint } from '../../src/lib/fal/models';
 import { CloudStore, refreshIdentity, type Identity, type RecordValue } from './firebase';
@@ -5,8 +6,8 @@ import { hydrate, serialize } from './headless';
 import { createWorkflowNodeFromSpec } from '../../src/lib/llm/space-node-factory';
 
 export const generationTools = [
-  {name:'cinegen_list_models',description:'List the fal.ai models available for unattended cloud generation and their exact input fields. A fal.ai key must be connected during CineGen authorization.',inputSchema:{type:'object' as const,properties:{kind:{type:'string',enum:['image','video']}},additionalProperties:false}},
-  {name:'cinegen_generate',description:'Generate an image or video in Spaces STUDIO mode (not Canvas). Results carry Studio metadata and are saved to the project and Studio feed even after you close chat. May spend fal.ai credits. Call cinegen_list_models first. Reuse requestId when retrying the same request; use a new ID only for a deliberately new generation.',inputSchema:{type:'object' as const,properties:{projectId:{type:'string'},spaceId:{type:'string'},requestId:{type:'string',description:'A unique ID for this logical generation, reused on retries.'},model:{type:'string',description:'Exact nodeType from cinegen_list_models.'},inputs:{type:'object',description:'Input values keyed by the advertised field IDs, including prompt and optional reference URLs.'}},required:['projectId','requestId','model','inputs'],additionalProperties:false}},
+  {name:'cinegen_list_models',description:'List connected Topview models by default. Use provider higgsfield ONLY when the user explicitly requests Higgsfield. Uses the existing CineGen website provider connections; no fal key is needed.',inputSchema:{type:'object' as const,properties:{provider:{type:'string',enum:['topview','higgsfield'],description:'Defaults to topview. Higgsfield only on explicit user request.'},kind:{type:'string',enum:['image','video']}},additionalProperties:false}},
+  {name:'cinegen_generate',description:'Generate an image or video in Spaces STUDIO mode (not Canvas). Results carry Studio metadata and are saved to the project and Studio feed even after you close chat. Uses Topview by default and its existing CineGen connection and credits. Use provider higgsfield ONLY when explicitly requested; never fall back automatically. No fal key is required. Call cinegen_list_models first. Reuse requestId when retrying the same request; use a new ID only for a deliberately new generation.',inputSchema:{type:'object' as const,properties:{provider:{type:'string',enum:['topview','higgsfield'],description:'Defaults to topview; use higgsfield only if the user explicitly asks.'},projectId:{type:'string'},spaceId:{type:'string'},requestId:{type:'string',description:'A unique ID for this logical generation, reused on retries.'},model:{type:'string',description:'Exact nodeType from cinegen_list_models.'},inputs:{type:'object',description:'Input values keyed by the advertised field IDs, including prompt and optional reference URLs.'}},required:['projectId','requestId','model','inputs'],additionalProperties:false}},
   {name:'cinegen_get_jobs',description:'Read a durable generation job. A completed job has already saved its media and project. Polling is optional; the job runs without a client.',inputSchema:{type:'object' as const,properties:{projectId:{type:'string'},requestId:{type:'string'}},required:['projectId','requestId'],additionalProperties:false}},
 ];
 export function models(kind?:unknown) {
@@ -39,13 +40,13 @@ export function prepareGeneration(args:RecordValue) {
   if(!/^fal-ai\/[A-Za-z0-9._/-]+$/.test(endpoint)) throw new Error('Invalid model endpoint.');
   return {model,inputs,config,endpoint};
 }
-interface Job extends RecordValue { identity:Identity & {falKey:string}; args:RecordValue; status:string; nodeId:string; createdAt:string; attempts:number }
-function publicJob(j:Job) { return {requestId:j.args.requestId,projectId:j.args.projectId,nodeId:j.nodeId,status:j.status,createdAt:j.createdAt,url:j.url??null,error:j.error??null}; }
+interface Job extends RecordValue { identity:Identity & {falKey?:string}; prepared?:ReturnType<typeof prepareProviderGeneration>; args:RecordValue; status:string; nodeId:string; createdAt:string; attempts:number }
+function publicJob(j:Job) { return {requestId:j.args.requestId,projectId:j.args.projectId,nodeId:j.nodeId,status:j.status,provider:j.args.provider??'fal',createdAt:j.createdAt,url:j.url??null,error:j.error??null}; }
 function falUrl(value:string) { const url=new URL(value);if(url.origin!=='https://queue.fal.run')throw new Error('Invalid provider response URL.');return url.href; }
 
-async function persistMedia(source:string,store:CloudStore,ownerId:string,projectId:string,assetId:string,type:string) {
+async function persistMedia(source:string,store:CloudStore,ownerId:string,projectId:string,assetId:string,type:string,provider = 'fal') {
   const url=new URL(source);
-  if(url.protocol!=='https:'||!(url.hostname.endsWith('.fal.media')||url.hostname==='fal.media'||url.hostname.endsWith('.fal.ai'))) throw new Error('Provider returned an unsupported media location.');
+  if(url.protocol!=='https:'||url.username||url.password||(provider==='fal'&&!(url.hostname.endsWith('.fal.media')||url.hostname==='fal.media'||url.hostname.endsWith('.fal.ai')))) throw new Error('Provider returned an unsupported media location.');
   const bucket='cinegen-734ba.firebasestorage.app';
   const name=`users/${ownerId}/projects/${projectId}/media/${assetId}/generated.${type==='video'?'mp4':'png'}`;
   const root=`https://firebasestorage.googleapis.com/v0/b/${bucket}/o`;
@@ -79,7 +80,7 @@ export class GenerationJob extends DurableObject {
     return this.ctx.blockConcurrencyWhile(()=>this.handleRequest(request));
   }
   private async handleRequest(request:Request) {
-    const body=await request.json() as {identity:Job['identity'];args:RecordValue};
+    const body=await request.json() as {identity:Job['identity'];args:RecordValue;prepared?:Job['prepared']};
     let job=await this.ctx.storage.get<Job>('job');
     if(job && job.identity.uid!==body.identity.uid) return new Response('Forbidden',{status:403});
     if(new URL(request.url).pathname==='/read') return Response.json(job?publicJob(job):{status:'not_found'});
@@ -87,8 +88,9 @@ export class GenerationJob extends DurableObject {
       if(JSON.stringify(job.args)!==JSON.stringify(body.args)) return Response.json({error:'This requestId was already used with different inputs.'},{status:409});
       return Response.json(publicJob(job));
     }
-    prepareGeneration(body.args);
-    job={identity:body.identity,args:body.args,nodeId:crypto.randomUUID(),createdAt:new Date().toISOString(),status:'queued',attempts:0};
+    if(body.args.provider) prepareProviderGeneration(body.args, body.prepared ? [body.prepared.model] : undefined);
+    else prepareGeneration(body.args); // Only legacy callers/jobs use fal; the public MCP always supplies provider.
+    job={identity:body.identity,args:body.args,nodeId:crypto.randomUUID(),createdAt:new Date().toISOString(),status:'queued',attempts:0,...(body.prepared?{prepared:body.prepared}:{})};
     await this.ctx.storage.setAlarm(Date.now()+100);
     await this.ctx.storage.put('job',job);
     return Response.json(publicJob(job));
@@ -98,7 +100,7 @@ export class GenerationJob extends DurableObject {
     try {
       const auth=await refreshIdentity(job.identity.refreshToken);if(auth.uid!==job.identity.uid)throw new Error('Connection identity changed.');
       job.identity.refreshToken=auth.refreshToken;
-      const store=new CloudStore(auth.token,auth.uid);const prepared=prepareGeneration(job.args);
+      const store=new CloudStore(auth.token,auth.uid);const prepared=job.args.provider ? (job.prepared ?? prepareProviderGeneration(job.args)) : prepareGeneration(job.args);
       if(job.status==='submitting') {job.status='needs_attention';job.error='Submission was interrupted. Check your fal.ai history before starting another generation to avoid a duplicate charge.';}
       else if(job.status==='queued') {
         const loaded=await store.load(job.args.projectId);const state=hydrate(loaded.state,loaded.library,loaded.metadata.useSqlite!==false);
@@ -110,11 +112,24 @@ export class GenerationJob extends DurableObject {
         await store.save(loaded,serialize(loaded.state,state,loaded.metadata.useSqlite!==false));
         job.status='submitting';await this.ctx.storage.put('job',job);
         // A watchdog marks an interrupted/ambiguous submission without ever replaying a paid POST.
-        await this.ctx.storage.setAlarm(Date.now()+60000);
-        const r=await fetch(`https://queue.fal.run/${prepared.endpoint}`,{method:'POST',headers:{authorization:`Key ${job.identity.falKey}`,'content-type':'application/json'},body:JSON.stringify(prepared.inputs),signal:AbortSignal.timeout(45000)});
+        await this.ctx.storage.setAlarm(Date.now()+(job.args.provider?300000:60000));
+        if(job.args.provider) {
+          const result=await providerRpc(auth.token,job.args.provider,'generate',(prepared as NonNullable<Job['prepared']>).params);
+          if(result.url){job.sourceUrl=result.url;job.status='saving';}
+          else if(result.taskId && job.args.provider==='topview') {job.providerTask={taskId:result.taskId,taskType:result.taskType,model:result.model,boardId:result.boardId,outputType:prepared.model.outputType,waitForCompletion:false};job.status='running';}
+          else {job.status='needs_attention';job.error='Provider did not return a resumable task or finished media. Check provider history before retrying.';}
+          if(result.status==='fail'){job.status='failed';job.error=result.error||'Provider generation failed.';}
+        } else {
+        const r=await fetch(`https://queue.fal.run/${(prepared as ReturnType<typeof prepareGeneration>).endpoint}`,{method:'POST',headers:{authorization:`Key ${job.identity.falKey}`,'content-type':'application/json'},body:JSON.stringify((prepared as ReturnType<typeof prepareGeneration>).inputs),signal:AbortSignal.timeout(45000)});
         if(!r.ok){job.status=r.status>=500?'needs_attention':'failed';job.error=`Provider submission returned ${r.status}. Check fal.ai before retrying.`;}
         else {const submitted=await r.json() as RecordValue;job.statusUrl=falUrl(submitted.status_url);job.responseUrl=falUrl(submitted.response_url);job.providerRequestId=submitted.request_id;job.status='running';}
+        }
       } else if(job.status==='running') {
+        if(job.args.provider==='topview') {
+          const result=await providerRpc(auth.token,'topview','generate',job.providerTask);
+          if(result.status==='fail') {job.status='failed';job.error=result.error||'Topview generation failed.';}
+          else if(result.url){job.sourceUrl=result.url;job.status='saving';}
+        } else {
         const r=await fetch(falUrl(job.statusUrl),{headers:{authorization:`Key ${job.identity.falKey}`}});
         if(!r.ok)throw new Error(`Provider status unavailable (${r.status}).`);
         const status=await r.json() as RecordValue;
@@ -129,9 +144,10 @@ export class GenerationJob extends DurableObject {
           job.status='saving';
         }
       }
+      }
       if(job.status==='saving') {
         let loaded=await store.load(job.args.projectId);
-        job.url??=await persistMedia(job.sourceUrl,store,loaded.ownerId,job.args.projectId,job.nodeId,prepared.model.outputType);
+        job.url??=await persistMedia(job.sourceUrl,store,loaded.ownerId,job.args.projectId,job.nodeId,prepared.model.outputType,job.args.provider??'fal');
         await this.ctx.storage.put('job',job);
         // Reload after uploading: another client may have edited the timeline while the file transferred.
         loaded=await store.load(job.args.projectId);const state=hydrate(loaded.state,loaded.library,loaded.metadata.useSqlite!==false);

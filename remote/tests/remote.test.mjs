@@ -104,7 +104,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.1.0');
+  assert.equal(initialized.result.serverInfo.version,'1.2.0');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -122,7 +122,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
     assert.equal(result.result.isError,undefined,result.result.content?.[0]?.text);
     assert.equal(JSON.parse(result.result.content[0].text).saved,true);
     assert.match(raw.workflow.director.sourceText,/ALICE/);
-    const studio = await (await api.handleMcp(request('tools/call',{name:'cinegen_studio_create',arguments:{projectId:raw.project.id,prompt:'Sunrise over the mountains',kind:'image',model:'flux-dev'}}),env,ctx)).json();
+    const studio = await (await api.handleMcp(request('tools/call',{name:'cinegen_studio_create',arguments:{projectId:raw.project.id,prompt:'Sunrise over the mountains',kind:'image',model:'topview-image-seedream-4-5'}}),env,ctx)).json();
     assert.equal(studio.result.isError,undefined,studio.result.content?.[0]?.text);
     assert.equal(JSON.parse(studio.result.content[0].text).saved,true);
     assert.ok(api.hydrate(raw,{elements:[],folders:[]}).nodes.some(n=>n.data.config.__studioPromptBody==='Sunrise over the mountains'));
@@ -132,12 +132,106 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
 test('Studio creation persists prepared items through a cloud save and reload without provider requests',async()=>{
   globalThis.fetch=async()=>{throw new Error('Studio preparation must not call a provider');};
   const raw=api.createDefaultProjectState('Studio film');const library={elements:[],folders:[]};
-  const edited=await api.editProject(raw,library,'cinegen_studio_create',{prompt:'A lighthouse at dusk',kind:'image',model:'flux-dev',inputs:{image_size:'landscape_16_9'}});
+  const edited=await api.editProject(raw,library,'cinegen_studio_create',{prompt:'A lighthouse at dusk',kind:'image',model:'topview-image-seedream-4-5',inputs:{aspect_ratio:'16:9'}});
   const reopened=api.hydrate(JSON.parse(JSON.stringify(edited.state)),library);
   const node=reopened.nodes.find(n=>n.data.config.__studioGenerated);
   assert.ok(node);
   assert.equal(node.data.config.__studioPromptBody,'A lighthouse at dusk');
-  assert.equal(node.data.config.image_size,'landscape_16_9');
+  assert.equal(node.data.config.aspect_ratio,'16:9');
   assert.equal(node.data.config.__studioCanvasPlaced,undefined);
   assert.equal(edited.result.status,'prepared');
+});
+
+test('Topview is the default and Higgsfield cannot be selected implicitly',()=>{
+  assert.equal(api.requestedProvider(undefined),'topview');
+  assert.equal(api.requestedProvider('higgsfield'),'higgsfield');
+  assert.throws(()=>api.requestedProvider('fal'),/Topview/);
+  assert.throws(()=>api.prepareProviderGeneration({model:'hf-cinematic-studio-2-5',inputs:{prompt:'A portrait'}}),/explicit user request/);
+  const p=api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{prompt:'Camera follows her',image_url:['https://example.com/shot.mp4']}});
+  assert.equal(p.provider,'topview');assert.equal(p.params.waitForCompletion,false);
+  assert.equal(p.params.medias[0].role,'video');
+});
+
+for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4-5'],['topview','video','topview-video-seedance-2-5'],['higgsfield','image','hf-cinematic-studio-2-5']]) {
+  test(`${provider} ${kind} jobs use the existing connection and save Studio results without fal credentials`,async()=>{
+    const values=new Map();const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>values.has(k)?structuredClone(values.get(k)):undefined,put:async(k,v)=>values.set(k,structuredClone(v)),setAlarm:async()=>{}}};
+    const originalLoad=api.CloudStore.prototype.load,originalSave=api.CloudStore.prototype.save;
+    let raw=api.createDefaultProjectState('Provider film'),submissions=0,polls=0;
+    api.CloudStore.prototype.load=async()=>({state:structuredClone(raw),library:{elements:[],folders:[]},metadata:{useSqlite:true},ownerId:'owner'});
+    api.CloudStore.prototype.save=async(_,state)=>{raw=structuredClone(state);};
+    const source=`https://provider-cdn.example/media.${kind==='video'?'mp4':'png'}`;
+    globalThis.fetch=async(url,options)=>{
+      const u=String(url);
+      if(u.includes('securetoken'))return Response.json({project_id:'48352992061',id_token:'firebase-token',user_id:'owner',refresh_token:'refresh'});
+      if(u===`https://cinegen-api.christopherjohnogden.workers.dev/api/rpc/${provider}/generate`){
+        assert.equal(options.headers['x-cinegen-id-token'],'firebase-token');
+        const p=JSON.parse(options.body).args[0];assert.equal(p.outputType,kind);
+        if(p.taskId){polls++;assert.equal(p.taskId,'task-1');return Response.json({ok:true,result:{url:source,status:'success'}});}
+        submissions++;assert.equal(p.prompt,'Golden hour');
+        return Response.json({ok:true,result:provider==='topview'?{taskId:'task-1',taskType:kind==='video'?'text_to_video':'text_to_image',model:p.model,status:'running'}:{url:source}});
+      }
+      if(u===source)return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':kind==='video'?'video/mp4':'image/png'}});
+      if(u.includes('firebasestorage')&&options.method==='POST'){await new Response(options.body).arrayBuffer();return Response.json({downloadTokens:'download'});}
+      if(u.includes('firebasestorage'))return new Response('',{status:404});
+      throw new Error(`Unexpected provider call: ${u}`);
+    };
+    try {
+      const identity={uid:'owner',email:'owner@example.com',refreshToken:'refresh'};
+      const args={provider,projectId:raw.project.id,requestId:'provider-test',model,inputs:{prompt:'Golden hour'}};
+      await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/start',{method:'POST',body:JSON.stringify({identity,args})}));
+      await new api.GenerationJob(ctx,{}).alarm();
+      if(provider==='topview'){assert.equal(values.get('job').status,'running');await new api.GenerationJob(ctx,{}).alarm();assert.equal(polls,1);}
+      assert.equal(values.get('job').status,'complete');assert.equal(submissions,1);
+      const reopened=api.hydrate(raw,{elements:[],folders:[]});
+      assert.equal(reopened.assets.length,1);assert.equal(reopened.nodes[0].data.config.__studioGenerated,true);
+      assert.equal(reopened.nodes[0].data.result.status,'complete');
+      await new api.GenerationJob(ctx,{}).alarm();assert.equal(submissions,1);
+    } finally {api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
+  });
+}
+
+test('uncertain Topview submissions stop without fallback or a second paid call',async()=>{
+  const values=new Map();const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>values.has(k)?structuredClone(values.get(k)):undefined,put:async(k,v)=>values.set(k,structuredClone(v)),setAlarm:async()=>{}}};
+  const originalLoad=api.CloudStore.prototype.load,originalSave=api.CloudStore.prototype.save;
+  let raw=api.createDefaultProjectState('Interrupted film'),paid=0;
+  api.CloudStore.prototype.load=async()=>({state:structuredClone(raw),library:{elements:[],folders:[]},metadata:{useSqlite:true},ownerId:'owner'});
+  api.CloudStore.prototype.save=async(_,state)=>{raw=structuredClone(state);};
+  globalThis.fetch=async url=>{if(String(url).includes('securetoken'))return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});assert.match(String(url),/\/topview\/generate$/);paid++;throw new Error('Connection lost after submit');};
+  try {
+    const identity={uid:'owner',email:'owner@example.com',refreshToken:'refresh'};
+    const args={provider:'topview',projectId:raw.project.id,requestId:'uncertain',model:'topview-image-seedream-4-5',inputs:{prompt:'A portrait'}};
+    const body=JSON.stringify({identity,args});
+    await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/start',{method:'POST',body}));
+    await new api.GenerationJob(ctx,{}).alarm();assert.equal(values.get('job').status,'needs_attention');
+    await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/start',{method:'POST',body}));
+    await new api.GenerationJob(ctx,{}).alarm();assert.equal(paid,1);
+  } finally {api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
+});
+
+test('MCP lists Topview by default and sends authenticated Topview jobs without a fal key',async()=>{
+  const originalLoad=api.CloudStore.prototype.load;
+  const raw=api.createDefaultProjectState('Default provider film');
+  api.CloudStore.prototype.load=async()=>({state:raw,library:{elements:[],folders:[]},metadata:{useSqlite:true}});
+  const calls=[];let queued;
+  globalThis.fetch=async(url)=>{
+    const u=String(url);calls.push(u);
+    if(u.includes('securetoken'))return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});
+    if(u.endsWith('/topview/accountStatus'))return Response.json({ok:true,result:{connected:true}});
+    if(u.endsWith('/topview/modelCatalog'))return Response.json({ok:true,result:{configs:[]}});
+    throw new Error(`Unexpected provider: ${u}`);
+  };
+  const env={PUBLIC_ORIGIN:'https://cinegen.example',JOBS:{idFromName:n=>n,get:()=>({fetch:async(_,options)=>{queued=JSON.parse(options.body);return Response.json({status:'queued',provider:queued.args.provider});}})}};
+  const ctx={props:{uid:'owner',email:'owner@example.com',refreshToken:'refresh'}};
+  const invoke=async(name,args)=>{
+    const request=new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})});
+    return (await api.handleMcp(request,env,ctx)).json();
+  };
+  try {
+    const listed=await invoke('cinegen_list_models',{kind:'image'});assert.equal(listed.result.isError,undefined);
+    const catalog=JSON.parse(listed.result.content[0].text);assert.equal(catalog.provider,'topview');assert.ok(catalog.models.every(m=>m.nodeType.startsWith('topview-')));
+    const started=await invoke('cinegen_generate',{projectId:raw.project.id,requestId:'default',model:'topview-image-seedream-4-5',inputs:{prompt:'A sunrise'}});
+    assert.equal(started.result.isError,undefined,started.result.content[0].text);
+    assert.equal(queued.args.provider,'topview');assert.equal(queued.prepared.provider,'topview');assert.equal(queued.identity.falKey,undefined);
+    assert.ok(!calls.some(u=>/fal\.run|higgsfield/.test(u)));
+  }finally{api.CloudStore.prototype.load=originalLoad;}
 });

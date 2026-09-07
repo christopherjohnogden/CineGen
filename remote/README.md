@@ -6,9 +6,9 @@ Add a custom connector in Claude's web settings and sign in with the same CineGe
 
 Sync local or Sites-only projects to CineGen Cloud first. Remote edits use Firebase user permissions and save to the same project revision format and shared Elements library. Reopen a project to read remote changes. Optimistic revision checks reject stale writes.
 
-29 tools support project creation/listing, script and Director data edits, Elements, Spaces, assets and timelines, plus fal.ai image/video jobs. Add a fal.ai key on the consent screen for paid generation. Jobs continue through Durable Object alarms after the client closes and save media to Firebase Storage. Retry a generation with the same requestId to avoid duplicate submissions. Ambiguous paid submissions stop for inspection in fal.ai history.
+Tools support project creation/listing, script and Director data edits, Elements, Spaces, assets and timelines, plus Topview and explicitly requested Higgsfield image/video jobs. Generation uses the existing provider connections in the CineGen website; no fal key is needed. Topview is the default. Higgsfield is never selected automatically, including after a Topview failure. Jobs continue through Durable Object alarms after the client closes and save media to Firebase Storage. Retry a generation with the same requestId to avoid duplicate submissions. Ambiguous paid submissions stop for inspection in fal.ai history.
 
-Desktop export/rendering, arbitrary Canvas execution, Director batch generation and non-fal providers are not implemented remotely. References must already exist in project assets or Elements. Project edits are capped at 8 MiB of serialized state and generated uploads at 90 MiB. Old remote revisions are retained; monitor Firestore storage for heavily edited projects.
+Desktop export/rendering, arbitrary Canvas execution, Director batch generation are not implemented remotely. References must already exist in project assets or Elements. Project edits are capped at 8 MiB of serialized state and generated uploads at 90 MiB. Old remote revisions are retained; monitor Firestore storage for heavily edited projects.
 
 ## Operations
 
@@ -25,4 +25,4 @@ Tests cover MCP protocol calls, native snapshot read-back, shared library concur
 
 Use `cinegen_studio_create` to prepare Studio items without starting generation or spending credits. Supply a prompt, optional destination `spaceId`, model name/node type, `inputs` keyed by model field IDs, and optional Element names. Remote calls also require `projectId`. Use `cinegen_list_node_types` to discover preparation models and controls. These items carry Studio metadata, retain their prompt and settings, and can be placed on Canvas later.
 
-Use `cinegen_generate` for actual Studio generation. Remote unattended generation supports the models returned by the remote `cinegen_list_models` tool; preparation does not expand that provider support. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.
+Use `cinegen_generate` for actual Studio generation. Remote unattended generation uses Topview by default. Pass `provider: "higgsfield"` only when the user explicitly requests it. `cinegen_list_models` reads the connected provider catalog. Legacy fal jobs already queued before this change can finish, but new fal jobs are not exposed. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.

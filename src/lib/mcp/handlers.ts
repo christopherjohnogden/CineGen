@@ -63,8 +63,9 @@ function modelOptionsFor(kind: 'video' | 'image'): Array<{ key: string; model: M
 }
 
 /** Accepts a model name or a node type, case-insensitively, and says what exists when it misses. */
-function resolveModel(kind: 'video' | 'image', requested: string): ModelDefinition {
-  const options = modelOptionsFor(kind);
+function resolveModel(kind: 'video' | 'image', requested: string, provider = 'topview'): ModelDefinition {
+  if (!['topview', 'higgsfield'].includes(provider)) throw new McpToolError('Topview is the default. Higgsfield requires an explicit user request.');
+  const options = modelOptionsFor(kind).filter(({ model }) => model.provider === provider);
   if (options.length === 0) throw new McpToolError(`No ${kind} models are available. Connect a provider in Settings.`);
 
   const want = requested.trim().toLowerCase();
@@ -281,7 +282,8 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
       const kind = str(args, 'kind') === 'image' ? 'image' : 'video';
       return {
         kind,
-        models: modelOptionsFor(kind).map(({ key, model }) => ({
+        defaultProvider: 'topview', backupProvider: 'higgsfield', automaticFallback: false,
+        models: modelOptionsFor(kind).filter(({ model }) => model.provider === (str(args, 'provider') || 'topview')).map(({ key, model }) => ({
           name: model.name,
           nodeType: key,
           provider: modelProviderLabel(model),
@@ -297,7 +299,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
     async cinegen_studio_create(args) {
       const prompt = str(args, 'prompt', true);
       const kind = str(args, 'kind') === 'image' ? 'image' : 'video';
-      const model = resolveModel(kind, str(args, 'model'));
+      const model = resolveModel(kind, str(args, 'model'), str(args, 'provider') || 'topview');
       if (args.inputs && (typeof args.inputs !== 'object' || Array.isArray(args.inputs))) throw new McpToolError('inputs must be an object.');
       const nodeIds = startGeneration(host, {
         model, prompt, elementIds: resolveElements(state(), strList(args, 'elements')),
@@ -312,7 +314,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
     async cinegen_generate(args) {
       const prompt = str(args, 'prompt', true);
       const kind = str(args, 'kind') === 'image' ? 'image' : 'video';
-      const model = resolveModel(kind, str(args, 'model'));
+      const model = resolveModel(kind, str(args, 'model'), str(args, 'provider') || 'topview');
       const elementIds = resolveElements(state(), strList(args, 'elements'));
       const count = int(args, 'count', 1, 1, MAX_BATCH);
       const durationRaw = args.durationSec;

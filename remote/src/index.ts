@@ -7,6 +7,7 @@ import { editProject, remoteTools } from './headless';
 import { createDefaultProjectState } from '../../site/lib/server/project-store';
 import { z } from 'zod';
 z.config({ jitless: true });
+import { requestedProvider, connectedModels, prepareProviderGeneration } from './providers';
 import { generationTools, models, prepareGeneration } from './jobs';
 export { GenerationJob } from './jobs';
 
@@ -20,7 +21,7 @@ const projectTool = { name:'cinegen_project',description:'List or create saved C
 async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Identity}) {
   const origin=request.headers.get('origin');
   if(origin && origin!==env.PUBLIC_ORIGIN) return new Response('Origin not allowed',{status:403});
-  const server = new Server({name:'cinegen',version:'1.1.0'},{capabilities:{tools:{}},instructions:'For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
+  const server = new Server({name:'cinegen',version:'1.2.0'},{capabilities:{tools:{}},instructions:'Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
   server.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[projectTool,...remoteTools,...generationTools]}));
   server.setRequestHandler(CallToolRequestSchema,async({params})=>{
     try {
@@ -35,16 +36,22 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
       const validated=z.fromJSONSchema(tool.inputSchema as any).safeParse(args);
       if(!validated.success)throw new Error(`Invalid tool arguments: ${validated.error.issues.map(i=>`${i.path.join('.')}: ${i.message}`).join('; ')}`);
       let result:unknown;
-      if(params.name==='cinegen_list_models') result={connected:Boolean(identity.falKey),models:models(args.kind).map(m=>({nodeType:m.nodeType,name:m.name,kind:m.outputType,inputs:m.inputs}))};
+      if(params.name==='cinegen_list_models') {
+        const provider=requestedProvider(args.provider);
+        const catalog=await connectedModels(auth.token,provider,args.kind);
+        result={provider,defaultProvider:'topview',backupProvider:'higgsfield',automaticFallback:false,connected:catalog.connected,models:catalog.models.map(m=>({nodeType:m.nodeType,name:m.name,kind:m.outputType,inputs:m.inputs}))};
+      }
       else if(params.name==='cinegen_generate'||params.name==='cinegen_get_jobs') {
         const projectId=safeId(args.projectId),requestId=safeId(args.requestId);
         await store.load(projectId);
+        let prepared;
         if(params.name==='cinegen_generate') {
-          if(!identity.falKey) throw new Error('Reconnect CineGen and add a fal.ai key to enable unattended generation.');
-          prepareGeneration(args);
+          args.provider=requestedProvider(args.provider);
+          const catalog=await connectedModels(auth.token,args.provider);
+          prepared=prepareProviderGeneration(args,catalog.models);
         }
         const job=env.JOBS.get(env.JOBS.idFromName(`${identity.uid}:${projectId}:${requestId}`));
-        const response=await job.fetch(`https://job/${params.name==='cinegen_get_jobs'?'read':'start'}`,{method:'POST',body:JSON.stringify({identity,args})});
+        const response=await job.fetch(`https://job/${params.name==='cinegen_get_jobs'?'read':'start'}`,{method:'POST',body:JSON.stringify({identity,args,prepared})});
         result=await response.json();
         if(!response.ok)throw new Error((result as any).error??'Job unavailable.');
       }
@@ -95,7 +102,7 @@ const defaultHandler={async fetch(request:Request,env:Env):Promise<Response>{
       if(!client) throw new Error('Unknown application.');
       const nonce=crypto.randomUUID();
       await env.OAUTH_KV.put(`consent:${nonce}`,JSON.stringify(auth),{expirationTtl:600});
-      const response=page(`<h1>Connect to CineGen</h1><p><strong>${html(client.clientName??'This application')}</strong> wants to read and edit projects in your CineGen Cloud account.</p><small>Connection returns to ${html(new URL(auth.redirectUri).origin)}. Only approve applications you intended to connect.</small><form id="login"><label for="email">CineGen Cloud email</label><input id="email" type="email" autocomplete="username" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required><label for="fal">fal.ai key (optional)</label><input id="fal" type="password" autocomplete="off"><small>Add a key to let your assistant generate media using your fal.ai credits while every client is closed. Leave blank for project editing only.</small><button id="submit">Sign in and allow access</button><p id="error" role="alert"></p></form><small>This is your CineGen Cloud login, which may differ from your ChatGPT login. Your password is sent directly to Firebase.</small>`, `document.getElementById('login').onsubmit=async(e)=>{e.preventDefault();const b=document.getElementById('submit'),error=document.getElementById('error');b.disabled=true;error.textContent='';try{const r=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_KEY}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value,returnSecureToken:true})});document.getElementById('password').value='';const u=await r.json();if(!r.ok)throw new Error('Sign-in failed. Check your CineGen email and password.');const c=await fetch('/authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({nonce:${JSON.stringify(nonce)},idToken:u.idToken,refreshToken:u.refreshToken,falKey:document.getElementById('fal').value})});const d=await c.json();if(!c.ok)throw new Error(d.error);location.assign(d.redirectTo)}catch(err){error.textContent=err.message;b.disabled=false}};`);
+      const response=page(`<h1>Connect to CineGen</h1><p><strong>${html(client.clientName??'This application')}</strong> wants to read and edit projects in your CineGen Cloud account.</p><small>Connection returns to ${html(new URL(auth.redirectUri).origin)}. Only approve applications you intended to connect.</small><form id="login"><label for="email">CineGen Cloud email</label><input id="email" type="email" autocomplete="username" required><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required><small>Generation uses your existing CineGen Topview connection by default. Higgsfield is used only when you explicitly request it. Generation may spend provider credits.</small><button id="submit">Sign in and allow access</button><p id="error" role="alert"></p></form><small>This is your CineGen Cloud login, which may differ from your ChatGPT login. Your password is sent directly to Firebase.</small>`, `document.getElementById('login').onsubmit=async(e)=>{e.preventDefault();const b=document.getElementById('submit'),error=document.getElementById('error');b.disabled=true;error.textContent='';try{const r=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_KEY}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value,returnSecureToken:true})});document.getElementById('password').value='';const u=await r.json();if(!r.ok)throw new Error('Sign-in failed. Check your CineGen email and password.');const c=await fetch('/authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({nonce:${JSON.stringify(nonce)},idToken:u.idToken,refreshToken:u.refreshToken})});const d=await c.json();if(!c.ok)throw new Error(d.error);location.assign(d.redirectTo)}catch(err){error.textContent=err.message;b.disabled=false}};`);
       response.headers.set('set-cookie',`cinegen_consent=${nonce}; HttpOnly; Secure; SameSite=Lax; Path=/authorize; Max-Age=600`);
       return response;
     }

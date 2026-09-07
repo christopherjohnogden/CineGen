@@ -29,10 +29,11 @@ export const TOOL_CATALOG = [
   {
     name: 'cinegen_list_models',
     description:
-      'List the generation models available for a kind of output, with the provider and what each one accepts (duration, references, frames). Use it before cinegen_generate when the user names a look or a model.',
+      'List Topview generation models by default (Higgsfield only when explicitly requested), with the provider and what each one accepts (duration, references, frames). Use it before cinegen_generate when the user names a look or a model.',
     inputSchema: {
       type: 'object',
       properties: {
+        provider: { type: 'string', enum: ['topview', 'higgsfield'], description: 'Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically.' },
         kind: { type: 'string', enum: ['video', 'image'], description: 'Which kind of model to list. Defaults to video.' },
       },
       additionalProperties: false,
@@ -44,6 +45,7 @@ export const TOOL_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        provider: { type: 'string', enum: ['topview', 'higgsfield'], description: 'Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically.' },
         spaceId: optionalString('Destination Space ID; defaults to the active Space.'),
         prompt: string('Shot description saved in Studio.'),
         kind: { type: 'string', enum: ['video', 'image'] },
@@ -63,6 +65,7 @@ export const TOOL_CATALOG = [
     inputSchema: {
       type: 'object',
       properties: {
+        provider: { type: 'string', enum: ['topview', 'higgsfield'], description: 'Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically.' },
         spaceId: optionalString('Destination Space ID; defaults to the active Space.'),
         view: { type: 'string', enum: ['studio', 'canvas'], description: 'Show results in Studio or place them on Canvas.' },
         prompt: string('What to generate. Write it as a shot description: subject, action, camera, lighting, mood.'),
