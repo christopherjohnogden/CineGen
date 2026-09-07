@@ -362,6 +362,9 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
     }
 
     case 'ADD_ASSET':
+      // A live request and its recovery poll can finish together. The same paid
+      // take keeps one asset ID, so do not insert it twice.
+      if (state.assets.some(asset => asset.id === action.asset.id)) return state;
       return { ...state, assets: [...state.assets, action.asset] };
 
     case 'UPDATE_ASSET':

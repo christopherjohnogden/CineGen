@@ -1178,6 +1178,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
   }, [modelOptions, modelType, outputKind]);
 
   const workflowDispatch = useCallback((): WorkflowDispatch => ({
+    projectId,
     setNodeRunning: (nodeId, running) => dispatch({ type: 'SET_NODE_RUNNING', nodeId, running }),
     setNodeResult: (nodeId, result) => dispatch({ type: 'SET_NODE_RESULT', nodeId, result }),
     addGeneration: (nodeId, url) => dispatch({ type: 'ADD_GENERATION', nodeId, url }),
@@ -1186,7 +1187,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       asset: { ...asset, thumbnailUrl: asset.url },
     }),
     getElements: () => state.elements,
-  }), [dispatch, state.elements]);
+  }), [dispatch, state.elements, projectId]);
 
   const setOutputType = (kind: OutputKind) => {
     setOutputKind(kind);

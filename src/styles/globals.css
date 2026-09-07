@@ -24004,3 +24004,19 @@ input[type='range']::-moz-range-track {
 .character-voice button:disabled { opacity: .5; cursor: wait; }
 .character-voice :focus-visible { outline: 2px solid #d5a451; outline-offset: 3px; }
 @media (max-width: 640px) { .character-voice { padding: 16px; } .character-voice__row { grid-template-columns: 1fr; } .character-voice__optional { display: none; } }
+
+/* Direct ElevenLabs creation stays with the character and its Canvas node. */
+.elevenlabs-audio__fields { display:flex; flex-direction:column; gap:14px; border:0; margin:0; padding:0; min-width:0; }
+.elevenlabs-connection { border:1px solid #ffffff13; border-radius:10px; padding:12px; background:#ffffff03; min-width:0; }
+.elevenlabs-connection__heading { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:13px; }
+.elevenlabs-connection__heading > span { display:flex; align-items:center; gap:9px; font-weight:600; color:var(--text-primary); }
+.elevenlabs-connection__heading > span > span { color:#d5a451; font-size:19px; }
+.elevenlabs-connection__heading button { background:none; border:0; padding:8px 0 8px 8px; color:#d5a451; cursor:pointer; font:inherit; font-size:11px; }
+.elevenlabs-connection__setup, .elevenlabs-connection__voices { display:grid; gap:10px; padding-top:14px; }
+.elevenlabs-connection label { display:grid; gap:8px; font-size:12px; }
+.elevenlabs-connection input, .elevenlabs-connection select { width:100%; min-width:0; }
+.elevenlabs-audio__generate { background:#d5a451; color:#17130d; font-weight:600; text-align:center; border-color:#d5a451; }
+.elevenlabs-audio button:disabled { opacity:.5; cursor:default; }
+.elevenlabs-audio__result { padding:16px 12px; background:#d5a45109; border:1px solid #d5a45126; border-radius:12px; }
+.elevenlabs-audio__result > span { display:block; color:#d5a451; font-size:10px; letter-spacing:.15em; margin-bottom:12px; }
+.elevenlabs-voice-preview { display:grid; gap:10px; padding:14px; border:1px solid #ffffff15; border-radius:12px; }

@@ -72,6 +72,7 @@ export interface ClaudeMcpStatus {
 }
 
 export interface ElectronAPI {
+  elevenlabs?: { request: (method: string, params: unknown, token: string) => Promise<unknown> };
   claudeMcp: {
     status: () => Promise<ClaudeMcpStatus>;
     setup: () => Promise<ClaudeMcpStatus>;

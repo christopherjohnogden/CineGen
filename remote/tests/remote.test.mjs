@@ -127,7 +127,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.7.0');
+  assert.equal(initialized.result.serverInfo.version,'1.8.0');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -454,4 +454,19 @@ test('Topview Seedance exposes and preserves mixed references including extensio
     {value:'https://example.com/media/opaque-id?token=test',role:'audio'},
   ]);
   assert.deepEqual(prepared.config.audio_references,['https://example.com/media/opaque-id?token=test']);
+});
+
+test('remote audio generation runs the connected account and saves the playable result without another download',async()=>{
+  const raw=api.createDefaultProjectState('Voice film');
+  const created=await api.editProject(raw,{version:1,elements:[],folders:[]},'cinegen_create_element',{name:'Cody',voice:{description:'Calm and warm',voiceId:'cody-voice'}});
+  const character=created.library.elements[0];
+  const prepared=await api.editProject(created.state,created.library,'cinegen_audio',{action:'prepare',elementId:character.id,text:'Ready when you are.'});
+  const args={action:'generate',nodeId:prepared.result.nodeId,spaceId:prepared.result.spaceId,requestId:'paid-audio-1'};
+  const url='https://firebasestorage.googleapis.com/v0/b/cinegen-734ba.firebasestorage.app/o/audio.mp3?alt=media';
+  const generate=async(request)=>{assert.equal(request.voiceId,'cody-voice');assert.equal(request.requestId,'paid-audio-1');assert.equal(request.text,'Ready when you are.');return {status:'complete',assetId:'paid-audio-1',requestId:'paid-audio-1',url};};
+  const saved=await api.editProject(prepared.state,prepared.library,'cinegen_audio',args,true,()=>{throw new Error('Already saved audio must not download again.');},generate);
+  assert.equal(saved.result.url,url);assert.equal(saved.result.requestId,'paid-audio-1');
+  const reopened=api.hydrate(saved.state,saved.library);
+  assert.equal(reopened.assets[0].type,'audio');assert.equal(reopened.nodes.find(n=>n.id===args.nodeId).data.result.audioRequestId,'paid-audio-1');
+  await assert.rejects(api.editProject(prepared.state,prepared.library,'cinegen_audio',{...args,requestId:undefined},true,undefined,generate),/requestId/);
 });

@@ -51,13 +51,14 @@ export function serialize(raw: RecordValue, state: WorkspaceState, sqlite = true
     elements: state.elements,
   };
 }
-export async function editProject(raw: RecordValue, library: RecordValue, name: string, args: RecordValue, sqlite = true, persistAudio?: (source: string, assetId: string) => Promise<string>) {
+export async function editProject(raw: RecordValue, library: RecordValue, name: string, args: RecordValue, sqlite = true, persistAudio?: (source: string, assetId: string) => Promise<string>, generateAudio?: (request: RecordValue) => Promise<unknown>) {
   let state = hydrate(raw, library, sqlite); const actions: McpAction[] = [];
   const handlers = createMcpHandlers({
     getState:()=>state, projectName: raw.project.name,
     dispatch:action=>{ state=workspaceReducer(state,action); actions.push(action); },
     runNode:()=>{ throw new Error('Use cinegen_generate for a durable cloud generation. Running arbitrary Canvas graphs requires the app.'); },
     appAction:async(action,payload)=>{
+      if (action === 'generate_audio' && generateAudio) return generateAudio(payload);
       if (action === 'persist_audio' && persistAudio) return persistAudio(String(payload.source), String(payload.assetId));
       if (action==='persist_element') {
         const element=(payload as any).element;

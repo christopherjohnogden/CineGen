@@ -15,6 +15,7 @@ export default {
     try{
       // Unlike Sites, a public Worker has no trusted upstream identity headers.
       if(!request.headers.get('x-cinegen-id-token'))return Response.json({ok:false,error:{code:'AUTH_REQUIRED',message:'Sign in to CineGen.'}},{status:401,headers:{'cache-control':'no-store',...(cors?{'Access-Control-Allow-Origin':origin,'Vary':'Origin'}:{})}});
+      const identityToken = request.headers.get('x-cinegen-id-token')!;
       request=await authenticateRemoteRequest(request);
       const url=new URL(request.url),workspace=workspaceIdForRequest(request);
       if(url.pathname==='/api/events'&&request.method==='GET')response=new Response('retry: 30000\n: CineGen cloud event bridge ready\n\n',{headers:{'content-type':'text/event-stream','cache-control':'no-store'}});
@@ -24,7 +25,7 @@ export default {
       else if(url.pathname==='/api/topview/oauth/callback'&&request.method==='GET')response=await handleTopviewCallback(request,env,workspace);
       else{
         const match=/^\/api\/rpc\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
-        response=match&&request.method==='POST'?await handleRpc(request,{namespace:match[1],method:match[2]},env):new Response('Not found',{status:404});
+        response=match&&request.method==='POST'?await handleRpc(request,{namespace:match[1],method:match[2]},env,{token:identityToken,uid:request.headers.get('oai-authenticated-user-id')!}):new Response('Not found',{status:404});
       }
     }catch(e){response=errorResponse(e);}
     if(cors){response=new Response(response.body,response);response.headers.set('Access-Control-Allow-Origin',origin);response.headers.append('Vary','Origin');}

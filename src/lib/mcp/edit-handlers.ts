@@ -1,3 +1,5 @@
+import { audioRequestFromNode } from '@/lib/elevenlabs/request';
+import type { ElevenLabsAudioResult } from '@/lib/elevenlabs/types';
 import { normalizeElementVoice } from '@/lib/elements/voice';
 import { elevenLabsAudioBrief } from '@/lib/elevenlabs/audio-brief';
 import { materializeElementLooks } from '@/lib/elements/variations';
@@ -54,7 +56,7 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
       const character = a.elementId ? found(state().elements, a.elementId, 'Element') : undefined;
       if (character && character.type !== 'character') throw new McpToolError('A voice belongs to a character Element.');
       if (a.action === 'prepare') {
-        const node = createWorkflowNodeFromSpec({ nodeType: 'elevenLabsAudio', label: (a.name as string) || `${character?.name || 'ElevenLabs'} audio`, config: { text: a.text ?? character?.voice?.sampleText ?? '', direction: a.direction ?? '', kind: a.kind ?? 'speech', elementId: character?.id ?? '' } }, { x: 100 + target!.nodes.length * 24, y: 100 });
+        const node = createWorkflowNodeFromSpec({ nodeType: 'elevenLabsAudio', label: (a.name as string) || `${character?.name || 'ElevenLabs'} audio`, config: { text: a.text ?? character?.voice?.sampleText ?? '', direction: a.direction ?? '', kind: a.kind ?? 'speech', elementId: character?.id ?? '', voiceId: a.voiceId ?? '', durationSeconds: a.durationSeconds } }, { x: 100 + target!.nodes.length * 24, y: 100 });
         activate(target!.id); host.dispatch({ type: 'SET_NODES', nodes: [...target!.nodes, node] });
         return { nodeId: node.id, spaceId: target!.id, status: 'awaiting_audio', brief: elevenLabsAudioBrief(node.data.config, character, { nodeId: node.id, spaceId: target!.id }) };
       }
@@ -63,19 +65,37 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
       if (!node && !character) throw new McpToolError('Specify a nodeId or a character elementId.');
       if (a.action === 'read') return { node, voice: character?.voice, brief: node ? elevenLabsAudioBrief(node.data.config, state().elements.find(el => el.id === node.data.config.elementId), { nodeId: node.id, spaceId: target!.id }) : undefined };
       if (node && a.expectedText !== undefined && node.data.config.text !== a.expectedText) throw new McpToolError('The audio brief changed. Read it before attaching this take.');
-      const source = required(a.audioUrl, 'audioUrl');
+      let source: string;
+      let generatedAudio: ElevenLabsAudioResult | undefined;
+      let generatedConfig: Record<string, unknown> | undefined;
+      if (a.action === 'generate') {
+        if (!node) throw new McpToolError('Prepare an ElevenLabs Audio node first, then generate with its nodeId.');
+        const requestId = required(a.requestId, 'requestId (reuse it to recover the same take)');
+        const voiceCharacter = character || state().elements.find(el => el.id === node.data.config.elementId);
+        const config = { ...node.data.config, ...(a.voiceId ? { voiceId: a.voiceId } : {}), ...(a.text !== undefined ? { text: a.text } : {}), ...(a.direction !== undefined ? { direction: a.direction } : {}), ...(a.kind ? { kind: a.kind } : {}), ...(a.durationSeconds ? { durationSeconds: a.durationSeconds } : {}), audioRequestId: requestId };
+        generatedConfig = config;
+        const generated = await app('generate_audio', audioRequestFromNode(config, voiceCharacter) as unknown as Record<string, unknown>) as ElevenLabsAudioResult;
+        generatedAudio = generated;
+        if (!generated.url || generated.status !== 'complete') {
+          if (JSON.stringify(found(space(target!.id).nodes, node.id, 'audio node')) !== JSON.stringify(node)) throw new McpToolError('The node changed while generating. Reuse requestId to retrieve the same take.');
+          activate(target!.id);
+          host.dispatch({ type: 'SET_NODES', nodes: space(target!.id).nodes.map(n => n.id === node.id ? { ...n, data: { ...n.data, config, result: { status: generated.error ? 'error' : 'running', audioRequestId: requestId, progressStartedAt: Date.now(), error: generated.error } } } : n) });
+          return { ...generated, nodeId: node.id, spaceId: target!.id, note: 'Reuse this requestId to check or finish saving this same take. Do not start another generation to recover it.' };
+        }
+        source = generated.url;
+      } else source = required(a.audioUrl, 'audioUrl');
       const existing = state().assets.find(asset => asset.type === 'audio' && (asset.url === source || asset.metadata?.elevenLabsSourceUrl === source));
-      const assetId = existing?.id ?? generateId();
-      const url = existing?.url ?? await app('persist_audio', { source, assetId }) as string;
+      const assetId = existing?.id ?? generatedAudio?.assetId ?? generateId();
+      const url = existing?.url ?? (generatedAudio ? source : await app('persist_audio', { source, assetId }) as string);
       if (node && JSON.stringify(found(space(target!.id).nodes, node.id, 'audio node')) !== JSON.stringify(node)) throw new McpToolError('The audio node changed while saving. Read it and attach this same audio again.');
       if (character && JSON.stringify(found(state().elements, character.id, 'Element')) !== JSON.stringify(character)) throw new McpToolError('The character changed while saving. Read it and attach this same audio again.');
       if (!existing) host.dispatch({ type: 'ADD_ASSET', asset: { id: assetId, name: String(a.name || node?.data.label || `${character?.name || 'ElevenLabs'} voice`), type: 'audio', url, sourceUrl: url, metadata: { elevenLabsSourceUrl: source }, createdAt: timestamp() } });
       if (node) {
         activate(target!.id);
-        host.dispatch({ type: 'SET_NODES', nodes: space(target!.id).nodes.map(n => n.id === node.id ? { ...n, data: { ...n.data, config: { ...n.data.config, audioUrl: url, audioAssetId: assetId }, result: { status: 'complete', url } } } : n) });
+        host.dispatch({ type: 'SET_NODES', nodes: space(target!.id).nodes.map(n => n.id === node.id ? { ...n, data: { ...n.data, config: { ...n.data.config, ...generatedConfig, audioUrl: url, audioAssetId: assetId }, result: { status: 'complete', url, ...(generatedAudio ? { audioRequestId: generatedAudio.requestId } : {}) } } } : n) });
       }
       if (character) host.dispatch({ type: 'UPDATE_ELEMENT', elementId: character.id, updates: { voice: { description: '', ...character.voice, provider: 'elevenlabs', referenceAudio: { id: assetId, url, source: 'generated', createdAt: timestamp() } }, updatedAt: timestamp() } });
-      return { saved: true, assetId, url, nodeId: node?.id, elementId: character?.id };
+      return { saved: true, assetId, url, nodeId: node?.id, elementId: character?.id, ...(generatedAudio ? { requestId: generatedAudio.requestId } : {}) };
     },
     async cinegen_capabilities() {
       return {

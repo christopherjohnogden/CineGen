@@ -10,6 +10,7 @@ import {
   importMedia,
   persistRemoteMedia,
 } from "./media-store";
+import { createElevenLabs } from "./elevenlabs";
 import { createElementsLibraryStore } from "./elements-library-store";
 import { createHiggsfieldMcp } from "./higgsfield-mcp";
 import { createProjectStore } from "./project-store";
@@ -39,6 +40,7 @@ export async function handleRpc(
   request: Request,
   params: RouteParams,
   runtimeEnv: RuntimeEnv,
+  identity?: { token: string; uid: string },
 ): Promise<Response> {
   try {
     const contentLength = Number(request.headers.get("content-length") || 0);
@@ -72,6 +74,21 @@ export async function handleRpc(
       return { ...input, huggingFaceToken: await providerVault.resolve("huggingface", input.huggingFaceToken) };
     };
 
+    if (params.namespace === 'elevenlabs') {
+      const elevenlabs = createElevenLabs(runtimeEnv, workspaceId, identity);
+      switch (params.method) {
+        case 'accountStatus': result = await elevenlabs.accountStatus(); break;
+        case 'connect': result = await elevenlabs.connect(args[0]); break;
+        case 'disconnect': result = await elevenlabs.disconnect(); break;
+        case 'voices': result = await elevenlabs.voices(args[0]); break;
+        case 'generate': result = await elevenlabs.generate(args[0]); break;
+        case 'job': result = await elevenlabs.job(args[0]); break;
+        case 'design': result = await elevenlabs.design(args[0]); break;
+        case 'saveVoice': result = await elevenlabs.saveVoice(args[0]); break;
+        default: throw new SiteHttpError(404, 'Unknown ElevenLabs action.');
+      }
+      return success(result);
+    }
     switch (operation) {
       case "project.list":
         result = await store.list();

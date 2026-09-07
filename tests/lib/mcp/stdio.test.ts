@@ -17,7 +17,7 @@ describe('MCP stdio protocol', () => {
       });
       child.stdin.end(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{}})+'\n'+JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})+'\n');
     });
-    expect(responses.find(x=>x.id===1)?.result.serverInfo?.version).toBe('0.7.0');
+    expect(responses.find(x=>x.id===1)?.result.serverInfo?.version).toBe('0.8.0');
     expect(responses.find(x=>x.id===2)?.result.tools).toHaveLength(TOOL_CATALOG.length);
   });
 });

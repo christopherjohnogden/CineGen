@@ -8,7 +8,7 @@ const REQUEST_TIMEOUT_MS = 8_000;
 
 export const TEAM_PROVIDER_SENTINEL = '__CINEGEN_TEAM_PROVIDER__';
 
-type ProviderId = 'fal' | 'openai' | 'kie' | 'runpod' | 'huggingface';
+type ProviderId = 'fal' | 'openai' | 'kie' | 'runpod' | 'huggingface' | 'elevenlabs';
 
 type ProviderStatus = {
   supported: boolean;

@@ -8,6 +8,7 @@ export const WORKSPACE_PROVIDER_IDS = [
   "kie",
   "runpod",
   "huggingface",
+  "elevenlabs",
 ] as const;
 
 export type WorkspaceProviderId = typeof WORKSPACE_PROVIDER_IDS[number];

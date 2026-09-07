@@ -734,16 +734,17 @@ function WorkflowCanvasInner({ onSendToStudio }: WorkflowCanvasProps) {
   }, []);
 
   const workflowDispatch = useCallback(() => ({
+    projectId,
     setNodeRunning: (nodeId: string, running: boolean) =>
       dispatch({ type: 'SET_NODE_RUNNING', nodeId, running }),
     setNodeResult: (nodeId: string, result: WorkflowNodeData['result']) =>
       dispatch({ type: 'SET_NODE_RESULT', nodeId, result }),
     addGeneration: (nodeId: string, url: string) =>
       dispatch({ type: 'ADD_GENERATION', nodeId, url }),
-    addAsset: (asset: { id: string; name: string; type: 'image' | 'video'; url: string; createdAt: string }) =>
-      dispatch({ type: 'ADD_ASSET', asset: { ...asset, thumbnailUrl: asset.url } }),
+    addAsset: (asset: { id: string; name: string; type: 'image' | 'video' | 'audio'; url: string; createdAt: string }) =>
+      dispatch({ type: 'ADD_ASSET', asset: { ...asset, ...(asset.type === 'audio' ? {} : { thumbnailUrl: asset.url }) } }),
     getElements: () => state.elements,
-  }), [dispatch, state.elements]);
+  }), [dispatch, state.elements, projectId]);
 
 
   const handleRunNode: RunNodeFn = useCallback(async (nodeId: string) => {

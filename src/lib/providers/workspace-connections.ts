@@ -1,6 +1,6 @@
 export const TEAM_PROVIDER_SENTINEL = '__CINEGEN_TEAM_PROVIDER__';
 
-export type WorkspaceProviderId = 'fal' | 'openai' | 'kie' | 'runpod' | 'huggingface';
+export type WorkspaceProviderId = 'fal' | 'openai' | 'kie' | 'runpod' | 'huggingface' | 'elevenlabs';
 
 export interface WorkspaceProviderStatus {
   supported: boolean;

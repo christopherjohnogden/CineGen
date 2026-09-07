@@ -114,6 +114,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   config: Record<string, unknown>;
   modelId?: string;
   result?: {
+    audioRequestId?: string;
     url?: string;
     text?: string;
     status?: 'idle' | 'running' | 'complete' | 'error';

@@ -1,3 +1,5 @@
+import { elevenLabs } from '@/lib/elevenlabs/client';
+import { audioRequestFromNode } from '@/lib/elevenlabs/request';
 import { withCharacterVoices, voiceElementsForPrompt } from '@/lib/elements/voice';
 import type { Node, Edge } from '@xyflow/react';
 import { topologicalSort } from './topo-sort';
@@ -49,13 +51,14 @@ import {
 import { isSeedance2ModelName } from '@/lib/topview/model-catalog';
 
 export interface WorkflowDispatch {
+  projectId?: string;
   setNodeRunning: (nodeId: string, running: boolean) => void;
   setNodeResult: (nodeId: string, result: WorkflowNodeData['result']) => void;
   addGeneration: (nodeId: string, url: string) => void;
   addAsset: (asset: {
     id: string;
     name: string;
-    type: 'image' | 'video';
+    type: 'image' | 'video' | 'audio';
     url: string;
     createdAt: string;
   }) => void;
@@ -666,6 +669,28 @@ async function runNodes(
 
     const portInputs = resolveInputs(definition.inputs, edges, nodeId, results);
 
+    if (nodeType === 'elevenLabsAudio') {
+      const existingUrl = node.data.result?.url || node.data.config.audioUrl;
+      if (existingUrl && (!node.data.result?.audioRequestId || node.data.result.status === 'complete') && (!targetNodeId || targetNodeId !== nodeId)) {
+        results.set(nodeId, { audio: existingUrl });
+        continue;
+      }
+      const request = audioRequestFromNode(node.data.config, dispatch.getElements().find(e => e.id === node.data.config.elementId), dispatch.projectId);
+      request.requestId = node.data.result?.audioRequestId && node.data.result.status !== 'complete' ? node.data.result.audioRequestId : crypto.randomUUID();
+      dispatch.setNodeRunning(nodeId, true);
+      dispatch.setNodeResult(nodeId, { status: 'running', audioRequestId: request.requestId, progressStartedAt: Date.now(), ...(typeof existingUrl === 'string' ? { url: existingUrl } : {}) });
+      try {
+        const generated = await elevenLabs.generate(request);
+        if (generated.status !== 'complete' || !generated.url) throw new Error(generated.error || 'This take is still processing. Check again to retrieve the same audio.');
+        dispatch.setNodeResult(nodeId, { status: 'complete', url: generated.url, audioRequestId: generated.requestId });
+        dispatch.addAsset({ id: generated.assetId, name: node.data.label || 'ElevenLabs audio', type: 'audio', url: generated.url, createdAt: new Date().toISOString() });
+        results.set(nodeId, { audio: generated.url });
+      } catch (cause) {
+        dispatch.setNodeResult(nodeId, { status: 'error', audioRequestId: request.requestId, ...(typeof existingUrl === 'string' ? { url: existingUrl } : {}), error: cause instanceof Error ? cause.message : 'Audio could not be retrieved. Check this take again before generating another.' });
+        throw cause;
+      } finally { dispatch.setNodeRunning(nodeId, false); }
+      continue;
+    }
     if (definition.category === 'utility') {
       results.set(nodeId, resolveUtilityOutputs(nodeType, definition.outputs, node.data, dispatch, portInputs));
       continue;
@@ -800,8 +825,8 @@ function resolveUtilityOutputs(
   for (const port of outputs) {
     switch (nodeType) {
       case 'elevenLabsAudio':
-        if (!data.config.audioUrl) throw new Error('The ElevenLabs audio is not ready. Create it with your ElevenLabs MCP in Claude, then attach the result or upload the audio to this node.');
-        output.audio = data.config.audioUrl;
+        if (!data.result?.url && !data.config.audioUrl) throw new Error('Generate audio on the ElevenLabs node first.');
+        output.audio = data.result?.url || data.config.audioUrl;
         break;
       case 'prompt':
         output[port.id] = data.config.prompt;

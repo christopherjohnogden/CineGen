@@ -20,6 +20,7 @@ const HEADER_HEIGHT = 52;
 const PORT_SPACING = 24;
 
 const NODE_BADGES: Record<string, string> = {
+  elevenLabsAudio: 'VOX',
   prompt: 'TXT',
   multiPrompt: 'SHT',
   shotPrompt: 'SHT',

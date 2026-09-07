@@ -202,3 +202,10 @@ The live Topview Canvas submit schema currently limits audio-route prompts to 4,
 ### Character voice and ElevenLabs audio
 
 Character Elements now have a voice section: a vocal description, ElevenLabs voice ID/name, sample dialogue and saved audio. Claude can write these through `cinegen_create_element` or `cinegen_edit_element` (`patch.voice`). Use the user's ElevenLabs MCP to design/select a voice or generate audio; then use `cinegen_audio` to attach its result durably. `cinegen_audio` can also prepare/read ElevenLabs speech and sound-effect briefs on Canvas. It never generates or charges credits itself. In the app, the character editor and ElevenLabs Audio node copy the matching Claude brief and accept uploaded audio. The node outputs audio for video reference ports. Character voice direction is automatically included in video prompts when the character is referenced.
+
+
+### Direct ElevenLabs audio
+
+ElevenLabs Audio nodes now run inside CineGen. Connect an ElevenLabs API key in the node or character voice panel; the key is validated and encrypted in the workspace vault. Speech uses the saved character voice or selected ElevenLabs voice with Eleven v3; sound effects use Eleven Sound Effects v2. The result plays on the node and is saved to Firebase, with a recoverable copy in Cloudflare R2. No Claude handoff is needed. Character editors can design voice previews, choose/save a voice, and generate sample dialogue inside the app.
+
+`cinegen_audio` supports `prepare`, `read`, `generate`, and `attach`. For `generate`, supply an existing audio `nodeId` and a unique `requestId`; reuse that ID to retrieve or finish saving the same paid take. A new request ID submits another generation. The provider's 5,000-character Eleven v3 limit includes performance tags; dialogue is never truncated. Voice description remains separate from spoken dialogue.

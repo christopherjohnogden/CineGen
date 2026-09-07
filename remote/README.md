@@ -27,7 +27,7 @@ Use `cinegen_studio_create` to prepare Studio items without starting generation 
 
 Use `cinegen_generate` for actual Studio generation. Remote unattended generation uses Topview by default. Pass `provider: "higgsfield"` only when the user explicitly requests it. `cinegen_list_models` reads the connected provider catalog. Legacy fal jobs already queued before this change can finish, but new fal jobs are not exposed. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.
 
-## Creative library and inline displays (server 1.7.0)
+## Creative library and inline displays (server 1.8.0)
 
 Active video jobs fill the player with flowing multicolor light, a clockwise spectrum border, and a compact glass status label until output is ready. Queued, starting and saving jobs retain their actual status labels; prepared or failed jobs do not animate. Reduced-motion preferences show the same colors without animation. Active video details show elapsed time from the recorded run start (or creation/submission time on older jobs), updating locally each second and catching up after backgrounding. Missing timestamps do not produce a fabricated timer.
 
@@ -65,10 +65,17 @@ If Topview's signed Canvas download returns HTTP 403 from Cloudflare, the remote
 
 Character Elements support `voice`: `description`, `provider: "elevenlabs"`, `voiceId`, `voiceName`, `sampleText`, and a saved `referenceAudio`. Set it with `cinegen_create_element` or `cinegen_edit_element` (`patch.voice`; null clears it). The profile stays with the character across continuity looks. Video prompts automatically include the vocal direction for referenced characters. Cloud `cinegen_generate` accepts `elementIds`; image and audio reference URLs still belong in the model's advertised inputs.
 
-The user's ElevenLabs MCP generates the audio in Claude. CineGen does not borrow Claude's credentials or route these tasks through fal.ai. `cinegen_audio` supports:
+CineGen generates audio directly using its own encrypted ElevenLabs connection. CineGen does not borrow Claude's credentials or route these tasks through fal.ai. `cinegen_audio` supports:
 
 - `prepare`: create an `elevenLabsAudio` Canvas node with `text`, `direction`, `kind` (`speech` or `sound`) and optional `elementId`. Returns the full ElevenLabs brief and node ID without starting a generation.
 - `read`: inspect the node and associated character voice before generation.
 - `attach`: give the existing `nodeId` and a downloadable HTTPS `audioUrl`. CineGen streams the audio to Firebase, adds a media asset and completes the node. Optional `elementId` saves the same audio as a character voice sample. `expectedText` protects against attaching a take to a changed dialogue brief. Retrying attachment reuses an already saved asset instead of generating again.
 
 A Claude-local file or sandbox link is not a public audio URL: upload that audio in CineGen, or use the downloadable HTTPS result from ElevenLabs. Audio output connects to a model's audio-reference port; a voice description alone is creative guidance, not a guarantee of voice identity or lip sync.
+
+
+### Direct ElevenLabs audio
+
+ElevenLabs Audio nodes now run inside CineGen. Connect an ElevenLabs API key in the node or character voice panel; the key is validated and encrypted in the workspace vault. Speech uses the saved character voice or selected ElevenLabs voice with Eleven v3; sound effects use Eleven Sound Effects v2. The result plays on the node and is saved to Firebase, with a recoverable copy in Cloudflare R2. No Claude handoff is needed. Character editors can design voice previews, choose/save a voice, and generate sample dialogue inside the app.
+
+`cinegen_audio` supports `prepare`, `read`, `generate`, and `attach`. For `generate`, supply an existing audio `nodeId` and a unique `requestId`; reuse that ID to retrieve or finish saving the same paid take. A new request ID submits another generation. The provider's 5,000-character Eleven v3 limit includes performance tags; dialogue is never truncated. Voice description remains separate from spoken dialogue.

@@ -1,3 +1,4 @@
+import { elevenLabs } from '@/lib/elevenlabs/client';
 import { prepareElementReferences, prepareAudioReference } from '@/lib/cloud/elements';
 import { buildElementDraft, type ElementBuildRequest } from '@/lib/elements/build-element';
 import type { Element } from '@/types/elements';
@@ -32,10 +33,11 @@ export function useMcpBridge(
     flushSync(() => dispatch(action));
   };
   const workflowDispatch = (): WorkflowDispatch => ({
+    projectId: options.projectId,
     setNodeRunning: (nodeId, running) => send({ type: 'SET_NODE_RUNNING', nodeId, running }),
     setNodeResult: (nodeId, result) => send({ type: 'SET_NODE_RESULT', nodeId, result }),
     addGeneration: (nodeId, url) => send({ type: 'ADD_GENERATION', nodeId, url }),
-    addAsset: (asset) => send({ type: 'ADD_ASSET', asset: { ...asset, thumbnailUrl: asset.url } }),
+    addAsset: (asset) => send({ type: 'ADD_ASSET', asset: { ...asset, ...(asset.type === 'audio' ? {} : { thumbnailUrl: asset.url }) } }),
     getElements: () => stateRef.current.elements,
   });
 
@@ -77,6 +79,7 @@ export function useMcpBridge(
         if (!options.projectId) throw new Error('Open a project before saving references.');
         return prepareElementReferences(args.element as Element, options.projectId);
       }
+      if (action === 'generate_audio') return elevenLabs.generate({ ...args, projectId: options.projectId } as any);
       if (action === 'persist_audio') {
         if (!options.projectId) throw new Error('Open a project before saving audio.');
         return prepareAudioReference(String(args.source), options.projectId, String(args.assetId));
