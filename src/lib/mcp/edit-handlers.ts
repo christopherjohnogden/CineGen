@@ -49,7 +49,7 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
   const raw: Record<string, McpToolHandler> = {
     async cinegen_capabilities() {
       return {
-        displays: { tools: DISPLAY_TOOLS.map(tool => tool.name), resourceUri: MEDIA_RESOURCE_URI, readOnly: true, note: 'Inline galleries and video playback require an MCP Apps-compatible client. Other clients receive readable media links. Local-only media must sync before it can be previewed in chat.' },
+        displays: { tools: DISPLAY_TOOLS.map(tool => tool.name), resourceUri: MEDIA_RESOURCE_URI, readOnly: true, actions: ['cinegen_send_to_studio'], note: 'Viewers support media selection, ordered batch review, uploaded assets, film presets and playback in MCP Apps-compatible clients. Send to Studio is a separate saved edit and never generates. Local-only media must sync before it can be used in chat.' },
         directorAdapters: listDirectorAdapters().map(({ id, label, provider, modelId, capabilities }) => ({ id, label, provider, modelId, capabilities })),
         shotlistInstructions: claudeShotlistImportPrompt(state().director),
         storyboard: storyboardPlan(state().director).map(frame => ({ id: frame.id, clipId: frame.clip.id, beatN: frame.beat.n, prompt: frame.prompt })),

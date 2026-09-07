@@ -10,6 +10,7 @@ import type { RecordValue } from './firebase';
 // Only advertise operations the headless host can actually finish and persist.
 export const REMOTE_NAMES = new Set([
   'cinegen_show_generations', 'cinegen_show_reference_elements', 'cinegen_job_display',
+  'cinegen_show_media', 'cinegen_show_generation_batch', 'cinegen_show_film_presets', 'cinegen_send_to_studio',
   'cinegen_get_context', 'cinegen_read', 'cinegen_capabilities', 'cinegen_get_generations',
   'cinegen_load_script', 'cinegen_set_breakdown', 'cinegen_set_shotlist', 'cinegen_approve_breakdown',
   'cinegen_create_element', 'cinegen_edit_element', 'cinegen_delete_element',

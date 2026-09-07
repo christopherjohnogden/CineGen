@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDisplayHandlers, displayJobSnapshot, type DisplayPage } from '@/lib/mcp/display-handlers';
-import { createInitialWorkspaceState } from '@/lib/mcp/workspace-state';
+import { createInitialWorkspaceState, workspaceReducer } from '@/lib/mcp/workspace-state';
 import { displayResult, displayUrl, previewUrl, DISPLAY_TOOLS } from '../../../mcp/display-tools.mjs';
 import { readMediaResource, MEDIA_RESOURCE } from '../../../mcp/media-viewer.mjs';
 const cloud = 'https://firebasestorage.googleapis.com/v0/b/cinegen/o/image.png?alt=media&token=sample';
@@ -75,5 +75,78 @@ describe('MCP media displays', () => {
     expect(displayUrl('https://example.com/public.png')).toBe('https://example.com/public.png');
     expect(previewUrl('https://example.com/public.png')).toBeNull();
     expect(previewUrl('https://fakefirebasestorage.googleapis.com/x')).toBeNull();
+  });
+  it('browses standalone assets, folders and Canvas uploads without exposing local paths', async () => {
+    const { state, handlers } = setup();
+    state.assets = [{ id: 'upload', name: 'Desktop interview', type: 'video', url: cloud, thumbnailUrl: cloud + '&preview=1', width: 1920, height: 1080, duration: 4.25, folderId: 'footage', createdAt: '2026-09-07' },
+      { id: 'voice', name: 'Voice memo', type: 'audio', url: cloud + '&audio=1', createdAt: '2026-09-06' },
+      { id: 'local', name: 'Local only', type: 'image', url: '/Users/person/private.png', thumbnailUrl: 'file:///private/thumb.jpg', createdAt: '' }];
+    state.mediaFolders = [{ id: 'footage', name: 'Footage' }];
+    state.nodes = [node('canvas', 'image', { config: { fileUrl: cloud + '&canvas=1', fileType: 'image', fileName: 'Canvas photo' } }) as any];
+    const all = await handlers.cinegen_show_media({}) as DisplayPage;
+    expect(all.total).toBe(4); expect(all.folders).toEqual([{ id: 'footage', name: 'Footage' }]);
+    expect(all.items.find(item => item.assetId === 'upload')).toMatchObject({ width: 1920, duration: 4.25, thumbnailUrl: cloud + '&preview=1', folderName: 'Footage' });
+    expect(JSON.stringify(all)).not.toMatch(/\/Users\/|file:\/\//);
+    const audio = await handlers.cinegen_show_media({ kind: 'audio' }) as DisplayPage;
+    expect(audio.items.map(item => item.assetId)).toEqual(['voice']);
+    const filtered = await handlers.cinegen_show_media({ folderId: 'footage', search: 'interview' }) as DisplayPage;
+    expect(filtered.total).toBe(1);
+    // A file present in both sources is listed once.
+    state.nodes[0].data.config.fileUrl = cloud;
+    expect((await handlers.cinegen_show_media({}) as DisplayPage).total).toBe(3);
+  });
+  it('preserves exact batch order, requested historical takes, failures, and missing slots', async () => {
+    const { state, handlers } = setup();
+    state.nodes = [node('takes', 'image', { config: { __studioGenerated: true, __studioOutputType: 'image' }, generations: [cloud, cloud + '&take=2'], activeGeneration: 1,
+      result: { status: 'error', url: cloud + '&take=2', error: 'Latest retry failed' } }) as any];
+    const jobs = [{ nodeId: 'takes' }, { nodeId: 'missing' }, { nodeId: 'takes', generationIndex: 0 }, { nodeId: 'takes', generationIndex: 99 }];
+    const batch = await handlers.cinegen_show_generation_batch({ jobs }) as DisplayPage;
+    expect(batch.items.map(item => item.batchIndex)).toEqual([1, 2, 3, 4]);
+    expect(batch.items.map(item => item.status)).toEqual(['failed', 'not_found', 'complete', 'not_found']);
+    expect(batch.items[0].url).toBe(cloud + '&take=2'); expect(batch.items[2].url).toBe(cloud); expect(batch.items[2].generationIndex).toBe(0);
+    expect(batch.allFound).toBe(false);
+    const paged = await handlers.cinegen_show_generation_batch({ jobs, offset: 2, limit: 1 }) as DisplayPage;
+    expect(paged.items[0].batchIndex).toBe(3); expect(paged.hasMore).toBe(true);
+  });
+  it('sends exact references into another Studio Space, persists on reload, and is idempotent', async () => {
+    let state = createInitialWorkspaceState();
+    state.spaces = [{ id: 'first', name: 'First', nodes: [], edges: [] }, { id: 'second', name: 'Second', nodes: [], edges: [] }]; state.activeSpaceId = 'first';
+    state.assets = [{ id: 'upload', name: 'Interview', url: cloud, type: 'video', createdAt: 'now' }];
+    const runNode = vi.fn();
+    const handlers = createDisplayHandlers({ getState: () => state, dispatch: action => { state = workspaceReducer(state, action); }, runNode });
+    const args = { itemIds: ['asset:upload'], spaceId: 'second' };
+    const result = await handlers.cinegen_send_to_studio(args) as any;
+    expect(result.generated).toBe(false); expect(state.activeSpaceId).toBe('first'); expect(state.nodes).toHaveLength(0);
+    expect(state.spaces[1].nodes).toHaveLength(1); expect(state.spaces[1].nodes[0].data.config).toMatchObject({ fileUrl: cloud, __studioMedia: true, __studioGenerated: true });
+    await handlers.cinegen_send_to_studio(args); expect(state.spaces[1].nodes).toHaveLength(1);
+    const shown = await handlers.cinegen_show_generations({ spaceId: 'second' }) as DisplayPage;
+    expect(shown.items[0].url).toBe(cloud); expect(runNode).not.toHaveBeenCalled();
+    const before = JSON.stringify(state);
+    await expect(handlers.cinegen_send_to_studio({ itemIds: ['asset:upload', 'forged-id'], spaceId: 'second' })).rejects.toThrow(/unavailable/);
+    expect(JSON.stringify(state)).toBe(before);
+    await expect(handlers.cinegen_send_to_studio({ ...args, url: 'https://evil.example/x' })).rejects.toThrow();
+  });
+  it('provides distinct film directions without generation, and returns complete reference identifiers', async () => {
+    const { state, handlers, dispatch, runNode } = setup();
+    const presets = await handlers.cinegen_show_film_presets({}) as DisplayPage;
+    expect(presets.total).toBe(12); expect(new Set(presets.items.map(item => item.diagram)).size).toBe(12);
+    const camera = await handlers.cinegen_show_film_presets({ category: 'camera', search: 'orbit' }) as DisplayPage;
+    expect(camera.items[0]).toMatchObject({ presetId: 'gentle-orbit', kind: 'preset', category: 'camera' });
+    state.elements = [{ id: 'hero', name: 'Hero', type: 'character', description: 'Lead', images: [{ id: 'front', url: cloud, source: 'upload', createdAt: 'now' }], createdAt: 'now', updatedAt: 'now' }];
+    const refs = await handlers.cinegen_show_reference_elements({}) as DisplayPage;
+    expect(refs.items[0].elementId).toBe('hero'); expect(refs.items[0].variationId).toBeTruthy(); expect(refs.items[0].imageId).toBe('front');
+    expect(dispatch).not.toHaveBeenCalled(); expect(runNode).not.toHaveBeenCalled();
+  });
+  it('shows actual model input references and safe thumbnails alongside output metadata', async () => {
+    const { state, handlers } = setup();
+    const reference = cloud + '&reference=1';
+    state.nodes = [{ id: 'generated', type: 'nano-banana-2', position: { x: 0, y: 0 }, data: { type: 'nano-banana-2', label: 'The doorway',
+      config: { __studioGenerated: true, prompt: 'The doorway', image_url: reference, resolution: '2K', aspect_ratio: '16:9' }, result: { status: 'complete', url: cloud } } }];
+    state.assets = [{ id: 'ref', name: 'Reference', type: 'image', url: reference, thumbnailUrl: '/local/thumb.jpg', createdAt: '' },
+      { id: 'out', name: 'Output', type: 'image', url: cloud, thumbnailUrl: cloud + '&thumb=1', width: 1920, height: 1080, createdAt: '' }];
+    const shown = await handlers.cinegen_job_display({ nodeId: 'generated' }) as DisplayPage;
+    expect(shown.items[0]).toMatchObject({ thumbnailUrl: cloud + '&thumb=1', width: 1920, height: 1080, resolution: '2K', aspectRatio: '16:9' });
+    expect(shown.items[0].references).toEqual([expect.objectContaining({ url: reference, previewUrl: reference })]);
+    expect(JSON.stringify(shown)).not.toContain('/local/');
   });
 });

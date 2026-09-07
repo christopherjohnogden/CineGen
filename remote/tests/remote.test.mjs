@@ -106,7 +106,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.3.0');
+  assert.equal(initialized.result.serverInfo.version,'1.4.0');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -283,7 +283,7 @@ test('display tools advertise a readable MCP Apps resource and return authentica
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const send=async(method,params)=>(await api.handleMcp(request(method,params),env,ctx)).json();
   const tools=(await send('tools/list')).result.tools.filter(tool=>tool.name.includes('show_')||tool.name==='cinegen_job_display');
-  assert.equal(tools.length,3);
+  assert.equal(tools.length,6);
   const resources=(await send('resources/list')).result.resources;
   assert.equal(resources.length,1);
   for(const tool of tools){assert.equal(tool._meta.ui.resourceUri,resources[0].uri);assert.equal(tool.annotations.readOnlyHint,true);assert.ok(tool.inputSchema.required.includes('projectId'));}
@@ -338,5 +338,47 @@ test('requestId display authenticates the project and reads only the durable sna
     assert.equal(response.structuredContent.items[0].error,'Download failed');
     assert.deepEqual(paths,['https://job/snapshot']);
     assert.deepEqual(response.structuredContent.refresh.arguments,{projectId:raw.project.id,requestId:'job'});
+  }finally{api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
+});
+
+test('uploaded media can be sent to Studio, serialized and rehydrated without a provider request',async()=>{
+  const raw=api.createDefaultProjectState('Studio library');
+  const url='https://firebasestorage.googleapis.com/upload.mp4';
+  raw.assets=[{id:'uploaded',project_id:raw.project.id,name:'Desktop video',type:'video',source_url:url,created_at:'now'}];
+  const library={elements:[],folders:[]};
+  globalThis.fetch=async()=>{throw new Error('No provider calls are allowed');};
+  const media=await api.editProject(raw,library,'cinegen_show_media',{});
+  assert.equal(media.changed,false);assert.equal(media.result.items[0].assetId,'uploaded');
+  const spaceId=api.hydrate(raw,library).activeSpaceId;
+  const edited=await api.editProject(raw,library,'cinegen_send_to_studio',{itemIds:['asset:uploaded'],spaceId});
+  assert.equal(edited.changed,true);assert.equal(edited.result.generated,false);
+  const reopened=api.hydrate(JSON.parse(JSON.stringify(edited.state)),library);
+  assert.ok(reopened.nodes.some(node=>node.data.config.__studioMedia&&node.data.config.fileUrl===url));
+  const repeat=await api.editProject(edited.state,library,'cinegen_send_to_studio',{itemIds:['asset:uploaded'],spaceId});
+  assert.equal(repeat.changed,false);assert.deepEqual(repeat.result.nodeIds,edited.result.nodeIds);
+});
+
+test('ordered cloud batch reads snapshots, isolates missing jobs and retains durable saving status',async()=>{
+  const raw=api.createDefaultProjectState('Batch review'), originalLoad=api.CloudStore.prototype.load, originalSave=api.CloudStore.prototype.save;
+  const paths=[];const env={PUBLIC_ORIGIN:'https://cinegen.example',JOBS:{idFromName:name=>name,get:name=>({fetch:async(url)=>{
+    paths.push(url);const requestId=name.split(':').at(-1);
+    return Response.json(requestId==='missing'?{status:'not_found'}:{requestId,nodeId:'node-'+requestId,status:requestId==='saving'?'saving':'complete',kind:'video',url:requestId==='saving'?null:'https://firebasestorage.googleapis.com/result.mp4',error:requestId==='saving'?'Download failed':undefined});
+  }})}};
+  const ctx={props:{uid:'owner',email:'owner@example.com',refreshToken:'refresh'}};
+  globalThis.fetch=async(url)=>{assert.match(String(url),/securetoken.googleapis.com/);return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});};
+  api.CloudStore.prototype.load=async()=>({state:raw,library:{elements:[],folders:[]},metadata:{useSqlite:true}});
+  api.CloudStore.prototype.save=async()=>{throw new Error('Must not save');};
+  const send=async(args)=>{
+    const request=new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'cinegen_show_generation_batch',arguments:{projectId:raw.project.id,...args}}})});
+    return (await (await api.handleMcp(request,env,ctx)).json()).result;
+  };
+  try{
+    const jobs=[{requestId:'done'},{requestId:'missing'},{requestId:'saving'}];
+    const shown=await send({jobs});assert.equal(shown.isError,undefined,shown.content[0].text);
+    assert.deepEqual(shown.structuredContent.items.map(item=>item.status),['complete','not_found','saving']);
+    assert.equal(shown.structuredContent.items[0].kind,'video');assert.equal(shown.structuredContent.items[2].error,'Download failed');
+    assert.equal(shown.structuredContent.allFound,false);assert.deepEqual(paths,['https://job/snapshot','https://job/snapshot','https://job/snapshot']);
+    const paged=await send({jobs,offset:2,limit:1});assert.equal(paged.structuredContent.items[0].batchIndex,3);assert.equal(paged.structuredContent.allFound,false);
+    const mismatch=await send({jobs:[{requestId:'done',nodeId:'wrong'}]});assert.equal(mismatch.structuredContent.items[0].status,'not_found');
   }finally{api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
 });

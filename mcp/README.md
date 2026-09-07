@@ -185,3 +185,8 @@ mocked in tests; live paid generations are not part of verification.
 Use `cinegen_studio_create` to prepare Studio items without starting generation or spending credits. Supply a prompt, optional destination `spaceId`, model name/node type, `inputs` keyed by model field IDs, and optional Element names. Remote calls also require `projectId`. Use `cinegen_list_node_types` to discover preparation models and controls. These items carry Studio metadata, retain their prompt and settings, and can be placed on Canvas later.
 
 Use `cinegen_generate` for actual Studio generation. Topview is the default for preparation and generation. Pass `provider: "higgsfield"` only when the user explicitly requests Higgsfield. Remote generation uses the existing CineGen website connections and does not require a fal key. `cinegen_nodes` remains the explicit Canvas creation path. Reconnect the MCP client to refresh its tool list after an update.
+
+
+### Creative library (stdio 0.4.0 / remote 1.4.0)
+
+The shared MCP Apps viewer now browses uploaded assets, exact ordered batches, reference Elements and illustrated film presets. Users can send exact selections/prompts back to chat or add existing image/video references to a Studio Space without generating. See [the remote display documentation](../remote/README.md#creative-library-and-inline-displays-server-140) for tool arguments, host compatibility and media limitations. The widget resource is `ui://cinegen/media-viewer-v2.html`.

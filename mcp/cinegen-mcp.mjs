@@ -80,7 +80,7 @@ async function handle(message) {
     result(id, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false }, resources: {} },
-      serverInfo: { name: 'cinegen', version: '0.3.0' },
+      serverInfo: { name: 'cinegen', version: '0.4.0' },
       instructions: DISPLAY_INSTRUCTIONS + ' ' +
         'Use Topview as the default generation provider. Use Higgsfield only when the user explicitly requests it, with no automatic fallback. Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing — breakdowns, shot lists, prompts — and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Use cinegen_element_models and cinegen_build_element for durable Element reference packs; review the completed draft with the user before cinegen_approve_element. Poll cinegen_get_jobs for background Director and Element actions.',
     });
