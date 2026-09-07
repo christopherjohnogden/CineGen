@@ -47,7 +47,7 @@ import {
 } from '@/lib/db-converters';
 import { mediaDebug, mediaDebugError } from '@/lib/debug/media-debug';
 import { generateId, timestamp } from '@/lib/utils/ids';
-import { loadAvailableProject, saveAvailableProject } from '@/lib/cloud/projects';
+import { loadAvailableProject, saveAvailableProject, watchCloudProject } from '@/lib/cloud/projects';
 import { loadAvailableElementsLibrary, saveAvailableElementsLibrary } from '@/lib/cloud/elements';
 import { setActiveFundingProject } from '@/lib/cloud/funding';
 import { startOwnerFundingRelay } from '@/lib/cloud/funding-relay';
@@ -206,6 +206,9 @@ interface HistoryState {
 const DRAG_DEBOUNCE_MS = 300;
 
 function historyReducer(history: HistoryState, action: WorkspaceAction): HistoryState {
+  if (action.type === 'HYDRATE') {
+    return { current: workspaceReducer(history.current, action), past: [], future: [], lastPushTime: 0, lastPushType: null };
+  }
   if (action.type === 'UNDO') {
     if (history.past.length === 0) return history;
     const prev = history.past[history.past.length - 1];
@@ -304,6 +307,8 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     lastPushType: null,
   });
   const state = history.current;
+  const liveStateRef = useRef(state);
+  liveStateRef.current = state;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
   const savePendingRef = useRef(false);
@@ -1209,6 +1214,41 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         .finally(() => setHydrationComplete(true));
     }
   }, []);
+
+  useEffect(() => {
+    if (!hydrationComplete || hydrationError) return;
+    let disposed = false;
+    let stop = () => {};
+    const canApply = () => !savePendingRef.current && liveStateRef.current.runningNodeIds.size === 0;
+    void watchCloudProject(projectId, canApply, raw => {
+      if (disposed || !canApply()) return false;
+      const current = liveStateRef.current;
+      const workflow = (raw.workflow ?? {}) as Record<string, unknown>;
+      const spaces = ((useSqlite ? workflow.spaces : raw.spaces) ?? []) as WorkflowSpace[];
+      const activeSpaceId = spaces.some(space => space.id === current.activeSpaceId)
+        ? current.activeSpaceId : String((useSqlite ? workflow.activeSpaceId : raw.activeSpaceId) ?? '');
+      const timelines = useSqlite
+        ? (raw.timelines as Array<Record<string, unknown> & { tracks: Record<string, unknown>[]; clips: Array<Record<string, unknown> & { keyframes?: Record<string, unknown>[] }>; transitions: Record<string, unknown>[] }>).map(tl => timelineFromRows(tl, tl.tracks, tl.clips, tl.transitions))
+        : (migrateSequenceToTimelines(raw as unknown as ProjectSnapshot).timelines ?? []) as Timeline[];
+      historyDispatch({ type: 'HYDRATE', payload: {
+        nodes: (workflow.nodes ?? []) as Node<WorkflowNodeData>[],
+        edges: (workflow.edges ?? []) as Edge[],
+        spaces, activeSpaceId,
+        openSpaceIds: [...current.openSpaceIds],
+        assets: useSqlite ? (raw.assets as Record<string, unknown>[]).map(assetFromRow) : (raw.assets ?? []) as Asset[],
+        mediaFolders: useSqlite ? (raw.mediaFolders as Record<string, unknown>[]).map(folderFromRow) : (raw.mediaFolders ?? []) as MediaFolder[],
+        timelines,
+        activeTimelineId: timelines.some(tl => tl.id === current.activeTimelineId) ? current.activeTimelineId : timelines[0]?.id ?? '',
+        exports: useSqlite ? (raw.exports as Record<string, unknown>[]).map(exportFromRow) : (raw.exports ?? []) as ExportJob[],
+        elements: current.elements, elementFolders: current.elementFolders,
+        director: useSqlite ? directorFromWorkflow(workflow) : directorFromSnapshot(raw as unknown as ProjectSnapshot),
+        providerUsage: normalizeProjectProviderUsage(useSqlite ? workflow.providerUsage : raw.providerUsage),
+      }});
+      return true;
+    }).then(unsubscribe => { if (disposed) unsubscribe(); else stop = unsubscribe; })
+      .catch(error => console.warn('[cloud] Could not start live project updates:', error));
+    return () => { disposed = true; stop(); };
+  }, [projectId, useSqlite, hydrationComplete, hydrationError]);
 
   const persistWorkspace = useCallback(async () => {
     if (!hydrationComplete || hydrationError) throw new Error('Project is not ready to save.');

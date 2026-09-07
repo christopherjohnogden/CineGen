@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   orderBy,
+  onSnapshot,
   query,
   runTransaction,
   setDoc,
@@ -297,6 +298,46 @@ export async function loadCloudProject<T = unknown>(projectId: string): Promise<
   loadedRevisions.set(cloudKey(access.ownerId, projectId), revision);
   rememberCloudProject(projectId);
   return restoreCloudMediaReferences(JSON.parse(serialized) as T);
+}
+
+// Listen to revision metadata; download a snapshot only when another client changes it.
+// The caller must accept it synchronously before we advance its save revision.
+export async function watchCloudProject(
+  projectId: string,
+  canApply: () => boolean,
+  apply: (snapshot: Record<string, unknown>) => boolean,
+): Promise<() => void> {
+  if (!await hasAccessibleCloudProject(projectId)) return () => {};
+  const user = await waitForCloudAuth();
+  if (!user) return () => {};
+  const access = await ensureProjectAccess(projectId, user);
+  const key = cloudKey(access.ownerId, projectId);
+  const projectRef = doc(cloudDb, 'users', access.ownerId, 'projects', projectId);
+  let revision = '', disposed = false, busy = false;
+  const refresh = async () => {
+    if (disposed || busy || !revision || revision === loadedRevisions.get(key)
+      || saveQueues.has(projectId) || !canApply()) return;
+    busy = true;
+    const target = revision;
+    const before = loadedRevisions.get(key);
+    try {
+      const chunks = await getDocs(query(collection(projectRef, 'revisions', target, 'chunks'), orderBy(documentId())));
+      if (disposed || revision !== target || loadedRevisions.get(key) !== before
+        || saveQueues.has(projectId) || !canApply()) return;
+      const raw = restoreCloudMediaReferences(JSON.parse(chunks.docs.map(chunk => String(chunk.data().data ?? '')).join(''))) as Record<string, unknown>;
+      if (apply(raw)) loadedRevisions.set(key, target);
+    } catch (error) {
+      console.warn('[cloud] Live project update will retry:', error);
+    } finally { busy = false; }
+  };
+  const stop = onSnapshot(projectRef, snapshot => {
+    if (snapshot.metadata.hasPendingWrites) return;
+    revision = String(snapshot.data()?.currentRevision ?? '');
+    void refresh();
+  }, error => console.warn('[cloud] Live project listener unavailable:', error));
+  // Retry a received update after an in-flight save or brief local edit settles.
+  const timer = setInterval(() => void refresh(), 2000);
+  return () => { disposed = true; stop(); clearInterval(timer); };
 }
 
 export async function listCloudProjects(): Promise<AvailableProjectMeta[]> {

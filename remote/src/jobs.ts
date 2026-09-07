@@ -186,6 +186,6 @@ export class GenerationJob extends DurableObject {
     }
     if(['complete','failed','needs_attention'].includes(job.status)) { job.identity={...job.identity,refreshToken:'',falKey:''}; }
     await this.ctx.storage.put('job',job);
-    if(!['complete','failed','needs_attention'].includes(job.status))await this.ctx.storage.setAlarm(Date.now()+30000);
+    if(!['complete','failed','needs_attention'].includes(job.status))await this.ctx.storage.setAlarm(Date.now()+(job.status==='running'?5000:30000));
   }
 }
