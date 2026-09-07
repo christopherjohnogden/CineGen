@@ -1,7 +1,7 @@
 // Self-contained MCP Apps UI. All data access goes through the authenticated
 // host bridge; no credentials, arbitrary HTML, or provider calls live here.
 function mountViewer() {
-  const root = document.getElementById('app'), pending = new Map(), chosen = new Map(), scrollPositions = new Map(), galleryPositions = new Map();
+  const root = document.getElementById('app'), pending = new Map(), chosen = new Map(), scrollPositions = new Map(), galleryPositions = new Map(), detailPanels = new Map();
   let sequence = 0, hostOrigin = '*', ready = false, capabilities = {}, current, selected = null, busy = false, timer, startupTimer, disposed = false, destination = '', message = '', manualSelection = '', viewKey = '';
   let hostContext = {}, lastSize = '', studioExpanded = false;
   let collectionsOpen = false, filtersOpen = false, multiSelect = false;
@@ -93,7 +93,7 @@ function mountViewer() {
         throw new Error('The chat did not send a readable CineGen view.');
       }
       clearTimeout(startupTimer); message = '';
-      if (current && current.projectId !== data.projectId) { chosen.clear(); galleryPositions.clear(); selected = null; destination = ''; }
+      if (current && current.projectId !== data.projectId) { chosen.clear(); galleryPositions.clear(); detailPanels.clear(); selected = null; destination = ''; }
       current = data; moreRequest = null; moreError = ''; destination ||= data.activeSpaceId || data.spaces?.[0]?.id || '';
       render(); schedule(true);
     } catch (error) { showError(error.message); }
@@ -265,6 +265,71 @@ function mountViewer() {
     }
     return bar;
   }
+  function resultDetails(item, panel) {
+    panel.classList.add('result-detail');
+    const player = media(item, true); player.classList.add('result-player');
+    const ratio = item.width && item.height ? [item.width, item.height] : String(item.aspectRatio || '').split(':').map(Number);
+    if (ratio.length === 2 && ratio.every(n => Number.isFinite(n) && n > 0)) player.style.aspectRatio = `${ratio[0]} / ${ratio[1]}`;
+    panel.append(player);
+    const heading = element('div', 'item-heading result-heading'), title = element('h2', '', item.title);
+    title.title = item.title; heading.append(title, badge(item)); panel.append(heading);
+    if (item.error) panel.append(element('p', 'notice', item.error));
+
+    const controls = element('div', 'result-controls'), contents = element('div', 'result-panels');
+    controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', 'Media information');
+    const key = `${current.projectId || ''}:${item.id}`, disclosures = [];
+    const update = () => {
+      const active = detailPanels.get(key);
+      for (const entry of disclosures) { const open = entry.name === active; entry.trigger.setAttribute('aria-expanded', String(open)); entry.body.hidden = !open; }
+      if (panel.isConnected) reportSize();
+    };
+    const add = (name, label, body, count) => {
+      const id = `result-panel-${++sequence}`;
+      const trigger = button(label, () => {
+        if (detailPanels.get(key) === name) detailPanels.delete(key); else detailPanels.set(key, name);
+        // Expand only the information panel. Rebuilding the viewer would stop playback.
+        update();
+      }, 'result-toggle');
+      trigger.id = `${id}-button`; trigger.setAttribute('aria-controls', id);
+      if (count) trigger.append(element('span', 'result-count', String(count)));
+      trigger.append(icon('down'));
+      body.id = id; body.classList.add('result-panel'); body.setAttribute('role', 'region'); body.setAttribute('aria-labelledby', trigger.id);
+      disclosures.push({ name, trigger, body }); controls.append(trigger); contents.append(body);
+    };
+    if (item.prompt) {
+      const prompt = element('div'), actions = element('div', 'actions');
+      prompt.append(element('p', 'result-prompt', item.prompt));
+      actions.append(button('Copy prompt', () => copyText(item.prompt), 'small', 'copy'), button('Use prompt', () => sendSelection([item], 'prompt'), 'small', 'arrow')); prompt.append(actions);
+      add('prompt', 'Prompt', prompt);
+    }
+    if (item.references?.length) {
+      const refs = element('div', 'input-references');
+      for (const ref of item.references) {
+        const cell = button(ref.title, () => openLink(ref.url), 'reference');
+        if (safeUrl(ref.previewUrl) && ref.kind === 'image') { const img = element('img'); img.src = ref.previewUrl; img.alt = ref.title; img.loading = 'lazy'; cell.prepend(img); }
+        refs.append(cell);
+      }
+      const body = element('div'); body.append(refs); add('references', 'References', body, item.references.length);
+    }
+    const info = element('div'), facts = element('dl', 'result-facts');
+    const rows = [['Space', item.spaceName], ['Folder', item.folderName], ['Model', item.model], ['Provider', item.provider],
+      ['Resolution', item.resolution], ['Dimensions', item.width && item.height ? `${item.width} × ${item.height}` : ''],
+      ['Aspect ratio', item.aspectRatio], ['Duration', item.duration ? `${item.duration.toFixed(1)} sec` : ''], ['Lens', item.lens],
+      ['Take', item.generationIndex !== undefined ? item.generationIndex + 1 : '']];
+    for (const [label, value] of rows) if (value !== undefined && value !== null && value !== '') facts.append(element('dt', '', label), element('dd', '', String(value)));
+    if (item.subtitle) info.append(element('p', 'meta', item.subtitle));
+    if (facts.children.length) info.append(facts);
+    const actions = element('div', 'actions result-actions');
+    if (selectable(item)) actions.append(button(chosen.has(item.id) ? 'Selected' : 'Select reference', () => toggle(item), 'small', chosen.has(item.id) ? 'check' : 'plus'));
+    if (safeUrl(item.url)) actions.append(button(`Open ${item.kind}`, () => openLink(item.url), 'small', 'external'));
+    if (safeUrl(current.projectUrl)) actions.append(button('Open CineGen', () => openLink(current.projectUrl), 'small', 'external'));
+    if (actions.children.length) info.append(actions);
+    if (info.children.length) add('details', 'Details', info);
+    if (disclosures.length) panel.append(controls, contents);
+    update();
+    if (detailPanels.size > 50) detailPanels.delete(detailPanels.keys().next().value);
+    return panel;
+  }
   function details(item) {
     const panel = element('section', 'detail');
     if (current.mode !== 'job') panel.append(button('Back to gallery', () => { selected = null; render(); schedule(); }, 'back', 'back'));
@@ -279,6 +344,7 @@ function mountViewer() {
       if (safeUrl(current.projectUrl)) panel.append(button('Open in CineGen', () => openLink(current.projectUrl), 'small', 'external'));
       return panel;
     }
+    if (!item.presetId && ['image', 'video'].includes(item.kind)) return resultDetails(item, panel);
     panel.append(media(item, true));
     const heading = element('div', 'item-heading'); heading.append(element('h2', '', item.title), badge(item)); panel.append(heading);
     if (item.subtitle) panel.append(element('p', 'meta', item.subtitle));
@@ -526,7 +592,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.5.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

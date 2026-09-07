@@ -161,6 +161,35 @@ describe('deployed MCP viewer startup', () => {
     expect(view.host.postMessage.mock.calls.some(([m]) => m.params?.name === 'cinegen_generate')).toBe(false);
   });
 
+  it('keeps result information collapsed and expands it without replacing or pausing the player', async () => {
+    const view = mount(); await view.initialize({ platform: 'mobile' });
+    const item = { id: 'film', kind: 'video', title: 'Seedance 2.5', status: 'complete', model: 'Seedance 2.5', provider: 'topview',
+      prompt: 'A camera moves through the scene.', resolution: '1080', aspectRatio: '16:9', duration: 30,
+      url: 'https://firebasestorage.googleapis.com/film.mp4', previewUrl: 'https://firebasestorage.googleapis.com/film.mp4',
+      references: [{ title: 'Vehicle', kind: 'image', url: 'https://firebasestorage.googleapis.com/car.png', previewUrl: 'https://firebasestorage.googleapis.com/car.png' }] };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, mode: 'job', items: [item], total: 1,
+      projectUrl: 'https://cinegen-film.vercel.app/', refresh: { name: 'cinegen_job_display', arguments: { nodeId: 'film' } } } } });
+    const video = view.document.querySelector('video')!;
+    video.currentTime = 12;
+    const pause = vi.spyOn(video, 'pause');
+    const toggles = [...view.document.querySelectorAll<HTMLButtonElement>('.result-toggle')];
+    expect(toggles.map(button => button.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false']);
+    expect([...view.document.querySelectorAll<HTMLElement>('.result-panel')].every(panel => panel.hidden)).toBe(true);
+    for (const toggle of toggles) {
+      toggle.click();
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(view.document.getElementById(toggle.getAttribute('aria-controls')!)?.hidden).toBe(false);
+      expect(view.document.querySelectorAll('.result-panel:not([hidden])')).toHaveLength(1);
+      expect(view.document.querySelector('video')).toBe(video);
+      expect(video.currentTime).toBe(12);
+    }
+    expect(pause).not.toHaveBeenCalled();
+    expect(view.document.querySelector('.result-facts')?.textContent).toContain('1080');
+    expect(view.document.querySelector('.result-actions')?.textContent).toContain('Open video');
+    toggles[2].click(); expect(view.document.querySelectorAll('.result-panel:not([hidden])')).toHaveLength(0);
+    expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
+  });
+
   it('keeps checking beyond five minutes, retries connection failures, and resumes after backgrounding', async () => {
     const view = mount(); await view.initialize();
     const running = { ...page, items: [{ ...page.items[0], status: 'running' }] };
