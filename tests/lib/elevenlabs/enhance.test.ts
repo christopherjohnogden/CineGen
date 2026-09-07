@@ -22,3 +22,16 @@ it('marks a finished failure so a deliberate retry can start again, but never re
   await expect(enhanceAudioText('voice', 'Warm voice')).rejects.toMatchObject({ enhancementFinished: true });
   expect(mock.enhance).toHaveBeenCalledTimes(1);
 });
+it('carries editing feedback separately from the draft through every recovery check', async () => {
+  vi.useFakeTimers();
+  const feedback = 'Change the accent to Scottish and make it brighter.';
+  const prompt = audioEnhancePrompt('voice', 'A soft Southern voice.', feedback);
+  expect(JSON.parse(prompt.user)).toEqual({ task: 'voice', original: 'A soft Southern voice.', feedback });
+  expect(prompt.system).toContain('unless the feedback explicitly changes them');
+  expect(audioEnhancePrompt('direction', '', 'Quiet and conversational.').user).toContain('Quiet and conversational.');
+  mock.enhance.mockResolvedValueOnce({ status: 'running' }).mockResolvedValueOnce({ status: 'complete', text: 'A bright Scottish voice with smooth, natural delivery.' });
+  const result = enhanceAudioText('voice', 'A soft Southern voice.', undefined, 'feedback-one', feedback);
+  await vi.advanceTimersByTimeAsync(2000);
+  await result;
+  expect(mock.enhance.mock.calls).toEqual(Array(2).fill([{ requestId: 'feedback-one', kind: 'voice', text: 'A soft Southern voice.', feedback }]));
+});

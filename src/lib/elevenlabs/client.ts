@@ -15,7 +15,7 @@ export async function elevenLabsRpc<T>(method: string, params?: unknown): Promis
   return data.result as T;
 }
 export const elevenLabs = {
-  enhance: (params: { requestId: string; kind: 'voice' | 'direction' | 'sound'; text: string }) => elevenLabsRpc<{ status: 'running' | 'complete' | 'error'; text?: string; error?: string }>('enhance', params),
+  enhance: (params: { requestId: string; kind: 'voice' | 'direction' | 'sound'; text: string; feedback?: string }) => elevenLabsRpc<{ status: 'running' | 'complete' | 'error'; text?: string; error?: string }>('enhance', params),
   status: () => elevenLabsRpc<{ connected: boolean; connection?: 'mcp' | 'api-key' }>('accountStatus'),
   authLogin: () => elevenLabsRpc<{ attempt: string; authorizationUrl: string }>('authLogin'),
   authCancel: (attempt: string) => elevenLabsRpc('authCancel', { attempt }),

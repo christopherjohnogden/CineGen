@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { type NodeProps, useReactFlow } from '@xyflow/react';
 import { SpeakerLoudIcon, MixerHorizontalIcon, MagicWandIcon, UploadIcon, ReloadIcon, CheckIcon, PlayIcon } from '@radix-ui/react-icons';
-import { enhanceAudioText } from '@/lib/elevenlabs/enhance';
+import { enhanceAudioText, type AudioEnhanceKind } from '@/lib/elevenlabs/enhance';
 import type { ElevenLabsPreview } from '@/lib/elevenlabs/types';
 import { BaseNode } from './base-node';
 import { useNodeConfigDraft } from './use-node-config-draft';
@@ -91,6 +91,9 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
   const previews = (Array.isArray(config.voicePreviews) ? config.voicePreviews : []) as ElevenLabsPreview[];
   const enhanceField = sound ? 'text' : designing ? 'voiceDescription' : 'direction';
   const enhanceInput = designing ? voiceDescription : String(config[enhanceField] || '');
+  const enhanceKind: AudioEnhanceKind = sound ? 'sound' : designing ? 'voice' : 'direction';
+  const feedbackByKind = config.enhanceFeedback as Partial<Record<AudioEnhanceKind, string>> | undefined;
+  const feedback = String(feedbackByKind?.[enhanceKind] || '');
   async function work(label: string, fn: () => Promise<void>) {
     if (operation.current || running) return;
     operation.current = true; setBusy(true); setActivity(label); setError(''); setNotice('');
@@ -99,22 +102,25 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
     finally { operation.current = false; setBusy(false); setActivity(''); }
   }
   async function enhance() {
-    await work('Enhancing wording…', async () => {
+    await work(feedback.trim() ? 'Rewriting prompt…' : 'Enhancing wording…', async () => {
       const controller = new AbortController(); enhancement.current = controller;
-      const kind = sound ? 'sound' : designing ? 'voice' : 'direction';
-      const previous = config.enhancePending as { requestId: string; kind: string; text: string } | undefined;
-      const requestId = previous?.kind === kind && previous.text === enhanceInput ? previous.requestId : crypto.randomUUID();
-      update({ enhancePending: { requestId, kind, text: enhanceInput } });
-      const result = await enhanceAudioText(kind, enhanceInput, controller.signal, requestId).catch(cause => {
+      const kind = enhanceKind;
+      const instructions = feedback.trim();
+      const previous = config.enhancePending as { requestId: string; kind: string; text: string; feedback?: string } | undefined;
+      const requestId = previous?.kind === kind && previous.text === enhanceInput && (previous.feedback || '') === instructions ? previous.requestId : crypto.randomUUID();
+      update({ enhancePending: { requestId, kind, text: enhanceInput, feedback: instructions } });
+      const result = await enhanceAudioText(kind, enhanceInput, controller.signal, requestId, instructions).catch(cause => {
         if (cause?.enhancementFinished) update({ enhancePending: undefined });
         throw cause;
       });
       const latest = getNode(id)?.data as WorkflowNodeData | undefined;
       if (!latest || controller.signal.aborted) return;
       const current = enhanceField === 'voiceDescription' ? String(latest.config.voiceDescription ?? character?.voice?.description ?? '') : String(latest.config[enhanceField] || '');
-      if (current !== enhanceInput) throw new Error('Your text changed while enhancing. Try again with the new wording.');
-      update({ enhancePending: undefined, [enhanceField]: result, enhanceUndo: { field: enhanceField, text: enhanceInput } });
-      setNotice('Wording refined. You can edit it or undo.');
+      const latestFeedback = latest.config.enhanceFeedback as Partial<Record<AudioEnhanceKind, string>> | undefined;
+      const latestKind = latest.config.kind === 'sound' ? 'sound' : latest.config.voiceMode === 'design' ? 'voice' : 'direction';
+      if (current !== enhanceInput || String(latestFeedback?.[kind] || '').trim() !== instructions || latestKind !== kind || latest.config.elementId !== config.elementId) throw new Error('Your text changed while enhancing. Try again with the new wording.');
+      update({ enhancePending: undefined, [enhanceField]: result, enhanceUndo: { field: enhanceField, text: enhanceInput }, enhanceFeedback: { ...latestFeedback, [kind]: '' }, ...(kind === 'direction' ? { directionOpen: true } : {}) });
+      setNotice(instructions ? 'Prompt rewritten from your feedback. You can edit it or undo.' : 'Wording refined. You can edit it or undo.');
     });
   }
   async function designVoice() {
@@ -140,8 +146,12 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
     });
   }
   const enhancer = <div className="vox-enhancer">
-    <div className="vox-enhancer__heading"><span><MagicWandIcon /> AI prompt enhancer</span><button type="button" role="switch" aria-label="AI prompt enhancer" aria-checked={!!config.enhanceEnabled} className="vox-switch" disabled={!!running} onClick={() => { const enabled = !config.enhanceEnabled; update({ enhanceEnabled: enabled }); if (enabled && enhanceInput.trim()) void enhance(); }}><span /></button></div>
-    {config.enhanceEnabled === true && <div className="vox-enhancer__tools"><p>{designing ? 'Refine tone, texture and character.' : sound ? 'Add clarity and detail to your sound brief.' : 'Refine delivery. Your dialogue stays word for word.'}</p><button type="button" className="vox-text-button" disabled={!!running || !enhanceInput.trim()} onClick={() => void enhance()}>Enhance wording <MagicWandIcon /></button></div>}
+    <div className="vox-enhancer__heading"><span><MagicWandIcon /> AI prompt enhancer</span><button type="button" role="switch" aria-label="AI prompt enhancer" aria-checked={!!config.enhanceEnabled} className="vox-switch" disabled={!!running} onClick={() => update({ enhanceEnabled: !config.enhanceEnabled })}><span /></button></div>
+    {config.enhanceEnabled === true && <div className="vox-enhancer__tools">
+      <label>What should change? <span>Optional</span><textarea rows={3} value={feedback} onChange={e => { update({ enhanceFeedback: { ...feedbackByKind, [enhanceKind]: e.target.value } }); setNotice(''); }} placeholder={designing ? 'Too gravelly. Make him sound younger, warmer, and more natural…' : sound ? 'The rain is too intense. Make it softer, with the thunder further away…' : 'It sounds too much like an announcer. Make the delivery quieter and more conversational…'} /></label>
+      <button type="button" className="vox-refine-button" disabled={!!running || (!enhanceInput.trim() && !feedback.trim())} onClick={() => void enhance()}><MagicWandIcon /> {feedback.trim() ? 'Rewrite prompt' : 'Enhance wording'}</button>
+      <p>{designing ? 'Refines your voice description. Create new previews to hear the change.' : sound ? 'Refines your sound brief. Generate audio to hear the change.' : 'Refines performance direction. Your dialogue stays word for word.'}</p>
+    </div>}
     {!!config.enhanceUndo && <button type="button" className="vox-text-button" disabled={!!running} onClick={() => { const previous = config.enhanceUndo as { field: string; text: string }; if (['voiceDescription', 'direction', 'text'].includes(previous.field)) update({ [previous.field]: previous.text, enhanceUndo: undefined }); setNotice('Original wording restored.'); }}><ReloadIcon /> Undo enhancement</button>}
   </div>;
   return <BaseNode nodeType="elevenLabsAudio" className="vox-node" title={data.label || 'ElevenLabs Audio'} selected={!!selected} isRunning={!!running} meta={running ? activity || 'Creating audio' : audioUrl ? 'Audio ready' : 'Voice studio'}>

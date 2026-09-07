@@ -24077,7 +24077,11 @@ input[type='range']::-moz-range-track {
 .vox-switch > span { width: 12px; height: 12px; border-radius: 50%; background: #a9adb4; transition: transform 180ms; }
 .vox-switch[aria-checked=true] { background: #d4a354; }
 .vox-switch[aria-checked=true] > span { transform: translateX(12px); background: #211b12; }
-.vox-enhancer__tools { display: grid; gap: 4px; }
+.vox-enhancer__tools { display: grid; gap: 10px; padding-top: 8px; border-top: 1px solid #ffffff09; }
+.vox-enhancer__tools > label { grid-template-columns: 1fr auto; align-items: center; }
+.vox-enhancer__tools textarea { grid-column: 1 / -1; }
+.vox-studio .vox-refine-button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; border: 1px solid #d4a35440; border-radius: 7px; background: #d4a35412; color: #e2bc80; font-size: 11px; font-weight: 500; }
+.vox-studio .vox-refine-button:hover:not(:disabled) { background: #d4a35420; border-color: #d4a35470; }
 .vox-studio .vox-text-button { display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; border: 0; background: none; padding: 5px 0; font-size: 10px; color: #dcb575; }
 .vox-studio .vox-text-button:hover { color: #f1d9b5; }
 .vox-secondary { display: flex; justify-content: center; align-items: center; gap: 8px; min-height: 42px; border: 1px solid #d4a35445; border-radius: 8px; background: #d4a3540c; color: #e0b775; font-size: 11px !important; }

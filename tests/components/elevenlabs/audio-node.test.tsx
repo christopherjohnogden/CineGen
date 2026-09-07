@@ -43,12 +43,14 @@ it('designs once, lets the user audition, then saves the selected voice and make
   expect(env.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'UPDATE_ELEMENT', elementId: 'cody' }));
   expect(screen.getByRole('button', { name: 'Generate audio', exact: true })).not.toBeDisabled();
 });
-it('enhances direction on toggle and Undo restores it without changing dialogue or submitting speech', async () => {
+it('opens the enhancer without submitting, then refines direction and supports Undo without changing dialogue', async () => {
   env.enhance.mockResolvedValue('Measured pace, quiet warmth, a restrained smile.');
   render(<Harness initial={{ voiceId: 'voice-cody', text: 'Do not rewrite this line.', direction: 'warm and slow' }} />);
   fireEvent.click(screen.getByRole('switch', { name: 'AI prompt enhancer' }));
+  expect(env.enhance).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Enhance wording' }));
   await waitFor(() => expect(env.node.current.config.direction).toBe('Measured pace, quiet warmth, a restrained smile.'));
-  expect(env.enhance).toHaveBeenCalledWith('direction', 'warm and slow', expect.any(AbortSignal), expect.any(String));
+  expect(env.enhance).toHaveBeenCalledWith('direction', 'warm and slow', expect.any(AbortSignal), expect.any(String), '');
   expect(env.node.current.config.enhanceEnabled).toBe(true);
   expect(env.node.current.config.text).toBe('Do not rewrite this line.'); expect(env.run).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Undo enhancement' }));
@@ -58,6 +60,7 @@ it('does not overwrite newer edits with a late enhancer response', async () => {
   let finish: any; env.enhance.mockImplementation(() => new Promise(r => { finish = r; }));
   render(<Harness initial={{ direction: 'warm', text: 'My dialogue' }} />);
   fireEvent.click(screen.getByRole('switch', { name: 'AI prompt enhancer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Enhance wording' }));
   act(() => env.flow.updateNodeData('audio', { config: { ...env.node.current.config, direction: 'cold and clipped' } }));
   await act(async () => finish('Enhanced warm direction'));
   expect(env.node.current.config.direction).toBe('cold and clipped');
@@ -102,4 +105,73 @@ it('accepts a restored description after local typing has been saved', () => {
     env.flush();
   });
   expect(input).toHaveValue('Restored character voice');
+});
+
+it('iterates on the current voice prompt using feedback, preserves previews, and undoes the latest revision', async () => {
+  const original = 'A deep, gravelly voice, calm and reassuring.';
+  const first = 'A youthful, smooth voice with a warm, conversational delivery.';
+  const second = 'A youthful, smooth voice with warm, conversational delivery and a slower pace.';
+  const previews = [{ id: 'existing-preview', url: 'https://audio.example/preview.mp3' }];
+  env.enhance.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+  render(<Harness initial={{ voiceMode: 'design', enhanceEnabled: true, voiceDescription: original, voicePreviews: previews }} />);
+  const feedback = screen.getByRole('textbox', { name: 'What should change? Optional' });
+  fireEvent.change(feedback, { target: { value: 'Too gravelly. Younger, warmer and more natural.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rewrite prompt' }));
+  await waitFor(() => expect(screen.getByLabelText('Describe the voice')).toHaveValue(first));
+  expect(env.enhance).toHaveBeenLastCalledWith('voice', original, expect.any(AbortSignal), expect.any(String), 'Too gravelly. Younger, warmer and more natural.');
+  expect(feedback).toHaveValue('');
+  expect(env.node.current.config.voicePreviews).toEqual(previews);
+  fireEvent.change(feedback, { target: { value: 'Keep that, but slow the pace.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rewrite prompt' }));
+  await waitFor(() => expect(screen.getByLabelText('Describe the voice')).toHaveValue(second));
+  expect(env.enhance).toHaveBeenLastCalledWith('voice', first, expect.any(AbortSignal), expect.any(String), 'Keep that, but slow the pace.');
+  fireEvent.click(screen.getByRole('button', { name: 'Undo enhancement' }));
+  expect(screen.getByLabelText('Describe the voice')).toHaveValue(first);
+  expect(env.design).not.toHaveBeenCalled(); expect(env.run).not.toHaveBeenCalled();
+});
+
+it('creates performance direction from feedback while keeping dialogue and feedback for other modes intact', async () => {
+  env.enhance.mockResolvedValue('Speak quietly and conversationally, with natural pauses.');
+  render(<Harness initial={{ enhanceEnabled: true, voiceId: 'cody', text: 'Keep this exact spoken line.', enhanceFeedback: { voice: 'A younger voice.', direction: 'Less announcer, more conversational.' } }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Rewrite prompt' }));
+  await waitFor(() => expect(screen.getByLabelText('Performance direction')).toHaveValue('Speak quietly and conversationally, with natural pauses.'));
+  expect(env.enhance).toHaveBeenCalledWith('direction', '', expect.any(AbortSignal), expect.any(String), 'Less announcer, more conversational.');
+  expect(env.node.current.config.text).toBe('Keep this exact spoken line.');
+  expect(env.node.current.config.enhanceFeedback).toEqual({ voice: 'A younger voice.', direction: '' });
+  expect(env.node.current.config.directionOpen).toBe(true);
+});
+
+it('keeps feedback edits and the caret while Canvas batches updates', () => {
+  render(<Harness deferred initial={{ enhanceEnabled: true, enhanceFeedback: { direction: 'Less gravel' } }} />);
+  const input = screen.getByRole('textbox', { name: 'What should change? Optional' }) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: 'Less heavy gravel', selectionStart: 11, selectionEnd: 11 } });
+  expect(input.value).toBe('Less heavy gravel');
+  expect(input.selectionStart).toBe(11);
+  act(() => env.flush());
+  expect(input.selectionStart).toBe(11);
+});
+
+it('rejects a late rewrite after feedback changes elsewhere', async () => {
+  let finish: any; env.enhance.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  render(<Harness initial={{ enhanceEnabled: true, direction: 'Warm', enhanceFeedback: { direction: 'Slower' } }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Rewrite prompt' }));
+  act(() => env.flow.updateNodeData('audio', { config: { ...env.node.current.config, enhanceFeedback: { direction: 'Faster' } } }));
+  await act(async () => finish('Warm and slow.'));
+  expect(env.node.current.config.direction).toBe('Warm');
+  expect(screen.getByRole('alert')).toHaveTextContent('Your text changed');
+});
+
+it('recovers the same rewrite after a lost response but uses a new request when feedback changes', async () => {
+  env.enhance.mockRejectedValueOnce(new Error('Connection lost')).mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValueOnce('Warm and bright.');
+  render(<Harness initial={{ enhanceEnabled: true, direction: 'Warm', enhanceFeedback: { direction: 'Slower' } }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Rewrite prompt' }));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Rewrite prompt' }));
+  await screen.findByRole('alert');
+  expect(env.enhance.mock.calls[1][3]).toBe(env.enhance.mock.calls[0][3]);
+  fireEvent.change(screen.getByRole('textbox', { name: 'What should change? Optional' }), { target: { value: 'Brighter' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Rewrite prompt' }));
+  await waitFor(() => expect(env.node.current.config.direction).toBe('Warm and bright.'));
+  expect(env.enhance.mock.calls[2][3]).not.toBe(env.enhance.mock.calls[0][3]);
+  expect(env.enhance.mock.calls[2][4]).toBe('Brighter');
 });

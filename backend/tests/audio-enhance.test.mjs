@@ -39,3 +39,23 @@ test('an interrupted inference eventually leaves a recoverable error instead of 
   f.sqlite.prepare("UPDATE audio_prompt_enhancements SET status='running',text=NULL,updated_at=0").run();
   const result=await f.enhance(p);assert.equal(result.status,'error');assert.match(result.error,/too long/);
 });
+test('feedback reaches inference separately and is part of the durable request identity',async()=>{
+  const feedback='Too gravelly. Make the voice younger, warmer and more natural.';
+  let calls=0;
+  const f=fixture(async(_model,input)=>{calls++;assert.deepEqual(JSON.parse(input.messages[1].content),{task:p.kind,original:p.text,feedback});return {response:{enhanced:'A youthful, warm voice with a smooth texture and relaxed, natural delivery.'}};});
+  const request={...p,feedback};
+  const done=await f.enhance(request);
+  assert.equal(done.status,'complete');assert.deepEqual(await f.enhance(request),done);assert.equal(calls,1);
+  await assert.rejects(f.enhance({...request,feedback:'Actually, make it rougher.'}),/different wording/);
+  await assert.rejects(f.enhance(p),/different wording/);
+});
+test('can build direction from feedback alone and rejects invalid feedback before inference',async()=>{
+  let calls=0;
+  const f=fixture(async(_model,input)=>{calls++;assert.deepEqual(JSON.parse(input.messages[1].content),{task:'direction',original:'',feedback:'Less announcer, more conversational.'});return {response:{enhanced:'Speak conversationally, using a relaxed pace and natural pauses.'}};});
+  await assert.rejects(f.enhance({...p,feedback:{text:'Change it'}}),/feedback/);
+  await assert.rejects(f.enhance({...p,feedback:'x'.repeat(12001)}),/12,000/);
+  await assert.rejects(f.enhance({...p,text:' ',feedback:' '}),/Write/);
+  assert.equal(calls,0);
+  const done=await f.enhance({...p,kind:'direction',text:'',feedback:'Less announcer, more conversational.'});
+  assert.equal(done.status,'complete');assert.equal(calls,1);
+});
