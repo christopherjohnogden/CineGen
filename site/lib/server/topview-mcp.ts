@@ -2080,6 +2080,8 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
             taskType,
             taskId,
             needCloudFrontUrl: true,
+            // Persist the original signed URL; shortened links can lose download authorization.
+            shortenUrls: false,
           });
           documents = parseToolDocuments(polled);
         }
@@ -2110,6 +2112,7 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
           taskType,
           taskId,
           needCloudFrontUrl: true,
+          shortenUrls: false,
         });
         documents = parseToolDocuments(polled);
         if (resultUrls(documents, outputType).length) {

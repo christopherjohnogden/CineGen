@@ -64,8 +64,8 @@ export async function downloadGeneratedMedia(source:string, provider='topview') 
       url=new URL(location,url);continue;
     }
     if(!response.ok||!response.body) {
-      await response.body?.cancel();
-      throw new Error(`Generated media download failed (HTTP ${response.status}).`);
+      const detail=(await response.text()).match(/<Code>([^<]+)<\/Code>/)?.[1] ?? '';
+      throw new Error(`Generated media download failed (HTTP ${response.status}, host ${url.hostname}${detail ? `, ${detail}` : ''}).`);
     }
     return response;
   }
@@ -114,7 +114,7 @@ export class GenerationJob extends DurableObject {
       // A provider result already exists: refresh authorization and retry only
       // persistence. Never reopen queued/submitting jobs or send another paid request.
       if(job && job.sourceUrl && ['needs_attention','failed'].includes(job.status) && body.identity.refreshToken) {
-        job.identity=body.identity;job.status='saving';job.attempts=0;
+        job.identity=body.identity;job.status='saving';job.attempts=0;job.refreshSource=true;
         await this.ctx.storage.put('job',job);
         await this.ctx.storage.setAlarm(Date.now()+100);
       }
@@ -192,7 +192,19 @@ export class GenerationJob extends DurableObject {
           if(savingSpace!.id===savingState.activeSpaceId)savingState.nodes=savingSpace!.nodes;
           await store.save(loaded,serialize(loaded.state,savingState,loaded.metadata.useSqlite!==false));
         }
-        job.url??=await persistMedia(job.sourceUrl,store,loaded.ownerId,job.args.projectId,job.nodeId,prepared.model.outputType,job.args.provider??'fal');
+        if(!job.url) {
+          let sources=[job.sourceUrl];
+          if(job.args.provider==='topview' && job.providerTask && (job.attempts>0||job.refreshSource)) {
+            const refreshed=await providerRpc(auth.token,'topview','generate',job.providerTask);
+            sources=[...new Set([refreshed.url,...(Array.isArray(refreshed.urls)?refreshed.urls:[]),job.sourceUrl].filter((url):url is string=>typeof url==='string'&&url.startsWith('https://')))];
+          }
+          for(let index=0;index<sources.length;index++) {
+            try {job.url=await persistMedia(sources[index],store,loaded.ownerId,job.args.projectId,job.nodeId,prepared.model.outputType,job.args.provider??'fal');job.sourceUrl=sources[index];break;}
+            catch(error) {
+              if(!(error instanceof Error)||!error.message.startsWith('Generated media')||index===sources.length-1)throw error;
+            }
+          }
+        }
         await this.ctx.storage.put('job',job);
         // Reload after uploading: another client may have edited the timeline while the file transferred.
         loaded=await store.load(job.args.projectId);const state=hydrate(loaded.state,loaded.library,loaded.metadata.useSqlite!==false);
@@ -221,7 +233,7 @@ export class GenerationJob extends DurableObject {
       }catch{/* The job status remains available even if project access was revoked. */}
     }
     if(['complete','failed','needs_attention'].includes(job.status)) { job.identity={...job.identity,refreshToken:'',falKey:''}; }
-    console.info('generation_progress', { requestId: job.args.requestId, nodeId: job.nodeId, status: job.status, attempts: job.attempts, hasSource: Boolean(job.sourceUrl), hasSavedMedia: Boolean(job.url), error: typeof job.error === 'string' ? job.error.replace(/https?:\/\/[^\s]+/g, '[url]').slice(0, 500) : undefined });
+    console.info('generation_progress', { requestId: job.args.requestId, nodeId: job.nodeId, status: job.status, attempts: job.attempts, hasSource: Boolean(job.sourceUrl), providerTaskId: job.providerTask?.taskId, sourcePath: job.sourceUrl ? new URL(job.sourceUrl).pathname : undefined, sourceQueryKeys: job.sourceUrl ? [...new URL(job.sourceUrl).searchParams.keys()] : [], hasSavedMedia: Boolean(job.url), error: typeof job.error === 'string' ? job.error.replace(/https?:\/\/[^\s]+/g, '[url]').slice(0, 500) : undefined });
     await this.ctx.storage.put('job',job);
     if(!['complete','failed','needs_attention'].includes(job.status))await this.ctx.storage.setAlarm(Date.now()+(job.status==='running'?5000:30000));
   }
