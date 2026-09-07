@@ -1,3 +1,4 @@
+import { createAudioEnhancer } from './elevenlabs-enhance';
 import { SiteHttpError, requireRecord, assertId } from './common';
 import { createWorkspaceProviderVault } from './workspace-provider-vault';
 import { openMcpAudio, returnedAudio, audioRun, runFailure, toolData, type McpAudioRun } from './elevenlabs-mcp-audio';
@@ -5,7 +6,7 @@ import { createElevenLabsMcp } from './elevenlabs-mcp';
 import { persistGeneratedMedia } from '../../../shared/generated-media.mjs';
 import type { ElevenLabsAudioRequest, ElevenLabsAudioResult } from '../../../src/lib/elevenlabs/types';
 
-type Env = Parameters<typeof createWorkspaceProviderVault>[0] & { MEDIA: R2Bucket };
+type Env = Parameters<typeof createWorkspaceProviderVault>[0] & { MEDIA: R2Bucket } & Partial<Pick<Cloudflare.Env, 'AI'>>;
 type Identity = { token: string; uid: string };
 type Job = { request_id: string; input_json: string; status: ElevenLabsAudioResult['status']; url: string | null; error: string | null; updated_at: number };
 const API = 'https://api.elevenlabs.io';
@@ -201,6 +202,7 @@ export function createElevenLabs(env: Env, workspaceId: string, identity?: Ident
     return result((await get(j.request_id))!);
   };
   return {
+    enhance: createAudioEnhancer(env, workspaceId),
     async accountStatus() { const oauth = await mcp.connected(); return { connected: oauth || Boolean(await vault.get('elevenlabs')), provider: 'elevenlabs', connection: oauth ? 'mcp' : 'api-key' }; },
     async connect(value: unknown) {
       const p = requireRecord(value, 'ElevenLabs connection');

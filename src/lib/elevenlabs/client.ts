@@ -8,13 +8,14 @@ export async function elevenLabsRpc<T>(method: string, params?: unknown): Promis
   // Both the web app and the Mac app use the same encrypted account connection.
   const response = await fetch(`${BACKEND}/api/rpc/elevenlabs/${method}`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-cinegen-id-token': await user.getIdToken(), 'x-cinegen-origin': 'https://cinegen-film.vercel.app' },
-    body: JSON.stringify({ args: params === undefined ? [] : [params] }), signal: AbortSignal.timeout(method === 'generate' || method === 'design' ? 240000 : 60000),
+    body: JSON.stringify({ args: params === undefined ? [] : [params] }), signal: AbortSignal.timeout(method === 'generate' || method === 'design' || method === 'enhance' ? 240000 : 60000),
   });
   const data = await response.json();
   if (!response.ok || !data.ok) throw new Error(data.error?.message || 'ElevenLabs could not complete this request.');
   return data.result as T;
 }
 export const elevenLabs = {
+  enhance: (params: { requestId: string; kind: 'voice' | 'direction' | 'sound'; text: string }) => elevenLabsRpc<{ status: 'running' | 'complete' | 'error'; text?: string; error?: string }>('enhance', params),
   status: () => elevenLabsRpc<{ connected: boolean; connection?: 'mcp' | 'api-key' }>('accountStatus'),
   authLogin: () => elevenLabsRpc<{ attempt: string; authorizationUrl: string }>('authLogin'),
   authCancel: (attempt: string) => elevenLabsRpc('authCancel', { attempt }),

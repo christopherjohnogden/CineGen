@@ -21,7 +21,7 @@ import { createTopviewMcp } from "./topview-mcp";
 import { createWorkspaceProviderVault } from "./workspace-provider-vault";
 
 type RouteParams = { namespace: string; method: string };
-type RuntimeEnv = {
+type RuntimeEnv = Partial<Pick<Cloudflare.Env, 'AI'>> & {
   DB: D1Database;
   MEDIA: R2Bucket;
   CINEGEN_HIGGSFIELD_TOKEN_SECRET?: string;
@@ -88,6 +88,7 @@ export async function handleRpc(
         case 'voices': result = await elevenlabs.voices(args[0]); break;
         case 'generate': result = await elevenlabs.generate(args[0]); break;
         case 'job': result = await elevenlabs.job(args[0]); break;
+        case 'enhance': result = await elevenlabs.enhance(args[0]); break;
         case 'design': result = await elevenlabs.design(args[0]); break;
         case 'saveVoice': result = await elevenlabs.saveVoice(args[0]); break;
         default: throw new SiteHttpError(404, 'Unknown ElevenLabs action.');

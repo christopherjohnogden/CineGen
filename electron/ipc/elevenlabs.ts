@@ -1,5 +1,5 @@
 import { ipcMain, shell } from 'electron';
-const METHODS = new Set(['authCancel', 'authLogin', 'authStatus', 'accountStatus', 'connect', 'disconnect', 'voices', 'generate', 'job', 'design', 'saveVoice']);
+const METHODS = new Set(['authCancel', 'authLogin', 'authStatus', 'accountStatus', 'connect', 'disconnect', 'voices', 'generate', 'job', 'design', 'saveVoice', 'enhance']);
 export function registerElevenLabsHandlers() {
   ipcMain.handle('elevenlabs:request', async (_event, method: string, params: unknown, token: string) => {
     if (!METHODS.has(method) || typeof token !== 'string' || !token || token.length > 12000) throw new Error('Invalid ElevenLabs request.');

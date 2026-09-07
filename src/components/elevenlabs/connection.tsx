@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { elevenLabs } from '@/lib/elevenlabs/client';
 import type { ElevenLabsVoice } from '@/lib/elevenlabs/types';
 
-export function ElevenLabsConnection({ voiceId, onVoice, showVoices = true, disabled = false }: {
-  voiceId?: string; onVoice?: (voice: ElevenLabsVoice) => void; showVoices?: boolean; disabled?: boolean;
+export function ElevenLabsConnection({ voiceId, voiceName, onVoice, showVoices = true, disabled = false, compact = false }: {
+  voiceId?: string; voiceName?: string; onVoice?: (voice: ElevenLabsVoice) => void; showVoices?: boolean; disabled?: boolean; compact?: boolean;
 }) {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [connection, setConnection] = useState<'mcp' | 'api-key'>();
@@ -60,7 +60,8 @@ export function ElevenLabsConnection({ voiceId, onVoice, showVoices = true, disa
     catch (e) { setError(e instanceof Error ? e.message : 'Connection failed.'); }
     finally { setBusy(false); }
   }
-  return <div className="elevenlabs-connection nodrag nowheel">
+  const chosen = voices.find(v => v.id === voiceId);
+  return <div className={`elevenlabs-connection nodrag nowheel${compact ? ' elevenlabs-connection--compact' : ''}`}>
     <div className="elevenlabs-connection__heading"><span><span aria-hidden="true">Ⅱ</span> ElevenLabs</span><button type="button" aria-label="ElevenLabs connection settings" disabled={disabled || busy || connected === null} onClick={() => setSettings(v => !v)}>{connected ? connection === 'mcp' ? 'MCP connected · Manage' : 'Connected · Manage' : connected === null ? 'Checking…' : 'Connect'}</button></div>
     {(connected === false || settings) && <div className="elevenlabs-connection__setup">
       <p className="character-voice__hint">Sign in once to use ElevenLabs in CineGen.</p>
@@ -69,14 +70,15 @@ export function ElevenLabsConnection({ voiceId, onVoice, showVoices = true, disa
       {!attempt && <button type="button" disabled={busy || disabled} onClick={() => setManualKey(v => !v)}>Use an API key instead</button>}
       {manualKey && <>
         <label>ElevenLabs API key<input type="password" autoComplete="off" className="element-modal__input" value={secret} disabled={disabled || busy} onChange={e => setSecret(e.target.value)} placeholder="Paste your ElevenLabs key" /></label>
-        <p className="character-voice__hint">Optional API connection for sound effects and voice design. Stored encrypted.</p>
+        <p className="character-voice__hint">Optional API connection. Stored encrypted.</p>
         <button className="character-voice__secondary" type="button" disabled={!secret.trim() || busy || disabled} onClick={() => void connect()}>Connect with API key</button>
       </>}
       {connected && <button className="character-voice__secondary" type="button" disabled={busy || disabled} onClick={() => { setBusy(true); void elevenLabs.disconnect().then(() => { setConnected(false); setVoices([]); }).catch(e => setError(e.message)).finally(() => setBusy(false)); }}>Disconnect</button>}
     </div>}
     {connected && showVoices && <div className="elevenlabs-connection__voices">
       <div className="elevenlabs-connection__heading"><span>Voice</span><button type="button" disabled={disabled} onClick={() => setSearchOpen(v => !v)}>Search voices</button></div>{searchOpen && <input aria-label="Search ElevenLabs voices" className="element-modal__input" placeholder="Search your voices…" value={search} disabled={disabled} onChange={e => setSearch(e.target.value)} />}
-      <select aria-label="ElevenLabs voice" className="element-modal__input" value={voiceId || ''} disabled={disabled} onChange={e => { const voice = voices.find(v => v.id === e.target.value); if (voice) onVoice?.(voice); }}><option value="">Choose a voice</option>{voiceId && !voices.some(v => v.id === voiceId) && <option value={voiceId}>Character’s saved voice</option>}{voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>
+      <select aria-label="ElevenLabs voice" className="element-modal__input" value={voiceId || ''} disabled={disabled} onChange={e => { const voice = voices.find(v => v.id === e.target.value); if (voice) onVoice?.(voice); }}><option value="">Choose a voice</option>{voiceId && !voices.some(v => v.id === voiceId) && <option value={voiceId}>{voiceName || 'Character’s saved voice'}</option>}{voices.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>
+      {compact && chosen?.previewUrl && <audio controls preload="none" src={chosen.previewUrl} aria-label={`Preview ${chosen.name}`} />}
       {cursor && <button type="button" disabled={busy || disabled} onClick={() => { setBusy(true); void elevenLabs.voices(search, cursor).then(r => { setVoices(v => [...v, ...r.voices]); setCursor(r.cursor); }).catch(e => setError(e.message)).finally(() => setBusy(false)); }}>Load more voices</button>}
     </div>}
     {error && <p className="character-voice__error" role="alert">{error}</p>}

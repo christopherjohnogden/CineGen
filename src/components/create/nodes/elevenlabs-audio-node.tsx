@@ -1,5 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { type NodeProps, useReactFlow } from '@xyflow/react';
+import { SpeakerLoudIcon, MixerHorizontalIcon, MagicWandIcon, UploadIcon, ReloadIcon, CheckIcon, PlayIcon } from '@radix-ui/react-icons';
+import { enhanceAudioText } from '@/lib/elevenlabs/enhance';
+import type { ElevenLabsPreview } from '@/lib/elevenlabs/types';
 import { BaseNode } from './base-node';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import { elevenLabs } from '@/lib/elevenlabs/client';
@@ -16,9 +19,18 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
   const [busy, setBusy] = useState(false);
   const runNode = useRunNode();
   const [error, setError] = useState('');
+  const [activity, setActivity] = useState('');
+  const [notice, setNotice] = useState('');
+  const operation = useRef(false);
+  const enhancement = useRef<AbortController | null>(null);
+  const stateRef = useRef(state); stateRef.current = state;
+  useEffect(() => () => enhancement.current?.abort(), []);
   const config = data.config;
   const character = state.elements.find(el => el.id === config.elementId);
-  const update = (patch: Record<string, unknown>) => updateNodeData(id, { config: { ...config, ...patch } });
+  const update = (patch: Record<string, unknown>) => {
+    updateNodeData(id, node => ({ config: { ...(node.data as WorkflowNodeData).config, ...patch } }));
+  };
+  const edit = (patch: Record<string, unknown>) => { update({ ...patch, enhanceUndo: undefined }); setNotice(''); };
   useEffect(() => {
     const requestId = data.result?.audioRequestId;
     if (!requestId || data.result?.status !== 'running') return;
@@ -67,23 +79,104 @@ export const ElevenLabsAudioNode = memo(function ElevenLabsAudioNode({ id, data,
   const running = busy || data.isRunning || data.result?.status === 'running';
   const audioUrl = data.result?.url || String(config.audioUrl || '');
   const pending = !!data.result?.audioRequestId && data.result?.status !== 'complete';
-  return <BaseNode nodeType="elevenLabsAudio" title={data.label || 'ElevenLabs Audio'} selected={!!selected} isRunning={!!running} meta={running ? 'Creating audio' : audioUrl ? 'Audio ready' : 'Voice & sound'}>
-    <div className="elevenlabs-audio nodrag nowheel"><fieldset disabled={!!running} className="elevenlabs-audio__fields">
-      <div className="character-voice__row"><label>Audio type<select className="element-modal__input" value={String(config.kind || 'speech')} onChange={e => update({ kind: e.target.value })}><option value="speech">Speech / dialogue</option><option value="sound">Sound effect</option></select></label><label>Character<select className="element-modal__input" value={String(config.elementId || '')} onChange={e => update({ elementId: e.target.value, voiceId: '' })}><option value="">No character</option>{state.elements.filter(el => el.type === 'character').map(el => <option key={el.id} value={el.id}>{el.name}</option>)}</select></label></div>
-      <ElevenLabsConnection disabled={!!running} showVoices={config.kind !== 'sound'} voiceId={String(config.voiceId || character?.voice?.voiceId || '')} onVoice={voice => update({ voiceId: voice.id, voiceName: voice.name })} />
-      {config.kind === 'sound' && <label>Duration (seconds)<input className="element-modal__input" type="number" min="0.5" max="30" step="0.5" value={String(config.durationSeconds || '')} placeholder="Automatic" onChange={e => update({ durationSeconds: e.target.value ? Number(e.target.value) : undefined })} /></label>}
-      {character?.voice?.description && <p className="character-voice__hint">{character.voice.description}</p>}
-      <label> {config.kind === 'sound' ? 'Sound brief' : 'Dialogue'}<textarea className="element-modal__textarea" rows={4} value={String(config.text || '')} onChange={e => update({ text: e.target.value })} placeholder={config.kind === 'sound' ? 'Describe the sound, setting and duration…' : 'Only the words the character should say…'} /></label>
-      <label>Performance direction<textarea className="element-modal__textarea" rows={2} value={String(config.direction || '')} onChange={e => update({ direction: e.target.value })} placeholder="Delivery, emotion, pacing…" /></label>
+  const sound = config.kind === 'sound';
+  const designing = !sound && config.voiceMode === 'design';
+  const voiceId = String(config.voiceId || character?.voice?.voiceId || '');
+  const voiceName = String(config.voiceName || character?.voice?.voiceName || '');
+  const voiceDescription = String(config.voiceDescription ?? character?.voice?.description ?? '');
+  const previewScript = String(config.voiceSampleText ?? 'Every voice has a story to tell. Take a moment, listen closely, and imagine where this one might lead. Sometimes, the smallest detail makes all the difference.');
+  const previewName = String(config.voiceDesignName ?? character?.name ?? 'New voice');
+  const previews = (Array.isArray(config.voicePreviews) ? config.voicePreviews : []) as ElevenLabsPreview[];
+  const enhanceField = sound ? 'text' : designing ? 'voiceDescription' : 'direction';
+  const enhanceInput = designing ? voiceDescription : String(config[enhanceField] || '');
+  async function work(label: string, fn: () => Promise<void>) {
+    if (operation.current || running) return;
+    operation.current = true; setBusy(true); setActivity(label); setError(''); setNotice('');
+    try { await fn(); }
+    catch (cause) { if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(cause instanceof Error ? cause.message : 'Could not finish this action.'); }
+    finally { operation.current = false; setBusy(false); setActivity(''); }
+  }
+  async function enhance() {
+    await work('Enhancing wording…', async () => {
+      const controller = new AbortController(); enhancement.current = controller;
+      const kind = sound ? 'sound' : designing ? 'voice' : 'direction';
+      const previous = config.enhancePending as { requestId: string; kind: string; text: string } | undefined;
+      const requestId = previous?.kind === kind && previous.text === enhanceInput ? previous.requestId : crypto.randomUUID();
+      update({ enhancePending: { requestId, kind, text: enhanceInput } });
+      const result = await enhanceAudioText(kind, enhanceInput, controller.signal, requestId).catch(cause => {
+        if (cause?.enhancementFinished) update({ enhancePending: undefined });
+        throw cause;
+      });
+      const latest = getNode(id)?.data as WorkflowNodeData | undefined;
+      if (!latest || controller.signal.aborted) return;
+      const current = enhanceField === 'voiceDescription' ? String(latest.config.voiceDescription ?? character?.voice?.description ?? '') : String(latest.config[enhanceField] || '');
+      if (current !== enhanceInput) throw new Error('Your text changed while enhancing. Try again with the new wording.');
+      update({ enhancePending: undefined, [enhanceField]: result, enhanceUndo: { field: enhanceField, text: enhanceInput } });
+      setNotice('Wording refined. You can edit it or undo.');
+    });
+  }
+  async function designVoice() {
+    await work('Designing voice previews…', async () => {
+      if (voiceDescription.trim().length < 20) throw new Error('Describe the voice in at least 20 characters.');
+      if (previewScript.trim().length < 100 || previewScript.trim().length > 1000) throw new Error('Use 100–1,000 characters for the preview script.');
+      const result = await elevenLabs.design(voiceDescription, previewScript, String(config.voiceLanguage || 'en'));
+      update({ voicePreviews: result.previews, voicePreviewDescription: voiceDescription, voiceSaveDescription: voiceDescription });
+      setNotice('Listen to the previews and choose your voice.');
+    });
+  }
+  async function chooseVoice(preview: ElevenLabsPreview) {
+    await work('Saving your voice…', async () => {
+      const description = String(config.voiceSaveDescription ?? config.voicePreviewDescription ?? voiceDescription);
+      if (description.length > 500) throw new Error('Shorten the library description below to 500 characters before saving. Your full design description stays above.');
+      const saved = await elevenLabs.saveVoice(preview.id, previewName.trim(), description, preview.viewStateId);
+      const latest = getNode(id)?.data as WorkflowNodeData | undefined;
+      if (!latest || latest.config.elementId !== config.elementId) return;
+      update({ voiceId: saved.id, voiceName: saved.name, voiceMode: 'existing', voicePreviews: [], enhanceUndo: undefined });
+      const target = stateRef.current.elements.find(el => el.id === config.elementId);
+      if (target && config.saveVoiceToCharacter !== false) dispatch({ type: 'UPDATE_ELEMENT', elementId: target.id, updates: { voice: { ...target.voice, description: String(config.voicePreviewDescription || voiceDescription), provider: 'elevenlabs', voiceId: saved.id, voiceName: saved.name, referenceAudio: { id: crypto.randomUUID(), url: preview.url, createdAt: new Date().toISOString(), source: 'generated' } }, updatedAt: new Date().toISOString() } });
+      setNotice(`${saved.name} is ready. Add your dialogue below.`);
+    });
+  }
+  const enhancer = <div className="vox-enhancer">
+    <div className="vox-enhancer__heading"><span><MagicWandIcon /> AI prompt enhancer</span><button type="button" role="switch" aria-label="AI prompt enhancer" aria-checked={!!config.enhanceEnabled} className="vox-switch" disabled={!!running} onClick={() => { const enabled = !config.enhanceEnabled; update({ enhanceEnabled: enabled }); if (enabled && enhanceInput.trim()) void enhance(); }}><span /></button></div>
+    {config.enhanceEnabled === true && <div className="vox-enhancer__tools"><p>{designing ? 'Refine tone, texture and character.' : sound ? 'Add clarity and detail to your sound brief.' : 'Refine delivery. Your dialogue stays word for word.'}</p><button type="button" className="vox-text-button" disabled={!!running || !enhanceInput.trim()} onClick={() => void enhance()}>Enhance wording <MagicWandIcon /></button></div>}
+    {!!config.enhanceUndo && <button type="button" className="vox-text-button" disabled={!!running} onClick={() => { const previous = config.enhanceUndo as { field: string; text: string }; if (['voiceDescription', 'direction', 'text'].includes(previous.field)) update({ [previous.field]: previous.text, enhanceUndo: undefined }); setNotice('Original wording restored.'); }}><ReloadIcon /> Undo enhancement</button>}
+  </div>;
+  return <BaseNode nodeType="elevenLabsAudio" className="vox-node" title={data.label || 'ElevenLabs Audio'} selected={!!selected} isRunning={!!running} meta={running ? activity || 'Creating audio' : audioUrl ? 'Audio ready' : 'Voice studio'}>
+    <div className="vox-studio nodrag nowheel">
+      <fieldset disabled={!!running} className="vox-fields">
+        <div className="vox-format" role="group" aria-label="Audio type"><button type="button" aria-pressed={!sound} onClick={() => edit({ kind: 'speech' })}><SpeakerLoudIcon /> Speech</button><button type="button" aria-pressed={sound} onClick={() => edit({ kind: 'sound' })}><MixerHorizontalIcon /> Sound effects</button></div>
+        {!sound && <>
+          <label className="vox-character">Character <span>Optional</span><select value={String(config.elementId || '')} onChange={e => edit({ elementId: e.target.value, voiceId: '', voiceName: '' })}><option value="">Standalone voice</option>{state.elements.filter(el => el.type === 'character').map(el => <option key={el.id} value={el.id}>{el.name}</option>)}</select></label>
+          <div className="vox-modes" role="group" aria-label="Voice source"><button type="button" aria-pressed={!designing} onClick={() => edit({ voiceMode: 'existing' })}>Use a voice</button><button type="button" aria-pressed={designing} onClick={() => edit({ voiceMode: 'design' })}>Design a voice</button></div>
+        </>}
+        <ElevenLabsConnection compact disabled={!!running} showVoices={!sound && !designing} voiceId={voiceId} voiceName={voiceName} onVoice={voice => edit({ voiceId: voice.id, voiceName: voice.name })} />
+        {designing && <section className="vox-design" aria-label="Design a voice">
+          <label>Describe the voice<textarea rows={4} value={voiceDescription} onChange={e => edit({ voiceDescription: e.target.value })} placeholder="A warm, low voice. A little gravel, a soft Southern accent, and the calm confidence of someone who has seen it all." /></label>
+          {enhancer}
+          <div className="vox-row"><label>Voice name<input value={previewName} onChange={e => update({ voiceDesignName: e.target.value })} placeholder="Name your voice" /></label><label>Language<select value={String(config.voiceLanguage || 'en')} onChange={e => update({ voiceLanguage: e.target.value })}><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="pt">Portuguese</option><option value="ja">Japanese</option><option value="zh">Chinese</option><option value="ko">Korean</option><option value="it">Italian</option><option value="hi">Hindi</option><option value="ar">Arabic</option></select></label></div>
+          <details className="vox-disclosure"><summary>Preview script <span>{previewScript.length} characters</span></summary><label><span className="vox-sr-only">Voice preview script</span><textarea rows={4} value={previewScript} onChange={e => update({ voiceSampleText: e.target.value })} /></label><p>Used only to audition the voice. Your dialogue below is separate.</p></details>
+          {!!previews.length && <div className="vox-previews" aria-label="Voice previews"><div className="vox-section-heading">Choose your voice<span>{previews.length} previews</span></div>
+            {previews.map((preview, index) => <div className="vox-preview" key={preview.id}><div><span>Voice {String(index + 1).padStart(2, '0')}</span><button type="button" className="vox-text-button" disabled={!!running} onClick={() => void chooseVoice(preview)}><CheckIcon /> Use voice</button></div><audio controls preload="none" src={preview.url} aria-label={`Voice preview ${index + 1}`} /></div>)}
+            {String(config.voicePreviewDescription || '').length > 500 && <label>Library description<textarea rows={3} value={String(config.voiceSaveDescription || '')} onChange={e => update({ voiceSaveDescription: e.target.value })} /><span>20–500 characters for your saved voice.</span></label>}
+            {character && <label className="vox-check"><input type="checkbox" checked={config.saveVoiceToCharacter !== false} onChange={e => update({ saveVoiceToCharacter: e.target.checked })} /> Save voice to {character.name}</label>}
+          </div>}
+        </section>}
+        {!designing && <><section className="vox-script" aria-label={sound ? 'Sound brief' : 'Dialogue'}><div className="vox-section-heading">{sound ? 'The sound' : 'The dialogue'}<span>{String(config.text || '').length} characters</span></div><label><span className="vox-sr-only">{sound ? 'Sound brief' : 'Dialogue'}</span><textarea rows={4} value={String(config.text || '')} onChange={e => edit({ text: e.target.value })} placeholder={sound ? 'Rain on a tin roof. Close, soft, steady, with distant thunder…' : 'What should they say?'} /></label></section>
+        <details className="vox-disclosure" open={config.directionOpen === true} onToggle={e => { if (e.currentTarget.open !== (config.directionOpen === true)) update({ directionOpen: e.currentTarget.open }); }}><summary>Performance direction<span>{config.direction ? 'Added' : 'Optional'}</span></summary><label><span className="vox-sr-only">Performance direction</span><textarea rows={2} value={String(config.direction || '')} onChange={e => edit({ direction: e.target.value })} placeholder="Quietly, with a hint of a smile. Slow down on the last line." /></label></details>
+        {enhancer}</>}
+        {sound && <label>Duration <span>Seconds · optional</span><input type="number" min="0.5" max="30" step="0.5" value={String(config.durationSeconds || '')} placeholder="Automatic" onChange={e => edit({ durationSeconds: e.target.value ? Number(e.target.value) : undefined })} /></label>}
       </fieldset>
-      {audioUrl && <div className="elevenlabs-audio__result"><span>YOUR AUDIO</span><audio controls preload="metadata" src={audioUrl} aria-label="ElevenLabs audio result" /></div>}
-      <button type="button" className="character-voice__primary elevenlabs-audio__generate" disabled={!!running || !String(config.text || '').trim()} onClick={() => { setError(''); void runNode(id); }}>{running ? 'Generating audio…' : pending ? 'Check / recover this take' : audioUrl ? 'Generate another take' : 'Generate audio'}</button>
-      {pending && !running && <button type="button" className="character-voice__secondary" onClick={() => updateNodeData(id, { result: { status: 'idle', ...(audioUrl ? { url: audioUrl } : {}) } })}>Start a new take</button>}
-      <input ref={input} hidden type="file" accept="audio/*,.mp3,.wav,.m4a" onChange={e => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
-      <button type="button" className="character-voice__secondary" disabled={!!running} onClick={() => input.current?.click()}>{busy ? 'Saving audio…' : 'Use an audio file instead'}</button>
-      <p className="character-voice__hint">Generate and listen here. Connect the audio output to a video’s audio reference. Uses your ElevenLabs credits.</p>
-      {data.result?.error && <p role="alert" className="character-voice__error">{data.result.error}</p>}
-      {error && <p role="alert" className="character-voice__error">{error}</p>}
+      {audioUrl && <section className="vox-result" aria-label="Generated audio"><div className="vox-section-heading"><span><SpeakerLoudIcon /> Your audio</span><span>Ready</span></div><audio controls preload="metadata" src={audioUrl} aria-label="ElevenLabs audio result" /></section>}
+      {activity && <p className="vox-status" role="status">{activity}</p>}
+      {notice && <p className="vox-status" role="status">{notice}</p>}
+      {data.result?.error && <p role="alert" className="vox-error">{data.result.error}</p>}
+      {error && <p role="alert" className="vox-error">{error}</p>}
+      <footer className="vox-footer"><button type="button" className="vox-generate" disabled={!!running || (designing ? !voiceDescription.trim() || !previewName.trim() : !String(config.text || '').trim() || (!sound && !voiceId))} onClick={() => { setError(''); setNotice(''); if (designing) void designVoice(); else void runNode(id); }}>{designing ? <MagicWandIcon /> : <PlayIcon />} {running ? activity || 'Generating audio…' : designing ? previews.length ? 'Create new previews' : 'Create voice previews' : pending ? 'Recover this take' : audioUrl ? 'Generate another take' : 'Generate audio'}</button>
+        {pending && !running && <button type="button" className="vox-text-button" onClick={() => updateNodeData(id, { result: { status: 'idle', ...(audioUrl ? { url: audioUrl } : {}) } })}>Start a new take</button>}
+        <input ref={input} hidden type="file" accept="audio/*,.mp3,.wav,.m4a" onChange={e => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
+        <button type="button" className="vox-upload" disabled={!!running} onClick={() => input.current?.click()}><UploadIcon /> Upload audio instead</button><p>Saved to CineGen · Uses ElevenLabs credits</p>
+      </footer>
     </div>
   </BaseNode>;
 });
