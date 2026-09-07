@@ -177,22 +177,55 @@ async function syncAsset(
   }
 }
 
+/** Canvas uploads can exist only in file-picker config, outside the media bin. */
+function canvasMediaAssets(state: Record<string, unknown>, assets: Record<string, unknown>[]): Record<string, unknown>[] {
+  const workflow = state.workflow as { nodes?: unknown; spaces?: unknown[] } | undefined;
+  const groups = [
+    workflow,
+    ...(Array.isArray(workflow?.spaces) ? workflow.spaces : []),
+    ...(Array.isArray(state.spaces) ? state.spaces : []),
+  ];
+  const seen = new Set(assets.map(asset => firstString(asset, [
+    'sourceUrl', 'source_url', 'url', 'fileRef', 'file_ref', 'originalPath', 'original_path',
+  ])));
+  const files: Record<string, unknown>[] = [];
+  for (const group of groups) {
+    const nodes = (group as { nodes?: unknown } | null)?.nodes;
+    if (!Array.isArray(nodes)) continue;
+    for (const node of nodes) {
+      if (node?.data?.type !== 'filePicker' || !stringValue(node.id)) continue;
+      const config = node.data.config;
+      const source = stringValue(config?.fileUrl);
+      if (!source || seen.has(source) || isFirebaseMediaUrl(source)) continue;
+      seen.add(source);
+      files.push({
+        id: `canvas-${node.id}`,
+        name: stringValue(config.fileName) || stringValue(node.data.label) || 'Canvas media',
+        sourceUrl: source,
+        type: stringValue(config.fileType),
+      });
+    }
+  }
+  return files;
+}
+
 export async function prepareStateForCloudMedia(
   state: unknown,
   uid: string,
   projectId: string,
 ): Promise<unknown> {
-  const cloned = JSON.parse(JSON.stringify(state ?? {})) as Record<string, unknown>;
+  const cloned = restoreCloudMediaReferences(JSON.parse(JSON.stringify(state ?? {}))) as Record<string, unknown>;
   const assets = Array.isArray(cloned.assets)
     ? cloned.assets.filter((asset): asset is Record<string, unknown> => Boolean(asset) && typeof asset === 'object')
     : [];
-  if (assets.length === 0 || Date.now() < pausedUntil) return cloned;
+  const media = [...assets, ...canvasMediaAssets(cloned, assets)];
+  if (media.length === 0 || Date.now() < pausedUntil) return cloned;
 
-  emitStatus({ status: 'uploading', completed: 0, total: assets.length });
+  emitStatus({ status: 'uploading', completed: 0, total: media.length });
   let completed = 0;
   let failed = 0;
   const savedSources = new Map<string, string>();
-  for (const asset of assets) {
+  for (const asset of media) {
     const original = firstString(asset, ['sourceUrl', 'source_url', 'url', 'fileRef', 'file_ref', 'originalPath', 'original_path']);
     try {
       await syncAsset(uid, projectId, asset);
@@ -209,12 +242,12 @@ export async function prepareStateForCloudMedia(
       const saved = firstString(asset, ['sourceUrl', 'source_url', 'url']);
       if (original && saved !== original && isFirebaseMediaUrl(saved)) savedSources.set(original, saved);
       completed += 1;
-      emitStatus({ status: 'uploading', completed, total: assets.length });
+      emitStatus({ status: 'uploading', completed, total: media.length });
     }
   }
   emitStatus(failed > 0
-    ? { status: 'waiting', completed, total: assets.length, error: `${failed} media file${failed === 1 ? '' : 's'} still need to upload.` }
-    : { status: 'ready', completed, total: assets.length });
+    ? { status: 'waiting', completed, total: media.length, error: `${failed} media file${failed === 1 ? '' : 's'} still need to upload.` }
+    : { status: 'ready', completed, total: media.length });
   // Generation cards and graph inputs must use the same durable copy as the asset.
   const replaceSavedSources = (value: unknown): unknown => {
     if (typeof value === 'string') return savedSources.get(value) ?? value;

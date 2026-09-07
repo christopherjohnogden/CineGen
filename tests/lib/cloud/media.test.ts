@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const storage = vi.hoisted(() => ({ metadata: vi.fn(), download: vi.fn(), upload: vi.fn() }));
 vi.mock('firebase/storage', () => ({
@@ -16,6 +16,7 @@ beforeEach(() => {
   storage.download.mockImplementation(async (path: string) =>
     `https://firebasestorage.googleapis.com/v0/b/test/o/${encodeURIComponent(path)}?alt=media&token=test`);
 });
+afterEach(() => vi.unstubAllGlobals());
 
 it('uses saved copies in Studio results, generation history, and references even with duplicate assets', async () => {
   const original = 'https://api.topview.ai/s/video';
@@ -67,4 +68,54 @@ it('uses an uploaded original even when its thumbnail fails to save', async () =
   } finally {
     warn.mockRestore();
   }
+});
+
+it('uploads computer files placed directly on the canvas without media-bin assets', async () => {
+  storage.metadata.mockRejectedValue({ code: 'storage/object-not-found' });
+  storage.upload.mockResolvedValue({});
+  const fetchMedia = vi.fn().mockResolvedValue(new Response('video bytes', { headers: { 'Content-Type': 'video/mp4' } }));
+  vi.stubGlobal('fetch', fetchMedia);
+  const source = 'local-media://file/Users/test/Downloads/My%20Video.mp4';
+  const node = { id: 'local-video', data: { type: 'filePicker', config: { fileUrl: source, fileType: 'video', fileName: 'My Video.mp4' } } };
+  const state = { workflow: { nodes: [node], spaces: [{ nodes: [node] }] }, reference: source };
+  const saved = await prepareStateForCloudMedia(state, 'owner', 'canvas-upload') as typeof state;
+  const url = saved.workflow.nodes[0].data.config.fileUrl;
+  expect(url).toMatch(/^https:\/\/firebasestorage.googleapis.com\//);
+  expect(saved.workflow.spaces[0].nodes[0].data.config.fileUrl).toBe(url);
+  expect(saved.reference).toBe(url);
+  expect(fetchMedia).toHaveBeenCalledExactlyOnceWith(source);
+  expect(storage.upload).toHaveBeenCalledTimes(1);
+  expect(state.workflow.nodes[0].data.config.fileUrl).toBe(source);
+  expect(await prepareStateForCloudMedia(saved, 'owner', 'canvas-upload')).toEqual(saved);
+  expect(storage.upload).toHaveBeenCalledTimes(1);
+});
+
+it('keeps failed canvas uploads available locally and reports the pending upload', async () => {
+  storage.metadata.mockRejectedValue({ code: 'storage/unauthorized' });
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const events: unknown[] = [];
+  const onStatus = (event: Event) => events.push((event as CustomEvent).detail);
+  window.addEventListener('cinegen:cloud-media-status', onStatus);
+  const state = { assets: [], workflow: { spaces: [{ nodes: [{ id: 'pending-file', data: {
+    type: 'filePicker', config: { fileUrl: 'blob:https://cinegen.example/upload', fileType: 'video' },
+  } }] }] } };
+  try {
+    expect(await prepareStateForCloudMedia(state, 'owner', 'pending-canvas')).toEqual(state);
+    expect(events.at(-1)).toEqual(expect.objectContaining({ status: 'waiting', total: 1, error: expect.any(String) }));
+  } finally {
+    window.removeEventListener('cinegen:cloud-media-status', onStatus);
+    warn.mockRestore();
+  }
+});
+
+it('saves files in inactive Spaces in JSON projects without confusing identical filenames', async () => {
+  const node = (id: string, path: string) => ({ id, data: { type: 'filePicker', config: { fileUrl: path, fileName: 'clip.mp4', fileType: 'video' } } });
+  const state = { workflow: { nodes: [] }, spaces: [{ nodes: [
+    node('first-folder', 'local-media://file/Users/test/one/clip.mp4'),
+    node('second-folder', 'local-media://file/Users/test/two/clip.mp4'),
+  ] }] };
+  const saved = await prepareStateForCloudMedia(state, 'owner', 'json-canvas') as typeof state;
+  const urls = saved.spaces[0].nodes.map(n => n.data.config.fileUrl);
+  expect(urls.every(url => url.startsWith('https://firebasestorage.googleapis.com/'))).toBe(true);
+  expect(new Set(urls).size).toBe(2);
 });
