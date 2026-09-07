@@ -218,12 +218,32 @@ function mountViewer() {
     add('path', { d: 'M29 41V29h12 M359 29h12v12 M371 184v12h-12 M41 196H29v-12', fill: 'none', stroke: '#c5ad81', 'stroke-width': 2 });
     frame.append(svg); return frame;
   }
+  function generationPrism(status) {
+    const loading = element('div', 'generation-loading');
+    loading.setAttribute('role', 'status');
+    const stage = element('div', 'generation-prism'); stage.setAttribute('aria-hidden', 'true');
+    const prism = element('div', 'generation-prism-object');
+    const shape = svgElement('svg', { viewBox: '0 0 100 100', fill: 'none', stroke: '#e4be83', 'stroke-width': .8, 'stroke-linejoin': 'round' });
+    // Explicit projected faces keep the prism legible in embedded iOS webviews.
+    // CSS animates the illustration independently of job polling.
+    for (const [face, points] of [
+      ['back', '59,24 35,72 91,76'], ['left', '34,12 10,60 35,72 59,24'],
+      ['base', '10,60 66,64 91,76 35,72'], ['right', '34,12 66,64 91,76 59,24'],
+      ['front', '34,12 10,60 66,64'],
+    ]) shape.append(svgElement('polygon', { class: `prism-face prism-${face}`, points }));
+    prism.append(shape); stage.append(prism);
+    loading.append(stage, element('p', 'generation-label', statusNames[status]));
+    return loading;
+  }
   function media(item, detail) {
     if (item.presetId) return diagram(item);
     const frame = element('div', `frame ${detail ? 'large' : ''}`);
     const thumbnail = safeUrl(item.thumbnailUrl || item.posterUrl), url = safeUrl(item.previewUrl);
     const isPoster = !detail && item.kind === 'video' && thumbnail;
     const source = !detail && item.kind === 'image' ? thumbnail || url : isPoster ? thumbnail : url;
+    if (item.kind === 'video' && activeStatuses.has(item.status) && !url && !safeUrl(item.url)) {
+      frame.append(generationPrism(item.status)); return frame;
+    }
     if (!source || !detail && item.kind === 'audio') {
       frame.append(icon(item.kind === 'audio' ? 'audio' : item.kind === 'video' ? 'play' : 'image'));
       frame.append(element('p', 'placeholder', item.kind === 'audio' && source ? 'Listen to audio' : item.unavailableReason || (item.url ? 'Open to view' : statusNames[item.status] || 'Preview unavailable'))); return frame;
@@ -592,7 +612,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.1' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

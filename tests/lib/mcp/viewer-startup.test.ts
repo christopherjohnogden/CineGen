@@ -143,6 +143,8 @@ describe('deployed MCP viewer startup', () => {
     view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: running } });
     (view.document.querySelector('.tile-preview') as HTMLButtonElement).click();
     expect(view.document.querySelector('.selection-bar')).toBeNull();
+    expect(view.document.querySelector('.result-player .generation-loading')?.textContent).toBe('Generating');
+    expect(view.document.querySelector('.result-player .generation-prism')).not.toBeNull();
     await vi.advanceTimersByTimeAsync(1);
     const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
     expect(calls()).toHaveLength(1);
@@ -151,6 +153,7 @@ describe('deployed MCP viewer startup', () => {
     view.send({ id: calls()[0][0].id, result: { structuredContent: done } });
     await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelector('.detail video')?.getAttribute('src')).toContain('finished.mp4');
+    expect(view.document.querySelector('.generation-loading')).toBeNull();
     expect(view.document.querySelector('.status')?.textContent).toBe('Ready');
     const video = view.document.querySelector('video');
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
@@ -159,6 +162,18 @@ describe('deployed MCP viewer startup', () => {
     view.send({ id: calls()[1][0].id, result: { structuredContent: done } }); await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelector('video')).toBe(video);
     expect(view.host.postMessage.mock.calls.some(([m]) => m.params?.name === 'cinegen_generate')).toBe(false);
+  });
+
+  it.each([
+    ['queued', 'Queued'], ['submitting', 'Starting'], ['saving', 'Saving to CineGen'],
+    ['pending', null], ['failed', null], ['needs_attention', null], ['complete', null],
+  ])('only animates a video awaiting output: %s', async (status, label) => {
+    const view = mount(); await view.initialize();
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: {
+      ...page, mode: 'job', items: [{ id: 'video-job', title: 'Seedance 2.5', kind: 'video', status, url: null }], total: 1,
+      refresh: { name: 'cinegen_job_display', arguments: { nodeId: 'video-job' } },
+    } } });
+    expect(view.document.querySelector('.generation-loading')?.textContent ?? null).toBe(label);
   });
 
   it('keeps result information collapsed and expands it without replacing or pausing the player', async () => {
