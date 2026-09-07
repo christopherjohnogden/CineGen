@@ -1,6 +1,7 @@
 import { ALL_MODELS } from '../../src/lib/fal/models';
 import { buildTopviewModelRegistry, topviewRequestedModel, type TopviewGenerationCatalog } from '../../src/lib/topview/model-catalog';
 import { topviewVideoSubmitRoute } from '../../src/lib/topview/reference-capabilities';
+import { hasTopviewCanvasAudioTools } from '../../src/lib/topview/canvas-audio';
 import type { RecordValue } from './firebase';
 
 export type GenerationProvider = 'topview' | 'higgsfield';
@@ -34,8 +35,9 @@ export async function connectedModels(token: string, provider: GenerationProvide
   if (provider === 'topview') {
     try {
       const transport = topviewVideoSubmitRoute(catalog?.toolSchemas?.topview_generate_video,
-        { taskType: 'omni_reference', inputAudios: [{}] }, status.authMode === 'api_key');
-      audioReferenceConnection = { ready: true, transport, billing: transport === 'api' ? 'Topview API credits' : 'Topview MCP plan' };
+        { taskType: 'omni_reference', model: 'Seedance 2.5', inputAudios: [{}] }, status.authMode === 'api_key', hasTopviewCanvasAudioTools(catalog?.tools ?? []));
+      audioReferenceConnection = { ready: true, transport, billing: transport === 'api' ? 'Topview API credits' : 'Existing Topview connection',
+        ...(transport === 'canvas-mcp' ? { requiresVisualReference: true, note: 'For Seedance 2.5, combine audio_references with at least one image or video in image_url. Canvas capability limits are checked before submitting.' } : {}) };
     } catch (error) {
       audioReferenceConnection = { ready: false, reason: (error as Error).message };
     }

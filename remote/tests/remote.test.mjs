@@ -2,6 +2,7 @@ import { before, afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
+import { canvasToolNames } from '../../tests/fixtures/topview-canvas.mjs';
 let api;
 const originalFetch=globalThis.fetch;
 before(async()=>{
@@ -106,7 +107,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.6.9');
+  assert.equal(initialized.result.serverInfo.version,'1.6.10');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -154,6 +155,15 @@ test('Topview is the default and Higgsfield cannot be selected implicitly',()=>{
   assert.equal(p.params.medias[0].role,'video');
 });
 
+test('MCP model discovery advertises the usable Canvas audio route and its visual-reference requirement',async()=>{
+  globalThis.fetch=async(url)=>Response.json({ok:true,result:String(url).endsWith('/accountStatus')?{connected:true,authMode:'oauth'}:{tools:canvasToolNames,toolSchemas:{topview_generate_video:{properties:{req:{properties:{inputImages:{},inputVideos:{}}}}}},configs:[]}});
+  const connected=await api.connectedModels('fixture','topview','video');
+  assert.equal(connected.audioReferenceConnection.ready,true);
+  assert.equal(connected.audioReferenceConnection.transport,'canvas-mcp');
+  assert.equal(connected.audioReferenceConnection.requiresVisualReference,true);
+  assert.ok(connected.models.find(model=>model.nodeType==='topview-video-seedance-2-5').inputs.some(field=>field.id==='audio_references'));
+});
+
 test('Seedance accepts 1080 and 1080p only when the live catalog permits that resolution',()=>{
   const catalog=(resolutions)=>({configs:[{outputType:'video',taskType:'omni_reference',config:{models:[{displayName:'Seedance 2.5',submitModel:'Seedance 2.5',defaultSubmitParameters:{resolution:720,duration:4,aspectRatio:'16:9'},submitParameterOptions:{resolution:resolutions,duration:[4,30],aspectRatio:['16:9']}}]}}]});
   for(const options of [[480,720,1080],['480p','720p','1080p']]) {
@@ -177,15 +187,18 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
     api.CloudStore.prototype.load=async()=>({state:structuredClone(raw),library:{elements:[],folders:[]},metadata:{useSqlite:true},ownerId:'owner'});
     api.CloudStore.prototype.save=async(_,state)=>{raw=structuredClone(state);};
     const source=`https://provider-cdn.example/media.${kind==='video'?'mp4':'png'}`;
+    const canvasVideo=provider==='topview'&&kind==='video';
+    const taskReceipt=canvasVideo?'cinegen-canvas:'+btoa(JSON.stringify({canvasId:'canvas_1',nodeId:'node_output',taskId:'provider_task'})).replace(/=+$/,''):'task-1';
     globalThis.fetch=async(url,options)=>{
       const u=String(url);
       if(u.includes('securetoken'))return Response.json({project_id:'48352992061',id_token:'firebase-token',user_id:'owner',refresh_token:'refresh'});
       if(u===`https://cinegen-api.christopherjohnogden.workers.dev/api/rpc/${provider}/generate`){
         assert.equal(options.headers['x-cinegen-id-token'],'firebase-token');
         const p=JSON.parse(options.body).args[0];assert.equal(p.outputType,kind);if(provider==='topview')assert.equal(p.downloadSource,'origin');
-        if(p.taskId){polls++;assert.equal(p.taskId,'task-1');return Response.json({ok:true,result:{url:source,urls:[source,'https://provider-cdn.example/alternative.png'],status:'success'}});}
+        if(p.taskId){polls++;assert.equal(p.taskId,taskReceipt);return Response.json({ok:true,result:{url:source,urls:[source,'https://provider-cdn.example/alternative.png'],status:'success'}});}
         submissions++;assert.equal(p.prompt,'Golden hour');
-        return Response.json({ok:true,result:provider==='topview'?{taskId:'task-1',taskType:kind==='video'?'text_to_video':'text_to_image',model:p.model,status:'running'}:{url:source}});
+        if(canvasVideo){assert.deepEqual(p.medias.map(media=>media.role),['image','audio']);assert.match(p.commandId,/^cinegen-/);}
+        return Response.json({ok:true,result:provider==='topview'?{taskId:taskReceipt,taskType:canvasVideo?'omni_reference':'text_to_image',model:p.model,status:'running'}:{url:source}});
       }
       if(u===source || u==='https://provider-cdn.example/alternative.png'){assert.equal(options.redirect,'manual');if(failDownload)throw new Error('Simulated persistence failure');if(recovering&&u===source)return new Response(null,{status:403});return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':kind==='video'?'video/mp4':'image/png'}});}
       if(u.includes('firebasestorage')&&options.method==='POST'){await new Response(options.body).arrayBuffer();return Response.json({downloadTokens:'download'});}
@@ -194,7 +207,7 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
     };
     try {
       const identity={uid:'owner',email:'owner@example.com',refreshToken:'refresh'};
-      const args={provider,projectId:raw.project.id,requestId:'provider-test',model,inputs:{prompt:'Golden hour'}};
+      const args={provider,projectId:raw.project.id,requestId:'provider-test',model,inputs:{prompt:'Golden hour',...(canvasVideo?{image_url:['https://cinegen.test/hero.png'],audio_references:['https://cinegen.test/music.mp3']}:{})}};
       await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/start',{method:'POST',body:JSON.stringify({identity,args})}));
       await new api.GenerationJob(ctx,{}).alarm();
       if(provider==='topview'){assert.equal(values.get('job').status,'running');await new api.GenerationJob(ctx,{}).alarm();assert.equal(polls,1);}

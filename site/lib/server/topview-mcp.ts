@@ -6,6 +6,7 @@ import {
 } from "./common";
 
 import { topviewAcceptsAudioReferences, topviewVideoSubmitRoute, topviewAudioApiRequest } from "@/lib/topview/reference-capabilities";
+import { hasTopviewCanvasAudioTools, submitTopviewCanvasAudio, queryTopviewCanvasAudio, readTopviewCanvasTask } from "@/lib/topview/canvas-audio";
 
 const PROVIDER = "topview";
 const MCP_URL = "https://mcp.topview.ai/mcp";
@@ -809,6 +810,9 @@ function friendlyToolError(value: unknown, fallback: string, apiKeyMode = false)
 }
 
 async function callTool(session: McpSession, name: string, req: JsonRecord): Promise<unknown> {
+  if (name === 'topview_query_task' && readTopviewCanvasTask(req.taskId)) {
+    return queryTopviewCanvasAudio((tool, args) => callTool(session, tool, args), String(req.taskId));
+  }
   const tool = session.tools.find((entry) => entry.name === name);
   if (!tool) {
     throw new SiteHttpError(
@@ -1723,7 +1727,7 @@ function generationResult(args: {
     } : {}),
     model: args.model,
     ...(args.durationSec ? { durationSec: args.durationSec } : {}),
-    ...(args.boardId ? {
+    ...(args.boardId && !readTopviewCanvasTask(args.taskId) ? {
       boardId: args.boardId,
       boardUrl: `https://www.topview.ai/board/${encodeURIComponent(args.boardId)}${boardTaskId ? `?boardResultId=${encodeURIComponent(boardTaskId)}` : ""}`,
     } : {}),
@@ -2056,25 +2060,44 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
 
       if (!taskId) {
         const config = await callTool(session, "topview_get_generation_config", { type: outputType, taskType, refresh: true });
-        const uploaded: UploadedMedia[] = [];
-        for (const input of inputs) uploaded.push(await uploadMedia(session, input, env, workspaceId));
-        if (!boardId) boardId = await chooseBoard(session) ?? "";
-        const built = buildRequest({
-          params,
-          taskType,
-          outputType,
-          config: parseToolDocuments(config),
-          media: uploaded,
-          boardId: boardId || undefined,
-        });
-        model = built.model;
-        durationSec = built.durationSec;
-        const toolName = outputType === "image" ? "topview_generate_image" : "topview_generate_video";
-        const submitted = await callTool(session, toolName, built.request);
-        documents = parseToolDocuments(submitted);
-        taskId = findStringByKeys(documents, ["taskId", "task_id", "generationId", "generation_id"]) ?? "";
-        if (!taskId) {
-          throw new SiteHttpError(502, "Topview did not return a task ID for this generation.", "TOPVIEW_RESULT_INVALID");
+        const preflight = buildRequest({ params, taskType, outputType, config: parseToolDocuments(config),
+          media: inputs.map((input, index) => ({ ...input, fileId: `preflight-${index}`, kind: /audio/.test(input.role) ? 'audio' : /video/.test(input.role) ? 'video' : 'image' })),
+          boardId: boardId || 'preflight-board' });
+        const route = outputType === 'video' ? topviewVideoSubmitRoute(
+          session.tools.find(tool => tool.name === 'topview_generate_video')?.inputSchema, preflight.request,
+          Boolean(session.uid), hasTopviewCanvasAudioTools(session.tools.map(tool => tool.name))) : 'mcp';
+        if (route === 'canvas-mcp') {
+          const submitted = await submitTopviewCanvasAudio({
+            call: (name, args) => callTool(session, name, args), references: inputs,
+            request: { ...preflight.request, prompt: params.prompt, commandId: params.commandId,
+              ...(params.generateAudio !== undefined ? { sound: params.generateAudio } : {}) },
+            load: reference => loadMedia(reference.value, env, workspaceId),
+          });
+          model = preflight.model;
+          durationSec = submitted.durationSec;
+          documents = [submitted];
+          taskId = submitted.taskId;
+        } else {
+          const uploaded: UploadedMedia[] = [];
+          for (const input of inputs) uploaded.push(await uploadMedia(session, input, env, workspaceId));
+          if (!boardId) boardId = await chooseBoard(session) ?? "";
+          const built = buildRequest({
+            params,
+            taskType,
+            outputType,
+            config: parseToolDocuments(config),
+            media: uploaded,
+            boardId: boardId || undefined,
+          });
+          model = built.model;
+          durationSec = built.durationSec;
+          const toolName = outputType === "image" ? "topview_generate_image" : "topview_generate_video";
+          const submitted = await callTool(session, toolName, built.request);
+          documents = parseToolDocuments(submitted);
+          taskId = findStringByKeys(documents, ["taskId", "task_id", "generationId", "generation_id"]) ?? "";
+          if (!taskId) {
+            throw new SiteHttpError(502, "Topview did not return a task ID for this generation.", "TOPVIEW_RESULT_INVALID");
+          }
         }
       }
 

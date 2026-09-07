@@ -16,12 +16,13 @@ export function topviewAcceptsAudioReferences(model: RecordValue): boolean {
 }
 
 /** Select a transport before submission; never retry a paid task on another route. */
-export function topviewVideoSubmitRoute(schema: unknown, request: RecordValue, hasApiConnection: boolean): 'mcp' | 'api' {
+export function topviewVideoSubmitRoute(schema: unknown, request: RecordValue, hasApiConnection: boolean, hasCanvasConnection = false): 'mcp' | 'api' | 'canvas-mcp' {
   if (request.taskType !== 'omni_reference' || !Array.isArray(request.inputAudios) || !request.inputAudios.length) return 'mcp';
   const top = record(schema);
   const requestSchema = record(record(top.properties).req ?? top);
   if (Object.hasOwn(record(requestSchema.properties), 'inputAudios')) return 'mcp';
   if (hasApiConnection) return 'api';
+  if (hasCanvasConnection && /seedance[-\s]+2[.\-]5(?:\b|[-\s])/i.test(String(request.model ?? ''))) return 'canvas-mcp';
   throw new Error('Seedance 2.5 supports audio references, but this Topview MCP-plan connection does not expose them. An API connection with separate Topview API credits is required for audio-reference generation. No generation was submitted; your audio was not discarded.');
 }
 

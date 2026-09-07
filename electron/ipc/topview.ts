@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { topviewAcceptsAudioReferences, topviewVideoSubmitRoute } from '@/lib/topview/reference-capabilities';
+import { hasTopviewCanvasAudioTools, submitTopviewCanvasAudio, queryTopviewCanvasAudio, readTopviewCanvasTask } from '@/lib/topview/canvas-audio';
 import {
   minimumEvenFrameSize,
   probeVideoFrameSize,
@@ -1336,6 +1337,9 @@ class TopviewMcpService {
   }
 
   private async callTool(session: McpSession, name: string, req: JsonRecord): Promise<unknown> {
+    if (name === 'topview_query_task' && readTopviewCanvasTask(req.taskId)) {
+      return queryTopviewCanvasAudio((tool, args) => this.callTool(session, tool, args), String(req.taskId));
+    }
     const tool = session.tools.find((entry) => entry.name === name);
     if (!tool) throw new Error(`Your Topview account does not currently expose ${name}.`);
     if (name === 'topview_generate_video') topviewVideoSubmitRoute(tool.inputSchema, req, false);
@@ -1702,6 +1706,20 @@ class TopviewMcpService {
       boardId,
       references: references.map((reference, index) => ({ ...reference, fileId: `preflight-${index + 1}` })),
     });
+    const route = topviewVideoSubmitRoute(session.tools.find(tool => tool.name === 'topview_generate_video')?.inputSchema,
+      preflight.req, false, hasTopviewCanvasAudioTools(session.tools.map(tool => tool.name)));
+    if (route === 'canvas-mcp') {
+      const submitted = await submitTopviewCanvasAudio({
+        call: (name, args) => this.callTool(session, name, args), references,
+        request: { ...preflight.req, prompt: params.prompt, ...(params.generateAudio !== undefined ? { sound: params.generateAudio } : {}) },
+        load: async reference => {
+          const source = await loadReference(reference.value, reference.role as TopviewMediaRole);
+          return { bytes: source.bytes, format: source.format, mime: source.contentType };
+        },
+      });
+      return { result: { taskId: submitted.taskId, taskType, boardId: submitted.canvasId,
+        model: preflight.model, durationSec: submitted.durationSec }, documents: [submitted] };
+    }
     const uploaded: UploadedTopviewReference[] = [];
     for (const reference of references) {
       uploaded.push(await this.uploadReference(session, reference, preflight.model));
@@ -1742,7 +1760,7 @@ class TopviewMcpService {
     if (!['text_to_video', 'image_to_video', 'omni_reference'].includes(params.taskType)) {
       throw new Error('Topview task query received an unsupported task type.');
     }
-    if (typeof params.boardId !== 'string' || !params.boardId.trim()) {
+    if (!readTopviewCanvasTask(params.taskId) && (typeof params.boardId !== 'string' || !params.boardId.trim())) {
       throw new Error('Topview task query requires the board ID returned by submit.');
     }
     if (typeof params.model !== 'string' || !params.model.trim()) {
@@ -1790,7 +1808,7 @@ class TopviewMcpService {
       status,
       ...(url ? { url } : {}),
       ...(error ? { error } : {}),
-      boardUrl: `https://www.topview.ai/board/${encodeURIComponent(params.boardId)}${boardTaskId ? `?boardResultId=${encodeURIComponent(boardTaskId)}` : ''}`,
+      ...(!readTopviewCanvasTask(params.taskId) ? { boardUrl: `https://www.topview.ai/board/${encodeURIComponent(params.boardId)}${boardTaskId ? `?boardResultId=${encodeURIComponent(boardTaskId)}` : ''}` } : {}),
     };
   }
 
