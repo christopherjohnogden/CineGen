@@ -1,3 +1,4 @@
+import { reportCloudSyncFailure, reportCloudSyncSuccess } from './sync-status';
 import { restoreCloudMediaReferences } from './media-references';
 import {
   collection,
@@ -260,9 +261,6 @@ async function performCloudSave(projectId: string, state: unknown, useSqlite: bo
     await deleteRevision(ownerId, projectId, revision).catch((cleanupError) => {
       console.warn('[cloud] Failed save left an orphaned revision behind:', revision, cleanupError);
     });
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('cinegen:cloud-sync-error', { detail: error }));
-    }
     throw error;
   }
 
@@ -277,7 +275,7 @@ async function performCloudSave(projectId: string, state: unknown, useSqlite: bo
 
 export function saveCloudProject(projectId: string, state: unknown, useSqlite: boolean): Promise<void> {
   const prior = saveQueues.get(projectId) ?? Promise.resolve();
-  const next = prior.catch(() => {}).then(() => performCloudSave(projectId, state, useSqlite));
+  const next = prior.catch(() => {}).then(() => performCloudSave(projectId, state, useSqlite)).then(() => { reportCloudSyncSuccess('project'); }).catch(error => { reportCloudSyncFailure(error, 'project'); throw error; });
   saveQueues.set(projectId, next);
   return next.finally(() => {
     if (saveQueues.get(projectId) === next) saveQueues.delete(projectId);
@@ -408,9 +406,7 @@ async function hasAccessibleCloudProject(projectId: string): Promise<boolean> {
 }
 
 function reportCloudSyncError(error: unknown): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('cinegen:cloud-sync-error', { detail: error }));
-  }
+  reportCloudSyncFailure(error, 'project');
 }
 
 export async function loadAvailableProject<T = unknown>(projectId: string, useSqlite: boolean): Promise<T> {

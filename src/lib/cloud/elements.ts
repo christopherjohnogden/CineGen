@@ -1,3 +1,4 @@
+import { reportCloudSyncFailure, reportCloudSyncSuccess } from './sync-status';
 import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import type { Element, ElementFolder, ElementsLibrary } from '@/types/elements';
 import { normalizeLibrary } from '@/lib/elements/library';
@@ -128,13 +129,12 @@ async function saveCloudLibrary(
     });
   });
   loadedRevisions.set(context.target.teamId, savedRevision);
+  reportCloudSyncSuccess('elements');
   return saved;
 }
 
 function reportSyncError(error: unknown): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('cinegen:cloud-sync-error', { detail: error }));
-  }
+  reportCloudSyncFailure(error, 'elements');
 }
 
 export async function loadAvailableElementsLibrary(

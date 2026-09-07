@@ -123,7 +123,12 @@ async function uploadSource(params: {
   } catch (error) {
     const code = stringValue((error as { code?: unknown })?.code);
     if (code !== 'storage/object-not-found') throw error;
-    const response = await fetch(fetchableSource(params.source));
+    let response: Response;
+    try {
+      response = await fetch(fetchableSource(params.source));
+    } catch (cause) {
+      throw new Error(`Could not read “${assetName}” for cloud upload. Its media source may be unavailable or blocking downloads. Relink or replace this media, then save again.`, { cause });
+    }
     if (!response.ok) throw new Error(`Could not read ${assetName} for cloud upload (HTTP ${response.status}).`);
     const blob = await response.blob();
     await uploadBytes(objectRef, blob, {

@@ -425,13 +425,21 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
       const cause = (event as CustomEvent<unknown>).detail;
       const message = cause instanceof Error ? cause.message : 'This project could not be saved to the cloud.';
       setAppToast({
-        id: crypto.randomUUID(),
+        id: `cloud-sync:${(cause as { scope?: string })?.scope ?? 'project'}`,
         title: message.includes('changed on another device') ? 'Newer cloud version found' : 'Cloud save paused',
         message,
       });
     };
+    const handleRecovered = (event: Event) => {
+      const { scope } = (event as CustomEvent<{ scope: string }>).detail;
+      setAppToast(current => current?.id === `cloud-sync:${scope}` ? null : current);
+    };
     window.addEventListener('cinegen:cloud-sync-error', handleCloudSyncError);
-    return () => window.removeEventListener('cinegen:cloud-sync-error', handleCloudSyncError);
+    window.addEventListener('cinegen:cloud-sync-recovered', handleRecovered);
+    return () => {
+      window.removeEventListener('cinegen:cloud-sync-error', handleCloudSyncError);
+      window.removeEventListener('cinegen:cloud-sync-recovered', handleRecovered);
+    };
   }, []);
 
   useEffect(() => {
