@@ -17,7 +17,7 @@ describe('MCP stdio protocol', () => {
       });
       child.stdin.end(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{}})+'\n'+JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list',params:{}})+'\n');
     });
-    expect(responses.find(x=>x.id===1)?.result.serverInfo?.version).toBe('0.6.5');
+    expect(responses.find(x=>x.id===1)?.result.serverInfo?.version).toBe('0.6.6');
     expect(responses.find(x=>x.id===2)?.result.tools).toHaveLength(TOOL_CATALOG.length);
   });
 });
@@ -44,11 +44,11 @@ it('serves the UI resource and forwards display data as structuredContent over s
       child.on('close', code => { try { if (code !== 0) throw new Error('stdio failed'); resolve(text.trim().split('\n').map(line => JSON.parse(line))); } catch (error) { reject(error); } });
       child.stdin.end([
         { id: 1, method: 'resources/list' },
-        { id: 2, method: 'resources/read', params: { uri: 'ui://cinegen/media-viewer-v10.html' } },
+        { id: 2, method: 'resources/read', params: { uri: 'ui://cinegen/media-viewer-v11.html' } },
         { id: 3, method: 'tools/call', params: { name: 'cinegen_show_generations', arguments: {} } },
       ].map(message => JSON.stringify({ jsonrpc: '2.0', ...message })).join('\n') + '\n');
     });
-    expect(output.find(item => item.id === 1).result.resources[0].uri).toBe('ui://cinegen/media-viewer-v10.html');
+    expect(output.find(item => item.id === 1).result.resources[0].uri).toBe('ui://cinegen/media-viewer-v11.html');
     expect(output.find(item => item.id === 2).result.contents[0].text).toContain('ui/initialize');
     expect(output.find(item => item.id === 3).result.structuredContent).toEqual(data);
     expect(output.find(item => item.id === 3).result.content[0].text).toContain('No matching media');

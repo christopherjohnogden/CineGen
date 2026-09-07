@@ -222,16 +222,9 @@ function mountViewer() {
     const loading = element('div', 'generation-loading');
     loading.setAttribute('role', 'status');
     const stage = element('div', 'generation-prism'); stage.setAttribute('aria-hidden', 'true');
-    const prism = element('div', 'generation-prism-object');
-    const shape = svgElement('svg', { viewBox: '0 0 100 100', fill: 'none', stroke: '#e4be83', 'stroke-width': .8, 'stroke-linejoin': 'round' });
-    // Explicit projected faces keep the prism legible in embedded iOS webviews.
-    // CSS animates the illustration independently of job polling.
-    for (const [face, points] of [
-      ['back', '59,24 35,72 91,76'], ['left', '34,12 10,60 35,72 59,24'],
-      ['base', '10,60 66,64 91,76 35,72'], ['right', '34,12 66,64 91,76 59,24'],
-      ['front', '34,12 10,60 66,64'],
-    ]) shape.append(svgElement('polygon', { class: `prism-face prism-${face}`, points }));
-    prism.append(shape); stage.append(prism);
+    // Light fills the player; CSS moves the color layers without rebuilding
+    // the viewer or interfering with its job polling and video controls.
+    stage.append(element('div', 'prism-spectrum'), element('div', 'prism-refraction'));
     loading.append(stage, element('p', 'generation-label', statusNames[status]));
     return loading;
   }
@@ -612,7 +605,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.1' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.2' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }
