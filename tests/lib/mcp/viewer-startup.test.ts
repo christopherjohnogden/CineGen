@@ -73,7 +73,7 @@ describe('deployed MCP viewer startup', () => {
   });
 
   it('serves the fixed script to hosts still using a cached resource URI', async () => {
-    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v5.html']) {
+    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v5.html', 'ui://cinegen/media-viewer-v6.html']) {
       expect(api.readMediaResource(uri).contents[0].uri).toBe(uri);
       const view = mount({ uri }); await view.initialize(); view.result();
       expect(view.document.querySelectorAll('.card')).toHaveLength(7);
@@ -176,19 +176,51 @@ describe('deployed MCP viewer startup', () => {
     view.send({ id: message.id, result: {} }); await vi.advanceTimersByTimeAsync(0);
     expect(view.document.querySelectorAll('.is-selected')).toHaveLength(0);
   });
-  it('shows at most nine cards and uses exact nine-item offsets for the page dots', async () => {
+  it('loads subsequent rows on scroll without a click or replacing the active scroller', async () => {
     const view = mount(); await view.initialize();
-    const items = Array.from({ length: 24 }, (_, i) => ({ ...page.items[0], id: `ref-${i}`, title: `Reference ${i}` }));
-    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items, total: 27, limit: 24, hasMore: true } } });
-    expect(view.document.querySelectorAll('.card')).toHaveLength(9);
-    expect(view.document.querySelectorAll('.page-dot')).toHaveLength(3);
-    (view.document.querySelector('[aria-label="Page 3 of 3"]') as HTMLButtonElement).click();
-    const call = view.host.postMessage.mock.calls.find(([m]) => m.method === 'tools/call')?.[0];
-    expect(call.params.arguments).toMatchObject({ offset: 18, limit: 9, elementIds: ['charger'] });
-    view.send({ id: call.id, result: { structuredContent: { ...page, items: items.slice(18), total: 27, offset: 18, limit: 9, hasMore: false } } });
+    const items = Array.from({ length: 27 }, (_, i) => ({ ...page.items[0], id: `ref-${i}`, title: `Reference ${i}` }));
+    const data = { ...page, items: items.slice(0, 9), total: 27, limit: 9, hasMore: true };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
+    const content = view.document.querySelector('.content') as HTMLElement;
+    Object.defineProperties(content, { clientHeight: { value: 400 }, scrollHeight: { value: 800, configurable: true } });
+    content.scrollTop = 280;
+    content.dispatchEvent(new view.window.Event('scroll'));
+    content.dispatchEvent(new view.window.Event('scroll'));
+    const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
+    expect(calls()).toHaveLength(1);
+    expect(calls()[0][0].params.arguments).toMatchObject({ offset: 9, limit: 9, elementIds: ['charger'] });
+    Object.defineProperty(content, 'scrollHeight', { value: 1200, configurable: true });
+    view.send({ id: calls()[0][0].id, result: { structuredContent: { ...data, items: items.slice(9, 18), offset: 9 } } });
     await vi.advanceTimersByTimeAsync(0);
-    expect(view.document.querySelector('[aria-label="Next page"]')?.hasAttribute('disabled')).toBe(true);
-    expect(view.document.querySelector('[aria-label="Page 3 of 3"]')?.getAttribute('aria-current')).toBe('page');
+    expect(view.document.querySelectorAll('.card')).toHaveLength(18);
+    expect(view.document.querySelector('.content')).toBe(content);
+    expect(content.scrollTop).toBe(280);
+    expect(view.document.querySelector('.pagination')).toBeNull();
+    content.scrollTop = 730; content.dispatchEvent(new view.window.Event('scroll'));
+    expect(calls()).toHaveLength(2);
+    expect(calls()[1][0].params.arguments.offset).toBe(18);
+    view.send({ id: calls()[1][0].id, result: { structuredContent: { ...data, items: items.slice(18), offset: 18, hasMore: false } } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelectorAll('.card')).toHaveLength(27);
+    expect(view.document.querySelector('.library-count')?.textContent).toBe('27 of 27');
+    content.dispatchEvent(new view.window.Event('scroll')); expect(calls()).toHaveLength(2);
+  });
+  it('keeps failed loading retryable and ignores an old page after changing collections', async () => {
+    const view = mount(); await view.initialize();
+    const data = { ...page, hasMore: true, total: 30 };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
+    const content = view.document.querySelector('.content') as HTMLElement;
+    Object.defineProperties(content, { clientHeight: { value: 400 }, scrollHeight: { value: 410 } });
+    content.dispatchEvent(new view.window.Event('scroll'));
+    const calls = () => view.host.postMessage.mock.calls.filter(([m]) => m.method === 'tools/call');
+    view.send({ id: calls()[0][0].id, error: { message: 'Connection lost' } }); await vi.advanceTimersByTimeAsync(0);
+    content.dispatchEvent(new view.window.Event('scroll')); expect(calls()).toHaveLength(1);
+    expect(view.document.querySelector('.library-footer')?.textContent).toContain('Retry');
+    (view.document.querySelector('.library-footer button') as HTMLButtonElement).click();
+    expect(calls()).toHaveLength(2);
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items: [page.items[0]], total: 1 } } });
+    view.send({ id: calls()[1][0].id, result: { structuredContent: { ...data, items: page.items, offset: 7 } } }); await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelectorAll('.card')).toHaveLength(1);
   });
   it('uses an Element’s full active look instead of treating its cover as the selected reference', async () => {
     const view = mount(); await view.initialize({}, { message: { text: {} } });
@@ -219,7 +251,7 @@ describe('deployed MCP viewer startup', () => {
     click('[aria-label="View image 4 · Weathered"]'); expect(count()).toBe('4 / 7');
     view.document.querySelector('.gallery-stage')?.dispatchEvent(new view.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     expect(count()).toBe('5 / 7');
-    expect(view.document.querySelector('.gallery-picture img')?.getAttribute('src')).toBe(images[4].previewUrl);
+    expect(view.document.querySelectorAll('.gallery-picture img')[4]?.getAttribute('src')).toBe(images[4].previewUrl);
     expect(view.document.querySelector('.element-use-note')?.textContent).toContain('3 references from Hero');
     click('.use-gallery-image');
     const message = view.host.postMessage.mock.calls.find(([m]) => m.method === 'ui/message')?.[0];
@@ -231,18 +263,21 @@ describe('deployed MCP viewer startup', () => {
     click('.back'); click('.card-view'); expect(count()).toBe('5 / 7');
     expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
   });
-  it('swipes horizontally without treating a vertical scroll or cancelled gesture as an image change', async () => {
+  it('updates the selected reference from native horizontal scrolling without a pointer-down or focus click', async () => {
     const view = mount(); await view.initialize();
     const item = { ...page.items[0], elementCard: true, references: page.items, galleryImages: page.items };
     view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, items: [item], total: 1 } } });
     (view.document.querySelector('.card-view') as HTMLButtonElement).click();
-    const stage = view.document.querySelector('.gallery-stage')!;
-    const pointer = (type: string, x: number, y: number) => { const event = new view.window.MouseEvent(type, { clientX: x, clientY: y, bubbles: true }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } }); stage.dispatchEvent(event); };
+    const picture = view.document.querySelector('.gallery-picture') as HTMLElement;
+    Object.defineProperty(picture, 'clientWidth', { value: 300 });
     const count = () => view.document.querySelector('.gallery-count')?.textContent;
-    pointer('pointerdown', 250, 100); pointer('pointerup', 100, 108); expect(count()).toBe('2 / 7');
-    pointer('pointerdown', 100, 100); pointer('pointerup', 130, 230); expect(count()).toBe('2 / 7');
-    pointer('pointerdown', 250, 100); pointer('pointercancel', 150, 100); pointer('pointerup', 100, 100); expect(count()).toBe('2 / 7');
-    pointer('pointerdown', 100, 100); pointer('pointerup', 250, 100); expect(count()).toBe('1 / 7');
+    picture.scrollLeft = 300; picture.dispatchEvent(new view.window.Event('scroll')); expect(count()).toBe('2 / 7');
+    view.document.querySelector('.content')?.dispatchEvent(new view.window.Event('scroll')); expect(count()).toBe('2 / 7');
+    picture.scrollLeft = 1190; picture.dispatchEvent(new view.window.Event('scroll')); expect(count()).toBe('5 / 7');
+    expect(view.document.querySelectorAll('.gallery-thumbnail')[4].getAttribute('aria-pressed')).toBe('true');
+    expect(view.document.activeElement).not.toBe(picture);
+    (view.document.querySelector('[aria-label="Next image"]') as HTMLButtonElement).click();
+    expect(picture.scrollLeft).toBe(1500); expect(count()).toBe('6 / 7');
   });
   it('handles single, unavailable and empty Element images without trapping navigation', async () => {
     const view = mount(); await view.initialize();

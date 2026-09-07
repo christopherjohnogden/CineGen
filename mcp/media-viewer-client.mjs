@@ -6,7 +6,8 @@ function mountViewer() {
   let hostContext = {}, lastSize = '', studioExpanded = false;
   let collectionsOpen = false, filtersOpen = false, multiSelect = false;
   const pageSize = 9;
-  const visibleItems = () => current.items.slice(0, pageSize);
+  let moreRequest = null, moreError = '';
+  const visibleItems = () => current.items;
   const knownTools = new Set(['cinegen_show_generations', 'cinegen_show_reference_elements', 'cinegen_job_display', 'cinegen_show_media', 'cinegen_show_generation_batch', 'cinegen_show_film_presets']);
   const statusNames = { complete: 'Ready', running: 'Generating', submitting: 'Starting', queued: 'Queued', pending: 'Prepared', saving: 'Saving to CineGen', needs_attention: 'Needs attention', failed: 'Failed', not_found: 'Not found' };
   const activeStatuses = new Set(['running', 'submitting', 'queued', 'saving']);
@@ -84,7 +85,7 @@ function mountViewer() {
       }
       clearTimeout(startupTimer); message = '';
       if (current && current.projectId !== data.projectId) { chosen.clear(); galleryPositions.clear(); selected = null; destination = ''; }
-      current = data; destination ||= data.activeSpaceId || data.spaces?.[0]?.id || '';
+      current = data; moreRequest = null; moreError = ''; destination ||= data.activeSpaceId || data.spaces?.[0]?.id || '';
       render(); schedule();
     } catch (error) { showError(error.message); }
   }
@@ -111,7 +112,7 @@ function mountViewer() {
       const args = toolName === current.refresh.name ? { ...current.refresh.arguments, ...changes }
         : { ...(current.projectId ? { projectId: current.projectId } : {}), ...changes };
       const data = resultData(await callTool(toolName, args)); if (!data) throw new Error('CineGen returned an unreadable view.');
-      current = data; if (!automatic) selected = null;
+      current = data; moreRequest = null; moreError = ''; if (!automatic) selected = null;
       // Refresh selected media on this page to avoid sending a replaced URL.
       for (const item of current.items) if (chosen.has(item.id)) chosen.set(item.id, item);
       schedule();
@@ -283,13 +284,17 @@ function mountViewer() {
     const images = elementImages(item), gallery = element('section', 'element-gallery');
     gallery.setAttribute('aria-label', `${item.title} images`); gallery.setAttribute('aria-roledescription', 'carousel');
     if (!images.length) { gallery.append(element('p', 'notice', item.unavailableReason || 'This Element has no images yet.')); return gallery; }
-    let index = galleryIndex(item, images), start;
+    let index = galleryIndex(item, images);
     const stage = element('div', 'gallery-stage'), picture = element('div', 'gallery-picture'); stage.tabIndex = 0;
     stage.setAttribute('aria-label', 'Image viewer. Use the left and right arrow keys to browse.');
     const previous = button('', () => move(-1), 'gallery-arrow previous', 'back'), next = button('', () => move(1), 'gallery-arrow next', 'arrow');
     previous.setAttribute('aria-label', 'Previous image'); next.setAttribute('aria-label', 'Next image');
     const count = element('span', 'gallery-count'); count.setAttribute('role', 'status'); count.setAttribute('aria-live', 'polite'); count.setAttribute('aria-atomic', 'true');
     stage.append(picture, previous, next, count);
+    images.forEach((image, i) => {
+      const slide = element('div', 'gallery-slide'); slide.setAttribute('role', 'group'); slide.setAttribute('aria-label', `Image ${i + 1} of ${images.length}`);
+      slide.append(media({ ...image, title: `${item.title} · Image ${i + 1}` }, true)); slide.querySelector('img')?.setAttribute('draggable', 'false'); picture.append(slide);
+    });
     const info = element('div', 'gallery-info'), look = element('span', 'gallery-look'), hint = element('span', 'meta', 'Swipe to browse'); info.append(look, hint);
     const strip = element('div', 'gallery-thumbnails'); strip.setAttribute('aria-label', 'Choose an image');
     const thumbs = images.map((image, i) => {
@@ -302,25 +307,26 @@ function mountViewer() {
     function show(value, reveal = false) {
       index = value; galleryPositions.set(item.id, index);
       if (galleryPositions.size > 50) galleryPositions.delete(galleryPositions.keys().next().value);
-      const image = images[index]; picture.replaceChildren(media({ ...image, title: `${item.title} · Image ${index + 1}` }, true));
-      picture.querySelector('img')?.setAttribute('draggable', 'false');
+      const image = images[index];
       previous.hidden = next.hidden = images.length < 2; previous.disabled = next.disabled = busy;
       count.textContent = `${index + 1} / ${images.length}`;
       look.textContent = image.variationName || item.variationName || 'Reference image'; hint.hidden = images.length < 2;
       thumbs.forEach((thumb, i) => thumb.setAttribute('aria-pressed', String(i === index)));
-      if (reveal) { const thumb = thumbs[index]; strip.scrollLeft = Math.max(0, thumb.offsetLeft - strip.offsetLeft - (strip.clientWidth - thumb.offsetWidth) / 2); }
+      if (reveal) { picture.scrollLeft = index * picture.clientWidth; revealThumbnail(); }
       const useImage = root.querySelector('.use-gallery-image'); if (useImage) useImage.disabled = busy || !selectable(image);
     }
+    function revealThumbnail() { const thumb = thumbs[index]; strip.scrollLeft = Math.max(0, thumb.offsetLeft - strip.offsetLeft - (strip.clientWidth - thumb.offsetWidth) / 2); }
     // Wrap at each end, so both arrows remain useful while browsing references.
     function move(step) { if (!busy) show((index + step + images.length) % images.length, true); }
     stage.addEventListener('keydown', event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); move(event.key === 'ArrowLeft' ? -1 : 1); } });
-    stage.addEventListener('pointerdown', event => { if (!event.isPrimary || event.target.closest('button') || busy) return; start = { id: event.pointerId, x: event.clientX, y: event.clientY }; stage.setPointerCapture?.(event.pointerId); });
-    stage.addEventListener('pointercancel', () => { start = null; });
-    stage.addEventListener('pointerup', event => {
-      if (!start || event.pointerId !== start.id) return;
-      const dx = event.clientX - start.x, dy = event.clientY - start.y; start = null;
-      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3) move(dx < 0 ? 1 : -1);
-    });
+    // A real overflow scroller handles touch and trackpad gestures without a
+    // pointer-down, focus click, or custom gesture capture.
+    picture.addEventListener('scroll', () => {
+      if (!picture.clientWidth) return;
+      const value = Math.max(0, Math.min(images.length - 1, Math.round(picture.scrollLeft / picture.clientWidth)));
+      if (value !== index) { show(value); revealThumbnail(); }
+    }, { passive: true });
+    picture._restore = () => { picture.scrollLeft = index * picture.clientWidth; };
     gallery.append(stage, info, strip); show(index); return gallery;
   }
   function elementActions(item) {
@@ -349,23 +355,61 @@ function mountViewer() {
     }
     return box;
   }
-  function pageNavigation() {
-    const total = Math.max(1, Math.ceil(current.total / pageSize)), index = Math.min(total - 1, Math.floor(current.offset / pageSize));
-    const nav = element('nav', 'pagination'); nav.setAttribute('aria-label', 'Library pages');
-    const go = page => refresh({ offset: page * pageSize, limit: pageSize });
-    const previous = button('', () => go(index - 1), 'page-arrow', 'back'), next = button('', () => go(index + 1), 'page-arrow', 'arrow');
-    previous.setAttribute('aria-label', 'Previous page'); next.setAttribute('aria-label', 'Next page');
-    previous.disabled = busy || index === 0; next.disabled = busy || index === total - 1;
-    const dots = element('div', 'page-dots');
-    const pages = [...new Set([0, ...[index - 1, index, index + 1].filter(page => page >= 0 && page < total), total - 1])].sort((a, b) => a - b);
-    let last = -1;
-    for (const page of pages) {
-      if (last >= 0 && page - last > 1) { const gap = element('span', 'page-gap', '…'); gap.setAttribute('aria-hidden', 'true'); dots.append(gap); }
-      const dot = button('', () => go(page), `page-dot ${page === index ? 'active' : ''}`); dot.setAttribute('aria-label', `Page ${page + 1} of ${total}`); dot.setAttribute('aria-current', page === index ? 'page' : 'false'); dot.append(element('span'));
-      dots.append(dot); last = page;
+  function mediaCard(item, index) {
+    const number = current.offset + index + 1, isSelected = chosen.has(item.id), canSelect = selectable(item);
+    const card = element('article', `card ${isSelected ? 'is-selected' : ''}`);
+    const opensGallery = item.elementCard && !multiSelect;
+    const pick = button('', () => canSelect && !opensGallery ? toggle(item) : (selected = item.id, collectionsOpen = false, render()), 'card-view');
+    pick.setAttribute('aria-label', `${canSelect && !opensGallery ? 'Select' : 'View'} ${item.title} · ${number}`);
+    if (canSelect && !opensGallery) pick.setAttribute('aria-pressed', String(isSelected)); pick.dataset.focusId = `pick:${item.id}`;
+    const picture = media(item, false); picture.classList.add('tile-image'); pick.append(picture);
+    if (canSelect) { const mark = element('span', 'selection-mark'); mark.setAttribute('aria-hidden', 'true'); if (isSelected) mark.append(icon('check')); picture.append(mark); }
+
+    const body = element('div', 'card-body'), title = element('h2', '', item.title.split(' · ')[0]); title.title = item.title; body.append(title);
+    const typeLabel = { character: 'Character', location: 'Environment', prop: 'Prop', vehicle: 'Vehicle' };
+    const subtitle = item.elementCard ? typeLabel[item.elementType] || 'Element' : item.presetId ? item.category : item.kind === 'video' ? 'Video' : item.kind === 'audio' ? 'Audio' : item.variationName || (item.title.includes(' · ') ? item.title.split(' · ').slice(1).join(' · ') : 'Image');
+    const meta = element('div', 'tile-meta'); meta.append(element('span', 'tile-subtitle', subtitle)); body.append(meta);
+    if (!item.presetId && item.status !== 'complete') body.append(badge(item)); pick.append(body); card.append(pick);
+    if (isSelected && !multiSelect && canSelect) {
+      const use = button('Use', () => sendSelection([item]), 'card-use'); use.setAttribute('aria-label', `Use ${item.title}`); card.append(use);
     }
-    const status = element('span', 'visually-hidden', `Page ${index + 1} of ${total}`); status.setAttribute('role', 'status');
-    nav.append(previous, dots, next, status); return nav;
+    const preview = button('', () => { selected = item.id; collectionsOpen = false; render(); }, 'tile-preview', 'eye'); preview.setAttribute('aria-label', `Preview ${item.title} · ${number}`); preview.title = 'Preview and details'; preview.dataset.focusId = `preview:${item.id}`; card.append(preview);
+    if (item.error) card.append(element('p', 'card-error', item.error)); return card;
+  }
+  function libraryFooter() {
+    const footer = element('div', 'library-footer'); footer.setAttribute('aria-label', 'Library browsing status');
+    const count = element('span', 'library-count', `${current.offset ? `${current.offset + 1}–` : ''}${current.offset + current.items.length} of ${current.total}`);
+    const status = element('span', 'library-status', moreRequest ? 'Loading more…' : current.hasMore ? 'Scroll to browse' : 'All loaded'); status.setAttribute('role', 'status');
+    footer.append(count, status);
+    if (current.offset > 0) footer.append(button('Back to start', () => refresh({ offset: 0, limit: pageSize }), 'small'));
+    if (moreError) { status.textContent = 'Could not load more'; footer.title = moreError; footer.append(button('Retry', () => { moreError = ''; loadMore(); }, 'small')); }
+    return footer;
+  }
+  function updateLibraryFooter() { root.querySelector('.library-footer')?.replaceWith(libraryFooter()); }
+  function maybeLoadMore() {
+    if (disposed || !current || selected || current.mode === 'job' || !current.hasMore || busy || moreRequest || moreError || !ready && !window.openai?.callTool) return;
+    const content = root.querySelector('.content');
+    if (content?.clientHeight > 0 && content.scrollHeight - content.scrollTop - content.clientHeight < 160) loadMore();
+  }
+  async function loadMore() {
+    if (disposed || !current?.hasMore || busy || moreRequest) return;
+    const source = current, token = {}, offset = source.nextOffset ?? source.offset + source.items.length;
+    moreRequest = token; updateLibraryFooter();
+    try {
+      const data = resultData(await callTool(source.refresh.name, { ...source.refresh.arguments, offset, limit: pageSize }));
+      if (disposed || current !== source || moreRequest !== token) return;
+      if (!data || data.offset !== offset || data.projectId !== source.projectId || data.refresh.name !== source.refresh.name) throw new Error('CineGen returned an unexpected library page.');
+      const ids = new Set(source.items.map(item => item.id)), added = data.items.filter(item => !ids.has(item.id));
+      const nextOffset = data.offset + data.items.length;
+      current = { ...source, items: [...source.items, ...added], total: data.total, nextOffset, hasMore: data.hasMore && nextOffset > offset };
+      // Append in place: replacing the scroller during a gesture stops momentum
+      // and can swallow the next swipe in an embedded mobile browser.
+      const grid = root.querySelector('.grid');
+      if (grid) added.forEach((item, index) => grid.append(mediaCard(item, source.items.length + index)));
+    } catch (error) { if (!disposed && current === source && moreRequest === token) moreError = error.message; }
+    finally {
+      if (moreRequest === token) { moreRequest = null; if (!disposed) { updateLibraryFooter(); updateScrollHint(); maybeLoadMore(); } }
+    }
   }
   function render() {
     if (!current) return;
@@ -393,12 +437,12 @@ function mountViewer() {
       const toolbar = element('div', 'toolbar'); toolbar.append(filters());
       const info = element('div', 'collection-info'), noun = current.mode === 'elements' && current.refresh.arguments.view !== 'images' ? 'Elements' : current.mode === 'presets' ? 'directions' : 'references';
       info.append(element('p', 'meta', `${current.total} ${noun}`));
-      if (multiSelect && visibleItems().some(selectable)) info.append(button('Select page', () => { for (const item of visibleItems().filter(selectable)) if (chosen.size < 24) chosen.set(item.id, item); render(); }, 'link'));
+      if (multiSelect && visibleItems().some(selectable)) info.append(button('Select up to 24', () => { for (const item of visibleItems().filter(selectable)) if (chosen.size < 24) chosen.set(item.id, item); render(); }, 'link'));
       toolbar.append(info); root.append(toolbar);
     }
     const shell = element('div', 'scroll-shell'), content = element('div', 'content');
     content.setAttribute('aria-label', item ? 'Media preview and details' : 'Browse collection'); content.setAttribute('role', 'region'); content.tabIndex = 0;
-    content.addEventListener('scroll', updateScrollHint, { passive: true }); shell.append(content); root.append(shell);
+    content.addEventListener('scroll', () => { updateScrollHint(); maybeLoadMore(); }, { passive: true }); shell.append(content); root.append(shell);
     if (message) {
       const feedback = element('div', 'feedback'), notice = element('p', '', message); notice.setAttribute('role', 'status');
       const dismiss = button('', () => { message = ''; render(); }, 'icon-button', 'close'); dismiss.setAttribute('aria-label', 'Dismiss message');
@@ -409,40 +453,21 @@ function mountViewer() {
     else {
       const grid = element('div', `grid ${busy ? 'is-loading' : ''}`); grid.setAttribute('aria-busy', String(busy));
       if (!current.items.length) { const empty = element('div', 'empty'); empty.append(icon('film'), element('h2', '', 'Nothing here yet'), element('p', '', current.refresh.arguments.search ? 'Try another search or clear your filters.' : current.mode === 'media' ? 'Import and sync files in CineGen to browse them here.' : 'Your saved media will appear here.')); grid.append(empty); }
-      visibleItems().forEach((item, index) => {
-        const number = current.offset + index + 1, isSelected = chosen.has(item.id), canSelect = selectable(item);
-        const card = element('article', `card ${isSelected ? 'is-selected' : ''}`);
-        const opensGallery = item.elementCard && !multiSelect;
-        const pick = button('', () => canSelect && !opensGallery ? toggle(item) : (selected = item.id, collectionsOpen = false, render()), 'card-view');
-        pick.setAttribute('aria-label', `${canSelect && !opensGallery ? 'Select' : 'View'} ${item.title} · ${number}`);
-        if (canSelect && !opensGallery) pick.setAttribute('aria-pressed', String(isSelected)); pick.dataset.focusId = `pick:${item.id}`;
-        const picture = media(item, false); picture.classList.add('tile-image'); pick.append(picture);
-        if (canSelect) { const mark = element('span', 'selection-mark'); mark.setAttribute('aria-hidden', 'true'); if (isSelected) mark.append(icon('check')); picture.append(mark); }
-
-        const body = element('div', 'card-body'), title = element('h2', '', item.title.split(' · ')[0]); title.title = item.title; body.append(title);
-        const typeLabel = { character: 'Character', location: 'Environment', prop: 'Prop', vehicle: 'Vehicle' };
-        const subtitle = item.elementCard ? typeLabel[item.elementType] || 'Element' : item.presetId ? item.category : item.kind === 'video' ? 'Video' : item.kind === 'audio' ? 'Audio' : item.variationName || (item.title.includes(' · ') ? item.title.split(' · ').slice(1).join(' · ') : 'Image');
-        const meta = element('div', 'tile-meta'); meta.append(element('span', 'tile-subtitle', subtitle)); body.append(meta);
-        if (!item.presetId && item.status !== 'complete') body.append(badge(item)); pick.append(body); card.append(pick);
-        if (isSelected && !multiSelect && canSelect) {
-          const use = button('Use', () => sendSelection([item]), 'card-use'); use.setAttribute('aria-label', `Use ${item.title}`); card.append(use);
-        }
-        const preview = button('', () => { selected = item.id; collectionsOpen = false; render(); }, 'tile-preview', 'eye'); preview.setAttribute('aria-label', `Preview ${item.title} · ${number}`); preview.title = 'Preview and details'; preview.dataset.focusId = `preview:${item.id}`; card.append(preview);
-        if (item.error) card.append(element('p', 'card-error', item.error)); grid.append(card);
-      });
+      visibleItems().forEach((item, index) => grid.append(mediaCard(item, index)));
       content.append(grid);
     }
-    if (!item) root.append(pageNavigation());
+    if (!item) root.append(libraryFooter());
     // A visual cue must not intercept the start of a native touch scroll.
     const hint = element('span', 'scroll-hint', 'Scroll for more'); hint.prepend(icon('down')); hint.setAttribute('aria-hidden', 'true');
     hint.hidden = true; shell.append(hint);
     if (item?.elementCard) root.append(elementActions(item));
     else if (multiSelect || item) root.append(actionBar([...chosen.values()]));
     content.scrollTop = manualSelection ? 0 : scrollTop;
+    root.querySelector('.gallery-picture')?._restore?.();
     const strip = root.querySelector('.gallery-thumbnails'), thumbnail = strip?.querySelector('[aria-pressed="true"]');
     if (thumbnail) strip.scrollLeft = Math.max(0, thumbnail.offsetLeft - strip.offsetLeft - (strip.clientWidth - thumbnail.offsetWidth) / 2);
     if (activeKey && sameView) [...root.querySelectorAll('[data-focus-id]')].find(el => el.dataset.focusId === activeKey)?.focus({ preventScroll: true });
-    reportSize(); updateScrollHint();
+    reportSize(); updateScrollHint(); setTimeout(maybeLoadMore, 0);
   }
   window.addEventListener('message', event => {
     if (event.source !== window.parent || event.data?.jsonrpc !== '2.0' || hostOrigin !== '*' && event.origin !== hostOrigin) return;
@@ -462,9 +487,9 @@ function mountViewer() {
   if (window.openai?.toolOutput) receive(window.openai.toolOutput);
   applyHostContext();
   new ResizeObserver(() => { reportSize(); updateScrollHint(); }).observe(root);
-  window.addEventListener('resize', () => { applyHostContext(); updateScrollHint(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.3.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
-    .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); })
+  window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.4.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+    .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }
 
