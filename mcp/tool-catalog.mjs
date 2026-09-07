@@ -1,4 +1,5 @@
 import { EDIT_TOOL_CATALOG } from './edit-schemas.mjs';
+import { DISPLAY_TOOLS } from './display-tools.mjs';
 /**
  * The CineGen MCP tool catalogue.
  *
@@ -19,6 +20,7 @@ const optionalString = string;
 
 /** @type {McpTool[]} */
 export const TOOL_CATALOG = [
+  ...DISPLAY_TOOLS,
   ...EDIT_TOOL_CATALOG,
   {
     name: 'cinegen_get_context',

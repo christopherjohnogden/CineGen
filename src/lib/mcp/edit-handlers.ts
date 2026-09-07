@@ -1,6 +1,7 @@
 import { materializeElementLooks } from '@/lib/elements/variations';
 import { elementGenerationModelOptions } from '@/lib/elements/model-options';
 import { EDIT_SCHEMAS, showPatch, scenePatch, clipPatch, breakdownPatch } from '../../../mcp/edit-schemas.mjs';
+import { DISPLAY_TOOLS, MEDIA_RESOURCE_URI } from '../../../mcp/display-tools.mjs';
 import type { McpHost, McpToolHandler } from './types';
 import { McpToolError } from './types';
 import { generateId, timestamp } from '@/lib/utils/ids';
@@ -48,6 +49,7 @@ export function createEditHandlers(host: McpHost): Record<string, McpToolHandler
   const raw: Record<string, McpToolHandler> = {
     async cinegen_capabilities() {
       return {
+        displays: { tools: DISPLAY_TOOLS.map(tool => tool.name), resourceUri: MEDIA_RESOURCE_URI, readOnly: true, note: 'Inline galleries and video playback require an MCP Apps-compatible client. Other clients receive readable media links. Local-only media must sync before it can be previewed in chat.' },
         directorAdapters: listDirectorAdapters().map(({ id, label, provider, modelId, capabilities }) => ({ id, label, provider, modelId, capabilities })),
         shotlistInstructions: claudeShotlistImportPrompt(state().director),
         storyboard: storyboardPlan(state().director).map(frame => ({ id: frame.id, clipId: frame.clip.id, beatN: frame.beat.n, prompt: frame.prompt })),

@@ -3039,53 +3039,53 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
       return `shape[${k}]._zod.run({ value: input[${k}], issues: [] }, ctx)`;
     };
     doc.write(`const input = payload.value;`);
-    const ids = /* @__PURE__ */ Object.create(null);
+    const ids2 = /* @__PURE__ */ Object.create(null);
     let counter = 0;
     for (const key of normalized.keys) {
-      ids[key] = `key_${counter++}`;
+      ids2[key] = `key_${counter++}`;
     }
     doc.write(`const newResult = {};`);
     for (const key of normalized.keys) {
-      const id2 = ids[key];
+      const id3 = ids2[key];
       const k = esc(key);
       const schema = shape[key];
       const isOptionalOut = schema?._zod?.optout === "optional";
-      doc.write(`const ${id2} = ${parseStr(key)};`);
+      doc.write(`const ${id3} = ${parseStr(key)};`);
       if (isOptionalOut) {
         doc.write(`
-        if (${id2}.issues.length) {
+        if (${id3}.issues.length) {
           if (${k} in input) {
-            payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
+            payload.issues = payload.issues.concat(${id3}.issues.map(iss => ({
               ...iss,
               path: iss.path ? [${k}, ...iss.path] : [${k}]
             })));
           }
         }
         
-        if (${id2}.value === undefined) {
+        if (${id3}.value === undefined) {
           if (${k} in input) {
             newResult[${k}] = undefined;
           }
         } else {
-          newResult[${k}] = ${id2}.value;
+          newResult[${k}] = ${id3}.value;
         }
         
       `);
       } else {
         doc.write(`
-        if (${id2}.issues.length) {
-          payload.issues = payload.issues.concat(${id2}.issues.map(iss => ({
+        if (${id3}.issues.length) {
+          payload.issues = payload.issues.concat(${id3}.issues.map(iss => ({
             ...iss,
             path: iss.path ? [${k}, ...iss.path] : [${k}]
           })));
         }
         
-        if (${id2}.value === undefined) {
+        if (${id3}.value === undefined) {
           if (${k} in input) {
             newResult[${k}] = undefined;
           }
         } else {
-          newResult[${k}] = ${id2}.value;
+          newResult[${k}] = ${id3}.value;
         }
         
       `);
@@ -9815,10 +9815,10 @@ var $ZodRegistry = class {
     this._idmap = /* @__PURE__ */ new Map();
   }
   add(schema, ..._meta) {
-    const meta3 = _meta[0];
-    this._map.set(schema, meta3);
-    if (meta3 && typeof meta3 === "object" && "id" in meta3) {
-      this._idmap.set(meta3.id, schema);
+    const meta4 = _meta[0];
+    this._map.set(schema, meta4);
+    if (meta4 && typeof meta4 === "object" && "id" in meta4) {
+      this._idmap.set(meta4.id, schema);
     }
     return this;
   }
@@ -9828,9 +9828,9 @@ var $ZodRegistry = class {
     return this;
   }
   remove(schema) {
-    const meta3 = this._map.get(schema);
-    if (meta3 && typeof meta3 === "object" && "id" in meta3) {
-      this._idmap.delete(meta3.id);
+    const meta4 = this._map.get(schema);
+    if (meta4 && typeof meta4 === "object" && "id" in meta4) {
+      this._idmap.delete(meta4.id);
     }
     this._map.delete(schema);
     return this;
@@ -10813,12 +10813,12 @@ function describe(description) {
   return ch;
 }
 // @__NO_SIDE_EFFECTS__
-function meta(metadata) {
+function meta(metadata2) {
   const ch = new $ZodCheck({ check: "meta" });
   ch._zod.onattach = [
     (inst) => {
       const existing = globalRegistry.get(inst) ?? {};
-      globalRegistry.add(inst, { ...existing, ...metadata });
+      globalRegistry.add(inst, { ...existing, ...metadata2 });
     }
   ];
   ch._zod.check = () => {
@@ -10957,9 +10957,9 @@ function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
       ctx.seen.get(parent).isParent = true;
     }
   }
-  const meta3 = ctx.metadataRegistry.get(schema);
-  if (meta3)
-    Object.assign(result2.schema, meta3);
+  const meta4 = ctx.metadataRegistry.get(schema);
+  if (meta4)
+    Object.assign(result2.schema, meta4);
   if (ctx.io === "input" && isTransforming(schema)) {
     delete result2.schema.examples;
     delete result2.schema.default;
@@ -10976,26 +10976,26 @@ function extractDefs(ctx, schema) {
     throw new Error("Unprocessed schema. This is a bug in Zod.");
   const idToSchema = /* @__PURE__ */ new Map();
   for (const entry of ctx.seen.entries()) {
-    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id2) {
-      const existing = idToSchema.get(id2);
+    const id3 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id3) {
+      const existing = idToSchema.get(id3);
       if (existing && existing !== entry[0]) {
-        throw new Error(`Duplicate schema id "${id2}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
+        throw new Error(`Duplicate schema id "${id3}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
       }
-      idToSchema.set(id2, entry[0]);
+      idToSchema.set(id3, entry[0]);
     }
   }
   const makeURI = (entry) => {
     const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
     if (ctx.external) {
       const externalId = ctx.external.registry.get(entry[0])?.id;
-      const uriGenerator = ctx.external.uri ?? ((id3) => id3);
+      const uriGenerator = ctx.external.uri ?? ((id4) => id4);
       if (externalId) {
         return { ref: uriGenerator(externalId) };
       }
-      const id2 = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
-      entry[1].defId = id2;
-      return { defId: id2, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id2}` };
+      const id3 = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
+      entry[1].defId = id3;
+      return { defId: id3, ref: `${uriGenerator("__shared")}#/${defsSegment}/${id3}` };
     }
     if (entry[1] === root) {
       return { ref: "#" };
@@ -11043,8 +11043,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
         continue;
       }
     }
-    const id2 = ctx.metadataRegistry.get(entry[0])?.id;
-    if (id2) {
+    const id3 = ctx.metadataRegistry.get(entry[0])?.id;
+    if (id3) {
       extractToDef(entry);
       continue;
     }
@@ -11140,10 +11140,10 @@ function finalize(ctx, schema) {
   } else {
   }
   if (ctx.external?.uri) {
-    const id2 = ctx.external.registry.get(schema)?.id;
-    if (!id2)
+    const id3 = ctx.external.registry.get(schema)?.id;
+    if (!id3)
       throw new Error("Schema is missing an `id` property");
-    result2.$id = ctx.external.uri(id2);
+    result2.$id = ctx.external.uri(id3);
   }
   Object.assign(result2, root.def ?? root.schema);
   const defs = ctx.external?.defs ?? {};
@@ -12199,8 +12199,8 @@ var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
   inst.with = inst.check;
   inst.clone = (def2, params) => clone(inst, def2, params);
   inst.brand = () => inst;
-  inst.register = ((reg, meta3) => {
-    reg.add(inst, meta3);
+  inst.register = ((reg, meta4) => {
+    reg.add(inst, meta4);
     return inst;
   });
   inst.parse = (data, params) => parse2(inst, data, params, { callee: inst.parse });
@@ -13843,10 +13843,69 @@ tool("cinegen_build_element", "Build a reviewed Element draft with durable proje
 tool("cinegen_approve_element", "Approve a completed Element build after reviewing its images and continuity looks. Commits the durable draft to the library; rejects stale drafts if the original Element changed. Call only after user approval.", { jobId: id, approved: external_exports.literal(true) });
 var EDIT_TOOL_CATALOG = tools;
 
+// mcp/display-tools.mjs
+var MEDIA_RESOURCE_URI = "ui://cinegen/media-viewer-v1.html";
+var MEDIA_MIME_TYPE = "text/html;profile=mcp-app";
+var DISPLAY_INSTRUCTIONS = "Use cinegen_show_reference_elements to visually show Elements, cinegen_show_generations to browse images/videos, and cinegen_job_display to show one result. These read-only tools render inline galleries and video players in MCP Apps-compatible clients; they never generate or spend credits. Prefer them when the user asks to see, preview, watch, or review media. Other clients receive readable media links. Refresh the connector tool index if these display tools are missing.";
+var id2 = { type: "string", minLength: 1, maxLength: 160 };
+var ids = { type: "array", items: id2, minItems: 1, maxItems: 24, uniqueItems: true };
+var page = { offset: { type: "integer", minimum: 0, default: 0 }, limit: { type: "integer", minimum: 1, maximum: 24, default: 12 } };
+var metadata = {
+  ui: { resourceUri: MEDIA_RESOURCE_URI, visibility: ["model", "app"] },
+  "openai/outputTemplate": MEDIA_RESOURCE_URI,
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Opening CineGen media\u2026",
+  "openai/toolInvocation/invoked": "CineGen media ready"
+};
+var DISPLAY_TOOLS = [
+  {
+    name: "cinegen_show_generations",
+    title: "Show CineGen generations",
+    description: "Display an inline gallery of saved CineGen images and videos, with playback, prompts and accurate generation/saving status. Browses all Spaces unless spaceId is supplied. Use nodeIds to show specific results. Read-only: never starts generation or retries saving. Use when the user asks to see, watch, preview or review their results.",
+    inputSchema: { type: "object", properties: { spaceId: id2, nodeIds: ids, kind: { type: "string", enum: ["image", "video"] }, ...page }, additionalProperties: false }
+  },
+  {
+    name: "cinegen_show_reference_elements",
+    title: "Show CineGen Elements",
+    description: "Display the CineGen Elements reference library as an inline image gallery, including characters, locations, props, vehicles and their saved looks. Filter by elementIds, type or search. This only views existing references; it never edits Elements or generates media.",
+    inputSchema: { type: "object", properties: { elementIds: ids, type: { type: "string", enum: ["character", "location", "prop", "vehicle"] }, search: { type: "string", maxLength: 200 }, ...page }, additionalProperties: false }
+  },
+  {
+    name: "cinegen_job_display",
+    title: "View CineGen result",
+    description: "Show one CineGen image or video in an inline viewer with playback, prompt and job status. Supply nodeId from a generation response, or requestId for a durable cloud job (requestId lookup requires the remote server; local desktop uses nodeId). Read-only: never generates, spends credits or resumes saving. Use cinegen_get_jobs separately when a save retry is wanted.",
+    inputSchema: { type: "object", properties: { nodeId: id2, requestId: id2, spaceId: id2 }, anyOf: [{ required: ["nodeId"] }, { required: ["requestId"] }], additionalProperties: false }
+  }
+].map((tool2) => ({ ...tool2, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: metadata }));
+var isDisplayTool = (name) => DISPLAY_TOOLS.some((tool2) => tool2.name === name);
+var MEDIA_DOMAINS = [
+  "https://firebasestorage.googleapis.com",
+  "https://storage.googleapis.com",
+  "https://cinegen-film.vercel.app",
+  "https://cinegen-kappa.vercel.app",
+  "https://cinegen-api.christopherjohnogden.workers.dev",
+  "https://*.cloudfront.net",
+  "https://*.topview.ai",
+  "https://*.higgsfield.ai",
+  "https://*.fal.media"
+];
+function displayResult(data) {
+  const escape = (value) => String(value ?? "").replace(/[\[\]<>\n\r]/g, " ");
+  const lines2 = [String(data.title), `${data.total} item${data.total === 1 ? "" : "s"}${data.total > data.items.length ? ` \xB7 showing ${data.offset + 1}\u2013${data.offset + data.items.length}` : ""}.`];
+  for (const item of data.items) {
+    lines2.push(`${escape(item.title)} \u2014 ${escape(item.status)}${item.spaceName ? ` \xB7 ${escape(item.spaceName)}` : ""}${item.error ? `: ${escape(item.error)}` : ""}`);
+    if (item.url) lines2.push(`[Open ${item.kind === "video" ? "video" : "image"}](<${item.url.replace(/[<>]/g, encodeURIComponent)}>)`);
+    else lines2.push(item.unavailableReason || "No saved media is available yet.");
+  }
+  if (!data.items.length) lines2.push("No matching media found.");
+  return { content: [{ type: "text", text: lines2.join("\n") }], structuredContent: data };
+}
+
 // mcp/tool-catalog.mjs
 var string4 = (description) => ({ type: "string", description });
 var optionalString = string4;
 var TOOL_CATALOG = [
+  ...DISPLAY_TOOLS,
   ...EDIT_TOOL_CATALOG,
   {
     name: "cinegen_get_context",
@@ -14026,6 +14085,281 @@ var TOOL_CATALOG = [
 ];
 var TOOL_NAMES = new Set(TOOL_CATALOG.map((tool2) => tool2.name));
 
+// mcp/media-viewer.mjs
+function mountViewer() {
+  const root = document.getElementById("app");
+  const pending = /* @__PURE__ */ new Map();
+  let sequence = 0, hostOrigin = "*", ready = false, current, selected = null, busy = false, timer, polls = 0;
+  const knownTools = /* @__PURE__ */ new Set(["cinegen_show_generations", "cinegen_show_reference_elements", "cinegen_job_display"]);
+  const statusNames = { complete: "Ready", running: "Generating", submitting: "Starting", queued: "Queued", pending: "Prepared", saving: "Saving to CineGen", needs_attention: "Needs attention", failed: "Failed", not_found: "Not found" };
+  const activeStatuses = /* @__PURE__ */ new Set(["running", "submitting", "queued", "saving"]);
+  const element = (tag, className, text) => {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== void 0) el.textContent = text;
+    return el;
+  };
+  const button = (label, action, className = "") => {
+    const el = element("button", className, label);
+    el.type = "button";
+    el.onclick = action;
+    return el;
+  };
+  const safeUrl = (value) => {
+    try {
+      const url2 = new URL(value);
+      return url2.protocol === "https:" && !url2.username && !url2.password ? url2.href : null;
+    } catch {
+      return null;
+    }
+  };
+  const notify = (method, params) => window.parent.postMessage({ jsonrpc: "2.0", method, params }, hostOrigin);
+  function request(method, params) {
+    return new Promise((resolve, reject) => {
+      const id3 = ++sequence;
+      const timeout = setTimeout(() => {
+        pending.delete(id3);
+        reject(new Error("The chat connection did not respond. Try refreshing this view."));
+      }, 2e4);
+      pending.set(id3, { resolve, reject, timeout });
+      window.parent.postMessage({ jsonrpc: "2.0", id: id3, method, params }, hostOrigin);
+    });
+  }
+  function reportSize() {
+    if (ready) notify("ui/notifications/size-changed", { width: document.documentElement.clientWidth, height: Math.ceil(root.getBoundingClientRect().height) });
+    window.openai?.notifyIntrinsicHeight?.(Math.ceil(root.getBoundingClientRect().height));
+  }
+  function showError(message) {
+    root.querySelector(".notice")?.remove();
+    const notice = element("p", "notice", message);
+    notice.setAttribute("role", "alert");
+    root.append(notice);
+    reportSize();
+  }
+  async function openLink(value) {
+    const url2 = safeUrl(value);
+    if (!url2) return;
+    try {
+      if (ready) await request("ui/open-link", { url: url2 });
+      else if (window.openai?.openExternal) window.openai.openExternal({ href: url2 });
+      else window.open(url2, "_blank", "noopener,noreferrer");
+    } catch (error48) {
+      showError(error48.message || "Could not open this link.");
+    }
+  }
+  function resultData(result2) {
+    if (result2?.isError) throw new Error(result2.content?.find((item) => item.type === "text")?.text || "CineGen could not load this view.");
+    const data = result2?.structuredContent || result2;
+    if (!data || !Array.isArray(data.items) || !data.refresh || !knownTools.has(data.refresh.name)) return null;
+    return data;
+  }
+  function receive(result2) {
+    try {
+      const data = resultData(result2);
+      if (!data) return;
+      current = data;
+      render();
+      schedule();
+    } catch (error48) {
+      showError(error48.message);
+    }
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (!current || polls >= 40 || !current.items.some((item) => activeStatuses.has(item.status))) return;
+    timer = setTimeout(async () => {
+      if (document.visibilityState === "hidden" || selected) {
+        schedule();
+        return;
+      }
+      polls += 1;
+      await refresh({}, true);
+    }, 8e3);
+  }
+  async function refresh(changes = {}, automatic = false) {
+    if (!current || busy || !knownTools.has(current.refresh.name)) return;
+    busy = true;
+    const control = root.querySelector("[data-refresh]");
+    if (control) {
+      control.disabled = true;
+      control.textContent = "Loading\u2026";
+    }
+    try {
+      const args = { ...current.refresh.arguments, ...changes };
+      const result2 = ready ? await request("tools/call", { name: current.refresh.name, arguments: args }) : window.openai?.callTool ? await window.openai.callTool(current.refresh.name, args) : await Promise.reject(new Error("Refresh is unavailable here. Ask your assistant to show this view again."));
+      const data = resultData(result2);
+      if (!data) throw new Error("CineGen returned an unreadable display result.");
+      current = data;
+      if (!automatic) selected = null;
+      render();
+      schedule();
+    } catch (error48) {
+      showError(error48.message || "Could not refresh CineGen.");
+    } finally {
+      busy = false;
+      const control2 = root.querySelector("[data-refresh]");
+      if (control2) {
+        control2.disabled = false;
+        control2.textContent = "\u21BB Refresh";
+      }
+    }
+  }
+  function badge(item) {
+    const status = element("span", `status ${item.status === "complete" ? "complete" : activeStatuses.has(item.status) ? "active" : "quiet"}`, statusNames[item.status] || item.status);
+    return status;
+  }
+  function media(item, detail2) {
+    const frame = element("div", `frame ${detail2 ? "large" : ""}`);
+    const url2 = safeUrl(item.previewUrl);
+    if (!url2) {
+      frame.append(element("span", "placeholder-icon", item.kind === "video" ? "\u25B7" : "\u25A7"));
+      frame.append(element("p", "placeholder", item.unavailableReason || (item.url ? "Open media to view this source" : statusNames[item.status] || "Preview unavailable")));
+      return frame;
+    }
+    const view = element(item.kind === "video" ? "video" : "img");
+    if (item.kind === "video") {
+      view.controls = detail2;
+      view.preload = "metadata";
+      view.playsInline = true;
+      view.muted = !detail2;
+    } else {
+      view.alt = item.title;
+      view.loading = "lazy";
+      view.referrerPolicy = "no-referrer";
+    }
+    view.src = url2;
+    view.onerror = () => {
+      frame.replaceChildren(element("span", "placeholder-icon", "\u25A7"), element("p", "placeholder", "Preview unavailable. Refresh this view or open the media."));
+      reportSize();
+    };
+    frame.append(view);
+    if (item.kind === "video" && !detail2) frame.append(element("span", "play", "\u25B6"));
+    return frame;
+  }
+  function detail(item) {
+    const panel = element("section", "detail");
+    if (current.mode !== "job") panel.append(button("\u2190 Back to gallery", () => {
+      selected = null;
+      render();
+      schedule();
+    }, "back"));
+    panel.append(media(item, true));
+    const heading = element("div", "item-heading");
+    heading.append(element("h2", "", item.title), badge(item));
+    panel.append(heading);
+    const facts = [item.spaceName, item.model, item.provider].filter(Boolean);
+    if (facts.length) panel.append(element("p", "meta", facts.join(" \xB7 ")));
+    if (item.error) panel.append(element("p", "notice", item.error));
+    if (item.prompt) {
+      const prompt = element("details", "prompt");
+      prompt.open = true;
+      prompt.append(element("summary", "", current.mode === "elements" ? "Description" : "Prompt"), element("p", "", item.prompt));
+      panel.append(prompt);
+    }
+    const actions = element("div", "actions");
+    if (safeUrl(item.url)) actions.append(button(item.kind === "video" ? "Open video \u2197" : "Open image \u2197", () => openLink(item.url), "primary"));
+    if (safeUrl(current.projectUrl)) actions.append(button("Open in CineGen \u2197", () => openLink(current.projectUrl)));
+    if (actions.children.length) panel.append(actions);
+    return panel;
+  }
+  function render() {
+    if (!current) return;
+    root.querySelectorAll("video").forEach((video) => video.pause());
+    root.replaceChildren();
+    const header = element("header");
+    const identity = element("div");
+    identity.append(element("div", "brand", "CINEGEN"), element("h1", "", current.mode === "job" ? "Result viewer" : current.title));
+    const reload = button("\u21BB Refresh", () => {
+      polls = 0;
+      refresh();
+    });
+    reload.dataset.refresh = "";
+    header.append(identity, reload);
+    root.append(header);
+    const item = current.mode === "job" ? current.items[0] : current.items.find((item2) => item2.id === selected);
+    if (item) root.append(detail(item));
+    else {
+      const info = element("div", "collection-info");
+      info.append(element("p", "meta", `${current.total} ${current.mode === "elements" ? "references" : "results"}`));
+      if (current.projectUrl) info.append(button("Open CineGen \u2197", () => openLink(current.projectUrl), "link"));
+      root.append(info);
+      const grid = element("div", "grid");
+      if (!current.items.length) grid.append(element("p", "empty", "No matching media yet. Your saved results will appear here."));
+      for (const item2 of current.items) {
+        const card = button("", () => {
+          selected = item2.id;
+          render();
+        }, "card");
+        card.setAttribute("aria-label", `View ${item2.title}`);
+        card.append(media(item2, false));
+        const body = element("div", "card-body");
+        body.append(element("span", "kind", item2.kind === "video" ? "VIDEO" : "IMAGE"), element("h2", "", item2.title));
+        if (item2.spaceName) body.append(element("p", "meta", item2.spaceName));
+        body.append(badge(item2));
+        card.append(body);
+        grid.append(card);
+      }
+      root.append(grid);
+      if (current.offset > 0 || current.hasMore) {
+        const footer = element("footer");
+        const prev = button("\u2190 Previous", () => refresh({ offset: Math.max(0, current.offset - current.limit) }));
+        prev.disabled = current.offset === 0;
+        const next = button("Next \u2192", () => refresh({ offset: current.offset + current.limit }));
+        next.disabled = !current.hasMore;
+        footer.append(prev, element("span", "meta", `${current.offset + 1}\u2013${current.offset + current.items.length} of ${current.total}`), next);
+        root.append(footer);
+      }
+    }
+    reportSize();
+  }
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent || event.data?.jsonrpc !== "2.0") return;
+    if (hostOrigin !== "*" && event.origin !== hostOrigin) return;
+    const message = event.data;
+    if (message.id !== void 0 && pending.has(message.id)) {
+      const entry = pending.get(message.id);
+      pending.delete(message.id);
+      clearTimeout(entry.timeout);
+      if (message.error) entry.reject(new Error(message.error.message || "The chat host rejected this request."));
+      else entry.resolve(message.result);
+      if (hostOrigin === "*" && event.origin && event.origin !== "null") hostOrigin = event.origin;
+      return;
+    }
+    if (message.method === "ui/notifications/tool-result") receive(message.params);
+    if (message.method === "ui/notifications/tool-cancelled") showError("Loading was cancelled.");
+    if (message.method === "ui/resource-teardown") {
+      clearTimeout(timer);
+      root.querySelectorAll("video").forEach((video) => video.pause());
+      window.parent.postMessage({ jsonrpc: "2.0", id: message.id, result: {} }, hostOrigin);
+    }
+  });
+  window.addEventListener("openai:set_globals", (event) => {
+    if (event.detail?.globals?.toolOutput) receive(event.detail.globals.toolOutput);
+  });
+  if (window.openai?.toolOutput) receive(window.openai.toolOutput);
+  new ResizeObserver(reportSize).observe(root);
+  request("ui/initialize", { appInfo: { name: "CineGen Media", version: "1.0.0" }, appCapabilities: { availableDisplayModes: ["inline"] }, protocolVersion: "2026-01-26" }).then(() => {
+    ready = true;
+    notify("ui/notifications/initialized", {});
+    reportSize();
+  }).catch(() => {
+    if (!current) showError("Ask your assistant to show CineGen media again if this view does not load.");
+  });
+}
+var css = `
+*{box-sizing:border-box}html,body{margin:0;background:#0d0f13;color:#eeeae3;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{color-scheme:dark}#app{padding:22px;max-width:1000px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:20px;border-bottom:1px solid #292b31}.brand{font-size:10px;letter-spacing:.26em;font-weight:800;color:#d8a453;margin-bottom:5px}h1{font-size:22px;letter-spacing:-.03em;line-height:1.2;margin:0}h2{margin:5px 0;font-size:15px;font-weight:600;overflow-wrap:anywhere}button{font:inherit;cursor:pointer;color:inherit;background:#20232b;border:1px solid #363941;border-radius:9px;padding:9px 13px;min-height:40px}button:hover{background:#2d3039;border-color:#827059}button:focus-visible,summary:focus-visible{outline:2px solid #e0ac62;outline-offset:3px}button:disabled{opacity:.45;cursor:default}.collection-info{display:flex;justify-content:space-between;align-items:center;margin:14px 0;gap:8px}.meta{color:#b1ada7;font-size:12px;margin:5px 0}.link,.back{background:transparent;border:0;padding:8px 0;color:#e0ac62}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card{padding:0;text-align:left;overflow:hidden;background:#171a21;border:1px solid #30333a;border-radius:12px;display:flex;flex-direction:column;min-width:0}.frame{position:relative;background:#090b0e;aspect-ratio:16/10;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;width:100%}.frame img,.frame video{width:100%;height:100%;object-fit:cover}.frame.large{aspect-ratio:auto;min-height:180px;max-height:470px;border:1px solid #292c33;border-radius:12px;margin-top:12px}.large img,.large video{width:100%;max-height:470px;object-fit:contain}.card-body{padding:12px 14px;flex:1}.kind{font:700 9px/1.2 ui-monospace,monospace;letter-spacing:.15em;color:#a9a399}.status{display:inline-flex;align-items:center;gap:6px;border-radius:5px;padding:3px 7px;font-size:10px;font-weight:600;margin-top:8px;background:#2a2d34;color:#c5c1ba}.complete{color:#b9cfbe;background:#24302a}.active{color:#efc17b;background:#3a2e20}.active:before{content:'';width:5px;height:5px;border-radius:100%;background:#e1aa57}.quiet{color:#d3b8b0}.play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:42px;height:42px;border:1px solid #ffffff55;background:#121419c9;border-radius:50%;display:grid;place-items:center;font-size:16px;padding-left:2px}.placeholder-icon{font-size:35px;color:#81715b}.placeholder{font-size:11px;text-align:center;color:#b8b0a5;padding:0 14px;max-width:280px}.item-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px}.item-heading h2{font-size:18px}.item-heading .status{flex-shrink:0;margin:0}.prompt{margin:18px 0;background:#191c23;border:1px solid #2d3038;border-radius:10px;padding:12px 14px}.prompt summary{cursor:pointer;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:#d7b780}.prompt p{line-height:1.7;margin:12px 0 2px;white-space:pre-wrap;overflow-wrap:anywhere}.actions{display:flex;gap:10px;flex-wrap:wrap}.primary{background:#d4a052;color:#151311;border-color:#d4a052;font-weight:650}.primary:hover{background:#e0af68}.notice{border-left:2px solid #d7a362;background:#2a231c;color:#f0d3aa;padding:12px;font-size:12px;overflow-wrap:anywhere}.empty{color:#b1ada7;grid-column:1/-1;padding:35px 10px;text-align:center}footer{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid #292b31;margin-top:20px;padding-top:16px}.loading{color:#b1ada7;padding:30px 0;text-align:center}@media(max-width:650px){#app{padding:16px}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}h1{font-size:20px}.card-body{padding:10px}header{gap:10px}.frame.large{max-height:340px}.large img,.large video{max-height:340px}.item-heading{align-items:flex-start}}@media(max-width:340px){.grid{grid-template-columns:1fr}header button{padding:8px;font-size:12px}}`;
+var meta3 = {
+  ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: MEDIA_DOMAINS } },
+  "openai/widgetDescription": "CineGen image and video gallery. Users can view references, play videos, inspect prompts, refresh status and open saved media. The widget cannot generate or edit.",
+  "openai/widgetPrefersBorder": true,
+  "openai/widgetCSP": { connect_domains: [], resource_domains: MEDIA_DOMAINS }
+};
+var MEDIA_RESOURCE = { uri: MEDIA_RESOURCE_URI, name: "CineGen media viewer", description: "Inline image/video and Element reference gallery.", mimeType: MEDIA_MIME_TYPE, _meta: meta3 };
+function readMediaResource(uri) {
+  if (uri !== MEDIA_RESOURCE_URI) throw new Error("Unknown CineGen UI resource.");
+  return { contents: [{ uri: MEDIA_RESOURCE_URI, mimeType: MEDIA_MIME_TYPE, _meta: meta3, text: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>CineGen Media</title><style>${css}</style></head><body><main id="app"><div class="brand">CINEGEN</div><p class="loading" role="status">Loading your media\u2026</p></main><script>(${mountViewer.toString()})();</script></body></html>` }] };
+}
+
 // mcp/cinegen-mcp.mjs
 var PROTOCOL_VERSION = "2025-06-18";
 var DISCOVERY_FILE = process.env.CINEGEN_MCP_BRIDGE_FILE || (0, import_node_path.join)((0, import_node_os.homedir)(), "Documents", "CINEGEN", "mcp-bridge.json");
@@ -14061,40 +14395,52 @@ function send(message) {
   process.stdout.write(`${JSON.stringify(message)}
 `);
 }
-function result(id2, value) {
-  send({ jsonrpc: "2.0", id: id2, result: value });
+function result(id3, value) {
+  send({ jsonrpc: "2.0", id: id3, result: value });
 }
-function failure(id2, code, message) {
-  send({ jsonrpc: "2.0", id: id2, error: { code, message } });
+function failure(id3, code, message) {
+  send({ jsonrpc: "2.0", id: id3, error: { code, message } });
 }
 async function handle(message) {
-  const { id: id2, method, params } = message;
-  if (id2 === void 0 || id2 === null) return;
+  const { id: id3, method, params } = message;
+  if (id3 === void 0 || id3 === null) return;
   if (method === "initialize") {
-    result(id2, {
+    result(id3, {
       protocolVersion: PROTOCOL_VERSION,
-      capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "cinegen", version: "0.2.0" },
-      instructions: "Use Topview as the default generation provider. Use Higgsfield only when the user explicitly requests it, with no automatic fallback. Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing \u2014 breakdowns, shot lists, prompts \u2014 and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Use cinegen_element_models and cinegen_build_element for durable Element reference packs; review the completed draft with the user before cinegen_approve_element. Poll cinegen_get_jobs for background Director and Element actions."
+      capabilities: { tools: { listChanged: false }, resources: {} },
+      serverInfo: { name: "cinegen", version: "0.3.0" },
+      instructions: DISPLAY_INSTRUCTIONS + " Use Topview as the default generation provider. Use Higgsfield only when the user explicitly requests it, with no automatic fallback. Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing \u2014 breakdowns, shot lists, prompts \u2014 and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Use cinegen_element_models and cinegen_build_element for durable Element reference packs; review the completed draft with the user before cinegen_approve_element. Poll cinegen_get_jobs for background Director and Element actions."
     });
     return;
   }
+  if (method === "resources/list") {
+    result(id3, { resources: [MEDIA_RESOURCE] });
+    return;
+  }
+  if (method === "resources/read") {
+    try {
+      result(id3, readMediaResource(params?.uri));
+    } catch (error48) {
+      failure(id3, -32602, error48.message);
+    }
+    return;
+  }
   if (method === "tools/list") {
-    result(id2, { tools: TOOL_CATALOG });
+    result(id3, { tools: TOOL_CATALOG });
     return;
   }
   if (method === "tools/call") {
     const name = params?.name;
     const tool2 = TOOL_CATALOG.find((entry) => entry.name === name);
     if (!tool2) {
-      failure(id2, -32602, `Unknown tool "${name}".`);
+      failure(id3, -32602, `Unknown tool "${name}".`);
       return;
     }
     try {
       const value = await callBridge(name, params?.arguments ?? {});
-      result(id2, { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
+      result(id3, isDisplayTool(name) ? displayResult(value) : { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
     } catch (error48) {
-      result(id2, {
+      result(id3, {
         isError: true,
         content: [{ type: "text", text: error48 instanceof Error ? error48.message : String(error48) }]
       });
@@ -14102,10 +14448,10 @@ async function handle(message) {
     return;
   }
   if (method === "ping") {
-    result(id2, {});
+    result(id3, {});
     return;
   }
-  failure(id2, -32601, `Unsupported method "${method}".`);
+  failure(id3, -32601, `Unsupported method "${method}".`);
 }
 var inFlight = 0;
 var closing = false;

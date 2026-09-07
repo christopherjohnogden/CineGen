@@ -1,9 +1,12 @@
 import { OAuthProvider, type OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { ListToolsRequestSchema, CallToolRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { CloudStore, FIREBASE_KEY, refreshIdentity, verifyIdentity, safeId, type Identity } from './firebase';
 import { editProject, remoteTools } from './headless';
+import { DISPLAY_INSTRUCTIONS, isDisplayTool, displayResult } from '../../mcp/display-tools.mjs';
+import { MEDIA_RESOURCE, readMediaResource } from '../../mcp/media-viewer.mjs';
+import { displayJobSnapshot, type DisplayPage } from '../../src/lib/mcp/display-handlers';
 import { createDefaultProjectState } from '../../site/lib/server/project-store';
 import { z } from 'zod';
 z.config({ jitless: true });
@@ -21,7 +24,9 @@ const projectTool = { name:'cinegen_project',description:'List or create saved C
 async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Identity}) {
   const origin=request.headers.get('origin');
   if(origin && origin!==env.PUBLIC_ORIGIN) return new Response('Origin not allowed',{status:403});
-  const server = new Server({name:'cinegen',version:'1.2.3'},{capabilities:{tools:{}},instructions:'Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
+  const server = new Server({name:'cinegen',version:'1.3.0'},{capabilities:{tools:{},resources:{}},instructions:DISPLAY_INSTRUCTIONS+' '+'Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [MEDIA_RESOURCE] }));
+  server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => readMediaResource(params.uri));
   server.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[projectTool,...remoteTools,...generationTools]}));
   server.setRequestHandler(CallToolRequestSchema,async({params})=>{
     try {
@@ -36,6 +41,34 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
       const validated=z.fromJSONSchema(tool.inputSchema as any).safeParse(args);
       if(!validated.success)throw new Error(`Invalid tool arguments: ${validated.error.issues.map(i=>`${i.path.join('.')}: ${i.message}`).join('; ')}`);
       let result:unknown;
+      if(isDisplayTool(params.name)) {
+        const projectId=safeId(args.projectId);
+        const loaded=await store.load(projectId);
+        const {projectId:_,...displayArgs}=args;
+        let data:DisplayPage;
+        if(params.name==='cinegen_job_display' && args.requestId) {
+          const requestId=safeId(args.requestId);
+          const job=env.JOBS.get(env.JOBS.idFromName(`${identity.uid}:${projectId}:${requestId}`));
+          const response=await job.fetch('https://job/snapshot',{method:'POST',body:JSON.stringify({identity,args:{projectId,requestId}})});
+          const snapshot=await response.json() as Record<string,unknown>;
+          if(!response.ok)throw new Error('This generation job is unavailable.');
+          if(snapshot.status==='not_found')throw new Error('No generation was found for this requestId.');
+          if(args.nodeId && snapshot.nodeId!==args.nodeId)throw new Error('This requestId belongs to a different nodeId.');
+          let existing:DisplayPage|undefined;
+          if(snapshot.nodeId) {
+            const gallery=await editProject(loaded.state,loaded.library,'cinegen_show_generations',{nodeIds:[snapshot.nodeId],...(args.spaceId?{spaceId:args.spaceId}:{})},loaded.metadata.useSqlite!==false);
+            existing=gallery.result as DisplayPage;
+          }
+          data=displayJobSnapshot({...snapshot,projectId,requestId},existing);
+        } else {
+          const shown=await editProject(loaded.state,loaded.library,params.name,displayArgs,loaded.metadata.useSqlite!==false);
+          data=shown.result as DisplayPage;
+        }
+        data.projectId=projectId;
+        data.projectUrl=`https://cinegen-film.vercel.app/?project=${encodeURIComponent(projectId)}&storage=db`;
+        data.refresh={name:params.name,arguments:{...data.refresh.arguments,projectId}};
+        return displayResult(data);
+      }
       if(params.name==='cinegen_list_models') {
         const provider=requestedProvider(args.provider);
         const catalog=await connectedModels(auth.token,provider,args.kind);
@@ -90,7 +123,7 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
 const defaultHandler={async fetch(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url);
   if(url.origin!==env.PUBLIC_ORIGIN) return new Response('Unknown host',{status:400});
-  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1});
+  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1,version:'1.3.0',displayTools:remoteTools.filter(t=>isDisplayTool(t.name)).map(t=>t.name)});
   if(url.pathname==='/') return page(`<h1>CineGen Connect</h1><p>Work on your saved CineGen projects from Claude or ChatGPT, even while your Mac is closed.</p><label>Connection URL</label><code>${html(env.PUBLIC_ORIGIN)}/mcp</code><p>Add this URL as a custom connector, then sign in with your CineGen Cloud account.</p><small>Sign into the same cloud account in CineGen on desktop and the website to see your saved work. Local-only projects must sync first.</small>`);
   if(url.pathname!=='/authorize') return new Response('Not found',{status:404});
   try {

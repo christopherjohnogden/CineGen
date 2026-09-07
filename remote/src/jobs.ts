@@ -111,6 +111,10 @@ export class GenerationJob extends DurableObject {
     const body=await request.json() as {identity:Job['identity'];args:RecordValue;prepared?:Job['prepared']};
     let job=await this.ctx.storage.get<Job>('job');
     if(job && job.identity.uid!==body.identity.uid) return new Response('Forbidden',{status:403});
+    if(new URL(request.url).pathname==='/snapshot') {
+      // Viewing a result must not retry persistence, schedule alarms or submit jobs.
+      return Response.json(job?{...publicJob(job),kind:job.prepared?.model.outputType??'image'}:{status:'not_found'});
+    }
     if(new URL(request.url).pathname==='/read') {
       // A provider result already exists: refresh authorization and retry only
       // persistence. Never reopen queued/submitting jobs or send another paid request.

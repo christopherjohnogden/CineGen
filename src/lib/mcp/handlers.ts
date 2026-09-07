@@ -1,4 +1,5 @@
 import { createEditHandlers } from './edit-handlers';
+import { createDisplayHandlers } from './display-handlers';
 import { placeStudioNodeOnCanvas } from '@/lib/studio/canvas-placement';
 import type { Node } from '@xyflow/react';
 import { getModelDefinition } from '@/lib/fal/models';
@@ -237,6 +238,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
 
   const handlers: Record<string, McpToolHandler> = {
     ...createEditHandlers(host),
+    ...createDisplayHandlers(host),
     async cinegen_get_context() {
       const s = state();
       const director = s.director;

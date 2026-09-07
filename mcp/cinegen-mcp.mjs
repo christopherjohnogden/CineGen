@@ -15,6 +15,8 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { TOOL_CATALOG } from './tool-catalog.mjs';
+import { DISPLAY_INSTRUCTIONS, isDisplayTool, displayResult } from './display-tools.mjs';
+import { MEDIA_RESOURCE, readMediaResource } from './media-viewer.mjs';
 
 const PROTOCOL_VERSION = '2025-06-18';
 const DISCOVERY_FILE = process.env.CINEGEN_MCP_BRIDGE_FILE
@@ -77,11 +79,21 @@ async function handle(message) {
   if (method === 'initialize') {
     result(id, {
       protocolVersion: PROTOCOL_VERSION,
-      capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'cinegen', version: '0.2.0' },
-      instructions:
+      capabilities: { tools: { listChanged: false }, resources: {} },
+      serverInfo: { name: 'cinegen', version: '0.3.0' },
+      instructions: DISPLAY_INSTRUCTIONS + ' ' +
         'Use Topview as the default generation provider. Use Higgsfield only when the user explicitly requests it, with no automatic fallback. Drives the open CineGen project. Call cinegen_get_context first to learn the real Spaces, Elements and Director state, then act with names and ids from it. You do the writing — breakdowns, shot lists, prompts — and these tools put the result in the app. Call cinegen_capabilities for Director adapter IDs and exact shotlist instructions. Read complete records before editing. Wait for user approval before cinegen_approve_breakdown. Director and Canvas generation can spend credits: follow the user requested scope. Use cinegen_element_models and cinegen_build_element for durable Element reference packs; review the completed draft with the user before cinegen_approve_element. Poll cinegen_get_jobs for background Director and Element actions.',
     });
+    return;
+  }
+
+  if (method === 'resources/list') {
+    result(id, { resources: [MEDIA_RESOURCE] });
+    return;
+  }
+  if (method === 'resources/read') {
+    try { result(id, readMediaResource(params?.uri)); }
+    catch (error) { failure(id, -32602, error.message); }
     return;
   }
 
@@ -99,7 +111,7 @@ async function handle(message) {
     }
     try {
       const value = await callBridge(name, params?.arguments ?? {});
-      result(id, { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
+      result(id, isDisplayTool(name) ? displayResult(value) : { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
     } catch (error) {
       // A tool failure is a result the model can read and react to, not a
       // protocol error: it should be able to fix its arguments and retry.

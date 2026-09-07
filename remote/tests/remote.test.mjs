@@ -106,7 +106,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.2.3');
+  assert.equal(initialized.result.serverInfo.version,'1.3.0');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -276,4 +276,67 @@ test('provider downloads reject unsafe redirects, loops and report actual HTTP f
   await assert.rejects(api.downloadGeneratedMedia('https://provider.example/result'),/redirect limit/);
   globalThis.fetch=async()=>new Response(null,{status:403});
   await assert.rejects(api.downloadGeneratedMedia('https://provider.example/result'),/HTTP 403, host provider.example/);
+});
+
+test('display tools advertise a readable MCP Apps resource and return authenticated structured media without writes',async()=>{
+  const env={PUBLIC_ORIGIN:'https://cinegen.example'};const ctx={props:{uid:'owner',email:'owner@example.com',refreshToken:'refresh'}};
+  const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+  const send=async(method,params)=>(await api.handleMcp(request(method,params),env,ctx)).json();
+  const tools=(await send('tools/list')).result.tools.filter(tool=>tool.name.includes('show_')||tool.name==='cinegen_job_display');
+  assert.equal(tools.length,3);
+  const resources=(await send('resources/list')).result.resources;
+  assert.equal(resources.length,1);
+  for(const tool of tools){assert.equal(tool._meta.ui.resourceUri,resources[0].uri);assert.equal(tool.annotations.readOnlyHint,true);assert.ok(tool.inputSchema.required.includes('projectId'));}
+  const resource=(await send('resources/read',{uri:resources[0].uri})).result.contents[0];
+  assert.equal(resource.mimeType,'text/html;profile=mcp-app');assert.match(resource.text,/ui\/initialize/);assert.match(resource.text,/window.openai/);
+  assert.ok((await send('resources/read',{uri:'file:///etc/passwd'})).error);
+  globalThis.fetch=async(url)=>{assert.match(String(url),/securetoken.googleapis.com/);return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});};
+  const originalLoad=api.CloudStore.prototype.load,originalSave=api.CloudStore.prototype.save;
+  const raw=api.createDefaultProjectState('Display film');let loads=0;
+  const url='https://firebasestorage.googleapis.com/v0/b/test/o/image.png?alt=media&token=test';
+  api.CloudStore.prototype.load=async(projectId)=>{loads++;assert.equal(projectId,raw.project.id);return {state:raw,library:{elements:[{id:'hero',name:'Hero',type:'character',description:'The lead',images:[{id:'image',url,createdAt:'now',source:'upload'}],createdAt:'now',updatedAt:'now'}],folders:[]},metadata:{useSqlite:true}};};
+  api.CloudStore.prototype.save=async()=>{throw new Error('Viewing must not save');};
+  try{
+    const shown=(await send('tools/call',{name:'cinegen_show_reference_elements',arguments:{projectId:raw.project.id}})).result;
+    assert.equal(shown.isError,undefined,shown.content[0].text);assert.equal(shown.structuredContent.items[0].url,url);
+    assert.equal(shown.structuredContent.refresh.arguments.projectId,raw.project.id);assert.match(shown.content[0].text,/Open image/);assert.equal(loads,1);
+    api.CloudStore.prototype.load=async()=>{throw new Error('Your CineGen account cannot access this project.');};
+    const denied=(await send('tools/call',{name:'cinegen_show_generations',arguments:{projectId:'foreign'}})).result;
+    assert.equal(denied.isError,true);assert.equal(denied.structuredContent,undefined);
+  }finally{api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
+});
+
+test('viewing a durable result cannot resume saving, submit generation, or lose its failure state',async()=>{
+  const identity={uid:'owner',email:'owner@example.com',refreshToken:'refresh'};
+  const record={identity,args:{projectId:'project',requestId:'request',provider:'topview'},status:'needs_attention',nodeId:'node',createdAt:'now',sourceUrl:'https://secret-cdn.example/signed.png',error:'Download failed',prepared:{model:{outputType:'video'}}};
+  let writes=0,alarms=0;
+  const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async()=>structuredClone(record),put:async()=>{writes++;},setAlarm:async()=>{alarms++;}}};
+  globalThis.fetch=async()=>{throw new Error('Viewing must not call providers');};
+  const job=new api.GenerationJob(ctx,{});
+  const response=await (await job.fetch(new Request('https://job/snapshot',{method:'POST',body:JSON.stringify({identity,args:record.args})}))).json();
+  assert.equal(response.status,'needs_attention');assert.equal(response.kind,'video');assert.equal(response.error,'Download failed');
+  assert.equal(response.sourceUrl,undefined);assert.equal(response.identity,undefined);assert.equal(response.prepared,undefined);
+  assert.equal(writes,0);assert.equal(alarms,0);
+  const denied=await job.fetch(new Request('https://job/snapshot',{method:'POST',body:JSON.stringify({identity:{...identity,uid:'other'},args:record.args})}));
+  assert.equal(denied.status,403);
+});
+
+test('requestId display authenticates the project and reads only the durable snapshot endpoint',async()=>{
+  const raw=api.createDefaultProjectState('Job display');
+  const originalLoad=api.CloudStore.prototype.load,originalSave=api.CloudStore.prototype.save;
+  const paths=[];
+  const env={PUBLIC_ORIGIN:'https://cinegen.example',JOBS:{idFromName:name=>{assert.equal(name,`owner:${raw.project.id}:job`);return name;},get:()=>({fetch:async(url)=>{paths.push(url);return Response.json({requestId:'job',projectId:raw.project.id,nodeId:'node',status:'saving',kind:'video',url:null,error:'Download failed'});}})}};
+  const ctx={props:{uid:'owner',email:'owner@example.com',refreshToken:'refresh'}};
+  globalThis.fetch=async(url)=>{assert.match(String(url),/securetoken.googleapis.com/);return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});};
+  api.CloudStore.prototype.load=async()=>({state:raw,library:{elements:[],folders:[]},metadata:{useSqlite:true}});
+  api.CloudStore.prototype.save=async()=>{throw new Error('Must not save');};
+  try{
+    const request=new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'cinegen_job_display',arguments:{projectId:raw.project.id,requestId:'job'}}})});
+    const response=(await (await api.handleMcp(request,env,ctx)).json()).result;
+    assert.equal(response.isError,undefined,response.content[0].text);
+    assert.equal(response.structuredContent.items[0].status,'saving');assert.equal(response.structuredContent.items[0].kind,'video');
+    assert.equal(response.structuredContent.items[0].error,'Download failed');
+    assert.deepEqual(paths,['https://job/snapshot']);
+    assert.deepEqual(response.structuredContent.refresh.arguments,{projectId:raw.project.id,requestId:'job'});
+  }finally{api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
 });
