@@ -1,13 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canvasAudioParameters, hasTopviewCanvasAudioTools, queryTopviewCanvasAudio, readTopviewCanvasTask, submitTopviewCanvasAudio } from '../../../src/lib/topview/canvas-audio';
-import { topviewVideoSubmitRoute } from '../../../src/lib/topview/reference-capabilities';
-import { canvasCapability, canvasFixture, canvasToolNames } from '../../fixtures/topview-canvas.mjs';
+import { topviewVideoSubmitRoute, topviewPromptMaxCharacters, assertTopviewCanvasPrompt } from '../../../src/lib/topview/reference-capabilities';
+import { canvasCapability, canvasFixture, canvasToolNames, canvasSubmitSchema } from '../../fixtures/topview-canvas.mjs';
 
 const references = [{ value: 'https://cinegen.test/hero.png', role: 'image' }, { value: 'https://cinegen.test/motion.mp4', role: 'video' }, { value: 'https://cinegen.test/beat.mp3', role: 'audio' }];
 const request = { taskType: 'omni_reference', model: 'Seedance 2.5', prompt: 'Move in time with the music.', resolution: 1080, duration: 12, aspectRatio: '16:9', sound: false, inputAudios: [{}] };
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Topview Canvas audio route', () => {
+  it('reads the provider-specific prompt limit and preserves oversized prompts before any Canvas writes', async () => {
+    const prompt = 'Full shot direction. '.repeat(300);
+    const original = { ...request, prompt };
+    const call = vi.fn(); const load = vi.fn();
+    await expect(submitTopviewCanvasAudio({ call, request: original, references, load, submitSchema: canvasSubmitSchema })).rejects.toThrow(/Topview's Canvas audio-reference route accepts up to 4,000/);
+    expect(original.prompt).toBe(prompt);
+    expect(call).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    expect(topviewPromptMaxCharacters(canvasSubmitSchema)).toBe(4000);
+    expect(topviewPromptMaxCharacters({ properties: { req: { properties: { prompt: { type: 'string' } } } } })).toBeUndefined();
+    expect(() => assertTopviewCanvasPrompt('x'.repeat(4000), canvasSubmitSchema)).not.toThrow();
+    expect(() => assertTopviewCanvasPrompt('x'.repeat(6000), { properties: { prompt: { maxLength: 8000 } } })).not.toThrow();
+  });
   it('uses the same MCP connection only when the complete Canvas toolchain exists', () => {
     expect(hasTopviewCanvasAudioTools(canvasToolNames)).toBe(true);
     expect(hasTopviewCanvasAudioTools(canvasToolNames.filter(name => name !== 'download_topview_canvas_nodes'))).toBe(false);

@@ -1,6 +1,22 @@
 type RecordValue = Record<string, unknown>;
 const record = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {};
 
+/** A provider transport's limit is not a global CineGen/model prompt limit. */
+export function topviewPromptMaxCharacters(schema: unknown): number | undefined {
+  const top = record(schema);
+  const request = record(record(top.properties).req ?? top);
+  const maximum = record(record(request.properties).prompt).maxLength;
+  return typeof maximum === 'number' && Number.isInteger(maximum) && maximum > 0 ? maximum : undefined;
+}
+
+export function assertTopviewCanvasPrompt(prompt: unknown, schema: unknown): void {
+  const maximum = topviewPromptMaxCharacters(schema);
+  const length = Array.from(String(prompt ?? '')).length;
+  if (maximum !== undefined && length > maximum) {
+    throw new Error(`Topview's Canvas audio-reference route accepts up to ${maximum.toLocaleString('en-US')} prompt characters; this prompt has ${length.toLocaleString('en-US')}. CineGen preserved the full prompt and did not submit a generation. Do not shorten or rewrite it without the user's approval.`);
+  }
+}
+
 /** Input audio is independent of nativeAudio, which controls generated sound. */
 export function topviewAcceptsAudioReferences(model: RecordValue): boolean {
   const parameters = record(record(model.raw).parameters ?? model.parameters);

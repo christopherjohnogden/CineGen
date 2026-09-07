@@ -1539,7 +1539,7 @@ class TopviewMcpService {
       configs,
       tools: session.tools.map((tool) => tool.name),
       toolSchemas: Object.fromEntries(session.tools
-        .filter((tool) => ['topview_get_generation_config', 'topview_generate_video', 'topview_generate_audio', 'topview_generate_music', 'topview_generate_voice', 'topview_clone_voice', 'topview_query_task'].includes(tool.name))
+        .filter((tool) => ['topview_get_generation_config', 'topview_generate_video', 'submit_topview_canvas_generation_task', 'topview_generate_audio', 'topview_generate_music', 'topview_generate_voice', 'topview_clone_voice', 'topview_query_task'].includes(tool.name))
         .map((tool) => [tool.name, tool.inputSchema])),
       fetchedAt: new Date().toISOString(),
     };
@@ -1711,6 +1711,7 @@ class TopviewMcpService {
     if (route === 'canvas-mcp') {
       const submitted = await submitTopviewCanvasAudio({
         call: (name, args) => this.callTool(session, name, args), references,
+        submitSchema: session.tools.find(tool => tool.name === 'submit_topview_canvas_generation_task')?.inputSchema,
         request: { ...preflight.req, prompt: params.prompt, ...(params.generateAudio !== undefined ? { sound: params.generateAudio } : {}) },
         load: async reference => {
           const source = await loadReference(reference.value, reference.role as TopviewMediaRole);

@@ -1,4 +1,5 @@
 // Read-only live Seedance 2.5 Canvas contract, checked 2026-09-07.
+export const canvasSubmitSchema = { type: 'object', properties: { prompt: { type: 'string', minLength: 1, maxLength: 4000 } } };
 export const canvasCapability = {
   model: 'seedance-2.5', displayName: 'Seedance 2.5', mediaType: 'video', taskType: 'video_edit',
   defaults: { duration: 30, resolution: 720, nativeAudio: true, aspectRatio: 'adaptive', omniReferenceTaskType: 'auto' },

@@ -2,7 +2,7 @@ import { before, afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
-import { canvasToolNames } from '../../tests/fixtures/topview-canvas.mjs';
+import { canvasToolNames, canvasSubmitSchema } from '../../tests/fixtures/topview-canvas.mjs';
 let api;
 const originalFetch=globalThis.fetch;
 before(async()=>{
@@ -107,7 +107,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.6.10');
+  assert.equal(initialized.result.serverInfo.version,'1.6.11');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -135,11 +135,13 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
 test('Studio creation persists prepared items through a cloud save and reload without provider requests',async()=>{
   globalThis.fetch=async()=>{throw new Error('Studio preparation must not call a provider');};
   const raw=api.createDefaultProjectState('Studio film');const library={elements:[],folders:[]};
-  const edited=await api.editProject(raw,library,'cinegen_studio_create',{prompt:'A lighthouse at dusk',kind:'image',model:'topview-image-seedream-4-5',inputs:{aspect_ratio:'16:9'}});
+  const prompt='A lighthouse at dusk. '.repeat(240).trim();
+  assert.ok(prompt.length>4000);
+  const edited=await api.editProject(raw,library,'cinegen_studio_create',{prompt,kind:'image',model:'topview-image-seedream-4-5',inputs:{aspect_ratio:'16:9'}});
   const reopened=api.hydrate(JSON.parse(JSON.stringify(edited.state)),library);
   const node=reopened.nodes.find(n=>n.data.config.__studioGenerated);
   assert.ok(node);
-  assert.equal(node.data.config.__studioPromptBody,'A lighthouse at dusk');
+  assert.equal(node.data.config.__studioPromptBody,prompt);
   assert.equal(node.data.config.aspect_ratio,'16:9');
   assert.equal(node.data.config.__studioCanvasPlaced,undefined);
   assert.equal(edited.result.status,'prepared');
@@ -156,11 +158,13 @@ test('Topview is the default and Higgsfield cannot be selected implicitly',()=>{
 });
 
 test('MCP model discovery advertises the usable Canvas audio route and its visual-reference requirement',async()=>{
-  globalThis.fetch=async(url)=>Response.json({ok:true,result:String(url).endsWith('/accountStatus')?{connected:true,authMode:'oauth'}:{tools:canvasToolNames,toolSchemas:{topview_generate_video:{properties:{req:{properties:{inputImages:{},inputVideos:{}}}}}},configs:[]}});
+  globalThis.fetch=async(url)=>Response.json({ok:true,result:String(url).endsWith('/accountStatus')?{connected:true,authMode:'oauth'}:{tools:canvasToolNames,toolSchemas:{topview_generate_video:{properties:{req:{properties:{inputImages:{},inputVideos:{}}}}},submit_topview_canvas_generation_task:canvasSubmitSchema},configs:[]}});
   const connected=await api.connectedModels('fixture','topview','video');
   assert.equal(connected.audioReferenceConnection.ready,true);
   assert.equal(connected.audioReferenceConnection.transport,'canvas-mcp');
   assert.equal(connected.audioReferenceConnection.requiresVisualReference,true);
+  assert.equal(connected.audioReferenceConnection.promptMaxCharacters,4000);
+  assert.match(connected.audioReferenceConnection.note,/not all CineGen prompts/);
   assert.ok(connected.models.find(model=>model.nodeType==='topview-video-seedance-2-5').inputs.some(field=>field.id==='audio_references'));
 });
 

@@ -1,7 +1,7 @@
 import { build } from '../../node_modules/esbuild/lib/main.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canvasFixture, canvasToolNames } from '../../tests/fixtures/topview-canvas.mjs';
+import { canvasFixture, canvasToolNames, canvasSubmitSchema } from '../../tests/fixtures/topview-canvas.mjs';
 await build({entryPoints:['site/lib/server/topview-mcp.ts'],outfile:'backend/dist/topview-test.mjs',bundle:true,platform:'browser',format:'esm',alias:{'@':new URL('../../src',import.meta.url).pathname}});
 const {createTopviewMcp}=await import('../dist/topview-test.mjs');
 
@@ -18,7 +18,7 @@ test('the cloud OAuth connection submits mixed references through Canvas and res
     assert.equal(options.headers.authorization,'Bearer fixture-oauth');
     const request=JSON.parse(options.body);let result={};
     if(request.method==='notifications/initialized')return new Response(null,{status:202});
-    if(request.method==='tools/list')result={tools:[...canvasToolNames.map(name=>({name,inputSchema:{type:'object'}})),
+    if(request.method==='tools/list')result={tools:[...canvasToolNames.map(name=>({name,inputSchema:name==='submit_topview_canvas_generation_task'?canvasSubmitSchema:{type:'object'}})),
       {name:'topview_get_generation_config',inputSchema:{type:'object',properties:{req:{type:'object'}}}},
       {name:'topview_generate_video',inputSchema:{type:'object',properties:{req:{type:'object',properties:{taskType:{type:'string'},model:{type:'string'},prompt:{type:'string'},inputImages:{type:'array'},inputVideos:{type:'array'}},additionalProperties:false}}}},
     ]};
@@ -43,6 +43,10 @@ test('the cloud OAuth connection submits mixed references through Canvas and res
     assert.equal(finished.taskId,receipt.taskId);
     assert.equal(finished.boardUrl,undefined,'must not invent a Marketing Studio link for a Canvas task');
     assert.equal(canvas.calls.filter(call=>call.name==='submit_topview_canvas_generation_task').length,1);
+    const callsBefore=canvas.calls.length;
+    await assert.rejects(api.generate({prompt:'Full directions. '.repeat(400),model:'Seedance 2.5',outputType:'video',waitForCompletion:false,
+      medias:[{value:'https://media.cinegen.test/image.png',role:'image'},{value:'https://media.cinegen.test/audio.mp3',role:'audio'}]}),/Topview's Canvas audio-reference route accepts up to 4,000/);
+    assert.equal(canvas.calls.length,callsBefore,'long prompts stop before uploads, nodes, or paid Canvas calls');
   }finally{globalThis.fetch=original;}
 });
 

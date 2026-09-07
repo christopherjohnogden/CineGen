@@ -1,3 +1,5 @@
+import { assertTopviewCanvasPrompt } from './reference-capabilities';
+
 type Data = Record<string, any>;
 type Call = (name: string, args: Data) => Promise<unknown>;
 export type CanvasReference = { value: string; role: string };
@@ -89,9 +91,11 @@ export function canvasAudioParameters(capability: Data, request: Data, reference
 /** Uses the same Topview MCP session and account as ordinary CineGen generations. */
 export async function submitTopviewCanvasAudio(args: {
   call: Call; request: Data; references: CanvasReference[];
+  submitSchema?: unknown;
   load: (reference: CanvasReference) => Promise<Source>;
 }): Promise<Data> {
   const { call, request, references } = args;
+  assertTopviewCanvasPrompt(request.prompt, args.submitSchema);
   const listed = data(await call('list_topview_canvases', { limit: 50 }));
   let canvasId = listed.canvases?.find((canvas: Data) => canvas.name === 'CineGen references')?.canvasId;
   if (!canvasId) canvasId = data(await call('create_topview_canvas', { name: 'CineGen references' })).canvasId;

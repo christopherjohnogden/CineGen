@@ -1,6 +1,6 @@
 import { ALL_MODELS } from '../../src/lib/fal/models';
 import { buildTopviewModelRegistry, topviewRequestedModel, type TopviewGenerationCatalog } from '../../src/lib/topview/model-catalog';
-import { topviewVideoSubmitRoute } from '../../src/lib/topview/reference-capabilities';
+import { topviewVideoSubmitRoute, topviewPromptMaxCharacters } from '../../src/lib/topview/reference-capabilities';
 import { hasTopviewCanvasAudioTools } from '../../src/lib/topview/canvas-audio';
 import type { RecordValue } from './firebase';
 
@@ -37,7 +37,9 @@ export async function connectedModels(token: string, provider: GenerationProvide
       const transport = topviewVideoSubmitRoute(catalog?.toolSchemas?.topview_generate_video,
         { taskType: 'omni_reference', model: 'Seedance 2.5', inputAudios: [{}] }, status.authMode === 'api_key', hasTopviewCanvasAudioTools(catalog?.tools ?? []));
       audioReferenceConnection = { ready: true, transport, billing: transport === 'api' ? 'Topview API credits' : 'Existing Topview connection',
-        ...(transport === 'canvas-mcp' ? { requiresVisualReference: true, note: 'For Seedance 2.5, combine audio_references with at least one image or video in image_url. Canvas capability limits are checked before submitting.' } : {}) };
+        ...(transport === 'canvas-mcp' ? { requiresVisualReference: true,
+          promptMaxCharacters: topviewPromptMaxCharacters(catalog?.toolSchemas?.submit_topview_canvas_generation_task),
+          note: 'For Seedance 2.5, combine audio_references with at least one image or video in image_url. Any promptMaxCharacters limit comes from the Topview Canvas endpoint and applies only to this audio-reference route, not all CineGen prompts. Preserve the full prompt; do not shorten or rewrite it without the user’s approval. Canvas capability limits are checked before submitting.' } : {}) };
     } catch (error) {
       audioReferenceConnection = { ready: false, reason: (error as Error).message };
     }
