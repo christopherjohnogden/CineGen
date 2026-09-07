@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type SyntheticEvent } from 'react';
 import { CLIP_REVIEW_STATUSES, formatElapsed, primeVideoPoster, type ClipCardSize, type ClipItem, type ClipReviewStatus } from '@/lib/studio/clips';
+import { isStudioMedia } from '@/lib/studio/canvas-import';
 
 export interface StudioClipGridActions {
   onOpen: (id: string) => void;
@@ -248,7 +249,7 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
       <div className="clip-tile__stack">
         <button type="button" className={`clip-tile__icon${item.liked ? ' is-on' : ''}`} data-tip={item.liked ? 'Unlike' : 'Like'} aria-label={item.liked ? 'Unlike' : 'Like'} aria-pressed={item.liked} onClick={run(() => actions.onLike(item.id))}>{HEART}</button>
         <button type="button" className="clip-tile__icon" data-tip="Download" aria-label="Download" disabled={!item.url} onClick={run(() => actions.onDownload(item.id))}>{DOWNLOAD}</button>
-        <button type="button" className="clip-tile__icon" data-tip="Recreate" aria-label="Recreate" onClick={run(() => actions.onRecreate(item.id))}>{RECREATE}</button>
+        {!isStudioMedia(item.node, item.model) && <button type="button" className="clip-tile__icon" data-tip="Recreate" aria-label="Recreate" onClick={run(() => actions.onRecreate(item.id))}>{RECREATE}</button>}
         <button type="button" className="clip-tile__icon" data-tip="Reference" aria-label="Reference" disabled={!item.url} onClick={run(() => actions.onReference(item.id))}>{REFERENCE}</button>
         <button
           type="button"
@@ -315,7 +316,7 @@ function ClipTile({ item, selected, selectionActive, onToggleSelect, ...actions 
               <button type="button" role="menuitem" onClick={run(() => actions.onExtractFrame(item.id, 'end'))}>Extract last frame</button>
             </>
           )}
-          <button type="button" role="menuitem" onClick={run(() => actions.onRecreate(item.id))}>Recreate</button>
+          {!isStudioMedia(item.node, item.model) && <button type="button" role="menuitem" onClick={run(() => actions.onRecreate(item.id))}>Recreate</button>}
           {item.url && <button type="button" role="menuitem" onClick={run(() => actions.onReference(item.id))}>Reference</button>}
           <div className="clip-menu__rule" role="separator" />
           <button type="button" role="menuitem" onClick={run(() => actions.onLike(item.id))}>{item.liked ? 'Unlike' : 'Like'}</button>

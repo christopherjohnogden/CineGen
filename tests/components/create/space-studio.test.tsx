@@ -240,6 +240,7 @@ vi.mock('@/components/create/use-topview-model-catalog', () => ({
   useTopviewModelCatalogVersion: () => 1,
 }));
 vi.mock('@/lib/fal/models', () => ({
+  ALL_MODELS: models,
   getModelDefinition: (nodeType: string) => models[nodeType],
 }));
 vi.mock('@/lib/workflows/provider-model-options', () => ({
@@ -342,6 +343,40 @@ describe('Space Studio', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it('accepts a Canvas prompt and media once, keeps existing references, and does not start a generation', async () => {
+    localStorage.setItem('cinegen_studio_draft:studio-test-project', JSON.stringify({ prompt: 'Earlier draft', attachments: [
+      { id: 'existing', url: 'https://media.test/existing.png', name: 'Existing.png', kind: 'image' },
+    ] }));
+    const consumed = vi.fn();
+    const transfer = { id: 'transfer-1', spaceId: 'space-a', prompt: 'A side view of this shot.', attachments: [
+      { id: 'canvas-file', url: 'https://media.test/uploaded.mp4', name: 'Uploaded.mp4', kind: 'video' as const },
+    ] };
+    const { rerender } = render(<SpaceStudio transfer={transfer} onTransferConsumed={consumed} />);
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue(transfer.prompt);
+    expect(screen.getAllByRole('button', { name: 'Remove Uploaded.mp4' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Remove Existing.png' }).length).toBeGreaterThan(0);
+    expect(consumed).toHaveBeenCalledTimes(1);
+    expect(workspaceHarness.dispatch.mock.calls.some(([action]) => action.type === 'SET_NODES')).toBe(false);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'Edited after sending' } });
+    rerender(<SpaceStudio transfer={transfer} onTransferConsumed={consumed} />);
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('Edited after sending');
+    expect(consumed).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an imported image in Studio and attaches it as a reference without selecting a fake generation model', () => {
+    workspaceHarness.state = makeState([{ id: 'canvas-import', type: 'filePicker', position: { x: 0, y: 0 }, data: {
+      type: 'filePicker', label: 'Desktop photo.png', config: { __studioGenerated: true, __studioMedia: true,
+        __studioOutputType: 'image', fileUrl: 'https://media.test/desktop.png', fileName: 'Desktop photo.png' },
+      result: { status: 'complete', url: 'https://media.test/desktop.png' },
+    } }]);
+    render(<SpaceStudio />);
+    const card = screen.getByTestId('space-studio-feed-item-canvas-import');
+    expect(within(card).getByText('From Canvas')).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Use as reference' }));
+    expect(screen.getAllByRole('button', { name: 'Remove Desktop photo.png' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveAttribute('data-value', 'video-seedance');
   });
 
   it('switches between Canvas and Studio without unmounting or mutating the workflow', () => {

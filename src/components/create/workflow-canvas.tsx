@@ -38,6 +38,7 @@ import { getModelDefinition } from '@/lib/fal/models';
 import { reconcilePromptMentionConnections } from '@/lib/llm/prompt-elements';
 import { areWorkflowPortsCompatible } from '@/lib/workflows/port-compatibility';
 import { detachSelection, isHideOnDelete, visibleCanvasEdges, visibleCanvasNodes } from '@/lib/studio/canvas-placement';
+import { canvasMedia, canvasPrompt } from '@/lib/studio/canvas-import';
 import { createContext, useContext } from 'react';
 import type { PortType } from '@/types/workflow';
 
@@ -130,7 +131,11 @@ function GroupButton({ onGroup }: { onGroup: () => void }) {
   );
 }
 
-function WorkflowCanvasInner() {
+interface WorkflowCanvasProps {
+  onSendToStudio?: (nodeIds: string[], content: 'media' | 'prompt', mediaUrl?: string) => void;
+}
+
+function WorkflowCanvasInner({ onSendToStudio }: WorkflowCanvasProps) {
   const { state, dispatch, projectId } = useWorkspace();
   const { screenToFlowPosition, fitView } = useReactFlow();
 
@@ -139,7 +144,7 @@ function WorkflowCanvasInner() {
   const [pendingPaletteConnection, setPendingPaletteConnection] = useState<PendingPaletteConnection | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [typeWarning, setTypeWarning] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeIds: string[]; mediaUrl?: string } | null>(null);
   const [isFileDragging, setIsFileDragging] = useState(false);
   const [isMobileCanvas, setIsMobileCanvas] = useState(false);
   const [mobileMultiSelect, setMobileMultiSelect] = useState(false);
@@ -528,13 +533,17 @@ function WorkflowCanvasInner() {
   }, [contextMenu]);
 
   const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      const selectedCount = state.nodes.filter((n) => n.selected).length;
-      if (selectedCount < 1) return;
+    (e: React.MouseEvent, node?: Node<WorkflowNodeData>) => {
       e.preventDefault();
-      setContextMenu({ x: e.clientX, y: e.clientY });
+      const selected = state.nodes.filter(n => n.selected);
+      const nodeIds = node && !node.selected ? [node.id] : selected.map(n => n.id);
+      if (!nodeIds.length) return;
+      if (node && !node.selected) dispatch({ type: 'SET_NODES', nodes: state.nodes.map(n => ({ ...n, selected: n.id === node.id })) });
+      const media = (e.target as HTMLElement | undefined)?.closest?.('img, video');
+      const mediaUrl = media?.getAttribute('src') || media?.querySelector('source')?.getAttribute('src') || undefined;
+      setContextMenu({ x: Math.max(8, Math.min(e.clientX, window.innerWidth - 240)), y: Math.max(8, Math.min(e.clientY, window.innerHeight - 240)), nodeIds, mediaUrl });
     },
-    [state.nodes],
+    [dispatch, state.nodes],
   );
 
   const clearSelection = useCallback(() => {
@@ -596,7 +605,8 @@ function WorkflowCanvasInner() {
           nodes: nodesRef.current.map((node) => ({ ...node, selected: node.id === nodeId })) as Node<WorkflowNodeData>[],
         });
       }
-      setContextMenu({ x: point.x, y: point.y });
+      setContextMenu({ x: Math.max(8, Math.min(point.x, window.innerWidth - 240)), y: Math.max(8, Math.min(point.y, window.innerHeight - 240)),
+        nodeIds: nodeIsSelected ? nodesRef.current.filter(node => node.selected).map(node => node.id) : [nodeId] });
       longPressTimerRef.current = null;
     }, 520);
   }, [isMobileCanvas, cancelLongPress, dispatch]);
@@ -923,7 +933,7 @@ function WorkflowCanvasInner() {
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={handleContextMenu}
-        onSelectionContextMenu={handleContextMenu}
+        onSelectionContextMenu={(event) => handleContextMenu(event)}
         onPaneClick={() => {
           if (paletteOpen) {
             setPaletteOpen(false);
@@ -1114,6 +1124,19 @@ function WorkflowCanvasInner() {
           className="workflow-context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
+          {onSendToStudio && state.nodes.some(node => contextMenu.nodeIds.includes(node.id) && canvasMedia(node, state.elements).length > 0) && (
+            <button type="button" className="workflow-context-menu__item" onClick={() => { onSendToStudio(contextMenu.nodeIds, 'media', contextMenu.mediaUrl); setContextMenu(null); }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="m10 8 5 4-5 4Z" /></svg>
+              Send to Studio
+            </button>
+          )}
+          {onSendToStudio && state.nodes.some(node => contextMenu.nodeIds.includes(node.id) && (canvasPrompt(node)
+            || canvasMedia(node, state.elements).some(media => media.url === contextMenu.mediaUrl && media.prompt))) && (
+            <button type="button" className="workflow-context-menu__item" onClick={() => { onSendToStudio(contextMenu.nodeIds, 'prompt', contextMenu.mediaUrl); setContextMenu(null); }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 5h16M12 5v14M8 19h8" /></svg>
+              Send prompt to Studio
+            </button>
+          )}
           {state.nodes.filter((n) => n.selected && n.type !== 'group').length >= 2 && (
             <button type="button" className="workflow-context-menu__item" onClick={handleGroupSelected}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1161,10 +1184,10 @@ function WorkflowCanvasInner() {
   );
 }
 
-export function WorkflowCanvas() {
+export function WorkflowCanvas(props: WorkflowCanvasProps = {}) {
   return (
     <ReactFlowProvider>
-      <WorkflowCanvasInner />
+      <WorkflowCanvasInner {...props} />
     </ReactFlowProvider>
   );
 }

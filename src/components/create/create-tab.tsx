@@ -19,6 +19,7 @@ import {
 import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
 import { renewalCountdown } from '@/lib/providers/renewal';
 import { placeStudioNodeOnCanvas, removeStudioNodeFromCanvas } from '@/lib/studio/canvas-placement';
+import { canvasMedia, canvasPrompt, importCanvasMedia, syncCanvasVideosToStudio, type StudioTransfer } from '@/lib/studio/canvas-import';
 
 type SidebarPanel = 'workflows' | 'models' | 'history' | null;
 type SpaceViewMode = 'canvas' | 'studio';
@@ -162,6 +163,7 @@ export function CreateTab() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [viewMode, setViewMode] = useState<SpaceViewMode>(getInitialSpaceViewMode);
+  const [studioTransfer, setStudioTransfer] = useState<StudioTransfer | null>(null);
   const [activePanel, setActivePanel] = useState<SidebarPanel>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -199,6 +201,25 @@ export function CreateTab() {
     }
   }, []);
 
+  // Also bring existing board videos into Studio when opening an older Space.
+  useEffect(() => {
+    const nodes = syncCanvasVideosToStudio(state.nodes, timestamp());
+    if (nodes !== state.nodes) dispatch({ type: 'SET_NODES', nodes });
+  }, [dispatch, state.nodes]);
+
+  const handleSendToStudio = useCallback((nodeIds: string[], content: 'media' | 'prompt', mediaUrl?: string) => {
+    const selected = state.nodes.filter(node => nodeIds.includes(node.id));
+    const allMedia = selected.flatMap(node => canvasMedia(node, state.elements));
+    const clicked = mediaUrl ? allMedia.find(media => media.url === mediaUrl) : undefined;
+    const media = content === 'media' ? (clicked ? [clicked] : allMedia) : [];
+    const prompt = content === 'prompt' ? (clicked?.prompt || selected.map(canvasPrompt).filter(Boolean).join('\n\n')) : undefined;
+    if (!media.length && !prompt) return;
+    const nodes = importCanvasMedia(state.nodes, media, timestamp(), true);
+    if (nodes !== state.nodes) dispatch({ type: 'SET_NODES', nodes });
+    setStudioTransfer({ id: generateId(), spaceId: state.activeSpaceId, attachments: media, prompt });
+    handleViewModeChange('studio');
+  }, [dispatch, handleViewModeChange, state.activeSpaceId, state.elements, state.nodes]);
+
   useEffect(() => registerMcpCommands({ view: (args) => {
     const mode = args.view;
     if (mode !== 'canvas' && mode !== 'studio') throw new Error('Unknown Space view.');
@@ -214,7 +235,10 @@ export function CreateTab() {
   // it — along with the prompt, elements and frames that produced it — before
   // centring. A node already placed is only focused, never duplicated.
   const handleOpenNodeInCanvas = useCallback((nodeId: string) => {
-    const placement = placeStudioNodeOnCanvas(state.nodes, state.edges, nodeId, state.assets);
+    const node = state.nodes.find(candidate => candidate.id === nodeId);
+    const sourceId = node?.data.config.__studioMedia ? node.data.config.__studioSourceNodeId : undefined;
+    const canvasNodeId = typeof sourceId === 'string' && state.nodes.some(candidate => candidate.id === sourceId) ? sourceId : nodeId;
+    const placement = placeStudioNodeOnCanvas(state.nodes, state.edges, canvasNodeId, state.assets);
     if (placement.changed) {
       dispatch({ type: 'SET_NODES', nodes: placement.nodes });
       dispatch({ type: 'SET_EDGES', edges: placement.edges });
@@ -222,7 +246,7 @@ export function CreateTab() {
     handleViewModeChange('canvas');
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        window.dispatchEvent(new CustomEvent('cinegen:fit-node', { detail: nodeId }));
+        window.dispatchEvent(new CustomEvent('cinegen:fit-node', { detail: canvasNodeId }));
       });
     });
   }, [dispatch, handleViewModeChange, state.assets, state.edges, state.nodes]);
@@ -594,7 +618,7 @@ export function CreateTab() {
             aria-hidden={viewMode === 'studio'}
             inert={viewMode === 'studio'}
           >
-            <WorkflowCanvas key={state.activeSpaceId} />
+            <WorkflowCanvas key={state.activeSpaceId} onSendToStudio={handleSendToStudio} />
             {isFullscreen && (
               <div
                 className="create-tab__fullscreen-overlay"
@@ -604,7 +628,8 @@ export function CreateTab() {
           </div>
           {viewMode === 'studio' && (
             <div className="create-tab__studio">
-              <SpaceStudio onOpenInCanvas={handleOpenNodeInCanvas} onHideFromCanvas={handleHideNodeFromCanvas} />
+              <SpaceStudio onOpenInCanvas={handleOpenNodeInCanvas} onHideFromCanvas={handleHideNodeFromCanvas}
+                transfer={studioTransfer} onTransferConsumed={() => setStudioTransfer(null)} />
             </div>
           )}
         </div>

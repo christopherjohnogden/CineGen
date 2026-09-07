@@ -9,7 +9,7 @@ const STUDIO_CELL_W = 380;
 const STUDIO_CELL_H = 330;
 
 function isStudioNode(node: Node<WorkflowNodeData>): boolean {
-  return Boolean(node.data.config.__studioGenerated);
+  return Boolean(node.data.config.__studioGenerated) && !node.data.config.__studioCanvasOrigin;
 }
 
 /** Next free cell in the Studio grid, anchored clear of hand-built graph work. */
@@ -30,4 +30,3 @@ export function nextStudioSlot(nodes: Node<WorkflowNodeData>[]): { x: number; y:
     y: originY + Math.floor(index / STUDIO_COLS) * STUDIO_CELL_H,
   };
 }
-

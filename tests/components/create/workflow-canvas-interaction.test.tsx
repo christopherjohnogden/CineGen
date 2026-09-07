@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const flowHarness = vi.hoisted(() => ({
@@ -103,11 +103,39 @@ describe('WorkflowCanvas node click and drag behavior', () => {
     helperHarness.result = { horizontal: null, vertical: null };
     flowHarness.props = null;
     localStorage.setItem('cinegen_mobile_canvas_guide_seen', '1');
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: vi.fn(() => ({
+      matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })) });
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it('offers Send to Studio on a right-clicked, unselected desktop file', () => {
+    const file = { ...modelNode, id: 'desktop-file', type: 'filePicker', selected: false,
+      data: { type: 'filePicker', label: 'Photo', config: { fileUrl: '/Users/test/photo.png', fileType: 'image' } } };
+    workspaceHarness.state = { ...workspaceHarness.state, nodes: [modelNode, file] };
+    const send = vi.fn();
+    render(<WorkflowCanvas onSendToStudio={send} />);
+    const target = document.createElement('img');
+    target.setAttribute('src', 'local-media://file/Users/test/photo.png');
+    act(() => flowHandler('onNodeContextMenu')({ preventDefault: vi.fn(), target, clientX: 300, clientY: 200 } as never, file as never));
+    fireEvent.click(screen.getByRole('button', { name: 'Send to Studio' }));
+    expect(send).toHaveBeenCalledExactlyOnceWith(['desktop-file'], 'media', 'local-media://file/Users/test/photo.png');
+    expect(screen.queryByRole('button', { name: 'Send to Studio' })).not.toBeInTheDocument();
+  });
+
+  it('offers a prompt transfer without treating the prompt as media', () => {
+    const prompt = { ...modelNode, id: 'prompt', type: 'prompt', data: { type: 'prompt', label: 'Prompt', config: { prompt: 'A new shot' } } };
+    workspaceHarness.state = { ...workspaceHarness.state, nodes: [prompt] };
+    const send = vi.fn();
+    render(<WorkflowCanvas onSendToStudio={send} />);
+    act(() => flowHandler('onNodeContextMenu')({ preventDefault: vi.fn(), clientX: 20, clientY: 20 } as never, prompt as never));
+    expect(screen.queryByRole('button', { name: 'Send to Studio' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt to Studio' }));
+    expect(send).toHaveBeenCalledExactlyOnceWith(['prompt'], 'prompt', undefined);
   });
 
   it.each([

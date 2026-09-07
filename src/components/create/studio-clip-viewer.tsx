@@ -1,3 +1,4 @@
+import { isStudioMedia } from '@/lib/studio/canvas-import';
 import {
   useCallback,
   useEffect,
@@ -444,7 +445,7 @@ export function StudioClipViewer({
                 </button>
                 {detailsOpen && (
                   <dl className="clip-viewer__details">
-                    <div><dt>Model</dt><dd>{item.model.name}</dd></div>
+                    <div><dt>{isStudioMedia(item.node, item.model) ? 'File' : 'Model'}</dt><dd>{item.model.name}</dd></div>
                     {quality && <div><dt>Quality</dt><dd>{quality}</dd></div>}
                     {bitrate && <div><dt>Bitrate</dt><dd>{bitrate}</dd></div>}
                     {aspect && <div><dt>Aspect</dt><dd>{aspect}</dd></div>}
@@ -525,7 +526,7 @@ export function StudioClipViewer({
         ) : (
           <footer className="clip-viewer__actions">
             <div className="clip-viewer__actions-row">
-              <button type="button" className="clip-viewer__primary" onClick={onRecreate}>{Icon.recreate}Recreate</button>
+              {!isStudioMedia(item.node, item.model) && <button type="button" className="clip-viewer__primary" onClick={onRecreate}>{Icon.recreate}Recreate</button>}
               <button type="button" className="clip-viewer__secondary" disabled={!item.url} onClick={onReference}>{Icon.reference}Reference</button>
             </div>
             <div className="clip-viewer__actions-row clip-viewer__actions-row--tools">

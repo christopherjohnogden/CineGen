@@ -11,6 +11,7 @@ import { createDefaultTimeline } from '@/lib/editor/timeline-operations';
 import { attachElementMentionToGraph } from '@/lib/llm/prompt-elements';
 import { observeProviderBalance, type ProviderBalanceObservation } from '@/lib/providers/project-usage';
 import { generateId, timestamp } from '@/lib/utils/ids';
+import { syncCanvasVideosToStudio } from '@/lib/studio/canvas-import';
 const LAYER_DECOMPOSE_CLOUD_CONFIG_VERSION = 2;
 export type WorkspaceAction =
   | { type: 'SET_TAB'; tab: ProjectTab }
@@ -217,33 +218,27 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       try { localStorage.setItem(TAB_STORAGE_KEY, action.tab); } catch {}
       return { ...state, activeTab: action.tab };
 
-    case 'SET_NODES':
+    case 'SET_NODES': {
+      const nodes = syncCanvasVideosToStudio(action.nodes, timestamp());
       return {
         ...state,
-        nodes: action.nodes,
-        spaces: updateActiveSpace(state.spaces, state.activeSpaceId, { nodes: action.nodes }),
+        nodes,
+        spaces: updateActiveSpace(state.spaces, state.activeSpaceId, { nodes }),
       };
+    }
 
-    case 'UPDATE_NODE_CONFIG':
+    case 'UPDATE_NODE_CONFIG': {
+      const nodes = syncCanvasVideosToStudio(state.nodes.map((n) =>
+        n.id === action.nodeId
+          ? { ...n, data: { ...n.data, config: { ...n.data.config, ...action.config } } }
+          : n,
+      ), timestamp());
       return {
         ...state,
-        nodes: state.nodes.map((n) =>
-          n.id === action.nodeId
-            ? { ...n, data: { ...n.data, config: { ...n.data.config, ...action.config } } }
-            : n,
-        ),
-        spaces: updateActiveSpace(
-          state.spaces,
-          state.activeSpaceId,
-          {
-            nodes: state.nodes.map((n) =>
-              n.id === action.nodeId
-                ? { ...n, data: { ...n.data, config: { ...n.data.config, ...action.config } } }
-                : n,
-            ),
-          },
-        ),
+        nodes,
+        spaces: updateActiveSpace(state.spaces, state.activeSpaceId, { nodes }),
       };
+    }
 
     case 'APPLY_ELEMENT_MENTION': {
       const updatedNodes = state.nodes.map((node) => (
@@ -469,15 +464,16 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
 
     case 'SET_NODE_RESULT':
     case 'ADD_GENERATION': {
-      const update = (nodes: Node<WorkflowNodeData>[]) => nodes.map(node => {
+      const update = (nodes: Node<WorkflowNodeData>[]) => syncCanvasVideosToStudio(nodes.map(node => {
         if (node.id !== action.nodeId) return node;
         if (action.type === 'SET_NODE_RESULT') return { ...node, data: { ...node.data, result: action.result } };
         const generations = [...((node.data.generations as string[]) ?? []), action.url];
         return { ...node, data: { ...node.data, generations, activeGeneration: generations.length - 1 } };
-      });
+      }), timestamp());
       // Jobs can finish after the user or MCP switches Spaces. Keep the result
       // with its original node instead of dropping it from the active canvas.
-      return { ...state, nodes: update(state.nodes), spaces: state.spaces.map(space => ({ ...space, nodes: update(space.nodes) })) };
+      const nodes = update(state.nodes);
+      return { ...state, nodes, spaces: state.spaces.map(space => ({ ...space, nodes: space.id === state.activeSpaceId ? nodes : update(space.nodes) })) };
     }
 
     case 'ADD_EXPORT':
@@ -590,4 +586,3 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       return state;
   }
 }
-

@@ -58,8 +58,8 @@ const INPUT_HEIGHTS: Record<string, number> = {
 
 /** Next free cell in the placed-generation grid, kept clear of authored work. */
 export function nextPlacedSlot(nodes: Node<WorkflowNodeData>[]): { x: number; y: number } {
-  const authored = nodes.filter((node) => !isStudioGenerated(node) && isPlacedOnCanvas(node));
-  const placed = nodes.filter((node) => isStudioGenerated(node) && isPlacedOnCanvas(node));
+  const authored = nodes.filter((node) => (!isStudioGenerated(node) || node.data.config.__studioCanvasOrigin) && isPlacedOnCanvas(node));
+  const placed = nodes.filter((node) => isStudioGenerated(node) && !node.data.config.__studioCanvasOrigin && isPlacedOnCanvas(node));
   const originX = authored.length ? Math.max(...authored.map((node) => node.position.x)) + 720 : 640;
   const originY = authored.length ? Math.min(...authored.map((node) => node.position.y)) : 80;
   const index = placed.length;
@@ -228,6 +228,11 @@ export function placeStudioNodeOnCanvas(
   const target = nodes.find((node) => node.id === nodeId);
   if (!target || isPlacedOnCanvas(target)) return { nodes, edges, changed: false };
 
+  if (target.data.config.__studioCanvasOrigin) {
+    return { nodes: nodes.map(node => node.id === nodeId ? { ...node, data: { ...node.data,
+      config: { ...node.data.config, __studioCanvasPlaced: true } } } : node), edges, changed: true };
+  }
+
   const position = nextPlacedSlot(nodes);
   const placed: Node<WorkflowNodeData> = {
     ...target,
@@ -325,6 +330,12 @@ export function removeStudioNodeFromCanvas(
   };
   delete hidden.data.config.__studioCanvasPlaced;
   delete hidden.data.config.__studioPlacedInputIds;
+
+  // Canvas-authored inputs remain part of the recipe. Visibility filtering hides
+  // these edges while the video is off-canvas; reopening restores the same graph.
+  if (target.data.config.__studioCanvasOrigin) {
+    return { nodes: nodes.map(node => node.id === nodeId ? hidden : node), edges, changed: true };
+  }
 
   return {
     nodes: nodes.filter((node) => !owned.has(node.id)).map((node) => (node.id === nodeId ? hidden : node)),

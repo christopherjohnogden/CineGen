@@ -30,6 +30,7 @@ import { toFileUrl } from '@/lib/utils/file-url';
 import { getMediaTypeForFile, resolveMediaFileUrl, getLocalPathForFile } from '@/lib/utils/media-file';
 import { nextStudioSlot } from '@/lib/studio/layout';
 import { isPlacedOnCanvas } from '@/lib/studio/canvas-placement';
+import { isStudioMedia, studioFeedModel, type StudioTransfer } from '@/lib/studio/canvas-import';
 import { StudioTrimDialog } from './studio-trim-dialog';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { classifyFeedError } from '@/lib/studio/errors';
@@ -539,7 +540,7 @@ function StudioFeedItem({
         <div>
           <span className="space-studio__feed-kind">{model.outputType}</span>
           <h3>{model.name}</h3>
-          <span className="space-studio__feed-provider">{modelProviderLabel(model)}</span>
+          <span className="space-studio__feed-provider">{isStudioMedia(node, model) ? 'From Canvas' : modelProviderLabel(model)}</span>
         </div>
         <div className="space-studio__feed-meta">
           <span className={`space-studio__status space-studio__status--${status}`}>
@@ -729,7 +730,7 @@ function StudioFeedItem({
           data-testid={`space-studio-reuse-${node.id}`}
           onClick={onReuse}
         >
-          Reuse settings
+          {isStudioMedia(node, model) ? 'Use as reference' : 'Reuse settings'}
         </button>
         {onOpenInCanvas && (
           <button type="button" className="space-studio__link-button" onClick={onOpenInCanvas}>
@@ -746,6 +747,8 @@ export interface SpaceStudioProps {
   onOpenInCanvas?: (nodeId: string) => void;
   /** Takes a placed generation back off the canvas without deleting the generation. */
   onHideFromCanvas?: (nodeId: string) => void;
+  transfer?: StudioTransfer | null;
+  onTransferConsumed?: () => void;
 }
 
 const CARD_SIZE_LABELS = { s: 'Small', m: 'Medium', l: 'Large' } as const;
@@ -790,7 +793,7 @@ const FAVOURITE_MODEL_NAMES: Record<'image' | 'video', string[]> = {
   video: [DEFAULT_VIDEO_MODEL_NAME],
 };
 
-export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioProps = {}) {
+export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTransferConsumed }: SpaceStudioProps = {}) {
   const { state, dispatch, projectId } = useWorkspace();
   const catalogVersion = useTopviewModelCatalogVersion();
   // A reload, a restart, or a hot reload in dev must not empty the composer:
@@ -923,6 +926,26 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   const [flyoutStyle, setFlyoutStyle] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
   const launchLockRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const consumedTransfer = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!transfer || consumedTransfer.current === transfer.id || transfer.spaceId !== state.activeSpaceId) return;
+    consumedTransfer.current = transfer.id;
+    if (transfer.prompt !== undefined) setPrompt(transfer.prompt);
+    if (transfer.attachments.length) {
+      const incoming = transfer.attachments.map(reference => ({ ...reference,
+        url: resolveCloudMediaReference(reference.url, state.assets as unknown as Record<string, unknown>[]),
+      }));
+      setAttachedRefs(current => [...current, ...incoming].filter((reference, index, all) => all.findIndex(other => other.url === reference.url) === index));
+      if (incoming.some(reference => reference.kind === 'video')) setOutputKind('video');
+      setVideoMode('references');
+    }
+    setFormError('');
+    setComposerOpen(true);
+    setFeedFilter('all');
+    setFeedNotice({ text: transfer.prompt !== undefined ? 'Canvas prompt loaded. Ready when you are.' : 'Canvas media added to your references.', kind: 'info' });
+    onTransferConsumed?.();
+  }, [onTransferConsumed, state.activeSpaceId, state.assets, transfer]);
 
   const modelOptions = useMemo(() => {
     void catalogVersion;
@@ -1245,6 +1268,17 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   };
 
   const reuseGeneration = useCallback((node: Node<WorkflowNodeData>, feedModel: ModelDefinition) => {
+    if (isStudioMedia(node, feedModel)) {
+      const url = resolveCloudMediaReference(node.data.result?.url || String(node.data.config.fileUrl || ''), state.assets as unknown as Record<string, unknown>[]);
+      if (!url) return;
+      const reference: AttachedReference = { id: node.id, url, name: feedModel.name, kind: feedModel.outputType === 'video' ? 'video' : 'image' };
+      setAttachedRefs(current => current.some(item => item.url === url) ? current : [...current, reference]);
+      if (reference.kind === 'video') setOutputKind('video');
+      setVideoMode('references');
+      setComposerOpen(true);
+      setFormError('');
+      return;
+    }
     // Resolve from the live graph, not just the __studio* mirrors — a video
     // built on the canvas keeps its prompt, Elements, and frames on upstream
     // nodes, and reading the mirrors alone dropped all three.
@@ -1511,7 +1545,8 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   };
 
   const feedItems = useMemo(() => state.nodes
-    .map((node, index) => ({ node, index, model: getModelDefinition(node.data.type) }))
+    .filter(node => !node.data.config.__studioHiddenFromFeed)
+    .map((node, index) => ({ node, index, model: studioFeedModel(node) }))
     .filter((entry): entry is { node: Node<WorkflowNodeData>; index: number; model: ModelDefinition } => {
       if (!entry.model || (entry.model.outputType !== 'image' && entry.model.outputType !== 'video')) return false;
       const resultStatus = entry.node.data.result?.status;
@@ -1528,7 +1563,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
     ))
     .sort((left, right) => (
       studioCreatedAt(right.node) - studioCreatedAt(left.node) || right.index - left.index
-    )), [feedFilter, state.nodes]);
+    )), [catalogVersion, feedFilter, state.nodes]);
 
   // Every scalar the model is set to, keyed the way the provider names it.
   const controlParams = useMemo(() => {
@@ -1871,6 +1906,12 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   const referenceClip = useCallback(async (id: string) => {
     const item = clipById(id);
     if (!item?.url) return;
+    if (isStudioMedia(item.node, item.model)) {
+      reuseGeneration(item.node, item.model);
+      setViewerId(null);
+      showNotice('Added to your references.');
+      return;
+    }
     try {
       let asset: Asset;
       if (item.kind === 'image') {
@@ -1892,7 +1933,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'Could not use this clip as a reference.', 'error');
     }
-  }, [assetFromFrame, clipById, dispatch, showNotice, state.assets, useAsStartFrame]);
+  }, [assetFromFrame, clipById, dispatch, reuseGeneration, showNotice, state.assets, useAsStartFrame]);
 
   // A clip in the feed lives on its node, not in the asset library, so editing
   // one has to file it first — otherwise the only editable videos would be the
@@ -1957,7 +1998,13 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas }: SpaceStudioPro
   }, [clipById, showNotice]);
 
   const removeClips = useCallback((ids: ReadonlySet<string>) => {
-    dispatch({ type: 'SET_NODES', nodes: state.nodes.filter((candidate) => !ids.has(candidate.id)) });
+    dispatch({ type: 'SET_NODES', nodes: state.nodes.flatMap(candidate => {
+      if (!ids.has(candidate.id)) return [candidate];
+      // Keep an import tombstone so the source board does not immediately add it again.
+      return candidate.data.config.__studioMedia ? [{ ...candidate, data: { ...candidate.data, config: {
+        ...candidate.data.config, __studioHiddenFromFeed: true, __studioCanvasPlaced: false,
+      } } }] : [];
+    }) });
     dispatch({ type: 'SET_EDGES', edges: state.edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)) });
     setViewerId((current) => (current && ids.has(current) ? null : current));
     setSelectedClipIds((current) => {

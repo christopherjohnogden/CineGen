@@ -49,7 +49,7 @@ vi.mock('@/components/create/nodes/video-node-preview', () => ({
   ),
 }));
 vi.mock('@/components/create/use-topview-model-catalog', () => ({ useTopviewModelCatalogVersion: () => 1 }));
-vi.mock('@/lib/fal/models', () => ({ getModelDefinition: (t: string) => models[t] }));
+vi.mock('@/lib/fal/models', () => ({ ALL_MODELS: models, getModelDefinition: (t: string) => models[t] }));
 vi.mock('@/lib/workflows/provider-model-options', () => ({
   modelProviderLabel: () => 'Topview AI',
   providerModelOptions: () => [{ key: 'video-ref', label: 'Topview AI · Seedance 2.5' }],
