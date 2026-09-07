@@ -1,4 +1,5 @@
 import { ClaudeMcpConnect } from './claude-mcp-connect';
+import { ElevenLabsConnection } from '@/components/elevenlabs/connection';
 import { RemoteMcpConnect } from './remote-mcp-connect';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { renewalSummary } from '@/lib/providers/renewal';
@@ -31,7 +32,7 @@ type SettingsTab = 'app' | 'project';
 type RunpodLtxImageModel = 'sdxl' | 'qwen-image-edit';
 
 /* Sidebar category IDs — these double as scroll-anchor IDs */
-type AppCategory = 'claude' | 'cloud' | 'api-keys' | 'endpoints' | 'pod' | 'provider' | 'preferences';
+type AppCategory = 'claude' | 'cloud' | 'elevenlabs' | 'api-keys' | 'endpoints' | 'pod' | 'provider' | 'preferences';
 type ProjectCategory = 'resolution' | 'frame-rate' | 'aspect-ratio';
 type Category = AppCategory | ProjectCategory;
 
@@ -49,6 +50,7 @@ const APP_CATEGORIES: { id: AppCategory; label: string }[] = [
   { id: 'cloud', label: 'Cloud Account' },
   { id: 'claude', label: 'Claude Desktop' },
   { id: 'api-keys', label: 'API Keys' },
+  { id: 'elevenlabs', label: 'ElevenLabs' },
   { id: 'endpoints', label: 'RunPod Endpoints' },
   { id: 'pod', label: 'Generation Session' },
   { id: 'provider', label: 'Provider' },
@@ -1367,6 +1369,15 @@ export function SettingsPage({ onBack, projectId, useSqlite }: SettingsPageProps
                 <TopviewConnect />
                 <HiggsfieldConnect />
                 <ArtlistConnect />
+              </section>
+
+              <section className="sp-card" id="sp-section-elevenlabs" aria-labelledby="elevenlabs-settings-title">
+                <h3 className="sp-card__title" id="elevenlabs-settings-title">ElevenLabs MCP</h3>
+                <p className="sp-card__desc">
+                  Connect your ElevenLabs account for audio in Spaces and character voices.
+                  Your connection is shared across CineGen on the web and Mac.
+                </p>
+                <ElevenLabsConnection showVoices={false} />
               </section>
 
               {/* --- RunPod Endpoints --- */}

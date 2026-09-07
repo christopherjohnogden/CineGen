@@ -61,9 +61,9 @@ export function ElevenLabsConnection({ voiceId, onVoice, showVoices = true, disa
     finally { setBusy(false); }
   }
   return <div className="elevenlabs-connection nodrag nowheel">
-    <div className="elevenlabs-connection__heading"><span><span aria-hidden="true">Ⅱ</span> ElevenLabs</span><button type="button" disabled={disabled || busy} onClick={() => setSettings(v => !v)}>{connected ? connection === 'mcp' ? 'MCP connected · Manage' : 'Connected · Manage' : connected === null ? 'Checking…' : 'Connect'}</button></div>
+    <div className="elevenlabs-connection__heading"><span><span aria-hidden="true">Ⅱ</span> ElevenLabs</span><button type="button" aria-label="ElevenLabs connection settings" disabled={disabled || busy || connected === null} onClick={() => setSettings(v => !v)}>{connected ? connection === 'mcp' ? 'MCP connected · Manage' : 'Connected · Manage' : connected === null ? 'Checking…' : 'Connect'}</button></div>
     {(connected === false || settings) && <div className="elevenlabs-connection__setup">
-      <p className="character-voice__hint">Sign in to ElevenLabs once to create and play audio here.</p>
+      <p className="character-voice__hint">Sign in once to use ElevenLabs in CineGen.</p>
       <button className="character-voice__primary" type="button" disabled={busy || disabled} onClick={() => void connectMcp()}>{busy && attempt ? 'Waiting for ElevenLabs…' : connection === 'mcp' && connected ? 'Reconnect ElevenLabs' : 'Connect ElevenLabs'}</button>
       {attempt && <p className="character-voice__hint">Finish signing in in the ElevenLabs tab, then return here. {authorizationUrl && <a href={authorizationUrl} target="_blank" rel="noreferrer">Open sign-in</a>} <button type="button" onClick={() => { void elevenLabs.authCancel(attempt).then(() => { setAttempt(undefined); setBusy(false); setAuthorizationUrl(''); }).catch(e => setError(e.message)); }}>Cancel</button></p>}
       {!attempt && <button type="button" disabled={busy || disabled} onClick={() => setManualKey(v => !v)}>Use an API key instead</button>}
