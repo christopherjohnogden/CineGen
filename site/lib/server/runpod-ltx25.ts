@@ -157,7 +157,7 @@ async function mediaReference(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REFERENCE_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { redirect: "error", signal: controller.signal });
+    const response = await fetch(url, { redirect: "manual", signal: controller.signal });
     if (!response.ok) throw new SiteHttpError(502, "CineGen could not download the LTX-2.5 first-frame Element.", "REFERENCE_UNAVAILABLE");
     return imageDataUri(await readLimitedImage(response));
   } catch (error) {

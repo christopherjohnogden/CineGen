@@ -210,7 +210,7 @@ export async function persistRemoteMedia(
   const assetId = assertId(params.assetId, "asset id");
   await ensureProject(projectId);
   const url = safeRemoteUrl(params.remoteUrl ?? params.url);
-  const response = await fetch(url, { redirect: "error" });
+  const response = await fetch(url, { redirect: "manual" });
   if (!response.ok || !response.body) {
     throw new SiteHttpError(502, "Could not download generated media.", "PROVIDER_ERROR");
   }

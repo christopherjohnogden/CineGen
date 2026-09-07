@@ -60,6 +60,8 @@ test('durable job retries never duplicate an ambiguous paid submission',async()=
   assert.equal(state.get('job').status,'needs_attention');assert.equal(paid,0);
   const response=await (await job.fetch(new Request('https://job/read',{method:'POST',body:JSON.stringify({identity,args})}))).json();
   assert.equal(response.falKey,undefined);assert.equal(response.identity,undefined);
+  assert.equal(state.get('job').status,'needs_attention');
+  await job.alarm();assert.equal(paid,0);
 });
 
 test('background generation saves durable media and native project state after all clients close',async()=>{
@@ -104,7 +106,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.2.0');
+  assert.equal(initialized.result.serverInfo.version,'1.2.1');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -157,6 +159,7 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
     const values=new Map();const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>values.has(k)?structuredClone(values.get(k)):undefined,put:async(k,v)=>values.set(k,structuredClone(v)),setAlarm:async()=>{}}};
     const originalLoad=api.CloudStore.prototype.load,originalSave=api.CloudStore.prototype.save;
     let raw=api.createDefaultProjectState('Provider film'),submissions=0,polls=0;
+    let failDownload=provider==='topview'&&kind==='image';
     api.CloudStore.prototype.load=async()=>({state:structuredClone(raw),library:{elements:[],folders:[]},metadata:{useSqlite:true},ownerId:'owner'});
     api.CloudStore.prototype.save=async(_,state)=>{raw=structuredClone(state);};
     const source=`https://provider-cdn.example/media.${kind==='video'?'mp4':'png'}`;
@@ -170,7 +173,7 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
         submissions++;assert.equal(p.prompt,'Golden hour');
         return Response.json({ok:true,result:provider==='topview'?{taskId:'task-1',taskType:kind==='video'?'text_to_video':'text_to_image',model:p.model,status:'running'}:{url:source}});
       }
-      if(u===source)return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':kind==='video'?'video/mp4':'image/png'}});
+      if(u===source){assert.equal(options.redirect,'manual');if(failDownload)throw new Error('Simulated persistence failure');return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':kind==='video'?'video/mp4':'image/png'}});}
       if(u.includes('firebasestorage')&&options.method==='POST'){await new Response(options.body).arrayBuffer();return Response.json({downloadTokens:'download'});}
       if(u.includes('firebasestorage'))return new Response('',{status:404});
       throw new Error(`Unexpected provider call: ${u}`);
@@ -181,6 +184,20 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
       await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/start',{method:'POST',body:JSON.stringify({identity,args})}));
       await new api.GenerationJob(ctx,{}).alarm();
       if(provider==='topview'){assert.equal(values.get('job').status,'running');await new api.GenerationJob(ctx,{}).alarm();assert.equal(polls,1);}
+      if(failDownload) {
+        for(let i=1;i<12;i++)await new api.GenerationJob(ctx,{}).alarm();
+        assert.equal(values.get('job').status,'needs_attention');
+        assert.equal(values.get('job').identity.refreshToken,'');
+        assert.equal(values.get('job').sourceUrl,source);
+        const foreign=await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/read',{method:'POST',body:JSON.stringify({identity:{...identity,uid:'other'},args})}));
+        assert.equal(foreign.status,403);
+        assert.equal(values.get('job').status,'needs_attention');
+        failDownload=false;
+        await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/read',{method:'POST',body:JSON.stringify({identity,args})}));
+        assert.equal(values.get('job').status,'saving');
+        await new api.GenerationJob(ctx,{}).alarm();
+        assert.equal(polls,1);
+      }
       assert.equal(values.get('job').status,'complete');assert.equal(submissions,1);
       const reopened=api.hydrate(raw,{elements:[],folders:[]});
       assert.equal(reopened.assets.length,1);assert.equal(reopened.nodes[0].data.config.__studioGenerated,true);
