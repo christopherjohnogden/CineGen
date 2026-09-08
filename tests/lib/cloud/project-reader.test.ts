@@ -92,3 +92,15 @@ it('times out even if restoring the auth token hangs', async () => {
   await vi.advanceTimersByTimeAsync(25_000); await assertion;
   expect(requests).toHaveLength(0);
 });
+
+it('checks only the metadata when the loaded revision is still current', async () => {
+  expect(await readCloudProject(user, 'cloud_test', undefined, { ownerId: 'owner', revision: 'revision' })).toEqual({ ownerId: 'owner', revision: 'revision', state: undefined });
+  expect(requests).toEqual(['users/owner/projects/cloud_test']);
+});
+
+it('uses the known shared owner and downloads chunks only for a new revision', async () => {
+  const result = await readCloudProject(user, 'cloud_test', undefined, { ownerId: 'creator', revision: 'older' });
+  expect(result.state).toEqual(JSON.parse(snapshot));
+  expect(requests).toHaveLength(3);
+  expect(requests.every(path => path.startsWith('users/creator/projects/'))).toBe(true);
+});

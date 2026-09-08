@@ -5,7 +5,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  documentId,
   getDoc,
   getDocs,
   orderBy,
@@ -55,6 +54,8 @@ interface CloudProjectDocument {
 }
 
 const loadedRevisions = new Map<string, string>();
+const loadedOwners = new Map<string, string>();
+const loadedStates = new Map<string, Record<string, unknown>>();
 const saveQueues = new Map<string, Promise<unknown>>();
 
 function timestamp(): string {
@@ -267,6 +268,7 @@ async function performCloudSave(projectId: string, state: unknown, useSqlite: bo
   }
 
   loadedRevisions.set(key, revision);
+  loadedStates.set(key, restoreCloudMediaReferences(stateRecord));
   rememberCloudProject(projectId);
   if (previousRevision && previousRevision !== revision) {
     void deleteRevision(ownerId, projectId, previousRevision).catch((error) => {
@@ -291,48 +293,101 @@ export async function loadCloudProject<T = unknown>(projectId: string, signal?: 
   signal?.throwIfAborted();
   const restored = restoreCloudMediaReferences(state as T);
   loadedRevisions.set(cloudKey(ownerId, projectId), revision);
+  loadedOwners.set(cloudKey(user.uid, projectId), ownerId);
+  loadedStates.clear();
+  loadedStates.set(cloudKey(ownerId, projectId), restored as Record<string, unknown>);
   rememberCloudProject(projectId);
   return restored;
 }
 
-// Listen to revision metadata; download a snapshot only when another client changes it.
-// The caller must accept it synchronously before we advance its save revision.
+// Push updates are the fast path. A bounded REST check independently recovers
+// missed/failed listeners, including after sleep, without waiting on the SDK.
 export async function watchCloudProject(
   projectId: string,
   canApply: () => boolean,
-  apply: (snapshot: Record<string, unknown>) => boolean,
+  apply: (snapshot: Record<string, unknown>, base?: Record<string, unknown>) => boolean,
 ): Promise<() => void> {
-  if (!await hasAccessibleCloudProject(projectId)) return () => {};
+  if (!isCloudProjectId(projectId)) return () => {};
   const user = await waitForCloudAuth();
   if (!user) return () => {};
-  const access = await ensureProjectAccess(projectId, user);
-  const key = cloudKey(access.ownerId, projectId);
-  const projectRef = doc(cloudDb, 'users', access.ownerId, 'projects', projectId);
-  let revision = '', disposed = false, busy = false;
-  const refresh = async () => {
-    if (disposed || busy || !revision || revision === loadedRevisions.get(key)
-      || saveQueues.has(projectId) || !canApply()) return;
-    busy = true;
-    const target = revision;
-    const before = loadedRevisions.get(key);
-    try {
-      const chunks = await getDocs(query(collection(projectRef, 'revisions', target, 'chunks'), orderBy(documentId())));
-      if (disposed || revision !== target || loadedRevisions.get(key) !== before
-        || saveQueues.has(projectId) || !canApply()) return;
-      const raw = restoreCloudMediaReferences(JSON.parse(chunks.docs.map(chunk => String(chunk.data().data ?? '')).join(''))) as Record<string, unknown>;
-      if (apply(raw)) loadedRevisions.set(key, target);
-    } catch (error) {
-      console.warn('[cloud] Live project update will retry:', error);
-    } finally { busy = false; }
+  let ownerId = loadedOwners.get(cloudKey(user.uid, projectId));
+  let disposed = false, busy = false, again = false, notice = 0;
+  let stopListener: (() => void) | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | undefined;
+  const interval = () => document.visibilityState === 'hidden' ? 15_000 : 2000;
+  const schedule = (delay: number) => {
+    if (disposed) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => void refresh(), delay);
   };
-  const stop = onSnapshot(projectRef, snapshot => {
-    if (snapshot.metadata.hasPendingWrites) return;
-    revision = String(snapshot.data()?.currentRevision ?? '');
-    void refresh();
-  }, error => console.warn('[cloud] Live project listener unavailable:', error));
-  // Retry a received update after an in-flight save or brief local edit settles.
-  const timer = setInterval(() => void refresh(), 2000);
-  return () => { disposed = true; stop(); clearInterval(timer); };
+  const listen = () => {
+    if (disposed || stopListener || !ownerId) return;
+    const projectRef = doc(cloudDb, 'users', ownerId, 'projects', projectId);
+    stopListener = onSnapshot(projectRef, snapshot => {
+      if (snapshot.metadata.hasPendingWrites || snapshot.metadata.fromCache) return;
+      const revision = String(snapshot.data()?.currentRevision ?? '');
+      if (revision && revision !== loadedRevisions.get(cloudKey(ownerId!, projectId))) {
+        notice++;
+        void refresh();
+      }
+    }, error => {
+      console.warn('[cloud] Live listener will reconnect; server checks remain active:', error);
+      stopListener?.(); stopListener = undefined;
+      if (!busy) schedule(interval());
+    });
+  };
+  const refresh = async () => {
+    if (disposed) return;
+    if (busy) { again = true; return; }
+    if (timer) clearTimeout(timer);
+    if (navigator.onLine === false || saveQueues.has(projectId) || !canApply()) { schedule(interval()); return; }
+    busy = true; again = false;
+    controller = new AbortController();
+    const before = ownerId ? loadedRevisions.get(cloudKey(ownerId, projectId)) : undefined;
+    const seen = notice;
+    try {
+      // Do not run access migrations/identity writes to start a read-only watch.
+      const result = await readCloudProject(user, projectId, controller.signal, { ownerId, revision: before });
+      if (disposed || controller.signal.aborted) return;
+      if (ownerId !== result.ownerId) { stopListener?.(); stopListener = undefined; }
+      ownerId = result.ownerId;
+      loadedOwners.set(cloudKey(user.uid, projectId), ownerId);
+      listen();
+      if (!result.state || seen !== notice || loadedRevisions.get(cloudKey(ownerId, projectId)) !== before
+        || saveQueues.has(projectId) || !canApply()) return;
+      const raw = restoreCloudMediaReferences(result.state) as Record<string, unknown>;
+      const key = cloudKey(ownerId, projectId);
+      if (apply(raw, loadedStates.get(key))) {
+        loadedRevisions.set(key, result.revision);
+        loadedStates.set(key, raw);
+      }
+    } catch (error) {
+      if (!disposed && !controller.signal.aborted) console.warn('[cloud] Live project update will retry:', error);
+    } finally {
+      busy = false; controller = undefined;
+      if (!disposed) { listen(); schedule(again ? 0 : interval()); }
+    }
+  };
+  const wake = () => {
+    if (document.visibilityState === 'hidden') return;
+    if (busy) { again = true; controller?.abort(); } else void refresh();
+  };
+  window.addEventListener('focus', wake);
+  window.addEventListener('online', wake);
+  document.addEventListener('visibilitychange', wake);
+  const stopPower = window.electronAPI?.app?.onPowerEvent?.(({ type }) => {
+    if (type === 'resume' || type === 'unlock-screen') wake();
+  });
+  listen();
+  void refresh();
+  return () => {
+    disposed = true; controller?.abort(); stopListener?.(); stopPower?.();
+    if (timer) clearTimeout(timer);
+    window.removeEventListener('focus', wake);
+    window.removeEventListener('online', wake);
+    document.removeEventListener('visibilitychange', wake);
+  };
 }
 
 export async function listCloudProjects(): Promise<AvailableProjectMeta[]> {

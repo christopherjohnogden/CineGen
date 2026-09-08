@@ -24,7 +24,7 @@ function id(value: unknown): string {
 /** A bounded, read-only path independent of Firestore's streaming/write queue.
  * Uses the signed-in user's token, so the same Firestore rules still apply.
  */
-export async function readCloudProject(user: User, projectId: string, signal?: AbortSignal) {
+export async function readCloudProject(user: User, projectId: string, signal?: AbortSignal, known?: { ownerId?: string; revision?: string }) {
   id(projectId);
   const controller = new AbortController();
   const cancel = () => controller.abort(signal?.reason);
@@ -62,7 +62,7 @@ export async function readCloudProject(user: User, projectId: string, signal?: A
       }
     }
     // Owners can open legacy projects without creating/migrating access metadata.
-    let ownerId = id(user.uid);
+    let ownerId = id(known?.ownerId ?? user.uid);
     let project = await get(`users/${ownerId}/projects/${projectId}`);
     if (!project) {
       const access = await get(`projectAccess/${projectId}`);
@@ -73,6 +73,11 @@ export async function readCloudProject(user: User, projectId: string, signal?: A
     if (!project) throw new Error('This cloud project was not found.');
     const metadata = data(project);
     const revision = id(metadata.currentRevision);
+    // Poll only the small project header when there is nothing new. Media and
+    // revision chunks are fetched once the server advertises a different save.
+    if (ownerId === known?.ownerId && revision === known.revision) {
+      return { ownerId, revision, state: undefined };
+    }
     const path = `users/${ownerId}/projects/${projectId}/revisions/${revision}`;
     const [marker, chunks] = await Promise.all([
       get(path),

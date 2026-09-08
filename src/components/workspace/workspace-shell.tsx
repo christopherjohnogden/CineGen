@@ -68,6 +68,7 @@ import {
   getMaxConcurrentVisionJobs,
 } from '@/lib/utils/api-key';
 import { markWorkspaceSavePending } from './workspace-persistence';
+import { mergeLiveWorkspace } from '@/lib/cloud/merge-project-update';
 import { useMcpBridge } from './use-mcp-bridge';
 
 /* ------------------------------------------------------------------
@@ -1227,31 +1228,46 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     if (!hydrationComplete || hydrationError) return;
     let disposed = false;
     let stop = () => {};
-    const canApply = () => !savePendingRef.current && liveStateRef.current.runningNodeIds.size === 0;
-    void watchCloudProject(projectId, canApply, raw => {
+    const canApply = () => liveStateRef.current.runningNodeIds.size === 0;
+    void watchCloudProject(projectId, canApply, (raw, base) => {
       if (disposed || !canApply()) return false;
       const current = liveStateRef.current;
-      const workflow = (raw.workflow ?? {}) as Record<string, unknown>;
-      const spaces = ((useSqlite ? workflow.spaces : raw.spaces) ?? []) as WorkflowSpace[];
-      const activeSpaceId = spaces.some(space => space.id === current.activeSpaceId)
-        ? current.activeSpaceId : String((useSqlite ? workflow.activeSpaceId : raw.activeSpaceId) ?? '');
-      const timelines = useSqlite
-        ? (raw.timelines as Array<Record<string, unknown> & { tracks: Record<string, unknown>[]; clips: Array<Record<string, unknown> & { keyframes?: Record<string, unknown>[] }>; transitions: Record<string, unknown>[] }>).map(tl => timelineFromRows(tl, tl.tracks, tl.clips, tl.transitions))
-        : (migrateSequenceToTimelines(raw as unknown as ProjectSnapshot).timelines ?? []) as Timeline[];
-      historyDispatch({ type: 'HYDRATE', payload: {
-        nodes: (workflow.nodes ?? []) as Node<WorkflowNodeData>[],
-        edges: (workflow.edges ?? []) as Edge[],
-        spaces, activeSpaceId,
-        openSpaceIds: [...current.openSpaceIds],
-        assets: useSqlite ? (raw.assets as Record<string, unknown>[]).map(assetFromRow) : (raw.assets ?? []) as Asset[],
-        mediaFolders: useSqlite ? (raw.mediaFolders as Record<string, unknown>[]).map(folderFromRow) : (raw.mediaFolders ?? []) as MediaFolder[],
-        timelines,
-        activeTimelineId: timelines.some(tl => tl.id === current.activeTimelineId) ? current.activeTimelineId : timelines[0]?.id ?? '',
-        exports: useSqlite ? (raw.exports as Record<string, unknown>[]).map(exportFromRow) : (raw.exports ?? []) as ExportJob[],
-        elements: current.elements, elementFolders: current.elementFolders,
-        director: useSqlite ? directorFromWorkflow(workflow) : directorFromSnapshot(raw as unknown as ProjectSnapshot),
-        providerUsage: normalizeProjectProviderUsage(useSqlite ? workflow.providerUsage : raw.providerUsage),
-      }});
+      if (savePendingRef.current && !base) return false;
+      const fromSnapshot = (raw: Record<string, unknown>) => {
+        const workflow = (raw.workflow ?? {}) as Record<string, unknown>;
+        const spaces = ((useSqlite ? workflow.spaces : raw.spaces) ?? []) as WorkflowSpace[];
+        const activeSpaceId = spaces.some(space => space.id === current.activeSpaceId)
+          ? current.activeSpaceId : String((useSqlite ? workflow.activeSpaceId : raw.activeSpaceId) ?? '');
+        const timelines = useSqlite
+          ? (raw.timelines as Array<Record<string, unknown> & { tracks: Record<string, unknown>[]; clips: Array<Record<string, unknown> & { keyframes?: Record<string, unknown>[] }>; transitions: Record<string, unknown>[] }>).map(tl => timelineFromRows(tl, tl.tracks, tl.clips, tl.transitions))
+          : (migrateSequenceToTimelines(raw as unknown as ProjectSnapshot).timelines ?? []) as Timeline[];
+        return {
+          nodes: (workflow.nodes ?? []) as Node<WorkflowNodeData>[],
+          edges: (workflow.edges ?? []) as Edge[],
+          spaces, activeSpaceId,
+          openSpaceIds: [...current.openSpaceIds],
+          assets: useSqlite ? (raw.assets as Record<string, unknown>[]).map(assetFromRow) : (raw.assets ?? []) as Asset[],
+          mediaFolders: useSqlite ? (raw.mediaFolders as Record<string, unknown>[]).map(folderFromRow) : (raw.mediaFolders ?? []) as MediaFolder[],
+          timelines,
+          activeTimelineId: timelines.some(tl => tl.id === current.activeTimelineId) ? current.activeTimelineId : timelines[0]?.id ?? '',
+          exports: useSqlite ? (raw.exports as Record<string, unknown>[]).map(exportFromRow) : (raw.exports ?? []) as ExportJob[],
+          elements: current.elements, elementFolders: current.elementFolders,
+          director: useSqlite ? directorFromWorkflow(workflow) : directorFromSnapshot(raw as unknown as ProjectSnapshot),
+          providerUsage: normalizeProjectProviderUsage(useSqlite ? workflow.providerUsage : raw.providerUsage),
+        };
+      };
+      let payload = fromSnapshot(raw);
+      if (savePendingRef.current && base) {
+        const merged = mergeLiveWorkspace(
+          workspaceReducer(current, { type: 'HYDRATE', payload: fromSnapshot(base) }),
+          current,
+          workspaceReducer(current, { type: 'HYDRATE', payload }),
+        );
+        payload = { ...payload, ...merged, openSpaceIds: [...merged.openSpaceIds] };
+      }
+      // HYDRATE renders the merged state without creating a new pending save.
+      // An existing dirty flag is retained so autosave retries against this revision.
+      historyDispatch({ type: 'HYDRATE', payload });
       return true;
     }).then(unsubscribe => { if (disposed) unsubscribe(); else stop = unsubscribe; })
       .catch(error => console.warn('[cloud] Could not start live project updates:', error));
