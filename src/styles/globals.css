@@ -267,9 +267,12 @@ input[type='range']::-moz-range-track {
   background: var(--bg-base);
   border-bottom: 1px solid var(--border-subtle);
   padding: 0 16px;
-  padding-left: 80px; /* space for macOS traffic lights */
   flex-shrink: 0;
   -webkit-app-region: drag;
+}
+
+.top-nav[data-native-platform="darwin"] {
+  padding-left: 80px; /* Only the native Mac window has traffic lights. */
 }
 
 .top-nav__left {

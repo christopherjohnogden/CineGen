@@ -70,7 +70,7 @@ export function TopTabs({
   }, [pageMenuOpen]);
 
   return (
-    <nav className="top-nav">
+    <nav className="top-nav" data-native-platform={window.electronAPI?.platform}>
       <div className="top-nav__left">
         <span className="top-nav__wordmark">CINEGEN</span>
         {onBackToHome && (

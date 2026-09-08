@@ -72,6 +72,8 @@ export interface ClaudeMcpStatus {
 }
 
 export interface ElectronAPI {
+  /** Supplied by the native preload only; absent from the browser bridge. */
+  platform?: string;
   elevenlabs?: { request: (method: string, params: unknown, token: string) => Promise<unknown> };
   prompts?: { rewrite: (params: import('./src/lib/studio/prompt-rewrite').StudioRewriteRequest, token: string) => Promise<import('./src/lib/studio/prompt-rewrite').StudioRewriteResult> };
   claudeMcp: {
