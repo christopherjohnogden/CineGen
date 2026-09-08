@@ -5,8 +5,10 @@ import { toFileUrl } from '@/lib/utils/file-url';
 interface Props {
   url: string;
   name: string;
-  onRemove: () => void;
-  removeTestId: string;
+  onRemove?: () => void;
+  removeTestId?: string;
+  onPreview?: () => void;
+  onDuration?: (duration: number) => void;
 }
 
 function timeLabel(seconds: number) {
@@ -18,7 +20,7 @@ export function StudioAudioReference(props: Props) {
   return <AudioReferencePlayer key={props.url} {...props} />;
 }
 
-function AudioReferencePlayer({ url, name, onRemove, removeTestId }: Props) {
+function AudioReferencePlayer({ url, name, onRemove, removeTestId, onPreview, onDuration }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
   const clipId = useId().replace(/:/g, '');
@@ -86,16 +88,19 @@ function AudioReferencePlayer({ url, name, onRemove, removeTestId }: Props) {
 
   function updateDuration() {
     const seconds = audio.current?.duration;
-    if (seconds && Number.isFinite(seconds)) setDuration(seconds);
+    if (seconds && Number.isFinite(seconds)) { setDuration(seconds); onDuration?.(seconds); }
   }
 
   return (
-    <div ref={root} className={`studio-audio-ref${playing ? ' is-playing' : ''}`} role="group" aria-label={`Audio reference: ${name}`}>
+    <div ref={root} className={`studio-audio-ref${playing ? ' is-playing' : ''}${onPreview ? ' has-preview' : ''}`} role="group" aria-label={`Audio reference: ${name}`}
+      onClick={event => { if (onPreview && event.target instanceof Element && !event.target.closest('button,input')) onPreview(); }}>
       <div className="studio-audio-ref__head">
-        <span className="studio-audio-ref__name" title={name}>{name}</span>
-        <button type="button" className="studio-audio-ref__remove" aria-label={`Remove ${name}`} data-testid={removeTestId} onClick={onRemove}>
+        {onPreview ? <button type="button" className="studio-audio-ref__name studio-audio-ref__preview" title={`Preview ${name}`} aria-label={`Preview ${name}`} aria-haspopup="dialog" onClick={onPreview}>
+          <span>{name}</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2h4v4M14 2 9 7M6 14H2v-4m0 4 5-5" /></svg>
+        </button> : <span className="studio-audio-ref__name" title={name}>{name}</span>}
+        {onRemove && <button type="button" className="studio-audio-ref__remove" aria-label={`Remove ${name}`} data-testid={removeTestId} onClick={onRemove}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 5 6 6m0-6-6 6" /></svg>
-        </button>
+        </button>}
       </div>
       <div className="studio-audio-ref__player">
         <button type="button" className="studio-audio-ref__play" aria-label={`${playing ? 'Pause' : 'Play'} ${name}`} onClick={() => void togglePlayback()}>

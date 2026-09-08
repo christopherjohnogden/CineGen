@@ -321,6 +321,8 @@ function makeState(nodes: Record<string, unknown>[] = []) {
 
 describe('Space Studio', () => {
   beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
     workspaceHarness.state = makeState();
     workspaceHarness.dispatch.mockClear();
     localStorage.clear();
@@ -1040,6 +1042,12 @@ describe('Space Studio', () => {
     expect(await screen.findByText('rhythm.wav added as a reference.')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Play rhythm.wav' })).toHaveLength(1);
     expect(screen.getByRole('slider', { name: 'Seek rhythm.wav' })).toBeInTheDocument();
+    for (const name of ['jordan.png', 'jordan-travis.mp4', 'rhythm.wav']) {
+      fireEvent.click(within(screen.getByTestId('space-studio-dock-refs')).getByRole('button', { name: `Preview ${name}` }));
+      expect(screen.getByRole('dialog', { name })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Close reference preview' }));
+      expect(within(screen.getByTestId('space-studio-dock-refs')).getByRole('button', { name: `Remove ${name}` })).toBeInTheDocument();
+    }
     // The video used to stop at "saved to Assets"; both are references now.
     expect(screen.getAllByRole('button', { name: 'Remove jordan.png' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'Remove jordan-travis.mp4' }).length).toBeGreaterThan(0);
@@ -1261,8 +1269,13 @@ describe('Space Studio', () => {
     expect(clip?.getAttribute('src')).toContain('run-cycle.mp4');
     expect(clip?.getAttribute('preload')).toBe('metadata');
 
+    fireEvent.click(within(strip).getByRole('button', { name: 'Preview Sky Diver' }));
+    expect(screen.getByRole('dialog', { name: 'Sky Diver' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close reference preview' }));
+
     // Each tile can be taken off the shot from here.
     fireEvent.click(within(strip).getByRole('button', { name: 'Remove run-cycle.mp4' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(within(screen.getByTestId('space-studio-dock-refs')).queryByText('run-cycle.mp4')).not.toBeInTheDocument();
     fireEvent.click(within(screen.getByTestId('space-studio-dock-refs')).getByRole('button', { name: 'Remove Sky Diver' }));
     expect(screen.queryByTestId('space-studio-dock-refs')).not.toBeInTheDocument();

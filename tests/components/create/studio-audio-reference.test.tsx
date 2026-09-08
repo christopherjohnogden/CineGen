@@ -30,6 +30,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('audio reference playback', () => {
+  it('opens quick look from the name without hijacking play, seek or remove', async () => {
+    const onPreview = vi.fn();
+    render(<StudioAudioReference {...props} onPreview={onPreview} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Cody dialogue.wav' }));
+    expect(onPreview).toHaveBeenCalledOnce();
+    onPreview.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Play Cody dialogue.wav' }));
+    await screen.findByRole('button', { name: 'Pause Cody dialogue.wav' });
+    fireEvent.click(screen.getByRole('slider'));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Cody dialogue.wav' }));
+    expect(onPreview).not.toHaveBeenCalled();
+  });
   it('shows a waveform, auditions and seeks without submitting the composer', async () => {
     const submit = vi.fn();
     const { container } = render(<form onSubmit={submit}><StudioAudioReference {...props} /></form>);

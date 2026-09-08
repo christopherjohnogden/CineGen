@@ -34,6 +34,7 @@ import { isStudioMedia, studioFeedModel, type StudioTransfer } from '@/lib/studi
 import { StudioTrimDialog } from './studio-trim-dialog';
 import { StudioPromptAssistant } from './studio-prompt-assistant';
 import { StudioAudioReference } from './studio-audio-reference';
+import { StudioReferencePreview, previewAttachedReference, previewElementReference, type ReferencePreview } from './studio-reference-preview';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
@@ -832,6 +833,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     ...reference, url: resolveCloudMediaReference(reference.url, state.assets as unknown as Record<string, unknown>[]),
   })));
   const [trimmingRefId, setTrimmingRefId] = useState<string | null>(null);
+  const [referencePreview, setReferencePreview] = useState<ReferencePreview | null>(null);
   const [dockPromptPx, setDockPromptPx] = useState(draft.dockPromptPx);
   const [dockBarPx, setDockBarPx] = useState(draft.dockBarPx);
   const dockResizeRef = useRef<{ prompt: number; width: number; x: number; y: number } | null>(null);
@@ -1850,6 +1852,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
         name: file.name,
         type: kind,
         url,
+        fileSize: file.size,
         createdAt: timestamp(),
         ...(localPath ? { fileRef: localPath } : {}),
         metadata: { generatedVia: 'studio-attachment' },
@@ -2272,10 +2275,13 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
           const image = elementImagesForVariation(element)[0];
           return (
             <div key={element.id} className="space-studio__dock-ref" title={element.name}>
-              {image
-                ? <img src={toFileUrl(image.url)} alt="" />
-                : <span className="space-studio__dock-ref-kind">EL</span>}
-              <span className="space-studio__dock-ref-label">{element.name}</span>
+              <button type="button" className="space-studio__ref-preview" aria-label={`Preview ${element.name}`} aria-haspopup="dialog"
+                onClick={() => setReferencePreview(previewElementReference(element))}>
+                {image
+                  ? <img src={toFileUrl(image.url)} alt="" />
+                  : <span className="space-studio__dock-ref-kind">EL</span>}
+                <span className="space-studio__dock-ref-label">{element.name}</span>
+              </button>
               <button
                 type="button"
                 className="space-studio__dock-ref-clear"
@@ -2291,21 +2297,25 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
         {attachedRefs.map((reference) => reference.kind === 'audio' ? (
           <StudioAudioReference key={reference.id} url={reference.url} name={reference.name}
             removeTestId={`space-studio-dock-ref-${reference.id}`}
+            onPreview={() => setReferencePreview(previewAttachedReference(reference, state.assets))}
             onRemove={() => setAttachedRefs(current => current.filter(entry => entry.id !== reference.id))} />
         ) : (
           <div key={reference.id} className="space-studio__dock-ref" title={reference.name}>
-            {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt="" />}
-            {reference.kind === 'video' && (
-              // eslint-disable-next-line jsx-a11y/media-has-caption
-              <video
-                src={toFileUrl(reference.url)}
-                muted
-                playsInline
-                preload="metadata"
-                onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
-              />
-            )}
-            <span className="space-studio__dock-ref-label">{reference.name}</span>
+            <button type="button" className="space-studio__ref-preview" aria-label={`Preview ${reference.name}`} aria-haspopup="dialog"
+              onClick={() => setReferencePreview(previewAttachedReference(reference, state.assets))}>
+              {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt="" />}
+              {reference.kind === 'video' && (
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                <video
+                  src={toFileUrl(reference.url)}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
+                />
+              )}
+              <span className="space-studio__dock-ref-label">{reference.name}</span>
+            </button>
             {reference.kind === 'video' && (
               <button
                 type="button"
@@ -2757,7 +2767,10 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
                   const image = elementImagesForVariation(element)[0];
                   return (
                     <span key={element.id} className="space-studio__ref is-selected" title={element.name}>
-                      <img src={toFileUrl(image.url)} alt={element.name} />
+                      <button type="button" className="space-studio__ref-preview" aria-label={`Preview ${element.name}`} aria-haspopup="dialog"
+                        onClick={() => setReferencePreview(previewElementReference(element))}>
+                        {image ? <img src={toFileUrl(image.url)} alt={element.name} /> : <span aria-hidden="true">EL</span>}
+                      </button>
                       <button
                         type="button"
                         className="space-studio__ref-remove"
@@ -2775,20 +2788,24 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
                   // hidden audio player behind it on desktop.
                   !dockMode && <StudioAudioReference key={reference.id} url={reference.url} name={reference.name}
                     removeTestId={`space-studio-attached-${reference.id}`}
+                    onPreview={() => setReferencePreview(previewAttachedReference(reference, state.assets))}
                     onRemove={() => setAttachedRefs(current => current.filter(entry => entry.id !== reference.id))} />
                 ) : (
                   <span key={reference.id} className="space-studio__ref is-selected" title={reference.name}>
-                    {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt={reference.name} />}
-                    {reference.kind === 'video' && (
-                      // eslint-disable-next-line jsx-a11y/media-has-caption
-                      <video
-                        src={toFileUrl(reference.url)}
-                        muted
-                        playsInline
-                        preload="metadata"
-                        onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
-                      />
-                    )}
+                    <button type="button" className="space-studio__ref-preview" aria-label={`Preview ${reference.name}`} aria-haspopup="dialog"
+                      onClick={() => setReferencePreview(previewAttachedReference(reference, state.assets))}>
+                      {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt={reference.name} />}
+                      {reference.kind === 'video' && (
+                        // eslint-disable-next-line jsx-a11y/media-has-caption
+                        <video
+                          src={toFileUrl(reference.url)}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
+                        />
+                      )}
+                    </button>
                     <button
                       type="button"
                       className="space-studio__ref-remove"
@@ -3574,6 +3591,8 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
             onClear={clearSelection}
           />
         )}
+
+        {referencePreview && <StudioReferencePreview reference={referencePreview} onClose={() => setReferencePreview(null)} />}
 
         {trimmingRefId && (() => {
           const reference = attachedRefs.find((entry) => entry.id === trimmingRefId);
