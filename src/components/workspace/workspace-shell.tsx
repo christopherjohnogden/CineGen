@@ -68,7 +68,6 @@ import {
   getMaxConcurrentVisionJobs,
 } from '@/lib/utils/api-key';
 import { markWorkspaceSavePending } from './workspace-persistence';
-import { mergeLiveWorkspace } from '@/lib/cloud/merge-project-update';
 import { useMcpBridge } from './use-mcp-bridge';
 
 /* ------------------------------------------------------------------
@@ -207,7 +206,7 @@ interface HistoryState {
 const DRAG_DEBOUNCE_MS = 300;
 
 function historyReducer(history: HistoryState, action: WorkspaceAction): HistoryState {
-  if (action.type === 'HYDRATE') {
+  if (action.type === 'HYDRATE' || action.type === 'SYNC_CLOUD_PROJECT') {
     return { current: workspaceReducer(history.current, action), past: [], future: [], lastPushTime: 0, lastPushType: null };
   }
   if (action.type === 'UNDO') {
@@ -1256,18 +1255,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           providerUsage: normalizeProjectProviderUsage(useSqlite ? workflow.providerUsage : raw.providerUsage),
         };
       };
-      let payload = fromSnapshot(raw);
-      if (savePendingRef.current && base) {
-        const merged = mergeLiveWorkspace(
-          workspaceReducer(current, { type: 'HYDRATE', payload: fromSnapshot(base) }),
-          current,
-          workspaceReducer(current, { type: 'HYDRATE', payload }),
-        );
-        payload = { ...payload, ...merged, openSpaceIds: [...merged.openSpaceIds] };
-      }
-      // HYDRATE renders the merged state without creating a new pending save.
-      // An existing dirty flag is retained so autosave retries against this revision.
-      historyDispatch({ type: 'HYDRATE', payload });
+      // Cancel a debounced closure containing the old workspace before advancing
+      // the cloud revision. The merged render schedules its replacement save.
+      if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+      // Merge in the reducer so edits queued in this React batch are included.
+      // Keep the dirty flag: failed/pending saves retry with the merged state.
+      historyDispatch({ type: 'SYNC_CLOUD_PROJECT', payload: fromSnapshot(raw), base: base ? fromSnapshot(base) : undefined });
       return true;
     }).then(unsubscribe => { if (disposed) unsubscribe(); else stop = unsubscribe; })
       .catch(error => console.warn('[cloud] Could not start live project updates:', error));

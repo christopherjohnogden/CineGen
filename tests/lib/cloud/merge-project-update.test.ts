@@ -41,3 +41,16 @@ test('merges both Studio and Canvas state while preserving the active view', () 
   expect(merged.spaces.find(space => space.id === 'space')?.nodes).toBe(merged.nodes);
   expect(merged.elements).toBe(local.elements);
 });
+
+test('cloud sync merges against edits already queued in the reducer, not an earlier render', () => {
+  const start = createInitialWorkspaceState();
+  const base = workspaceReducer(start, { type: 'SET_NODES', nodes: [node('old')] as any });
+  const remote = workspaceReducer(base, { type: 'SET_NODES', nodes: [...base.nodes, node('new')] as any });
+  const payload = (state: typeof base) => ({ ...state, openSpaceIds: [...state.openSpaceIds] });
+  // A keypress is queued after the download began, before the sync action.
+  const edited = workspaceReducer(base, { type: 'UPDATE_NODE_CONFIG', nodeId: 'old', config: { prompt: 'last keystroke' } });
+  const merged = workspaceReducer(edited, { type: 'SYNC_CLOUD_PROJECT', base: payload(base), payload: payload(remote) });
+  expect(merged.nodes.map(n => n.id)).toEqual(['old', 'new']);
+  expect(merged.nodes[0].data.config.prompt).toBe('last keystroke');
+  expect(merged.activeTab).toBe(edited.activeTab);
+});

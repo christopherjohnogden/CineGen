@@ -1,3 +1,4 @@
+import { mergeLiveWorkspace } from '@/lib/cloud/merge-project-update';
 import type { Node, Edge } from '@xyflow/react';
 import type { WorkflowSpace, WorkspaceState, ProjectTab } from '@/types/workspace';
 import type { Asset, MediaFolder } from '@/types/project';
@@ -56,6 +57,7 @@ export type WorkspaceAction =
   | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
   | { type: 'APPLY_ELEMENT_MENTION'; nodeId: string; elementId: string; config: Record<string, unknown> }
   | { type: 'HYDRATE'; payload: HydratePayload }
+  | { type: 'SYNC_CLOUD_PROJECT'; payload: HydratePayload; base?: HydratePayload }
   | { type: 'UNDO' }
   | { type: 'REDO' };
 
@@ -214,6 +216,13 @@ return {
 
 export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
   switch (action.type) {
+    case 'SYNC_CLOUD_PROJECT': {
+      const remote = workspaceReducer(state, { type: 'HYDRATE', payload: action.payload });
+      if (!action.base) return remote;
+      const base = workspaceReducer(state, { type: 'HYDRATE', payload: action.base });
+      const merged = mergeLiveWorkspace(base, state, remote);
+      return workspaceReducer(state, { type: 'HYDRATE', payload: { ...action.payload, ...merged, openSpaceIds: [...merged.openSpaceIds] } });
+    }
     case 'SET_TAB':
       try { localStorage.setItem(TAB_STORAGE_KEY, action.tab); } catch {}
       return { ...state, activeTab: action.tab };
