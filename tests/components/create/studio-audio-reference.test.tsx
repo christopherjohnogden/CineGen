@@ -30,17 +30,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('audio reference playback', () => {
-  it('opens quick look from the name without hijacking play, seek or remove', async () => {
+  it('opens quick look from a waveform thumbnail and only offers playback in the larger view', () => {
     const onPreview = vi.fn();
-    render(<StudioAudioReference {...props} onPreview={onPreview} />);
+    const { container } = render(<StudioAudioReference {...props} onPreview={onPreview} />);
+    expect(screen.queryByRole('button', { name: 'Play Cody dialogue.wav' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    expect(container.querySelector('audio')).toBeNull();
+    expect(preview).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview Cody dialogue.wav' }));
     expect(onPreview).toHaveBeenCalledOnce();
     onPreview.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Play Cody dialogue.wav' }));
-    await screen.findByRole('button', { name: 'Pause Cody dialogue.wav' });
-    fireEvent.click(screen.getByRole('slider'));
     fireEvent.click(screen.getByRole('button', { name: 'Remove Cody dialogue.wav' }));
     expect(onPreview).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledOnce();
   });
   it('shows a waveform, auditions and seeks without submitting the composer', async () => {
     const submit = vi.fn();

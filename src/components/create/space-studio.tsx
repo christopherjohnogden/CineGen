@@ -2296,6 +2296,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
         })}
         {attachedRefs.map((reference) => reference.kind === 'audio' ? (
           <StudioAudioReference key={reference.id} url={reference.url} name={reference.name}
+            thumbnailLayout="dock"
             removeTestId={`space-studio-dock-ref-${reference.id}`}
             onPreview={() => setReferencePreview(previewAttachedReference(reference, state.assets))}
             onRemove={() => setAttachedRefs(current => current.filter(entry => entry.id !== reference.id))} />

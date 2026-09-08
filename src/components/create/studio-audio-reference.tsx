@@ -8,6 +8,7 @@ interface Props {
   onRemove?: () => void;
   removeTestId?: string;
   onPreview?: () => void;
+  thumbnailLayout?: 'dock' | 'inline';
   onDuration?: (duration: number) => void;
 }
 
@@ -16,11 +17,26 @@ function timeLabel(seconds: number) {
 }
 
 export function StudioAudioReference(props: Props) {
+  if (props.onPreview) return <AudioReferenceThumbnail {...props} onPreview={props.onPreview} />;
   // A replaced source gets fresh playback/preview state, even with the same ID.
   return <AudioReferencePlayer key={props.url} {...props} />;
 }
 
-function AudioReferencePlayer({ url, name, onRemove, removeTestId, onPreview, onDuration }: Props) {
+function AudioReferenceThumbnail({ name, onPreview, onRemove, removeTestId, thumbnailLayout = 'inline' }: Props & { onPreview: () => void }) {
+  const docked = thumbnailLayout === 'dock';
+  return <div className={`studio-audio-thumb ${docked ? 'space-studio__dock-ref' : 'space-studio__ref is-selected'}`} role="group" aria-label={`Audio reference: ${name}`}>
+    <button type="button" className="space-studio__ref-preview" title={`Preview ${name}`} aria-label={`Preview ${name}`} aria-haspopup="dialog" onClick={onPreview}>
+      <svg className="studio-audio-thumb__wave" viewBox="0 0 80 32" aria-hidden="true">
+        <path d="M5 14v4m7-10v16m7-13v10m7-18v26m7-20v14m7-16v18m7-24v30m7-24v18m7-14v10m7-14v18m7-11v4" />
+      </svg>
+      <span className="studio-audio-thumb__name">{name}</span>
+    </button>
+    {onRemove && <button type="button" className={docked ? 'space-studio__dock-ref-clear' : 'space-studio__ref-remove'}
+      aria-label={`Remove ${name}`} data-testid={removeTestId} onClick={onRemove}>×</button>}
+  </div>;
+}
+
+function AudioReferencePlayer({ url, name, onRemove, removeTestId, onDuration }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
   const clipId = useId().replace(/:/g, '');
@@ -92,12 +108,9 @@ function AudioReferencePlayer({ url, name, onRemove, removeTestId, onPreview, on
   }
 
   return (
-    <div ref={root} className={`studio-audio-ref${playing ? ' is-playing' : ''}${onPreview ? ' has-preview' : ''}`} role="group" aria-label={`Audio reference: ${name}`}
-      onClick={event => { if (onPreview && event.target instanceof Element && !event.target.closest('button,input')) onPreview(); }}>
+    <div ref={root} className={`studio-audio-ref${playing ? ' is-playing' : ''}`} role="group" aria-label={`Audio reference: ${name}`}>
       <div className="studio-audio-ref__head">
-        {onPreview ? <button type="button" className="studio-audio-ref__name studio-audio-ref__preview" title={`Preview ${name}`} aria-label={`Preview ${name}`} aria-haspopup="dialog" onClick={onPreview}>
-          <span>{name}</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 2h4v4M14 2 9 7M6 14H2v-4m0 4 5-5" /></svg>
-        </button> : <span className="studio-audio-ref__name" title={name}>{name}</span>}
+        <span className="studio-audio-ref__name" title={name}>{name}</span>
         {onRemove && <button type="button" className="studio-audio-ref__remove" aria-label={`Remove ${name}`} data-testid={removeTestId} onClick={onRemove}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 5 6 6m0-6-6 6" /></svg>
         </button>}

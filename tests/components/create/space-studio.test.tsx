@@ -1040,11 +1040,12 @@ describe('Space Studio', () => {
     });
 
     expect(await screen.findByText('rhythm.wav added as a reference.')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Play rhythm.wav' })).toHaveLength(1);
-    expect(screen.getByRole('slider', { name: 'Seek rhythm.wav' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Play rhythm.wav' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('slider', { name: 'Seek rhythm.wav' })).not.toBeInTheDocument();
     for (const name of ['jordan.png', 'jordan-travis.mp4', 'rhythm.wav']) {
       fireEvent.click(within(screen.getByTestId('space-studio-dock-refs')).getByRole('button', { name: `Preview ${name}` }));
       expect(screen.getByRole('dialog', { name })).toBeInTheDocument();
+      if (name === 'rhythm.wav') expect(within(screen.getByRole('dialog', { name })).getByRole('button', { name: 'Play rhythm.wav' })).toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Close reference preview' }));
       expect(within(screen.getByTestId('space-studio-dock-refs')).getByRole('button', { name: `Remove ${name}` })).toBeInTheDocument();
     }
