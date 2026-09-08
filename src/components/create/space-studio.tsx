@@ -33,6 +33,7 @@ import { isPlacedOnCanvas } from '@/lib/studio/canvas-placement';
 import { isStudioMedia, studioFeedModel, type StudioTransfer } from '@/lib/studio/canvas-import';
 import { StudioTrimDialog } from './studio-trim-dialog';
 import { StudioPromptAssistant } from './studio-prompt-assistant';
+import { StudioAudioReference } from './studio-audio-reference';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
@@ -2287,7 +2288,11 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
             </div>
           );
         })}
-        {attachedRefs.map((reference) => (
+        {attachedRefs.map((reference) => reference.kind === 'audio' ? (
+          <StudioAudioReference key={reference.id} url={reference.url} name={reference.name}
+            removeTestId={`space-studio-dock-ref-${reference.id}`}
+            onRemove={() => setAttachedRefs(current => current.filter(entry => entry.id !== reference.id))} />
+        ) : (
           <div key={reference.id} className="space-studio__dock-ref" title={reference.name}>
             {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt="" />}
             {reference.kind === 'video' && (
@@ -2300,7 +2305,6 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
                 onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
               />
             )}
-            {reference.kind === 'audio' && <span className="space-studio__dock-ref-kind">AUD</span>}
             <span className="space-studio__dock-ref-label">{reference.name}</span>
             {reference.kind === 'video' && (
               <button
@@ -2340,7 +2344,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
         <button
           type="button"
           className="space-studio__dock-add"
-          aria-label="Attach an image or video"
+          aria-label="Attach an image, video, or audio reference"
           data-testid="space-studio-dock-add"
           onClick={() => openAttachFor(null)}
         >
@@ -2766,7 +2770,13 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
                     </span>
                   );
                 })}
-                {attachedRefs.map((reference) => (
+                {attachedRefs.map((reference) => reference.kind === 'audio' ? (
+                  // The dock has its own reference strip. Avoid loading a second,
+                  // hidden audio player behind it on desktop.
+                  !dockMode && <StudioAudioReference key={reference.id} url={reference.url} name={reference.name}
+                    removeTestId={`space-studio-attached-${reference.id}`}
+                    onRemove={() => setAttachedRefs(current => current.filter(entry => entry.id !== reference.id))} />
+                ) : (
                   <span key={reference.id} className="space-studio__ref is-selected" title={reference.name}>
                     {reference.kind === 'image' && <img src={toFileUrl(reference.url)} alt={reference.name} />}
                     {reference.kind === 'video' && (
@@ -2779,7 +2789,6 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
                         onLoadedMetadata={(event) => primeVideoPoster(event.currentTarget)}
                       />
                     )}
-                    {reference.kind === 'audio' && <span className="space-studio__ref-kind">AUD</span>}
                     <button
                       type="button"
                       className="space-studio__ref-remove"

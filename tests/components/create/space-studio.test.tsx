@@ -1038,6 +1038,8 @@ describe('Space Studio', () => {
     });
 
     expect(await screen.findByText('rhythm.wav added as a reference.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Play rhythm.wav' })).toHaveLength(1);
+    expect(screen.getByRole('slider', { name: 'Seek rhythm.wav' })).toBeInTheDocument();
     // The video used to stop at "saved to Assets"; both are references now.
     expect(screen.getAllByRole('button', { name: 'Remove jordan.png' }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: 'Remove jordan-travis.mp4' }).length).toBeGreaterThan(0);

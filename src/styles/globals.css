@@ -4349,6 +4349,47 @@ input[type='range']::-moz-range-track {
   pointer-events: none;
 }
 
+/* Audio references — compact audition player shared by the dock and mobile. */
+.studio-audio-ref {
+  flex: 0 0 auto;
+  width: 220px;
+  max-width: 100%;
+  padding: 8px 10px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border-subtle));
+  border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, var(--bg-raised)), var(--bg-base));
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+  transition: border-color .18s ease;
+}
+.studio-audio-ref.is-playing { border-color: var(--accent); }
+.studio-audio-ref__head { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.studio-audio-ref__name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: var(--text-primary); }
+.studio-audio-ref__remove { position: relative; display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; border-radius: 6px; color: var(--text-secondary); }
+.studio-audio-ref__remove::before { content: ''; position: absolute; inset: -8px -6px -4px -6px; }
+.studio-audio-ref__remove:hover { background: var(--bg-overlay); color: var(--text-primary); }
+.studio-audio-ref__remove svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.studio-audio-ref__player { display: flex; align-items: center; gap: 9px; }
+.studio-audio-ref__play { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 50%; background: var(--accent-dim); color: var(--accent-hover); transition: background .15s ease, color .15s ease; }
+.studio-audio-ref__play:hover, .studio-audio-ref.is-playing .studio-audio-ref__play { background: var(--accent); color: var(--bg-base); }
+.studio-audio-ref__play svg { width: 18px; height: 18px; fill: currentColor; }
+.studio-audio-ref__track { flex: 1; min-width: 0; }
+.studio-audio-ref__wave { position: relative; height: 28px; color: var(--accent-hover); border-radius: 4px; }
+.studio-audio-ref__wave > svg { display: block; width: 100%; height: 100%; }
+.studio-audio-ref__wave-icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; opacity: .6; }
+.studio-audio-ref__wave input[type="range"] { position: absolute; inset: -4px 0; width: 100%; height: calc(100% + 8px); margin: 0; padding: 0; opacity: 0; cursor: pointer; touch-action: pan-y; }
+.studio-audio-ref__wave input:disabled { cursor: default; }
+.studio-audio-ref__wave:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.studio-audio-ref__meta { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-top: 2px; font-size: 9px; line-height: 1.4; color: var(--text-secondary); white-space: nowrap; }
+.studio-audio-ref__meta > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.studio-audio-ref__meta > :last-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.studio-audio-ref > audio { display: none; }
+@media (pointer: coarse) {
+  .studio-audio-ref { width: 240px; padding: 8px 12px 12px; }
+  .studio-audio-ref__play { width: 44px; height: 44px; flex-basis: 44px; }
+  .studio-audio-ref__wave { height: 36px; }
+  .studio-audio-ref__remove::before { inset: -11px; }
+}
+
 /* Setting pills */
 .space-studio__pill-row {
   display: grid;
@@ -23484,19 +23525,6 @@ input[type='range']::-moz-range-track {
   .clip-selection__preview { display: none; }
   .clip-selection__summary { min-width: 0; flex: 1 1 auto; padding: 0 4px 0 8px; }
   .clip-selection__summary strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-}
-
-/* Audio has no frame to show; name the kind instead. */
-.space-studio__ref-kind {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  background: var(--bg-elevated);
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: .08em;
 }
 
 /* ---- Docked reference strip ---------------------------------------------- */
