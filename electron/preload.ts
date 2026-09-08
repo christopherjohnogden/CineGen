@@ -129,6 +129,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     generateAudio: (params: unknown) => ipcRenderer.invoke('topview:generate-audio', params),
   },
   elevenlabs: { request: (method: string, params: unknown, token: string) => ipcRenderer.invoke('elevenlabs:request', method, params, token) },
+  prompts: { rewrite: (params: unknown, token: string) => ipcRenderer.invoke('prompts:rewrite', params, token) },
   teamProviders: {
     status: () => ipcRenderer.invoke('team-providers:status'),
     connect: () => ipcRenderer.invoke('team-providers:connect'),

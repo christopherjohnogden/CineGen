@@ -12,6 +12,7 @@ import {
 } from "./media-store";
 import { createElevenLabsMcp } from './elevenlabs-mcp';
 import { createElevenLabs } from "./elevenlabs";
+import { createStudioPromptRewriter } from './studio-prompt-rewrite';
 import { createElementsLibraryStore } from "./elements-library-store";
 import { createHiggsfieldMcp } from "./higgsfield-mcp";
 import { createProjectStore } from "./project-store";
@@ -96,6 +97,10 @@ export async function handleRpc(
       return success(result);
     }
     switch (operation) {
+      case 'prompts.rewrite':
+        if (!identity) throw new SiteHttpError(401, 'Sign in to CineGen to edit prompts with AI.');
+        result = await createStudioPromptRewriter(runtimeEnv, workspaceId)(args[0]);
+        break;
       case "project.list":
         result = await store.list();
         break;

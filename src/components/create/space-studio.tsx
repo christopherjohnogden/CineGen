@@ -32,6 +32,7 @@ import { nextStudioSlot } from '@/lib/studio/layout';
 import { isPlacedOnCanvas } from '@/lib/studio/canvas-placement';
 import { isStudioMedia, studioFeedModel, type StudioTransfer } from '@/lib/studio/canvas-import';
 import { StudioTrimDialog } from './studio-trim-dialog';
+import { StudioPromptAssistant } from './studio-prompt-assistant';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
@@ -2920,6 +2921,12 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
             }}
           >
             {dockTools}
+            <StudioPromptAssistant
+              key={`${projectId}:${state.activeSpaceId}:${outputKind}:${modelType}`}
+              prompt={prompt}
+              kind={outputKind}
+              onApply={(original, replacement) => setPrompt(current => current === original ? replacement : current)}
+            />
           <div className="space-studio__setting-row-wrap">
             <button
               type="button"

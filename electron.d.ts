@@ -73,6 +73,7 @@ export interface ClaudeMcpStatus {
 
 export interface ElectronAPI {
   elevenlabs?: { request: (method: string, params: unknown, token: string) => Promise<unknown> };
+  prompts?: { rewrite: (params: import('./src/lib/studio/prompt-rewrite').StudioRewriteRequest, token: string) => Promise<import('./src/lib/studio/prompt-rewrite').StudioRewriteResult> };
   claudeMcp: {
     status: () => Promise<ClaudeMcpStatus>;
     setup: () => Promise<ClaudeMcpStatus>;

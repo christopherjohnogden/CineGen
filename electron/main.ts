@@ -27,6 +27,7 @@ import { registerCliLlmDetectHandlers } from './ipc/cli-llm-detect.js';
 import { registerCodexCliHandlers } from './ipc/codex-cli.js';
 import { registerOpenAiLlmHandlers } from './ipc/openai-llm.js';
 import { registerElevenLabsHandlers } from './ipc/elevenlabs.js';
+import { registerPromptHandlers } from './ipc/prompts.js';
 import { registerTeamProviderHandlers } from './ipc/team-providers.js';
 import { registerGeminiCliHandlers } from './ipc/gemini-cli.js';
 import { registerMusicPromptHandlers } from './ipc/music-prompt.js';
@@ -431,6 +432,7 @@ app.whenReady().then(async () => {
   registerOpenAiLlmHandlers();
   registerTeamProviderHandlers();
   registerElevenLabsHandlers();
+  registerPromptHandlers();
   registerGeminiCliHandlers();
   registerMusicPromptHandlers();
   registerFileSystemHandlers();
