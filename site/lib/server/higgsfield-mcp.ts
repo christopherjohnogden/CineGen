@@ -1,3 +1,4 @@
+import { validateHiggsfieldMediaTool } from '@/lib/higgsfield/media-tools';
 import {
   SiteHttpError,
   contentTypeForName,
@@ -355,7 +356,7 @@ export async function toolArguments(tool: McpTool, value: unknown, env: RuntimeE
   const extra = params.params && typeof params.params === "object" && !Array.isArray(params.params)
     ? params.params as Record<string, unknown>
     : {};
-  const mediaKeys = new Set(['medias', 'higgsfield_media_inputs', 'image_references', 'video_references', 'audio_references', 'image_url', 'input_images']);
+  const mediaKeys = new Set(['medias', 'higgsfield_media_inputs', 'image_references', 'video_references', 'audio_references', 'image_url', 'input_images', 'input_video', 'input_audio']);
   for (const [key, entry] of Object.entries(pickKnownHiggsfieldParams(String(params.model), extra) ?? {})) {
     if ((key in properties || acceptsExtra) && !mediaKeys.has(key) && !/api.?key|token|secret|^__/i.test(key) && entry !== null && entry !== undefined) args[key] = entry;
   }
@@ -378,9 +379,12 @@ export async function toolArguments(tool: McpTool, value: unknown, env: RuntimeE
     const row = entry as Record<string, unknown>;
     return typeof row.value === "string" && row.value ? [{ value: row.value, role: String(row.role ?? "image") }] : [];
   }).map(async (entry) => ({ ...entry, value: await mediaReference(entry.value, env, workspaceId) })));
+  validateHiggsfieldMediaTool(String(params.model), extra, references);
   if (references.length) {
     if (nested) {
-      args.medias = references.map((entry) => ({ value: entry.value, role: entry.role }));
+      args.medias = references.map((entry) => ({ value: entry.value,
+        role: params.model === 'topaz_image' ? 'image_references' : params.model === 'topaz_video' ? 'video_references'
+          : params.model === 'sync_so' ? (/audio/.test(entry.role) ? 'input_audio' : 'input_video') : entry.role }));
       return { params: args };
     }
     const field = ["reference_images", "image_urls", "images", "references", "medias", "media"]

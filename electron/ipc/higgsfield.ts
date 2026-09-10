@@ -1,3 +1,4 @@
+import { isHiggsfieldMediaTool, validateHiggsfieldMediaTool } from '../../src/lib/higgsfield/media-tools.js';
 // electron/ipc/higgsfield.ts
 //
 // Phase 0.2 — shared Higgsfield generation client. One service backs Spaces nodes, the Quick Edit
@@ -123,6 +124,11 @@ export function buildCreateArgs(params: HiggsfieldGenerateParams): string[] {
     args.push(`--${name}`, serialized);
   };
 
+  if (isHiggsfieldMediaTool(params.model)) {
+    validateHiggsfieldMediaTool(params.model, genericParams, params.medias ?? []);
+    if (params.model === 'sync_so') throw new Error('Sync Lipsync 3 is available through Higgsfield MCP in the CineGen website. The current Higgsfield desktop CLI does not expose this model. No generation was submitted.');
+    for (const field of ['image_references', 'video_references', 'input_video', 'input_audio']) delete genericParams[field];
+  }
   const prompt = params.prompt !== undefined ? params.prompt : genericParams.prompt;
   delete genericParams.prompt;
   appendParam('prompt', prompt);

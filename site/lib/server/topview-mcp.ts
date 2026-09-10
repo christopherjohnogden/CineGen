@@ -1,3 +1,4 @@
+import { isTopviewMediaTool, topviewMediaToolUnavailable, buildTopviewMediaToolRequest } from '@/lib/topview/media-tools';
 import {
   SiteHttpError,
   contentTypeForName,
@@ -812,6 +813,16 @@ function friendlyToolError(value: unknown, fallback: string, apiKeyMode = false)
 async function callTool(session: McpSession, name: string, req: JsonRecord): Promise<unknown> {
   if (name === 'topview_query_task' && readTopviewCanvasTask(req.taskId)) {
     return queryTopviewCanvasAudio((tool, args) => callTool(session, tool, args), String(req.taskId));
+  }
+  if (name === 'cinegen_topview_lip_sync' || (name === 'topview_query_task' && req.taskType === 'lip_sync')) {
+    if (!session.uid) throw new SiteHttpError(422, topviewMediaToolUnavailable('Video Lip Sync')!, 'TOPVIEW_TOOL_UNAVAILABLE');
+    const query = name === 'topview_query_task';
+    const response = await fetchJson(`https://api.topview.ai/v1/video_avatar/task/${query ? `query?taskId=${encodeURIComponent(String(req.taskId))}&needCloudFrontUrl=true` : 'submit'}`, {
+      method: query ? 'GET' : 'POST', headers: { authorization: `Bearer ${session.token}`, 'Topview-Uid': session.uid, 'content-type': 'application/json' },
+      body: query ? undefined : JSON.stringify(req), redirect: 'manual', signal: AbortSignal.timeout(90_000),
+    }, 'Topview could not complete the lip-sync request.');
+    if (String(response.code) !== '200') throw new SiteHttpError(502, friendlyToolError(response, 'Topview lip sync failed.', true), 'TOPVIEW_TOOL_ERROR');
+    return response;
   }
   const tool = session.tools.find((entry) => entry.name === name);
   if (!tool) {
@@ -1868,6 +1879,7 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       }
       return {
         configs,
+        authMode: session.uid ? 'api_key' : 'oauth',
         tools: session.tools.map((tool) => tool.name),
         toolSchemas: Object.fromEntries(session.tools
           .filter((tool) => ["topview_get_generation_config", "topview_generate_video", "submit_topview_canvas_generation_task", "topview_generate_audio", "topview_generate_music", "topview_generate_voice", "topview_clone_voice", "topview_query_task"].includes(tool.name))
@@ -2038,12 +2050,13 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       const existingTaskId = typeof params.taskId === "string" && params.taskId.trim()
         ? params.taskId.trim()
         : typeof params.jobId === "string" ? params.jobId.trim() : "";
-      if (!existingTaskId && (typeof params.prompt !== "string" || !params.prompt.trim())) {
+      const special = isTopviewMediaTool(params.model) ? params.model : undefined;
+      if (!special && !existingTaskId && (typeof params.prompt !== "string" || !params.prompt.trim())) {
         throw new SiteHttpError(400, "Topview generation requires a prompt.", "TOPVIEW_PARAMETERS_INVALID");
       }
       const inputs = mediaInputs(params, outputType);
       const explicitTaskType = params.taskType ?? (isRecord(params.params) ? params.params.taskType ?? params.params.task_type : undefined);
-      const taskType = normalizeTaskType(explicitTaskType, outputType, inputs);
+      const taskType = special ? (special === 'Video Lip Sync' ? 'lip_sync' : 'avatar_video') : normalizeTaskType(explicitTaskType, outputType, inputs);
       if ((taskType === "text_to_image" || taskType === "text_to_video") && inputs.length) {
         throw new SiteHttpError(400, `Topview ${taskType} does not accept media references.`, "TOPVIEW_PARAMETERS_INVALID");
       }
@@ -2058,7 +2071,18 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
       let taskId = existingTaskId;
       let documents: unknown = [];
 
-      if (!taskId) {
+      if (!taskId && special) {
+        const unavailable = topviewMediaToolUnavailable(special, session.tools.map(tool => tool.name), Boolean(session.uid));
+        if (unavailable) throw new SiteHttpError(422, unavailable, 'TOPVIEW_TOOL_UNAVAILABLE');
+        buildTopviewMediaToolRequest(special, String(params.prompt ?? ''), inputs);
+        const uploaded: UploadedMedia[] = [];
+        for (const input of inputs) uploaded.push(await uploadMedia(session, input, env, workspaceId));
+        if (special !== 'Video Lip Sync' && !boardId) boardId = await chooseBoard(session) ?? '';
+        const built = buildTopviewMediaToolRequest(special, String(params.prompt ?? ''), uploaded, boardId);
+        documents = parseToolDocuments(await callTool(session, special === 'Video Lip Sync' ? 'cinegen_topview_lip_sync' : 'topview_avatar_video', built.request));
+        taskId = findStringByKeys(documents, ['taskId', 'task_id']) ?? '';
+        if (!taskId) throw new SiteHttpError(502, 'Topview did not return a receipt. Check Topview before starting another generation.', 'TOPVIEW_RESULT_INVALID');
+      } else if (!taskId) {
         const config = await callTool(session, "topview_get_generation_config", { type: outputType, taskType, refresh: true });
         const preflight = buildRequest({ params, taskType, outputType, config: parseToolDocuments(config),
           media: inputs.map((input, index) => ({ ...input, fileId: `preflight-${index}`, kind: /audio/.test(input.role) ? 'audio' : /video/.test(input.role) ? 'video' : 'image' })),

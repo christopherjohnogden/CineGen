@@ -1,3 +1,4 @@
+import { buildTopviewMediaToolRequest, topviewMediaToolUnavailable } from '../../../src/lib/topview/media-tool-request.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -1116,7 +1117,43 @@ export function createTopviewService(options = {}) {
     }
   }
 
+  const isMediaTool = model => ['Avatar 4', 'Avatar 4 Fast', 'Video Lip Sync', 'Image Upscale', 'Video Upscale'].includes(model);
+  async function mediaTool(params) {
+    const session = await createMcpSession();
+    const unavailable = topviewMediaToolUnavailable(params.model, session.tools.map(tool => tool.name));
+    if (unavailable) throw serviceError(unavailable, 'TOPVIEW_TOOL_UNAVAILABLE', 422);
+    let taskId = params.taskId;
+    const taskType = 'avatar_video';
+    let boardId = params.boardId;
+    if (!taskId) {
+      const refs = topviewVideoReferences(params.medias).references;
+      buildTopviewMediaToolRequest(params.model, params.prompt ?? '', refs);
+      const uploaded = [];
+      for (const [index, ref] of refs.entries()) uploaded.push({ ...ref, fileId: await uploadReference(session, ref.value, index) });
+      boardId = await chooseBoard(session);
+      const built = buildTopviewMediaToolRequest(params.model, params.prompt ?? '', uploaded, boardId);
+      const result = parseTopviewToolDocuments(await callTool(session, 'topview_avatar_video', built.request));
+      taskId = findStringByKeys(result, ['taskId', 'task_id']);
+      if (!taskId) throw serviceError('Topview did not return a receipt. Check Topview before starting another generation.', 'TOPVIEW_RESULT_INVALID', 502);
+    }
+    const receipt = { taskId, taskType, boardId, model: params.model };
+    if (!params.taskId) return { ...receipt, status: 'running' };
+    const docs = parseTopviewToolDocuments(await callTool(session, 'topview_query_task', { taskType, taskId, needCloudFrontUrl: true, shortenUrls: false }));
+    const parsed = parseTopviewMcpResult(docs);
+    return { ...receipt, ...parsed, status: parsed.url ? 'success' : /fail|error|cancel/.test(parsed.status ?? '') ? 'fail' : 'running', mediaType: 'video' };
+  }
+
   async function generate(params) {
+    if (isMediaTool(params?.model)) {
+      let result = await mediaTool(params);
+      const deadline = now() + DEFAULT_GENERATION_TIMEOUT_MS;
+      while (!result.url && result.status !== 'fail' && now() < deadline) {
+        await sleep(pollIntervalMs);
+        result = await mediaTool(result);
+      }
+      if (!result.url) throw serviceError(result.error || 'Topview has not returned the result. Resume the saved task.', 'TOPVIEW_GENERATION_PENDING', 502);
+      return result;
+    }
     if (!isRecord(params) || typeof params.prompt !== 'string' || !params.prompt.trim()) {
       throw serviceError('Topview video generation requires a prompt.', 'INVALID_INPUT');
     }
@@ -1152,6 +1189,7 @@ export function createTopviewService(options = {}) {
     let parsed = parseTopviewMcpResult(result);
     const taskId = parsed.taskId;
     if (!taskId) throw serviceError('Topview did not return a task ID for this generation.', 'TOPVIEW_BAD_RESPONSE', 502);
+    if (params.waitForCompletion === false) return { taskId, taskType, boardId, model: built.model, durationSec: built.durationSec, status: 'running' };
     let boardTaskId = parsed.boardTaskId;
     const deadline = now() + generationTimeoutMs;
     while (!parsed.url) {
@@ -1313,6 +1351,18 @@ export function createTopviewService(options = {}) {
   }
 
   const handlers = {
+    async submit(params) {
+      if (isMediaTool(params?.model)) return mediaTool(params);
+      return generate({ ...params, waitForCompletion: false });
+    },
+    async query(params) {
+      if (!params?.taskId) throw serviceError('A saved task ID is required.', 'INVALID_INPUT');
+      if (isMediaTool(params.model)) return mediaTool(params);
+      if (!['text_to_video','image_to_video','omni_reference'].includes(params.taskType)) throw serviceError('Invalid saved task type.', 'INVALID_INPUT');
+      const session = await createMcpSession();
+      const parsed = parseTopviewMcpResult(await callTool(session, 'topview_query_task', { taskType: params.taskType, taskId: params.taskId, needCloudFrontUrl: true, shortenUrls: false }));
+      return { ...params, ...parsed, mediaType: 'video', status: parsed.url ? 'success' : /fail|error/.test(parsed.status) ? 'fail' : 'running' };
+    },
     async modelCatalog() {
       const session = await createMcpSession();
       if (!session.tools.some((tool) => tool.name === 'topview_get_generation_config')) {

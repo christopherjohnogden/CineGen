@@ -497,7 +497,7 @@ export interface ElectronAPI {
       medias?: Array<{ value: string; role?: string }>;
     }) => Promise<{
       taskId: string;
-      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference' | 'avatar_video' | 'lip_sync';
       boardId?: string;
       model: string;
       /** Absent for fixed-length models, which expose no duration parameter. */
@@ -506,14 +506,14 @@ export interface ElectronAPI {
     }>;
     query?: (params: {
       taskId: string;
-      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference' | 'avatar_video' | 'lip_sync';
       boardId?: string;
       model: string;
       durationSec?: number;
       referencePreparation?: string;
     }) => Promise<{
       taskId: string;
-      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+      taskType: 'text_to_video' | 'image_to_video' | 'omni_reference' | 'avatar_video' | 'lip_sync';
       boardId?: string;
       model: string;
       durationSec?: number;

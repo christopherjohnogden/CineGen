@@ -67,5 +67,6 @@ export function referenceFieldFor(model: ModelDefinition): ModelInputField | und
     ?? imageFields.find((field) => field.mediaRole === 'image' && field.multiple)
     ?? imageFields.find((field) => field.multiple)
     ?? imageFields.find((field) => field.mediaRole === 'image')
-    ?? imageFields[0];
+    ?? imageFields[0]
+    ?? model.inputs.find(field => field.portType === 'video' && (field.fieldType === 'port' || field.fieldType === 'element-list'));
 }

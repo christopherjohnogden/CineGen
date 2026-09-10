@@ -1,7 +1,9 @@
+import { validateHiggsfieldMediaTool } from '@/lib/higgsfield/media-tools';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { cloudDb, cloudFunctions } from './firebase';
 import { getModelDefinition } from '@/lib/fal/models';
+import { isTopviewMediaTool, buildTopviewMediaToolRequest } from '@/lib/topview/media-tools';
 import { topviewRequestedModel } from '@/lib/topview/model-catalog';
 import { requestProviderUsageRefresh } from '@/lib/providers/project-usage';
 import { isVideoGenerationProvider } from '@/lib/utils/video-generation-provider';
@@ -76,6 +78,11 @@ export function workflowMediaInputs(inputs: Record<string, unknown>, outputType:
   addReferences(inputs.medias);
   addReferences(inputs.image_urls);
   addReferences(inputs.input_image_urls);
+  addReferences(inputs.image_references);
+  add(inputs.video_references, 'video');
+  add(inputs.audio_references, 'audio');
+  add(inputs.input_video, 'video');
+  add(inputs.input_audio, 'audio');
   addReferences(inputs.reference_images);
   add(inputs.image_url, outputType === 'video' ? 'start_image' : 'image');
   add(inputs.first_frame, 'start_image');
@@ -99,9 +106,11 @@ async function runTopviewWorkflow(params: WorkflowRunParams, options: WorkflowRu
   const model = getModelDefinition(params.nodeType);
   if (!model || model.provider !== 'topview') throw new Error('Topview model configuration is unavailable.');
   const prompt = String(params.inputs.prompt ?? '').trim();
-  if (!prompt) throw new Error('Connect a prompt before running this Topview model.');
+  if (model.unavailableReason) throw new Error(model.unavailableReason);
+  if (!prompt && model.inputs.some(field => field.id === 'prompt' && field.required)) throw new Error('Connect a prompt before running this Topview model.');
   const medias = workflowMediaInputs(params.inputs, model.outputType);
   const requestedModel = topviewRequestedModel(model, params.inputs.model);
+  if (isTopviewMediaTool(requestedModel)) buildTopviewMediaToolRequest(requestedModel, prompt, medias);
   if (model.outputType === 'image') {
     return window.electronAPI.topview.generateImage({
       prompt,
@@ -174,6 +183,7 @@ async function runHiggsfieldWorkflow(params: WorkflowRunParams): Promise<unknown
   if (!model || model.provider !== 'higgsfield') throw new Error('Higgsfield model configuration is unavailable.');
   const prompt = typeof params.inputs.prompt === 'string' ? params.inputs.prompt.trim() : undefined;
   const medias = workflowMediaInputs(params.inputs, model.outputType);
+  validateHiggsfieldMediaTool(model.id, params.inputs, medias);
   const outputType = model.outputType === 'model3d' ? '3d' : model.outputType;
   const result = await window.electronAPI.higgsfield.generate({
     prompt,

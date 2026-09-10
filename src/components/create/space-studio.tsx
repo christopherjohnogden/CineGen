@@ -1,3 +1,4 @@
+import { isTopviewMediaTool } from '@/lib/topview/media-tools';
 import { resolveCloudMediaReference } from '@/lib/cloud/media-references';
 import {
   useCallback,
@@ -141,17 +142,17 @@ const PRIMARY_CONTROL_IDS = [
 
 function canStudioSupplyRequiredField(
   field: ModelInputField,
-  promptField: ModelInputField,
+  promptField: ModelInputField | undefined,
 ): boolean {
   if (!field.required || field.default !== undefined) return true;
-  if (field.id === promptField.id) return true;
+  if (field.id === promptField?.id) return true;
   if (CONTROL_FIELD_TYPES.has(field.fieldType)) return true;
-  return isImageField(field) && field.mediaRole !== 'video' && field.mediaRole !== 'audio';
+  return ['image', 'video', 'audio', 'media'].includes(field.portType);
 }
 
 function canUseInStudio(model: ModelDefinition, kind: OutputKind): boolean {
   const promptField = promptFieldFor(model);
-  if (model.outputType !== kind || !promptField) return false;
+  if (model.outputType !== kind) return false;
   return model.inputs.every((field) => canStudioSupplyRequiredField(field, promptField));
 }
 
@@ -242,6 +243,7 @@ function feedPromptFor(
 type CapabilityBadge = { label: string; kind: 'resolution' | 'duration' | 'tag' };
 
 function modelCapabilitySummary(model: ModelDefinition): CapabilityBadge[] {
+  if (model.unavailableReason) return [{ label: 'Unavailable', kind: 'tag' }];
   const controls = orderedControlFields(model);
   const badges: CapabilityBadge[] = [];
   const resolution = controls.find((field) => field.id === 'resolution');
@@ -1374,7 +1376,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
 
     const trimmedPrompt = prompt.trim();
     const selectedModel = modelType ? getModelDefinition(modelType) : undefined;
-    if (!trimmedPrompt) {
+    if (!trimmedPrompt && selectedModel && promptFieldFor(selectedModel)?.required) {
       setFormError('Write a prompt before generating.');
       return;
     }
@@ -1383,18 +1385,15 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       return;
     }
 
+    if (selectedModel.unavailableReason) { setFormError(selectedModel.unavailableReason); return; }
     const promptField = promptFieldFor(selectedModel);
-    if (!promptField) {
-      setFormError('This model does not expose a prompt input for Studio.');
-      return;
-    }
 
     const useReferences = outputKind === 'image' || videoMode === 'references' || editing;
     const elementIds = useReferences
       ? selectedElementIds.filter((id) => availableElements.some((element) => element.id === id))
       : [];
     const selectedReferenceField = referenceFieldFor(selectedModel);
-    const audioReferenceField = selectedModel.inputs.find(field => field.mediaRole === 'audio' && field.multiple);
+    const audioReferenceField = selectedModel.inputs.find(field => field.mediaRole === 'audio');
     if (attachedRefs.some(reference => reference.kind === 'audio') && !audioReferenceField && selectedModel.provider === 'topview') {
       setFormError(`${selectedModel.name} does not accept audio references. Choose Seedance 2.5 for images, video, and audio together.`);
       return;
@@ -1438,7 +1437,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       }
     }
 
-    const connectedFields = new Set<string>([promptField.id]);
+    const connectedFields = new Set<string>(promptField ? [promptField.id] : []);
     if (elementIds.length > 0 && selectedReferenceField) connectedFields.add(selectedReferenceField.id);
     if (outputKind === 'video' && videoMode === 'frames') {
       if (selectedStartAsset && selectedStartField) connectedFields.add(selectedStartField.id);
@@ -1479,6 +1478,13 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       const durationField = selectedControlFields.find(isDurationField);
       if (durationField) modelConfig[durationField.id] = TOPVIEW_INHERITED_VIDEO_DURATION;
     }
+    for (const field of selectedModel.inputs.filter(field => ['image', 'video', 'audio', 'media'].includes(field.portType) && !['start_image', 'end_image'].includes(field.mediaRole ?? ''))) {
+      const refs = attachedRefs.filter(ref => field.portType === 'media' && !['audio','video'].includes(field.mediaRole ?? '') ? ref.kind !== 'audio' : ref.kind === (field.mediaRole ?? field.portType));
+      if (refs.length) {
+        if (!field.multiple && refs.length > 1) { setFormError(`Choose one ${field.label.toLowerCase()}.`); return; }
+        modelConfig[field.id] = field.multiple ? refs.map(ref => ref.url) : refs[0].url;
+      }
+    }
     const missingRequired = selectedModel.inputs.find((field) => {
       if (!field.required || field.default !== undefined) return false;
       if (connectedFields.has(field.id)) return false;
@@ -1498,8 +1504,8 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     // to create were pure config carriers — the executor reads config as a
     // first-class fallback — so five nodes per generation only ever bought
     // clutter. `Expand to graph` on the node rebuilds the wired form on demand.
-    const composedPrompt = composePresetPrompt(trimmedPrompt, activePreset);
-    modelConfig[promptField.id] = composedPrompt;
+    const composedPrompt = selectedModel.provider === 'topview' && isTopviewMediaTool(selectedModel.name) ? trimmedPrompt : composePresetPrompt(trimmedPrompt, activePreset);
+    if (promptField) modelConfig[promptField.id] = composedPrompt;
     modelConfig.__studioPromptBody = trimmedPrompt;
     if (activePreset && activePreset.promptSuffix) {
       modelConfig.__studioPresetId = activePreset.id;
@@ -1514,10 +1520,11 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     const referenceUrls = editUrl
       ? [editUrl, ...visualUrls.filter((url) => url !== editUrl)]
       : visualUrls;
-    if (audioUrls.length && audioReferenceField) modelConfig[audioReferenceField.id] = audioUrls;
+    if (audioUrls.length && audioReferenceField) modelConfig[audioReferenceField.id] = audioReferenceField.multiple ? audioUrls : audioUrls[0];
     if (attachedUrls.length) modelConfig.__studioAttachedRefs = attachedUrls;
     if ((elementIds.length > 0 || referenceUrls.length > 0) && selectedReferenceField) {
-      modelConfig[selectedReferenceField.id] = {
+      modelConfig[selectedReferenceField.id] = selectedModel.provider === 'higgsfield' && !promptField && !elementIds.length
+        ? (selectedReferenceField.multiple ? referenceUrls : referenceUrls[0]) : {
         elementIds,
         elementVariationIds,
         ...(referenceUrls.length > 0 ? { urls: referenceUrls } : {}),
@@ -2833,7 +2840,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
 
           <div className="space-studio__field space-studio__field--prompt">
             <div className="space-studio__field-head">
-              <label className="space-studio__field-label" htmlFor="space-studio-prompt">Prompt</label>
+              <label className="space-studio__field-label" htmlFor="space-studio-prompt">{model && promptFieldFor(model)?.label || 'Prompt'}</label>
               <span className="space-studio__hint">
                 {promptWords > 0 ? `${promptWords} ${promptWords === 1 ? 'word' : 'words'} · ` : ''}
                 <span className="space-studio__hint-shortcut">⌘↵ to generate</span>
@@ -2855,7 +2862,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
               ref={promptRef}
               value={prompt}
               rows={4}
-              placeholder={outputKind === 'video'
+              placeholder={model && !promptFieldFor(model)?.required ? (isTopviewMediaTool(model.name) && model.name.startsWith('Avatar') ? 'Optional expressions and movement. Dialogue comes from your audio file.' : 'Optional notes for this result…') : outputKind === 'video'
                 ? 'Describe the shot, action, camera, lighting, and mood… type @ for a reference'
                 : 'Describe the image, composition, lighting, and style… type @ for a reference'}
               onChange={(event) => {
@@ -3265,12 +3272,13 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
           )}
 
           <div className="space-studio__submit">
+            {model?.provider === 'topview' && isTopviewMediaTool(model.name) && <p className="space-studio__hint">{model.unavailableReason || model.description}</p>}
             {formError && <p className="space-studio__form-error" role="alert">{formError}</p>}
             <button
               className="space-studio__generate"
               type="submit"
               data-testid="space-studio-generate"
-              disabled={isLaunching || isUploadingReference || !prompt.trim() || !modelType}
+              disabled={isLaunching || isUploadingReference || (!prompt.trim() && Boolean(model && promptFieldFor(model)?.required)) || !modelType || Boolean(model?.unavailableReason)}
             >
               {isUploadingReference ? 'Uploading…' : isLaunching ? 'Starting…' : dockMode ? (batchCount > 1 ? `Generate ×${batchCount}` : 'Generate') : `Generate ${batchCount > 1 ? `${batchCount} ${outputKind}s` : outputKind}`}
               {!isLaunching && creditEstimate !== null && (

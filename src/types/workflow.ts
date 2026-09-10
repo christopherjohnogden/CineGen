@@ -66,6 +66,8 @@ export interface ModelDefinition {
   provider?: 'topview' | 'higgsfield' | 'fal' | 'kie' | 'local' | 'runpod' | 'pod';
   runpodEndpointId?: string;
   podRoute?: string;  // e.g. 'sdxl', 'flux', 'qwen-edit', 'ltx', 'wan-t2v', 'wan-i2v'
+  /** Present when a known provider tool cannot run through this connection. */
+  unavailableReason?: string;
   responseMapping: {
     path: string;
   };
@@ -98,7 +100,7 @@ export interface TranscriptSegment {
 /** Non-secret task coordinates needed to resume a paid Topview video render. */
 export interface TopviewVideoTaskState {
   taskId: string;
-  taskType: 'text_to_video' | 'image_to_video' | 'omni_reference';
+  taskType: 'text_to_video' | 'image_to_video' | 'omni_reference' | 'avatar_video' | 'lip_sync';
   boardId?: string;
   model: string;
   /** Absent for fixed-length models, which do not expose a duration parameter. */

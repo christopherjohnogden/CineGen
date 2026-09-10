@@ -1,5 +1,6 @@
 import type { ModelDefinition, ModelInputField } from '@/types/workflow';
 import { topviewAcceptsAudioReferences } from './reference-capabilities';
+import { topviewMediaToolDefinitions } from './media-tools';
 import gptImage25Catalog from './gpt-image-25.generated.json';
 
 export type TopviewCatalogOutput = 'image' | 'video' | 'audio';
@@ -16,6 +17,7 @@ export interface TopviewGenerationCatalog {
   tools?: string[];
   toolSchemas?: Record<string, unknown>;
   fetchedAt?: string;
+  authMode?: 'oauth' | 'api_key';
 }
 
 type CatalogModel = {
@@ -439,12 +441,13 @@ function fallbackModels(): CatalogModel[] {
 export function buildTopviewModelRegistry(catalog?: TopviewGenerationCatalog | null): Record<string, ModelDefinition> {
   const live = mergeCatalog(catalog);
   const source = live.length ? live : fallbackModels();
-  return Object.fromEntries(source.map((model) => {
+  const definitions = source.map((model) => {
     const definition = model.outputType === 'image'
       ? imageDefinition(model)
       : model.outputType === 'video' ? videoDefinition(model) : audioDefinition(model);
-    return [definition.nodeType, definition];
-  }));
+    return definition;
+  });
+  return Object.fromEntries([...definitions, ...topviewMediaToolDefinitions(catalog?.tools, catalog?.authMode === 'api_key')].map(model => [model.nodeType, model]));
 }
 
 export function topviewRequestedModel(model: ModelDefinition, configured?: unknown): string {

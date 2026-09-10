@@ -1,3 +1,5 @@
+import { validateHiggsfieldMediaTool } from '../../src/lib/higgsfield/media-tools';
+import { isTopviewMediaTool, buildTopviewMediaToolRequest } from '../../src/lib/topview/media-tools';
 import { ALL_MODELS } from '../../src/lib/fal/models';
 import { buildTopviewModelRegistry, topviewRequestedModel, type TopviewGenerationCatalog } from '../../src/lib/topview/model-catalog';
 import { topviewVideoSubmitRoute, topviewPromptMaxCharacters } from '../../src/lib/topview/reference-capabilities';
@@ -51,6 +53,7 @@ export function prepareProviderGeneration(args: RecordValue, available = provide
   const provider = requestedProvider(args.provider);
   const model = available.find(m => m.nodeType === args.model && m.provider === provider);
   if (!model) throw new Error(`Choose an exact ${provider} model from cinegen_list_models. Higgsfield requires provider: "higgsfield" and an explicit user request.`);
+  if (model.unavailableReason) throw new Error(model.unavailableReason);
   if (!args.inputs || typeof args.inputs !== 'object' || Array.isArray(args.inputs)) throw new Error('Model inputs are required.');
   const config: RecordValue = {};
   const medias: Array<{ value: string; role: string }> = [];
@@ -89,13 +92,14 @@ export function prepareProviderGeneration(args: RecordValue, available = provide
   }
   const promptField = model.inputs.find(f => f.id === 'prompt' || f.falParam === 'prompt');
   const prompt = promptField ? String(config[promptField.id] ?? '') : '';
-  if (!prompt.trim()) throw new Error('A prompt is required.');
+  if (promptField?.required && !prompt.trim()) throw new Error('A prompt is required.');
+  if (provider === 'topview' && isTopviewMediaTool(model.name)) buildTopviewMediaToolRequest(model.name, prompt, medias);
   const params: RecordValue = { prompt, outputType: model.outputType, model: provider === 'topview' ? topviewRequestedModel(model, config.model) : model.id, medias };
   if (provider === 'topview') {
     for (const [from, to] of [['duration','durationSec'],['aspect_ratio','aspectRatio'],['resolution','resolution'],['quality','quality'],['generate_audio','generateAudio'],['generate_count','generateCount']]) {
       if (config[from] !== undefined && config[from] !== '') params[to] = from === 'duration' || from === 'generate_count' ? Number(config[from]) : config[from];
     }
     params.waitForCompletion = false;
-  } else { params.params = config; params.wait = false; }
+  } else { validateHiggsfieldMediaTool(model.id, config, medias); params.params = config; params.wait = false; if (!promptField) delete params.prompt; }
   return { provider, model, config, params, prompt };
 }

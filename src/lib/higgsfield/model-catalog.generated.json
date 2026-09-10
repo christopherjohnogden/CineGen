@@ -4930,34 +4930,16 @@
       "type": "video",
       "params": [
         {
-          "name": "active_speaker_detection",
-          "type": "boolean",
-          "default": false,
-          "required": false
-        },
-        {
-          "name": "folder_id",
-          "type": "object",
-          "default": null,
-          "required": false
-        },
-        {
-          "name": "input_audio",
-          "type": "object",
-          "default": null,
-          "required": true
-        },
-        {
           "name": "input_video",
           "type": "object",
           "default": null,
           "required": true
         },
         {
-          "name": "occlusion_detection_enabled",
-          "type": "boolean",
-          "default": false,
-          "required": false
+          "name": "input_audio",
+          "type": "object",
+          "default": null,
+          "required": true
         },
         {
           "name": "sync_mode",
@@ -4973,9 +4955,9 @@
           ]
         },
         {
-          "name": "temperature",
-          "type": "number",
-          "default": 0.5,
+          "name": "folder_id",
+          "type": "string",
+          "default": null,
           "required": false
         }
       ]
@@ -5195,8 +5177,6 @@
     },
     {
       "display_name": "Topaz",
-      "job_set_type": "topaz_image",
-      "type": "image",
       "params": [
         {
           "name": "denoise",
@@ -5224,28 +5204,15 @@
         },
         {
           "name": "folder_id",
-          "type": "object",
+          "type": "string",
           "default": null,
           "required": false
         },
         {
-          "name": "input_image",
-          "type": "object",
+          "name": "image_references",
+          "type": "array",
           "default": null,
           "required": true
-        },
-        {
-          "name": "model",
-          "type": "string",
-          "default": "Standard V2",
-          "required": false,
-          "enum": [
-            "Standard V2",
-            "Low Resolution V2",
-            "CGI",
-            "High Fidelity V2",
-            "Text Refine"
-          ]
         },
         {
           "name": "output_height",
@@ -5264,8 +5231,23 @@
           "type": "number",
           "default": 0,
           "required": false
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "default": "Standard V2",
+          "required": false,
+          "enum": [
+            "Standard V2",
+            "Low Resolution V2",
+            "CGI",
+            "High Fidelity V2",
+            "Text Refine"
+          ]
         }
-      ]
+      ],
+      "type": "image",
+      "job_set_type": "topaz_image"
     },
     {
       "display_name": "Topaz",
@@ -5366,8 +5348,6 @@
     },
     {
       "display_name": "Topaz",
-      "job_set_type": "topaz_video",
-      "type": "video",
       "params": [
         {
           "name": "aspect_ratio",
@@ -5385,61 +5365,13 @@
           ]
         },
         {
-          "name": "duration",
-          "type": "object",
-          "default": null,
-          "required": false
-        },
-        {
           "name": "enhancement",
           "type": "object",
           "default": null,
           "required": false
         },
         {
-          "name": "folder_id",
-          "type": "object",
-          "default": null,
-          "required": false
-        },
-        {
           "name": "frame_interpolation",
-          "type": "object",
-          "default": null,
-          "required": false
-        },
-        {
-          "name": "frame_rate",
-          "type": "number",
-          "default": 30,
-          "required": false
-        },
-        {
-          "name": "frames_count",
-          "type": "object",
-          "default": null,
-          "required": false
-        },
-        {
-          "name": "input_height",
-          "type": "object",
-          "default": null,
-          "required": false
-        },
-        {
-          "name": "input_video",
-          "type": "object",
-          "default": null,
-          "required": false
-        },
-        {
-          "name": "input_video_size",
-          "type": "integer",
-          "default": 0,
-          "required": false
-        },
-        {
-          "name": "input_width",
           "type": "object",
           "default": null,
           "required": false
@@ -5453,8 +5385,16 @@
             "1080p",
             "2160p"
           ]
+        },
+        {
+          "name": "video_references",
+          "type": "array",
+          "default": null,
+          "required": true
         }
-      ]
+      ],
+      "type": "video",
+      "job_set_type": "topaz_video"
     },
     {
       "display_name": "Text to 3D",

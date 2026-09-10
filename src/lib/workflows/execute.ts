@@ -2,6 +2,7 @@ import { elevenLabs } from '@/lib/elevenlabs/client';
 import { waitForElevenLabsAudio } from '@/lib/elevenlabs/wait';
 import { audioRequestFromNode } from '@/lib/elevenlabs/request';
 import { withCharacterVoices, voiceElementsForPrompt } from '@/lib/elements/voice';
+import { isTopviewMediaTool } from '@/lib/topview/media-tools';
 import type { Node, Edge } from '@xyflow/react';
 import { topologicalSort } from './topo-sort';
 import { NODE_REGISTRY, resolveElementNodeIds, resolveElementNodeVariationIds } from './node-registry';
@@ -1289,7 +1290,8 @@ async function executeModelNode(
       falInputs.prompt = resolveElementMentions(falInputs.prompt, connectedElements, useKieMentions);
     }
 
-    if (modelDef.outputType === 'video' && typeof falInputs.prompt === 'string') {
+    if (modelDef.outputType === 'video' && typeof falInputs.prompt === 'string'
+      && !(modelDef.provider === 'topview' && isTopviewMediaTool(modelDef.name))) {
       const library = dispatch.getElements();
       const ids = [...connectedElements.flatMap(el => el.id ? [el.id] : []),
         ...(Array.isArray(data.config.__studioElementIds) ? data.config.__studioElementIds.filter((id): id is string => typeof id === 'string') : [])];

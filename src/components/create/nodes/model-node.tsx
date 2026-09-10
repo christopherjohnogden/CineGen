@@ -555,11 +555,11 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
       : modelDef.nodeType === 'runpod-ltx25-session' && status === 'error' && data.result?.remoteJobId
         ? 'Resume render'
       : 'Run Model';
-  const visualActionDisabled = (modelDef.nodeType === 'sam3-segment' || modelDef.nodeType === 'sam3-segment-cloud')
+  const visualActionDisabled = Boolean(modelDef.unavailableReason) || ((modelDef.nodeType === 'sam3-segment' || modelDef.nodeType === 'sam3-segment-cloud')
     ? !inputImageUrl
     : modelDef.nodeType === 'sam3-track-cloud'
       ? !inputVideoUrl
-      : false;
+      : false);
   const runVisualAction = () => {
     if (modelDef.nodeType === 'sam3-segment') {
       setSam3ModalOpen(true);
@@ -724,6 +724,7 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
             </div>
           ) : !activeUrl ? (
             <div className={`model-node__media-state nodrag${status === 'error' ? ' model-node__media-state--error' : ''}`}>
+              {modelDef.unavailableReason && <span className="model-node__media-state-message">{modelDef.unavailableReason}</span>}
               {status === 'error' && data.result?.error && (
                 <span className="model-node__media-state-message">{data.result.error}</span>
               )}
@@ -1127,6 +1128,8 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
                 type="button"
                 className="model-node__run-btn nodrag"
                 onClick={() => runNode(id)}
+                disabled={Boolean(modelDef.unavailableReason)}
+                title={modelDef.unavailableReason}
               >
                 &rarr; Run Model
               </button>

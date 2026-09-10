@@ -1,3 +1,4 @@
+import { isTopviewMediaTool, topviewMediaToolUnavailable, buildTopviewMediaToolRequest } from '@/lib/topview/media-tools';
 import { app, ipcMain, safeStorage, shell } from 'electron';
 import crypto from 'node:crypto';
 import { lookup } from 'node:dns/promises';
@@ -99,7 +100,7 @@ export interface TopviewAudioGenerateResult {
   model?: string;
 }
 
-export type TopviewVideoTaskType = 'text_to_video' | 'image_to_video' | 'omni_reference';
+export type TopviewVideoTaskType = 'text_to_video' | 'image_to_video' | 'omni_reference' | 'avatar_video' | 'lip_sync';
 
 export interface TopviewSubmitResult {
   taskId: string;
@@ -1693,6 +1694,20 @@ class TopviewMcpService {
     result: TopviewSubmitResult;
     documents: unknown[];
   }> {
+    if (isTopviewMediaTool(params?.model)) {
+      const unavailable = topviewMediaToolUnavailable(params.model, session.tools.map(tool => tool.name));
+      if (unavailable) throw new Error(unavailable);
+      const references = normalizeTopviewReferences(params.medias);
+      buildTopviewMediaToolRequest(params.model, params.prompt ?? '', references);
+      const uploaded: UploadedTopviewReference[] = [];
+      for (const reference of references) uploaded.push(await this.uploadReference(session, reference));
+      const boardId = await this.chooseBoard(session);
+      const built = buildTopviewMediaToolRequest(params.model, params.prompt ?? '', uploaded, boardId);
+      const documents = parseToolDocuments(await this.callTool(session, 'topview_avatar_video', built.request));
+      const taskId = findStringByKeys(documents, ['taskId', 'task_id']);
+      if (!taskId) throw new Error('Topview did not return a receipt. Check Topview before starting another generation.');
+      return { result: { taskId, taskType: built.taskType, boardId, model: params.model }, documents };
+    }
     this.validateGenerateParams(params);
     const references = normalizeTopviewReferences(params.medias);
     const taskType = topviewTaskTypeForMedias(params.medias);
@@ -1760,7 +1775,7 @@ class TopviewMcpService {
     if (!params || typeof params.taskId !== 'string' || !params.taskId.trim()) {
       throw new Error('Topview task query requires a task ID.');
     }
-    if (!['text_to_video', 'image_to_video', 'omni_reference'].includes(params.taskType)) {
+    if (!['text_to_video', 'image_to_video', 'omni_reference', 'avatar_video'].includes(params.taskType)) {
       throw new Error('Topview task query received an unsupported task type.');
     }
     if (!readTopviewCanvasTask(params.taskId) && (typeof params.boardId !== 'string' || !params.boardId.trim())) {
@@ -1780,6 +1795,7 @@ class TopviewMcpService {
       taskType: params.taskType,
       taskId: params.taskId.trim(),
       needCloudFrontUrl: true,
+      shortenUrls: false,
     });
     const documents = parseToolDocuments(polled);
     const rawStatus = taskStatus(documents);

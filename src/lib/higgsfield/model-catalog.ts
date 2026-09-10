@@ -79,6 +79,10 @@ function mediaFieldFor(
     portType = 'image';
     mediaRole = 'image';
     multiple = true;
+  } else if (param.name === 'video_references') {
+    portType = 'video'; mediaRole = 'video'; multiple = true;
+  } else if (param.name === 'audio_references') {
+    portType = 'audio'; mediaRole = 'audio'; multiple = true;
   } else if (SINGLE_VIDEO_PARAMS.has(param.name)) {
     portType = 'video';
     mediaRole = 'video';
@@ -163,6 +167,10 @@ function customizeWorkflowField(
   model: HiggsfieldModelSchema,
   field: ModelInputField,
 ): ModelInputField {
+  if (model.job_set_type === 'topaz_image') {
+    if (['output_width', 'output_height'].includes(field.id)) return { ...field, min: 1, step: 1, label: field.id === 'output_width' ? 'Output width (px)' : 'Output height (px)' };
+    if (['sharpen', 'denoise', 'face_enhancement_strength', 'face_enhancement_creativity'].includes(field.id)) return { ...field, min: 0, max: 1, step: 0.05 };
+  }
   if (model.job_set_type !== 'seedance_2_5') return field;
 
   if (field.id === 'aspect_ratio') {
@@ -349,13 +357,16 @@ export function buildHiggsfieldModelRegistry(
     registry[nodeType] = {
       id: model.job_set_type,
       nodeType,
-      name: model.display_name,
+      name: model.job_set_type === 'topaz_image' ? 'Topaz Image Upscale' : model.job_set_type === 'topaz_video' ? 'Topaz Video Upscale' : model.display_name,
       category: outputType,
       description: `Higgsfield ${model.type.toUpperCase()} model`,
       inputs: schemaInputs,
       outputType,
       outputs: [{ id: outputType, portType: outputType, label: outputType === 'model3d' ? '3D Model' : humanize(outputType) }],
       provider: 'higgsfield',
+      ...(model.job_set_type === 'sync_so' && typeof window !== 'undefined' && ['darwin', 'win32', 'linux'].includes(window.electronAPI?.platform ?? '')
+        ? { unavailableReason: 'Sync Lipsync 3 is available in CineGen on the web and through MCP. The current Mac connection does not expose this model.' }
+        : {}),
       responseMapping: { path: outputType === 'text' ? 'text' : 'output.url' },
     };
   }

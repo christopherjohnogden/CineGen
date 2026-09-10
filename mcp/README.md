@@ -220,3 +220,18 @@ Canvas, Studio and MCP share these provider definitions:
 - Higgsfield: `hf-gpt-image-2-5`, model `gpt_image_2_5`, with `variant: "flare"` or `"sunburst"`. Its `image_references` input accepts image URLs or Canvas Element connections. Resolution values are 1k/2k/4k; quality values are low/medium/high/xhigh/max. Optional background values are auto/opaque/transparent.
 
 The Topview snapshot comes from its live generation config; the Higgsfield entry comes from its CLI model schema, cross-checked with its MCP catalog. Connected Topview catalogs continue to override the fallback snapshot. Topview remains the default provider; Higgsfield requires an explicit selection. The cloud job worker persists Higgsfield job IDs and polls the same job without resubmitting. Neither model availability checks nor automated tests generate paid media.
+
+### Optional talking avatars, lip sync, and upscaling
+
+These are separate model choices in Canvas, Studio, and MCP. Selecting a model prepares its controls; processing starts only when the user runs it. Normal generations never trigger an upscale or lip-sync pass. `cinegen_list_models` reports `available` and `unavailableReason`; check these before submitting.
+
+| Provider / model node type | Input and availability |
+| --- | --- |
+| Topview `topview-video-avatar-4`, `topview-video-avatar-4-fast` | One image in `image_url` and one audio URL in `audio_references`. Optional `prompt` describes motion, at most 600 characters. Dialogue comes from the audio. Uses the existing MCP connection and durable `avatar_video` task receipt. |
+| Topview `topview-video-video-lip-sync` | One video in `image_url` and one dialogue file in `audio_references`. Requires an existing Topview API-key connection in CineGen cloud; MCP OAuth alone does not expose this tool. No account or balance is switched. |
+| Topview `topview-image-image-upscale`, `topview-video-video-upscale` | Listed as unavailable: no verified upscaling endpoint is exposed through the current Topview connection. No requests are submitted. |
+| Higgsfield `hf-topaz-image` | Explicit Higgsfield choice. One `image_references` URL, positive whole-pixel `output_width` and `output_height`. Optional denoise, sharpening, and face controls. No prompt required. |
+| Higgsfield `hf-topaz-video` | Explicit Higgsfield choice. One `video_references` URL; choose `resolution` 1080p or 2160p. Enhancement and frame interpolation are omitted unless supplied explicitly. No prompt required. |
+| Higgsfield `hf-sync-so` | Explicit Higgsfield choice. One `input_video` and one `input_audio`. `sync_mode` controls duration matching. Available through the website and remote MCP; the current native Higgsfield CLI does not expose this model, so the Mac option is unavailable. |
+
+Provider schemas were checked on 2026-09-10. Topaz fields were checked against CLI and MCP; Sync Lipsync 3 uses the MCP catalog. Re-query the catalog after reconnecting if options are cached. Prepared items retain references and output controls; paid generation tests are not run automatically.

@@ -3,6 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Asset } from '@/types/project';
 import type { ModelDefinition, WorkflowNodeData } from '@/types/workflow';
+import { topviewMediaToolDefinitions } from '@/lib/topview/media-tools';
+import { buildHiggsfieldModelRegistry } from '@/lib/higgsfield/model-catalog';
+
+const mediaModels = vi.hoisted(() => ({} as Record<string, ModelDefinition>));
 
 const workspaceHarness = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -242,14 +246,14 @@ vi.mock('@/components/create/use-topview-model-catalog', () => ({
 }));
 vi.mock('@/lib/fal/models', () => ({
   ALL_MODELS: models,
-  getModelDefinition: (nodeType: string) => models[nodeType],
+  getModelDefinition: (nodeType: string) => models[nodeType] ?? mediaModels[nodeType],
 }));
 vi.mock('@/lib/workflows/provider-model-options', () => ({
   modelProviderLabel: (model: ModelDefinition) => (
     model.provider === 'higgsfield' ? 'Higgsfield' : 'Topview AI'
   ),
   providerModelOptions: (categories: string[]) => (
-    categories.includes('video')
+    [...(categories.includes('video')
       ? [
           { key: 'video-one', label: 'Topview AI · Video Model' },
           { key: 'video-two', label: 'Higgsfield · Alternate Video' },
@@ -257,7 +261,9 @@ vi.mock('@/lib/workflows/provider-model-options', () => ({
           // Listed last so the default is chosen by name, not by position.
           { key: 'video-seedance', label: 'Topview AI · Seedance 2.5' },
         ]
-      : [{ key: 'image-one', label: 'Topview AI · Image Model' }]
+      : [{ key: 'image-one', label: 'Topview AI · Image Model' }]), ...Object.values(mediaModels)
+        .filter(model => categories.includes(model.category))
+        .map(model => ({key: model.nodeType, label: `${model.provider} · ${model.name}`}))]
   ),
 }));
 vi.mock('@/lib/elements/variations', () => ({
@@ -325,6 +331,13 @@ describe('Space Studio', () => {
     HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
     workspaceHarness.state = makeState();
     workspaceHarness.dispatch.mockClear();
+    vi.mocked(executeFromNode).mockClear();
+    vi.mocked(createWorkflowNodeFromSpec).mockClear();
+    vi.mocked(executeFromNode).mockResolvedValue(undefined as never);
+    vi.mocked(createWorkflowNodeFromSpec).mockImplementation((spec, position) => ({
+      id: `new-${spec.nodeType}`, type: spec.nodeType, position,
+      data: {type: spec.nodeType, label: spec.label, config: spec.config},
+    }) as never);
     localStorage.clear();
     // Most of these tests read the list cards; the grid has its own suite.
     localStorage.setItem('cinegen_studio_feed_view', 'list');
@@ -346,6 +359,55 @@ describe('Space Studio', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    for (const key of Object.keys(mediaModels)) delete mediaModels[key];
+  });
+
+  it('runs a selected Topaz image upscale with dimensions and a source, without a prompt', async () => {
+    const model = buildHiggsfieldModelRegistry()['hf-topaz-image'];
+    mediaModels[model.nodeType] = model;
+    render(<SpaceStudio transfer={{ id: 'upscale-source', spaceId: 'space-a', attachments: [
+      { id: 'photo', name: 'Source.png', kind: 'image', url: 'https://media.test/source.png' },
+    ] }} />);
+    fireEvent.click(within(screen.getByRole('group', {name: 'Output type'})).getByRole('button', {name: 'Image'}));
+    fireEvent.click(screen.getByRole('combobox', {name: 'Model'}));
+    fireEvent.click(screen.getByRole('option', {name: /Topaz Image Upscale/}));
+    expect(workspaceHarness.dispatch).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('spinbutton', {name: 'Output width (px)'}), {target: {value: '2048'}});
+    fireEvent.change(screen.getByRole('spinbutton', {name: 'Output height (px)'}), {target: {value: '1024'}});
+    expect(screen.getByTestId('space-studio-generate')).toBeEnabled();
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form')!);
+    const action = workspaceHarness.dispatch.mock.calls.map(([action]) => action).find(action => action.type === 'SET_NODES');
+    expect(action.nodes).toHaveLength(1);
+    expect(action.nodes[0].data.config).toMatchObject({image_references: ['https://media.test/source.png'], output_width: 2048, output_height: 1024});
+    expect(action.nodes[0].data.config.prompt).toBeUndefined();
+  });
+
+  it('keeps Avatar 4 optional, with separate image and dialogue references', () => {
+    const model = topviewMediaToolDefinitions(['topview_avatar_video']).find(model => model.name === 'Avatar 4')!;
+    mediaModels[model.nodeType] = model;
+    render(<SpaceStudio transfer={{ id: 'avatar-source', spaceId: 'space-a', attachments: [
+      { id: 'photo', name: 'Source.png', kind: 'image', url: 'https://media.test/source.png' },
+      { id: 'voice', name: 'Voice.wav', kind: 'audio', url: 'https://media.test/voice.wav' },
+    ] }} />);
+    expect(screen.getByRole('combobox', {name: 'Model'})).toHaveAttribute('data-value', 'video-seedance');
+    fireEvent.click(screen.getByRole('combobox', {name: 'Model'}));
+    fireEvent.click(screen.getByRole('option', {name: /Avatar 4/}));
+    expect(workspaceHarness.dispatch).not.toHaveBeenCalled();
+    expect(screen.getByTestId('space-studio-generate')).toBeEnabled();
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form')!);
+    const action = workspaceHarness.dispatch.mock.calls.map(([action]) => action).find(action => action.type === 'SET_NODES');
+    expect(action.nodes[0].data.config).toMatchObject({image_url: {urls: ['https://media.test/source.png']}, audio_references: ['https://media.test/voice.wav'], prompt: ''});
+  });
+
+  it('explains unavailable Topview processing before a run can start', () => {
+    const model = topviewMediaToolDefinitions().find(model => model.name === 'Video Upscale')!;
+    mediaModels[model.nodeType] = model;
+    render(<SpaceStudio />);
+    fireEvent.click(screen.getByRole('combobox', {name: 'Model'}));
+    fireEvent.click(screen.getByRole('option', {name: /Video Upscale/}));
+    expect(screen.getByText(model.unavailableReason!)).toBeInTheDocument();
+    expect(screen.getByTestId('space-studio-generate')).toBeDisabled();
+    expect(workspaceHarness.dispatch).not.toHaveBeenCalled();
   });
 
   it('accepts a Canvas prompt and media once, keeps existing references, and does not start a generation', async () => {

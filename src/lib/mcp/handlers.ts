@@ -136,8 +136,9 @@ function startGeneration(host: McpHost, request: GenerationRequest): string[] {
     host.dispatch({ type: 'SET_ACTIVE_SPACE', spaceId: target.id });
   }
   const { model } = request;
+  if (model.unavailableReason && !request.prepareOnly) throw new McpToolError(model.unavailableReason);
   const promptField = promptFieldFor(model);
-  if (!promptField) throw new McpToolError(`${model.name} does not take a text prompt.`);
+  if (promptField?.required && !request.prompt.trim()) throw new McpToolError('"prompt" is required for this model.');
 
   for (const key of Object.keys(request.inputs ?? {})) {
     if (!model.inputs.some(field => field.id === key)) throw new McpToolError(`Unknown model input: ${key}`);
@@ -149,7 +150,7 @@ function startGeneration(host: McpHost, request: GenerationRequest): string[] {
     __studioOutputType: model.outputType,
     __studioPrompt: request.prompt,
     __studioPromptBody: request.prompt,
-    [promptField.id]: request.prompt,
+    ...(promptField ? { [promptField.id]: request.prompt } : {}),
   };
 
   if (request.elementIds.length > 0) {
@@ -306,6 +307,8 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
           name: model.name,
           nodeType: key,
           provider: modelProviderLabel(model),
+          available: !model.unavailableReason,
+          unavailableReason: model.unavailableReason,
           takesReferences: Boolean(referenceFieldFor(model)),
           takesFrames: Boolean(startFieldFor(model)),
           takesEndFrame: Boolean(endFieldFor(model)),
@@ -318,7 +321,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
     },
 
     async cinegen_studio_create(args) {
-      const prompt = str(args, 'prompt', true);
+      const prompt = str(args, 'prompt');
       const kind = str(args, 'kind') === 'image' ? 'image' : 'video';
       const model = resolveModel(kind, str(args, 'model'), str(args, 'provider') || 'topview');
       if (args.inputs && (typeof args.inputs !== 'object' || Array.isArray(args.inputs))) throw new McpToolError('inputs must be an object.');
@@ -333,7 +336,7 @@ export function createMcpHandlers(host: McpHost): Record<string, McpToolHandler>
     },
 
     async cinegen_generate(args) {
-      const prompt = str(args, 'prompt', true);
+      const prompt = str(args, 'prompt');
       const kind = str(args, 'kind') === 'image' ? 'image' : 'video';
       const model = resolveModel(kind, str(args, 'model'), str(args, 'provider') || 'topview');
       const elementIds = resolveElements(state(), strList(args, 'elements'));

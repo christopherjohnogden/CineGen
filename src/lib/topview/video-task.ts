@@ -54,6 +54,8 @@ const TOPVIEW_TASK_TYPES = new Set<TopviewVideoTaskState['taskType']>([
   'text_to_video',
   'image_to_video',
   'omni_reference',
+  'avatar_video',
+  'lip_sync',
 ]);
 
 export function normalizeTopviewVideoTask(value: unknown): TopviewVideoTaskState | undefined {

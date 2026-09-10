@@ -13962,14 +13962,14 @@ var TOOL_CATALOG = [
       properties: {
         provider: { type: "string", enum: ["topview", "higgsfield"], description: "Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically." },
         spaceId: optionalString("Destination Space ID; defaults to the active Space."),
-        prompt: string4("Shot description saved in Studio."),
+        prompt: string4("Shot description saved in Studio. Optional for lip sync, upscaling, and audio-driven avatars."),
         kind: { type: "string", enum: ["video", "image"] },
         model: optionalString("Exact model node type or name from cinegen_list_node_types."),
         inputs: { type: "object", description: "Model controls and reference URLs keyed by advertised field IDs. For Topview Seedance 2.5: image_url accepts image/video URLs; audio_references accepts an array of MP3/WAV audio URLs. These are input references, separate from generate_audio. Studio metadata is managed automatically; prompt takes precedence." },
         elements: { type: "array", items: { type: "string" }, description: "Existing Element names to attach as references." },
         count: { type: "integer", minimum: 1, maximum: 4 }
       },
-      required: ["prompt"],
+      required: [],
       additionalProperties: false
     }
   },
@@ -13982,7 +13982,7 @@ var TOOL_CATALOG = [
         provider: { type: "string", enum: ["topview", "higgsfield"], description: "Defaults to Topview. Select Higgsfield only when the user explicitly requests it; never fall back automatically." },
         spaceId: optionalString("Destination Space ID; defaults to the active Space."),
         view: { type: "string", enum: ["studio", "canvas"], description: "Show results in Studio or place them on Canvas." },
-        prompt: string4("What to generate. Write it as a shot description: subject, action, camera, lighting, mood."),
+        prompt: string4("Required when the selected model requires a prompt. Optional for lip sync, upscaling, and audio-driven avatars."),
         kind: { type: "string", enum: ["video", "image"], description: "Defaults to video." },
         model: optionalString('Model name or node type, e.g. "Seedance 2.5". Defaults to the project default for the kind.'),
         inputs: { type: "object", description: "Model input fields from cinegen_list_models. Seedance 2.5 accepts image/video URLs in image_url and MP3/WAV URLs in audio_references. May combine all three. Prompt and explicit controls above take precedence." },
@@ -13996,7 +13996,7 @@ var TOOL_CATALOG = [
         aspectRatio: optionalString('e.g. "16:9", "9:16".'),
         resolution: optionalString('e.g. "720p", "1080p".')
       },
-      required: ["prompt"],
+      required: [],
       additionalProperties: false
     }
   },

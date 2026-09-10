@@ -21,6 +21,24 @@ test('Higgsfield parses a job receipt separately from its input URLs and matches
   assert.throws(()=>parseGeneration({structuredContent:{unlim_choice:{message:'Choose billing'}}}),/No generation was submitted/);
 });
 
+test('optional Topaz and lip sync use their exact source roles without a generation prompt', async () => {
+  const cases = [
+    {model:'topaz_image', params:{output_width:2048,output_height:1024}, medias:[{value:'https://example.com/photo.png',role:'image'}], roles:['image_references']},
+    {model:'topaz_video', params:{resolution:'2160p'}, medias:[{value:'https://example.com/clip.mp4',role:'video'}], roles:['video_references']},
+    {model:'sync_so', params:{sync_mode:'cut_off'}, medias:[{value:'https://example.com/clip.mp4',role:'video'},{value:'https://example.com/voice.wav',role:'audio'}], roles:['input_video','input_audio']},
+  ];
+  for(const {roles,...input} of cases){
+    const {params}=await toolArguments(generateTool,input,{},'test');
+    assert.equal(params.model,input.model);
+    assert.deepEqual(params.medias.map(media=>media.role),roles);
+    assert.equal(params.prompt,undefined);
+    assert.equal(params.enhancement,undefined);
+    assert.equal(params.frame_interpolation,undefined);
+  }
+  await assert.rejects(toolArguments(generateTool,{model:'sync_so',medias:[{value:'https://example.com/clip.mp4',role:'video'}]}, {}, 'test'),/one dialogue audio/);
+  await assert.rejects(toolArguments(generateTool,{model:'topaz_image',params:{output_width:0,output_height:1024},medias:cases[0].medias}, {}, 'test'),/whole-pixel/);
+});
+
 async function fixtureApi() {
   const secret='fixture-secret';
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(secret));
