@@ -1665,6 +1665,91 @@
       ]
     },
     {
+      "display_name": "GPT Image 2.5",
+      "params": [
+        {
+          "name": "aspect_ratio",
+          "type": "string",
+          "default": "1:1",
+          "required": false,
+          "enum": [
+            "auto",
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "21:9",
+            "27:16",
+            "16:27",
+            "9:8",
+            "8:9"
+          ]
+        },
+        {
+          "name": "background",
+          "type": "string",
+          "default": null,
+          "required": false,
+          "enum": [
+            "auto",
+            "opaque",
+            "transparent"
+          ]
+        },
+        {
+          "name": "image_references",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "default": null,
+          "required": true
+        },
+        {
+          "name": "quality",
+          "type": "string",
+          "default": "low",
+          "required": false,
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "1k",
+          "required": false,
+          "enum": [
+            "1k",
+            "2k",
+            "4k"
+          ]
+        },
+        {
+          "name": "variant",
+          "type": "string",
+          "default": "flare",
+          "required": false,
+          "enum": [
+            "flare",
+            "sunburst"
+          ]
+        }
+      ],
+      "type": "image",
+      "job_set_type": "gpt_image_2_5"
+    },
+    {
       "display_name": "Grok Image",
       "job_set_type": "grok_image",
       "type": "image",

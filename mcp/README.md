@@ -211,3 +211,12 @@ ElevenLabs Audio nodes now run inside CineGen. Choose Connect ElevenLabs in the 
 `cinegen_audio` supports `prepare`, `read`, `generate`, and `attach`. For `generate`, supply an existing audio `nodeId` and a unique `requestId`; reuse that ID to retrieve or finish saving the same paid take. A new request ID submits another generation. The provider's 5,000-character Eleven v3 limit includes performance tags; dialogue is never truncated. Voice description remains separate from spoken dialogue.
 
 The OAuth callback is public only at its fixed backend path, bound to a one-time state, PKCE verifier, and same-browser secure cookie. Login creation, status, cancellation, tool discovery, generation, and stored media require CineGen authentication. Live hosted tool names and output contracts must be verified after the workspace authorizes the connection; mocked transport tests alone do not establish live feature availability.
+
+### GPT Image 2.5 (verified September 10, 2026)
+
+Canvas, Studio and MCP share these provider definitions:
+
+- Topview: `topview-image-gpt-image-2-5-flare` and `topview-image-gpt-image-2-5-sunburst`. Exact submit names are `GPT Image 2.5 Flare` and `GPT Image 2.5 Sunburst`. Both support text-to-image and image editing, 1K/2K/4K, and low/medium/high/xhigh/max quality. Use `image_url` for image references and `quality` for the quality selection.
+- Higgsfield: `hf-gpt-image-2-5`, model `gpt_image_2_5`, with `variant: "flare"` or `"sunburst"`. Its `image_references` input accepts image URLs or Canvas Element connections. Resolution values are 1k/2k/4k; quality values are low/medium/high/xhigh/max. Optional background values are auto/opaque/transparent.
+
+The Topview snapshot comes from its live generation config; the Higgsfield entry comes from its CLI model schema, cross-checked with its MCP catalog. Connected Topview catalogs continue to override the fallback snapshot. Topview remains the default provider; Higgsfield requires an explicit selection. The cloud job worker persists Higgsfield job IDs and polls the same job without resubmitting. Neither model availability checks nor automated tests generate paid media.

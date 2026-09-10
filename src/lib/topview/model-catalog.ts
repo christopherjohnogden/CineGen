@@ -1,5 +1,6 @@
 import type { ModelDefinition, ModelInputField } from '@/types/workflow';
 import { topviewAcceptsAudioReferences } from './reference-capabilities';
+import gptImage25Catalog from './gpt-image-25.generated.json';
 
 export type TopviewCatalogOutput = 'image' | 'video' | 'audio';
 
@@ -411,6 +412,9 @@ function fallbackModels(): CatalogModel[] {
       defaults: {},
       accepts: new Set<string>(),
     })),
+    ...mergeCatalog({ configs: gptImage25Catalog.models.map((model) => ({
+      outputType: 'image', taskType: model.taskType, config: { models: [model] },
+    })) }),
     ...FALLBACK_VIDEO_MODELS.map((displayName) => ({
       displayName,
       outputType: 'video' as const,

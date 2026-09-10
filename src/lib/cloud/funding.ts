@@ -108,6 +108,7 @@ async function runTopviewWorkflow(params: WorkflowRunParams, options: WorkflowRu
       model: requestedModel,
       aspectRatio: typeof params.inputs.aspect_ratio === 'string' ? params.inputs.aspect_ratio : undefined,
       resolution: typeof params.inputs.resolution === 'string' ? params.inputs.resolution : undefined,
+      quality: typeof params.inputs.quality === 'string' ? params.inputs.quality : undefined,
       generateCount: typeof params.inputs.generate_count === 'number' ? params.inputs.generate_count : 1,
       medias,
     });

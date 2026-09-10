@@ -545,6 +545,7 @@ export interface ElectronAPI {
       model?: string;
       aspectRatio?: string;
       resolution?: string;
+      quality?: string;
       generateCount?: number;
       medias?: Array<{ value: string; role?: string }>;
     }) => Promise<{

@@ -202,7 +202,7 @@ test('Seedance accepts 1080 and 1080p only when the live catalog permits that re
   assert.throws(()=>api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{prompt:'A moving camera',resolution:'1080p'}},models),/allows: 480, 720/);
 });
 
-for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4-5'],['topview','video','topview-video-seedance-2-5'],['higgsfield','image','hf-cinematic-studio-2-5']]) {
+for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4-5'],['topview','video','topview-video-seedance-2-5'],['higgsfield','image','hf-cinematic-studio-2-5'],['higgsfield','image','hf-gpt-image-2-5']]) {
   test(`${provider} ${kind} jobs use the existing connection and save Studio results without fal credentials`,async()=>{
     const values=new Map();const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>values.has(k)?structuredClone(values.get(k)):undefined,put:async(k,v)=>values.set(k,structuredClone(v)),setAlarm:async()=>{}}};
     const originalLoad=api.CloudStore.prototype.load,originalSave=api.CloudStore.prototype.save;
@@ -211,6 +211,7 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
     api.CloudStore.prototype.load=async()=>({state:structuredClone(raw),library:{elements:[],folders:[]},metadata:{useSqlite:true},ownerId:'owner'});
     api.CloudStore.prototype.save=async(_,state)=>{raw=structuredClone(state);};
     const canvasVideo=provider==='topview'&&kind==='video';
+    const hfAsync=model==='hf-gpt-image-2-5';
     const source=canvasVideo?'https://du9d8548ooqnc.cloudfront.net/task%2Foutput.mp4?Policy=policy&Signature=signature&Key-Pair-Id=key':`https://provider-cdn.example/media.${kind==='video'?'mp4':'png'}`;
     let nodeTransfers=0;
     const taskReceipt=canvasVideo?'cinegen-canvas:'+btoa(JSON.stringify({canvasId:'canvas_1',nodeId:'node_output',taskId:'provider_task'})).replace(/=+$/,''):'task-1';
@@ -220,10 +221,10 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
       if(u===`https://cinegen-api.christopherjohnogden.workers.dev/api/rpc/${provider}/generate`){
         assert.equal(options.headers['x-cinegen-id-token'],'firebase-token');
         const p=JSON.parse(options.body).args[0];assert.equal(p.outputType,kind);if(provider==='topview')assert.equal(p.downloadSource,'origin');
-        if(p.taskId){polls++;assert.equal(p.taskId,taskReceipt);return Response.json({ok:true,result:{url:source,urls:[source,'https://provider-cdn.example/alternative.png'],status:'success'}});}
+        if(p.taskId||p.jobId){polls++;assert.equal(p.taskId??p.jobId,taskReceipt);return Response.json({ok:true,result:{url:source,urls:[source,'https://provider-cdn.example/alternative.png'],status:'success'}});}
         submissions++;assert.equal(p.prompt,'Golden hour');
         if(canvasVideo){assert.deepEqual(p.medias.map(media=>media.role),['image','audio']);assert.match(p.commandId,/^cinegen-/);}
-        return Response.json({ok:true,result:provider==='topview'?{taskId:taskReceipt,taskType:canvasVideo?'omni_reference':'text_to_image',model:p.model,status:'running'}:{url:source}});
+        return Response.json({ok:true,result:provider==='topview'?{taskId:taskReceipt,taskType:canvasVideo?'omni_reference':'text_to_image',model:p.model,status:'running'}:hfAsync?{jobId:taskReceipt,model:p.model,status:'running'}:{url:source}});
       }
       if(u==='https://cinegen-film.vercel.app/api/generated-media/save'){
         nodeTransfers++;assert.equal(options.headers.authorization,'Bearer firebase-token');
@@ -241,7 +242,7 @@ for(const [provider,kind,model] of [['topview','image','topview-image-seedream-4
       const args={provider,projectId:raw.project.id,requestId:'provider-test',model,inputs:{prompt:'Golden hour',...(canvasVideo?{image_url:['https://cinegen.test/hero.png'],audio_references:['https://cinegen.test/music.mp3']}:{})}};
       await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/start',{method:'POST',body:JSON.stringify({identity,args})}));
       await new api.GenerationJob(ctx,{}).alarm();
-      if(provider==='topview'){assert.equal(values.get('job').status,'running');await new api.GenerationJob(ctx,{}).alarm();assert.equal(polls,1);}
+      if(provider==='topview'||hfAsync){assert.equal(values.get('job').status,'running');await new api.GenerationJob(ctx,{}).alarm();assert.equal(polls,1);}
       if(failDownload) {
         for(let i=1;i<12;i++)await new api.GenerationJob(ctx,{}).alarm();
         assert.equal(values.get('job').status,'needs_attention');
@@ -469,4 +470,17 @@ test('remote audio generation runs the connected account and saves the playable 
   const reopened=api.hydrate(saved.state,saved.library);
   assert.equal(reopened.assets[0].type,'audio');assert.equal(reopened.nodes.find(n=>n.id===args.nodeId).data.result.audioRequestId,'paid-audio-1');
   await assert.rejects(api.editProject(prepared.state,prepared.library,'cinegen_audio',{...args,requestId:undefined},true,undefined,generate),/requestId/);
+});
+
+test('GPT Image 2.5 is discoverable and preserves both providers and variants',()=>{
+  for(const variant of ['flare','sunburst']) {
+    const topview=api.prepareProviderGeneration({provider:'topview',model:`topview-image-gpt-image-2-5-${variant}`,inputs:{prompt:'Ceramic cup',quality:'max',resolution:'4K',image_url:['https://media.example/ref.png']}});
+    assert.equal(topview.params.model,`GPT Image 2.5 ${variant==='flare'?'Flare':'Sunburst'}`);
+    assert.equal(topview.params.quality,'max');assert.equal(topview.params.resolution,'4K');
+    assert.equal(topview.params.medias[0].role,'image');
+    const hf=api.prepareProviderGeneration({provider:'higgsfield',model:'hf-gpt-image-2-5',inputs:{prompt:'Ceramic cup',variant,quality:'xhigh',resolution:'4k',image_references:['https://media.example/ref.png']}});
+    assert.equal(hf.params.model,'gpt_image_2_5');assert.equal(hf.params.params.variant,variant);assert.equal(hf.params.params.quality,'xhigh');
+    assert.equal(hf.params.wait,false);assert.equal(hf.params.medias[0].role,'image');
+  }
+  assert.throws(()=>api.prepareProviderGeneration({provider:'higgsfield',model:'hf-gpt-image-2-5',inputs:{prompt:'Cup',variant:'invented'}}),/Unsupported/);
 });

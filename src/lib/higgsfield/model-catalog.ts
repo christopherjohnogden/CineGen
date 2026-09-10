@@ -44,7 +44,7 @@ const SINGLE_IMAGE_PARAMS = new Set([
   'texture_image_url',
 ]);
 
-const MULTI_IMAGE_PARAMS = new Set(['input_images']);
+const MULTI_IMAGE_PARAMS = new Set(['input_images', 'image_references']);
 const SINGLE_VIDEO_PARAMS = new Set(['input_video', 'video']);
 const SINGLE_AUDIO_PARAMS = new Set(['input_audio']);
 

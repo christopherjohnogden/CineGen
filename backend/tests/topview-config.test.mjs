@@ -123,3 +123,31 @@ test('audio references use the existing API connection without loss; MCP-only co
     }finally{globalThis.fetch=original;}
   }
 });
+
+test('GPT Image 2.5 uses its exact variant and quality on the cloud connection',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const config=JSON.parse(await readFile('src/lib/topview/gpt-image-25.generated.json','utf8'));
+  let connection;
+  const db={prepare(sql){return {values:[],bind(...values){this.values=values;return this},async first(){return connection??null},async run(){if(sql.includes('INSERT INTO provider_connections'))connection={client_json:this.values[2],pending_ciphertext:this.values[3],token_ciphertext:this.values[4]};return {meta:{changes:1}}}}}};
+  const api=createTopviewMcp({DB:db},'cinegen-local-v1','http://localhost');
+  await api.importTeamConnection({client:{client_id:'fixture'},token:{access_token:'fixture',expires_at:Date.now()+3600000}});
+  const calls=[],original=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>{
+    assert.equal(String(url),'https://mcp.topview.ai/mcp');
+    const request=JSON.parse(options.body);let result={};
+    if(request.method==='notifications/initialized')return new Response(null,{status:202});
+    if(request.method==='tools/list')result={tools:['topview_get_generation_config','topview_generate_image'].map(name=>({name,inputSchema:{type:'object',properties:{req:{type:'object'}}}}))};
+    if(request.method==='tools/call'){
+      const {name,arguments:args}=request.params;calls.push({name,args});
+      result={content:[{type:'text',text:JSON.stringify({code:'200',result:name==='topview_get_generation_config'?{models:config.models.filter(m=>m.taskType===args.req.taskType)}:{taskId:'gpt25-fixture',status:'init'}})}]};
+    }
+    return Response.json({jsonrpc:'2.0',id:request.id,result});
+  };
+  try {
+    for(const variant of ['Flare','Sunburst']){
+      await api.generate({prompt:'Cup',outputType:'image',model:`GPT Image 2.5 ${variant}`,quality:'max',resolution:'4K',aspectRatio:'16:9',boardId:'fixture-board',waitForCompletion:false});
+      const submitted=calls.filter(c=>c.name==='topview_generate_image').at(-1).args.req;
+      assert.equal(submitted.model,`GPT Image 2.5 ${variant}`);assert.equal(submitted.quality,'max');assert.equal(submitted.resolution,'4K');
+    }
+  }finally{globalThis.fetch=original;}
+});

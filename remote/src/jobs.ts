@@ -127,6 +127,7 @@ export class GenerationJob extends DurableObject {
           const result=await providerRpc(auth.token,job.args.provider,'generate',{...(prepared as NonNullable<Job['prepared']>).params,commandId:`cinegen-${job.nodeId}`});
           if(result.url){job.sourceUrl=result.url;job.status='saving';}
           else if(result.taskId && job.args.provider==='topview') {job.providerTask={taskId:result.taskId,taskType:result.taskType,model:result.model,boardId:result.boardId,outputType:prepared.model.outputType,waitForCompletion:false};job.status='running';}
+          else if(result.jobId && job.args.provider==='higgsfield') {job.providerTask={jobId:result.jobId,model:result.model,outputType:prepared.model.outputType,wait:false};job.status='running';}
           else {job.status='needs_attention';job.error='Provider did not return a resumable task or finished media. Check provider history before retrying.';}
           if(result.status==='fail'){job.status='failed';job.error=result.error||'Provider generation failed.';}
         } else {
@@ -135,9 +136,9 @@ export class GenerationJob extends DurableObject {
         else {const submitted=await r.json() as RecordValue;job.statusUrl=falUrl(submitted.status_url);job.responseUrl=falUrl(submitted.response_url);job.providerRequestId=submitted.request_id;job.status='running';}
         }
       } else if(job.status==='running') {
-        if(job.args.provider==='topview') {
-          const result=await providerRpc(auth.token,'topview','generate',job.providerTask);
-          if(result.status==='fail') {job.status='failed';job.error=result.error||'Topview generation failed.';}
+        if(job.args.provider==='topview' || job.args.provider==='higgsfield') {
+          const result=await providerRpc(auth.token,job.args.provider,'generate',job.providerTask);
+          if(result.status==='fail') {job.status='failed';job.error=result.error||'Provider generation failed.';}
           else if(result.url){job.sourceUrl=result.url;job.status='saving';}
         } else {
         const r=await fetch(falUrl(job.statusUrl),{headers:{authorization:`Key ${job.identity.falKey}`}});

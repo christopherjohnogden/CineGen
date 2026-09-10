@@ -1,0 +1,220 @@
+{
+  "checkedAt": "2026-09-10",
+  "source": "Topview live generation config",
+  "models": [
+    {
+      "submitModel": "GPT Image 2.5 Flare",
+      "requiredSubmitFields": [
+        "taskType",
+        "model",
+        "prompt",
+        "inputImageFileIds",
+        "aspectRatio",
+        "resolution"
+      ],
+      "backendModelCode": "gpt-image-2.5-flare",
+      "taskType": "image_edit",
+      "provider": "gpt-image",
+      "displayName": "GPT Image 2.5 Flare",
+      "defaultSubmitParameters": {
+        "aspectRatio": "1:1",
+        "resolution": "1K"
+      },
+      "submitParameterOptions": {
+        "aspectRatio": [
+          "auto",
+          "9:16",
+          "3:4",
+          "1:1",
+          "4:3",
+          "16:9",
+          "2:3",
+          "3:2",
+          "5:4",
+          "4:5",
+          "21:9",
+          "9:21",
+          "1:2",
+          "2:1",
+          "210:297",
+          "297:210"
+        ],
+        "resolution": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "quality": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "sort": 1,
+      "configSection": "imageEdit",
+      "status": 1
+    },
+    {
+      "submitModel": "GPT Image 2.5 Sunburst",
+      "requiredSubmitFields": [
+        "taskType",
+        "model",
+        "prompt",
+        "inputImageFileIds",
+        "aspectRatio",
+        "resolution"
+      ],
+      "backendModelCode": "gpt-image-2.5-sunburst",
+      "taskType": "image_edit",
+      "provider": "gpt-image",
+      "displayName": "GPT Image 2.5 Sunburst",
+      "defaultSubmitParameters": {
+        "aspectRatio": "1:1",
+        "resolution": "1K"
+      },
+      "submitParameterOptions": {
+        "aspectRatio": [
+          "auto",
+          "9:16",
+          "3:4",
+          "1:1",
+          "4:3",
+          "16:9",
+          "2:3",
+          "3:2",
+          "5:4",
+          "4:5",
+          "21:9",
+          "9:21",
+          "1:2",
+          "2:1",
+          "210:297",
+          "297:210"
+        ],
+        "resolution": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "quality": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "sort": 1,
+      "configSection": "imageEdit",
+      "status": 1
+    },
+    {
+      "submitModel": "GPT Image 2.5 Flare",
+      "requiredSubmitFields": [
+        "taskType",
+        "model",
+        "prompt",
+        "aspectRatio",
+        "resolution"
+      ],
+      "backendModelCode": "gpt-image-2.5-flare",
+      "taskType": "text_to_image",
+      "provider": "gpt-image",
+      "displayName": "GPT Image 2.5 Flare",
+      "defaultSubmitParameters": {
+        "aspectRatio": "1:1",
+        "resolution": "1K"
+      },
+      "submitParameterOptions": {
+        "aspectRatio": [
+          "auto",
+          "9:16",
+          "3:4",
+          "1:1",
+          "4:3",
+          "16:9",
+          "2:3",
+          "3:2",
+          "5:4",
+          "4:5",
+          "21:9",
+          "9:21",
+          "1:2",
+          "2:1",
+          "210:297",
+          "297:210"
+        ],
+        "resolution": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "quality": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "sort": 1,
+      "configSection": "textToImage",
+      "status": 1
+    },
+    {
+      "submitModel": "GPT Image 2.5 Sunburst",
+      "requiredSubmitFields": [
+        "taskType",
+        "model",
+        "prompt",
+        "aspectRatio",
+        "resolution"
+      ],
+      "backendModelCode": "gpt-image-2.5-sunburst",
+      "taskType": "text_to_image",
+      "provider": "gpt-image",
+      "displayName": "GPT Image 2.5 Sunburst",
+      "defaultSubmitParameters": {
+        "aspectRatio": "1:1",
+        "resolution": "1K"
+      },
+      "submitParameterOptions": {
+        "aspectRatio": [
+          "auto",
+          "9:16",
+          "3:4",
+          "1:1",
+          "4:3",
+          "16:9",
+          "2:3",
+          "3:2",
+          "5:4",
+          "4:5",
+          "21:9",
+          "9:21",
+          "1:2",
+          "2:1",
+          "210:297",
+          "297:210"
+        ],
+        "resolution": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "quality": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "sort": 1,
+      "configSection": "textToImage",
+      "status": 1
+    }
+  ]
+}

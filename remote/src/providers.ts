@@ -92,10 +92,10 @@ export function prepareProviderGeneration(args: RecordValue, available = provide
   if (!prompt.trim()) throw new Error('A prompt is required.');
   const params: RecordValue = { prompt, outputType: model.outputType, model: provider === 'topview' ? topviewRequestedModel(model, config.model) : model.id, medias };
   if (provider === 'topview') {
-    for (const [from, to] of [['duration','durationSec'],['aspect_ratio','aspectRatio'],['resolution','resolution'],['generate_audio','generateAudio'],['generate_count','generateCount']]) {
+    for (const [from, to] of [['duration','durationSec'],['aspect_ratio','aspectRatio'],['resolution','resolution'],['quality','quality'],['generate_audio','generateAudio'],['generate_count','generateCount']]) {
       if (config[from] !== undefined && config[from] !== '') params[to] = from === 'duration' || from === 'generate_count' ? Number(config[from]) : config[from];
     }
     params.waitForCompletion = false;
-  } else { params.params = config; params.wait = true; }
+  } else { params.params = config; params.wait = false; }
   return { provider, model, config, params, prompt };
 }

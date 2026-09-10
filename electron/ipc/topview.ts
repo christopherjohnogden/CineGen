@@ -63,6 +63,7 @@ export interface TopviewImageGenerateParams {
   model?: string;
   aspectRatio?: string;
   resolution?: string;
+  quality?: string;
   generateCount?: number;
   medias?: Array<{ value: string; role?: string }>;
 }
@@ -614,6 +615,7 @@ export function buildTopviewImageRequest(args: {
   for (const [field, requested, fallback] of [
     ['aspectRatio', args.params.aspectRatio, '16:9'],
     ['resolution', args.params.resolution, '1K'],
+    ['quality', args.params.quality, 'medium'],
   ] as const) {
     if (!advertisesField(model, field)) continue;
     req[field] = configValue({ model, field, requested, fallback });

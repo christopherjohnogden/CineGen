@@ -694,6 +694,9 @@ export function buildTopviewImageRequest({ config, params, fileIds = [], boardId
   if (resolutionField) {
     req[resolutionField] = configuredValue(model, resolutionField, params.resolution, '1K');
   }
+  if (configuredField(model, ['quality'])) {
+    req.quality = configuredValue(model, 'quality', params.quality, 'medium');
+  }
   for (const field of requiredFields(model)) {
     if ((req[field] === undefined || req[field] === null || req[field] === '') && defaults[field] !== undefined) {
       req[field] = defaults[field];

@@ -10,12 +10,12 @@ import {
 describe('generated Higgsfield model catalog', () => {
   it('captures every model exposed by the authenticated CLI snapshot', () => {
     expect(HIGGSFIELD_CATALOG.cli.version).toBe('0.1.28');
-    expect(HIGGSFIELD_MODEL_SCHEMAS).toHaveLength(100);
-    expect(new Set(HIGGSFIELD_MODEL_SCHEMAS.map((model) => model.job_set_type)).size).toBe(100);
+    expect(HIGGSFIELD_MODEL_SCHEMAS).toHaveLength(101);
+    expect(new Set(HIGGSFIELD_MODEL_SCHEMAS.map((model) => model.job_set_type)).size).toBe(101);
     expect(HIGGSFIELD_MODEL_SCHEMAS.reduce<Record<string, number>>((counts, model) => {
       counts[model.type] = (counts[model.type] ?? 0) + 1;
       return counts;
-    }, {})).toEqual({ '3d': 13, audio: 6, image: 39, text: 1, video: 41 });
+    }, {})).toEqual({ '3d': 13, audio: 6, image: 40, text: 1, video: 41 });
   });
 
   it('preserves exact required/default/enum schema values', () => {
@@ -34,7 +34,7 @@ describe('generated Higgsfield model catalog', () => {
   });
 
   it('turns every raw model into one provider node and preserves legacy node ids', () => {
-    expect(Object.keys(HIGGSFIELD_MODEL_REGISTRY)).toHaveLength(100);
+    expect(Object.keys(HIGGSFIELD_MODEL_REGISTRY)).toHaveLength(101);
     expect(HIGGSFIELD_MODEL_REGISTRY['hf-soul-v2']?.id).toBe('text2image_soul_v2');
     expect(HIGGSFIELD_MODEL_REGISTRY['hf-nano-banana-pro']?.id).toBe('nano_banana_2');
     expect(HIGGSFIELD_MODEL_REGISTRY['hf-seedance-2']?.id).toBe('seedance_2_0');

@@ -4,6 +4,7 @@ import {
   mediaPathFromReference,
   requireRecord,
 } from "./common";
+import { pickKnownHiggsfieldParams } from '../../../src/lib/higgsfield/model-catalog';
 
 const PROVIDER = "higgsfield";
 const MCP_URL = "https://mcp.higgsfield.ai/mcp";
@@ -275,6 +276,7 @@ async function mcpRequest(token: string, message: unknown, sessionId?: string): 
       ...(sessionId ? { "mcp-session-id": sessionId } : {}),
     },
     body: JSON.stringify(message),
+    signal: AbortSignal.timeout(60_000),
   });
   const payload = await responsePayload(response);
   if (!response.ok) {
@@ -305,6 +307,10 @@ async function mcpTools(token: string): Promise<{ tools: McpTool[]; sessionId?: 
 }
 
 function selectTool(tools: McpTool[], outputType: string, mode = "generate"): McpTool {
+  if (mode === 'generate') {
+    const exact = tools.find((tool) => tool.name === `generate_${outputType}` || tool.name === `higgsfield_generate_${outputType}`);
+    if (exact) return exact;
+  }
   const scored = tools.map((tool) => {
     const text = `${tool.name} ${tool.description ?? ""}`.toLowerCase();
     let score = 0;
@@ -339,22 +345,31 @@ async function mediaReference(value: string, env: RuntimeEnv, workspaceId: strin
   return `data:${mime};base64,${bytesToBase64(bytes)}`;
 }
 
-async function toolArguments(tool: McpTool, value: unknown, env: RuntimeEnv, workspaceId: string): Promise<Record<string, unknown>> {
+export async function toolArguments(tool: McpTool, value: unknown, env: RuntimeEnv, workspaceId: string): Promise<Record<string, unknown>> {
   const params = requireRecord(value, "Higgsfield generation parameters");
-  const properties = tool.inputSchema?.properties ?? {};
+  const rootProperties = tool.inputSchema?.properties ?? {};
+  const nested = rootProperties.params?.type === 'object';
+  const properties = nested ? (rootProperties.params.properties ?? {}) as Record<string, Record<string, unknown>> : rootProperties;
+  const acceptsExtra = nested && rootProperties.params.additionalProperties !== false;
   const args: Record<string, unknown> = {};
   const extra = params.params && typeof params.params === "object" && !Array.isArray(params.params)
     ? params.params as Record<string, unknown>
     : {};
-  for (const [key, entry] of Object.entries(extra)) {
-    if (key in properties && !/api.?key|token|secret/i.test(key)) args[key] = entry;
+  const mediaKeys = new Set(['medias', 'higgsfield_media_inputs', 'image_references', 'video_references', 'audio_references', 'image_url', 'input_images']);
+  for (const [key, entry] of Object.entries(pickKnownHiggsfieldParams(String(params.model), extra) ?? {})) {
+    if ((key in properties || acceptsExtra) && !mediaKeys.has(key) && !/api.?key|token|secret|^__/i.test(key) && entry !== null && entry !== undefined) args[key] = entry;
+  }
+  if (nested) {
+    args.model = params.model;
+    if (params.prompt !== undefined) args.prompt = params.prompt;
   }
   setFirst(args, properties, ["prompt", "text", "description"], params.prompt);
   setFirst(args, properties, ["model", "model_id", "modelId"], params.model);
   setFirst(args, properties, ["output_type", "media_type", "type"], params.outputType ?? "video");
   setFirst(args, properties, ["duration", "duration_seconds", "durationSec"], extra.duration ?? params.durationSec);
   setFirst(args, properties, ["aspect_ratio", "aspectRatio"], extra.aspect_ratio ?? params.aspectRatio);
-  setFirst(args, properties, ["resolution", "quality"], extra.resolution ?? params.resolution);
+  setFirst(args, properties, ["resolution"], extra.resolution ?? params.resolution);
+  setFirst(args, properties, ["quality"], extra.quality ?? params.quality);
   setFirst(args, properties, ["generate_audio", "audio"], extra.generate_audio);
 
   const rawMedias = Array.isArray(params.medias) ? params.medias : [];
@@ -364,6 +379,10 @@ async function toolArguments(tool: McpTool, value: unknown, env: RuntimeEnv, wor
     return typeof row.value === "string" && row.value ? [{ value: row.value, role: String(row.role ?? "image") }] : [];
   }).map(async (entry) => ({ ...entry, value: await mediaReference(entry.value, env, workspaceId) })));
   if (references.length) {
+    if (nested) {
+      args.medias = references.map((entry) => ({ value: entry.value, role: entry.role }));
+      return { params: args };
+    }
     const field = ["reference_images", "image_urls", "images", "references", "medias", "media"]
       .find((name) => name in properties);
     if (field) {
@@ -377,7 +396,7 @@ async function toolArguments(tool: McpTool, value: unknown, env: RuntimeEnv, wor
       setFirst(args, properties, ["reference_image", "image_url", "start_image"], references[0].value);
     }
   }
-  return args;
+  return nested ? { params: args } : args;
 }
 
 function strings(value: unknown, values: string[] = []): string[] {
@@ -387,20 +406,47 @@ function strings(value: unknown, values: string[] = []): string[] {
   return values;
 }
 
-function parseGeneration(value: unknown): { url?: string; jobId?: string; mediaType?: "image" | "video" | "audio" | "text" | "3d"; text?: string } {
-  const all = strings(value);
-  const url = all.flatMap((entry) => entry.match(/https:\/\/[^\s"'<>]+/g) ?? [])
-    .find((entry) => !/higgsfield\.ai\/(?:account|login|settings)/i.test(entry));
-  const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const structured = row.structuredContent && typeof row.structuredContent === "object"
-    ? row.structuredContent as Record<string, unknown>
-    : {};
-  const jobId = [structured.job_id, structured.jobId, structured.generation_id, structured.generationId]
-    .find((entry) => typeof entry === "string") as string | undefined;
-  const mediaType = url && /\.(png|jpe?g|webp|gif)(?:\?|$)/i.test(url) ? "image"
-    : url && /\.(mp3|wav|m4a|ogg)(?:\?|$)/i.test(url) ? "audio"
-      : url ? "video" : undefined;
-  return { url, jobId, mediaType, ...(!url && all.length ? { text: all.join("\n") } : {}) };
+/** Read only output fields: input/reference URLs must never masquerade as results. */
+export function parseGeneration(value: unknown, expectedJobId?: string): {
+  url?: string; jobId?: string; status: 'success' | 'running' | 'fail'; error?: string; mediaType?: string;
+} {
+  const envelope = requireRecord(value, 'Higgsfield result');
+  if (envelope.isError) {
+    const text = Array.isArray(envelope.content) ? envelope.content.filter((block) => block?.type === 'text').map((block) => block.text).join(' ') : '';
+    throw new SiteHttpError(502, text || remoteMessage(envelope, 'Higgsfield rejected the request.'), 'HIGGSFIELD_GENERATION_ERROR');
+  }
+  const documents: Record<string, unknown>[] = [];
+  if (envelope.structuredContent && typeof envelope.structuredContent === 'object') documents.push(envelope.structuredContent as Record<string, unknown>);
+  for (const block of Array.isArray(envelope.content) ? envelope.content : []) {
+    if (block?.type !== 'text') continue;
+    try { const parsed = JSON.parse(block.text); if (parsed && typeof parsed === 'object') documents.push(parsed); } catch { /* Human-readable companion text. */ }
+  }
+  if (!documents.length) documents.push(envelope);
+  for (const doc of documents) {
+    if (doc.unlim_choice) throw new SiteHttpError(422, 'Higgsfield needs a choice between unlimited generations and credits. No generation was submitted.', 'HIGGSFIELD_BILLING_CHOICE');
+    if (doc.error) throw new SiteHttpError(502, String(doc.error), 'HIGGSFIELD_GENERATION_ERROR');
+    const rows = Array.isArray(doc.results) ? doc.results : Array.isArray(doc.jobs) ? doc.jobs : [doc];
+    const row = rows.find((item) => item && typeof item === 'object' && (!expectedJobId || [item.job_id, item.jobId, item.id].includes(expectedJobId))) as Record<string, unknown> | undefined;
+    if (!row) continue;
+    const jobId = [row.job_id, row.jobId, row.id, row.generation_id].find((id) => typeof id === 'string') as string | undefined;
+    const status = String(row.status ?? '');
+    if (/^(failed|fail|canceled|cancelled|nsfw|ip_detected)$/.test(status) || (status === 'lookup_failed' && row.retryable === false)) {
+      return { jobId, status: 'fail', error: String(row.error ?? row.fail_reason ?? 'Higgsfield could not complete this generation.') };
+    }
+    const output = row.results && !Array.isArray(row.results) && typeof row.results === 'object' ? row.results as Record<string, unknown>
+      : row.output && typeof row.output === 'object' ? row.output as Record<string, unknown> : {};
+    const url = [row.result_url, output.rawUrl, output.url, row.url].find((url) => typeof url === 'string' && url.startsWith('https://')) as string | undefined;
+    if (url && (!status || /^(completed|complete|success|succeeded)$/.test(status))) return { jobId, url, status: 'success', mediaType: typeof row.type === 'string' ? row.type : undefined };
+    if (jobId) return { jobId, status: 'running' };
+  }
+  throw new SiteHttpError(502, 'Higgsfield did not return a generation job or finished media. Check provider history before retrying.', 'HIGGSFIELD_RESULT_UNAVAILABLE');
+}
+
+async function queryGeneration(token: string, sessionId: string | undefined, tools: McpTool[], jobId: string) {
+  const tool = tools.find((tool) => tool.name === 'jobs_wait' || tool.name === 'higgsfield_jobs_wait');
+  if (!tool) throw new SiteHttpError(422, 'Higgsfield does not expose its job polling tool. Reconnect Higgsfield to refresh its tools.', 'HIGGSFIELD_TOOL_UNAVAILABLE');
+  const called = await callTool(token, sessionId, tool, { jobs: [{ index: 0, job_id: jobId }], timeout_seconds: 15 });
+  return parseGeneration(called.result, jobId);
 }
 
 async function callTool(token: string, sessionId: string | undefined, tool: McpTool, args: Record<string, unknown>) {
@@ -465,18 +511,28 @@ export function createHiggsfieldMcp(env: RuntimeEnv, workspaceId: string, reques
       const params = requireRecord(value, "Higgsfield generation parameters");
       const outputType = typeof params.outputType === "string" ? params.outputType : "video";
       const { tools, sessionId } = await mcpTools(token);
-      const tool = selectTool(tools, outputType);
-      const args = await toolArguments(tool, params, env, workspaceId);
-      const called = await callTool(token, sessionId, tool, args);
-      const parsed = parseGeneration(called.result);
-      if (!parsed.url) {
-        throw new SiteHttpError(502, parsed.text || "Higgsfield accepted the request but did not return a finished media URL.", "HIGGSFIELD_RESULT_UNAVAILABLE");
+      const model = typeof params.model === 'string' ? params.model : 'auto';
+      let parsed: ReturnType<typeof parseGeneration>;
+      if (params.jobId !== undefined) {
+        if (typeof params.jobId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(params.jobId)) throw new SiteHttpError(400, 'Invalid Higgsfield job ID.', 'HIGGSFIELD_PARAMETERS_INVALID');
+        parsed = await queryGeneration(token, sessionId, tools, params.jobId);
+      } else {
+        const tool = selectTool(tools, outputType);
+        const args = await toolArguments(tool, params, env, workspaceId);
+        const called = await callTool(token, sessionId, tool, args);
+        parsed = parseGeneration(called.result);
       }
-      return {
-        ...parsed,
-        mediaType: parsed.mediaType ?? outputType,
-        model: typeof params.model === "string" ? params.model : "auto",
-      };
+      // Remote MCP persists the receipt immediately and resumes in its Durable Object.
+      // Interactive Studio/Canvas callers wait on this same job; never submit again.
+      const deadline = Date.now() + 240_000;
+      while (params.wait !== false && parsed.status === 'running' && parsed.jobId && Date.now() < deadline) {
+        parsed = await queryGeneration(token, sessionId, tools, parsed.jobId);
+        if (parsed.status === 'running') await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      if (params.wait !== false && parsed.status === 'running') throw new SiteHttpError(504, `Higgsfield is still generating job ${parsed.jobId}. Check this job before starting another generation.`, 'HIGGSFIELD_STILL_RUNNING');
+      if (params.wait !== false && parsed.status === 'fail') throw new SiteHttpError(502, parsed.error ?? 'Higgsfield generation failed.', 'HIGGSFIELD_GENERATION_FAILED');
+      return { ...parsed, mediaType: parsed.mediaType ?? outputType, model };
+
     },
 
     async quickEdit(value: unknown) {
