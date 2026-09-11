@@ -61,20 +61,27 @@ function mount({ preloaded = false, uri = api.MEDIA_RESOURCE.uri } = {}) {
 }
 
 describe('deployed MCP viewer startup', () => {
-  it('uses a dark canvas fallback and adopts host colors without repainting the player', async () => {
+  it('keeps a transparent document even when the host supplies a contrasting widget surface', async () => {
     const view = mount();
     expect(view.document.documentElement.dataset.theme).toBe('dark');
     await view.initialize({ theme: 'dark', styles: { variables: {
-      '--color-background-primary': '#141414', '--color-text-primary': '#faf9f5',
+      '--color-background-primary': '#30302e', '--color-text-primary': '#faf9f5',
     } } });
     view.result();
     const card = view.document.querySelector('.card');
-    expect(view.document.documentElement.style.getPropertyValue('--color-background-primary')).toBe('#141414');
+    expect(view.document.documentElement.style.getPropertyValue('--color-background-primary')).toBe('#30302e');
+    for (const surface of [view.document.documentElement, view.document.body, view.document.querySelector('#app')]) {
+      expect(view.window.getComputedStyle(surface).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    }
+    expect(view.window.getComputedStyle(view.document.documentElement).colorScheme).toBe('light dark');
+    expect(view.window.getComputedStyle(view.document.querySelector('#app')).colorScheme).toBe('dark');
     view.send({ method: 'ui/notifications/host-context-changed', params: { theme: 'light', styles: { variables: {
       '--color-background-primary': '#faf9f5', '--color-text-primary': '#262624',
     } } } });
     expect(view.document.documentElement.dataset.theme).toBe('light');
     expect(view.document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('#262624');
+    expect(view.window.getComputedStyle(view.document.documentElement).colorScheme).toBe('light dark');
+    expect(view.window.getComputedStyle(view.document.body).backgroundColor).toBe('rgba(0, 0, 0, 0)');
     expect(view.document.querySelector('.card')).toBe(card);
     view.send({ method: 'ui/notifications/host-context-changed', params: { theme: 'dark' } });
     expect(view.document.documentElement.dataset.theme).toBe('dark');
@@ -120,7 +127,7 @@ describe('deployed MCP viewer startup', () => {
   });
 
   it('serves the fixed script to hosts still using a cached resource URI', async () => {
-    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v5.html', 'ui://cinegen/media-viewer-v6.html', 'ui://cinegen/media-viewer-v16.html']) {
+    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v5.html', 'ui://cinegen/media-viewer-v6.html', 'ui://cinegen/media-viewer-v16.html', 'ui://cinegen/media-viewer-v17.html']) {
       expect(api.readMediaResource(uri).contents[0].uri).toBe(uri);
       const view = mount({ uri }); await view.initialize(); view.result();
       expect(view.document.querySelectorAll('.card')).toHaveLength(7);

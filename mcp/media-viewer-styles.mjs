@@ -1,13 +1,16 @@
 export const css = `
-/* Paint the iframe canvas to match its host. A transparent document can expose
-   the host webview's white backing surface even when the chat is dark. */
-:root{color-scheme:dark;--page:var(--color-background-primary,#141414);--bg:#1c1d1f;--surface:var(--color-background-secondary,#27282a);--line:var(--color-border-primary,#303134);--ink:var(--color-text-primary,#efede8);--muted:var(--color-text-secondary,#aaa49a);--gold:#d8ad70}
-:root[data-theme="light"]{color-scheme:light;--page:var(--color-background-primary,#ffffff);--bg:#f6f5f2;--surface:var(--color-background-secondary,#edece8);--line:var(--color-border-primary,#d7d5cf);--ink:var(--color-text-primary,#242320);--muted:var(--color-text-secondary,#67635b);--gold:#8a5c1e}
-*{box-sizing:border-box}html,body{margin:0;width:100%;min-height:100%;background:var(--page);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+/* Let the chat show through. Its background-primary token describes a widget
+   surface, not necessarily the conversation behind it. Supporting both root
+   color schemes avoids the browser forcing an opaque iframe canvas when the
+   embedding page uses a different scheme. Theme native controls inside #app. */
+:root{color-scheme:light dark;--bg:#1c1d1f;--surface:var(--color-background-secondary,#27282a);--line:var(--color-border-primary,#303134);--ink:var(--color-text-primary,#efede8);--muted:var(--color-text-secondary,#aaa49a);--gold:#d8ad70}
+:root[data-theme="light"]{--bg:#f6f5f2;--surface:var(--color-background-secondary,#edece8);--line:var(--color-border-primary,#d7d5cf);--ink:var(--color-text-primary,#242320);--muted:var(--color-text-secondary,#67635b);--gold:#8a5c1e}
+*{box-sizing:border-box}html,body{margin:0;width:100%;min-height:100%;background:transparent;color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer;border:1px solid var(--line);border-radius:9px;background:#222326;min-height:40px;padding:8px 12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background .16s,border-color .16s,transform .16s;-webkit-tap-highlight-color:transparent}
 button:active{transform:scale(.98)}button:disabled{opacity:.4;cursor:default}button svg{flex-shrink:0}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}[hidden]{display:none!important}
 @media(hover:hover){button:hover{background:#303134;border-color:#716351}.card-view:hover{background:#222326}.tile-preview:hover{background:#d8ad70;color:#161616}}
-#app{position:relative;width:100%;max-width:760px;margin:auto;padding:18px;--viewer-height:620px}
+#app{color-scheme:dark;position:relative;width:100%;max-width:760px;margin:auto;padding:18px;--viewer-height:620px}
+:root[data-theme="light"] #app{color-scheme:light}
 #app.is-ready{height:auto;padding:8px;display:flex;flex-direction:column;min-height:0;border:0;border-radius:0;background:transparent;box-shadow:none}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 7px 4px;flex-shrink:0;min-height:47px}.header-controls{display:flex;gap:2px;align-items:center}.collection-title{font:inherit;min-height:42px;padding:3px 0;gap:7px;background:transparent;border:0}.collection-title svg{order:2;width:12px;height:12px;color:#9c8b71}.logomark{display:grid;place-items:center;min-height:36px;width:36px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--gold)}.logomark svg{width:23px;height:23px}
 .brand{font:650 9px/1.3 ui-monospace,monospace;letter-spacing:.19em;color:var(--gold);margin:0 0 3px}h1{font-size:19px;line-height:1.25;font-weight:620;letter-spacing:-.035em;margin:0}h2{font-size:14px;line-height:1.35;margin:0;font-weight:600}h3{font-size:11px}.icon-button{width:40px;height:40px;padding:0;background:transparent;border-color:transparent;color:#b9b6b0}.small{min-height:36px;font-size:12px;padding:6px 10px}
