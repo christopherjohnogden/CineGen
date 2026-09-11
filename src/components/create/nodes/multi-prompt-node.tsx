@@ -4,6 +4,7 @@ import { memo, useCallback } from 'react';
 import { type NodeProps, useReactFlow } from '@xyflow/react';
 import { BaseNode } from './base-node';
 import { MentionTextarea } from './mention-textarea';
+import { useNodeConfigDraft } from './use-node-config-draft';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import type { WorkflowNodeData } from '@/types/workflow';
 
@@ -19,14 +20,16 @@ const DURATION_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
   const { updateNodeData } = useReactFlow();
   const { state, dispatch } = useWorkspace();
-  const shots: MultiPromptShot[] = (data.config?.shots as MultiPromptShot[]) ?? [{ prompt: '', duration: 5 }];
+  const [config, editDraft] = useNodeConfigDraft(data.config);
+  const shots: MultiPromptShot[] = (config.shots as MultiPromptShot[]) ?? [{ prompt: '', duration: 5 }];
   const totalDuration = shots.reduce((total, shot) => total + shot.duration, 0);
 
   const updateShots = useCallback(
     (newShots: MultiPromptShot[]) => {
-      updateNodeData(id, { config: { ...data.config, shots: newShots } });
+      editDraft({ shots: newShots });
+      updateNodeData(id, node => ({ config: { ...(node.data as WorkflowNodeData).config, shots: newShots } }));
     },
-    [id, data.config, updateNodeData],
+    [id, editDraft, updateNodeData],
   );
 
   const handlePromptChange = useCallback(
@@ -42,6 +45,7 @@ function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
       const newShots = shots.map((shot, shotIndex) => (
         shotIndex === index ? { ...shot, prompt: value } : shot
       ));
+      editDraft({ shots: newShots });
       dispatch({
         type: 'APPLY_ELEMENT_MENTION',
         nodeId: id,
@@ -49,7 +53,7 @@ function MultiPromptNodeInner({ id, data, selected }: MultiPromptNodeProps) {
         config: { shots: newShots },
       });
     },
-    [dispatch, id, shots],
+    [dispatch, id, shots, editDraft],
   );
 
   const handleDurationChange = useCallback(
