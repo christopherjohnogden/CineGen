@@ -12,7 +12,7 @@ describe('Topview Canvas audio route', () => {
     const prompt = 'Full shot direction. '.repeat(300);
     const original = { ...request, prompt };
     const call = vi.fn(); const load = vi.fn();
-    await expect(submitTopviewCanvasAudio({ call, request: original, references, load, submitSchema: canvasSubmitSchema })).rejects.toThrow(/Topview's Canvas audio-reference route accepts up to 4,000/);
+    await expect(submitTopviewCanvasAudio({ call, request: original, references, load, submitSchema: canvasSubmitSchema })).rejects.toThrow(/Topview's Canvas route accepts up to 4,000/);
     expect(original.prompt).toBe(prompt);
     expect(call).not.toHaveBeenCalled();
     expect(load).not.toHaveBeenCalled();

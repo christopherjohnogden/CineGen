@@ -188,6 +188,7 @@ function startGeneration(host: McpHost, request: GenerationRequest): string[] {
   setIfAccepted('duration', request.durationSec);
   setIfAccepted('aspect_ratio', request.aspectRatio);
   setIfAccepted('resolution', request.resolution);
+  if (config.video_mode === 'edit') config.__studioVideoMode = 'edit';
 
   const created: Node<WorkflowNodeData>[] = [];
   for (let index = 0; index < request.count; index += 1) {

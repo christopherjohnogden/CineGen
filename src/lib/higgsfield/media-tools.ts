@@ -1,6 +1,10 @@
-/** Verified against Higgsfield's model catalog on 2026-09-10. */
+/** Verified against Higgsfield's model catalog on 2026-09-11. */
+export function isHiggsfieldGenjutsu(model: unknown): boolean {
+  return ['hf_mult_motion_control', 'hf_mult_replace_object'].includes(String(model));
+}
+
 export function isHiggsfieldMediaTool(model: unknown): boolean {
-  return ['topaz_image', 'topaz_video', 'sync_so'].includes(String(model));
+  return isHiggsfieldGenjutsu(model) || ['topaz_image', 'topaz_video', 'sync_so'].includes(String(model));
 }
 
 export function validateHiggsfieldMediaTool(model: string, params: Record<string, unknown>, medias: Array<{ value: string; role?: string }>): void {
@@ -8,7 +12,16 @@ export function validateHiggsfieldMediaTool(model: string, params: Record<string
   const image = medias.filter(m => /image/.test(m.role ?? ''));
   const video = medias.filter(m => /video/.test(m.role ?? ''));
   const audio = medias.filter(m => /audio/.test(m.role ?? ''));
-  if (model === 'topaz_image') {
+  if (isHiggsfieldGenjutsu(model)) {
+    if (medias.some(media => !['image', 'image_references', 'video', 'video_references'].includes(media.role ?? ''))) {
+      throw new Error('Genjutsu accepts reference images and one source video. Audio and frame references are not supported.');
+    }
+    if (video.length !== 1) throw new Error('Genjutsu requires exactly one source video.');
+    if (!image.length) throw new Error('Genjutsu requires at least one reference image.');
+    if (params.resolution !== undefined && !['480p', '720p', '1080p'].includes(String(params.resolution))) {
+      throw new Error('Genjutsu output must be 480p, 720p, or 1080p.');
+    }
+  } else if (model === 'topaz_image') {
     if (image.length !== 1 || medias.length !== 1) throw new Error('Topaz Image Upscale requires exactly one source image.');
     for (const field of ['output_width', 'output_height']) {
       const size = Number(params[field]);

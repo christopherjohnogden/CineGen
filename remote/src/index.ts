@@ -99,7 +99,7 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
       if(params.name==='cinegen_list_models') {
         const provider=requestedProvider(args.provider);
         const catalog=await connectedModels(auth.token,provider,args.kind);
-        result={provider,defaultProvider:'topview',backupProvider:'higgsfield',automaticFallback:false,connected:catalog.connected,audioReferenceConnection:catalog.audioReferenceConnection,models:catalog.models.map(m=>({nodeType:m.nodeType,name:m.name,kind:m.outputType,available:!m.unavailableReason,unavailableReason:m.unavailableReason,inputs:m.inputs}))};
+        result={provider,defaultProvider:'topview',backupProvider:'higgsfield',automaticFallback:false,connected:catalog.connected,audioReferenceConnection:catalog.audioReferenceConnection,clipEditConnection:catalog.clipEditConnection,models:catalog.models.map(m=>({nodeType:m.nodeType,name:m.name,kind:m.outputType,available:!m.unavailableReason,unavailableReason:m.unavailableReason,inputs:m.inputs}))};
       }
       else if(params.name==='cinegen_generate'||params.name==='cinegen_get_jobs') {
         const projectId=safeId(args.projectId),requestId=safeId(args.requestId);

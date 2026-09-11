@@ -8,6 +8,7 @@ import { modelProvider, modelProviderLabel } from '@/lib/workflows/provider-mode
 import { getLayerDecomposeStageLabel } from '@/lib/workflows/layer-decompose';
 import { useRunNode } from './workflow-canvas';
 import { CustomSelect } from '@/components/ui/custom-select';
+import { clipEditResolutions } from '@/lib/topview/clip-edit';
 import type { WorkflowNodeData, ModelInputField } from '@/types/workflow';
 
 interface NodeInspectorProps {
@@ -287,7 +288,9 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
   const isSeedance25 = modelDef.id === 'seedance_2_5';
   const inspectorFields = modelDef.inputs.filter(
     (f) => f.fieldType !== 'port' && f.fieldType !== 'element-list',
-  ).filter((field) => !isSeedance25 || !SEEDANCE_REFERENCE_FIELDS.has(field.id));
+  ).filter((field) => !isSeedance25 || !SEEDANCE_REFERENCE_FIELDS.has(field.id))
+    .filter(field => modelDef.provider !== 'topview' || data.config.video_mode !== 'edit' || !['duration', 'aspect_ratio'].includes(field.id))
+    .map(field => modelDef.provider === 'topview' && data.config.video_mode === 'edit' && field.id === 'resolution' ? { ...field, options: clipEditResolutions(field.options) } : field);
   const primaryFields = isSeedance25
     ? inspectorFields
         .filter((field) => SEEDANCE_PRIMARY_FIELD_ORDER.includes(field.id))
@@ -329,6 +332,9 @@ export function NodeInspector({ nodeId, data }: NodeInspectorProps) {
 
       {inspectorFields.length > 0 && (
         <div className="node-inspector__body">
+          {modelDef.provider === 'topview' && data.config.video_mode === 'edit' && (
+            <p className="inspector__reference-note">Length and framing match the source. Connect one 720p or larger video to Video to edit.</p>
+          )}
           {isSeedance25 && (
             <div className="inspector__reference-note">
               <span className="inspector__reference-note-icon" aria-hidden="true">

@@ -5,6 +5,7 @@ import {
 } from './video-duration';
 
 export interface TopviewVideoRequest {
+  videoMode?: 'auto' | 'edit';
   prompt: string;
   model?: string;
   durationSec?: number;
@@ -141,7 +142,7 @@ export async function runTopviewVideoTask(
   const startedAt = now();
   // Seedance charges, refunds, and only then reports that it read the prompt as an edit of
   // the attached clip, so the task has to fail once before the inherited length is knowable.
-  let inheritedDurationRetried = request.durationSec === TOPVIEW_INHERITED_VIDEO_DURATION;
+  let inheritedDurationRetried = request.videoMode === 'edit' || request.durationSec === TOPVIEW_INHERITED_VIDEO_DURATION;
   for (;;) {
     const query = await client.query(task);
     const updatedTask = normalizeTopviewVideoTask({ ...task, ...query }) ?? task;

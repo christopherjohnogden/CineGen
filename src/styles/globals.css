@@ -769,16 +769,31 @@ input[type='range']::-moz-range-track {
 }
 
 .asst-send {
-  width: 28px;
-  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  line-height: 1;
   border: none;
-  border-radius: 8px;
+  border-radius: 11px;
   background: var(--accent);
   color: #241a08;
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 150ms, box-shadow 150ms;
 }
+
+.asst-send svg { display: block; }
+.asst-send:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, white); }
+.asst-send:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.asst-send__busy { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: asst-send-spin 900ms linear infinite; }
+@keyframes asst-send-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .asst-send__busy { animation: none; } }
+@media (pointer: coarse) { .asst-send { width: 44px; height: 44px; flex-basis: 44px; } }
 
 .asst-send:disabled {
   opacity: 0.4;

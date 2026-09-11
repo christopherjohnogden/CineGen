@@ -25,6 +25,22 @@ export const canvasToolNames = [
   'refresh_topview_canvas_generation_task', 'download_topview_canvas_nodes',
 ];
 
+// Minimal ISO-BMFF metadata for preflight tests; deliberately not playable media.
+export function clipVideoFixture(width = 1280, height = 720, version = 0) {
+  const box = (type, payload) => {
+    const bytes = new Uint8Array(payload.length + 8);
+    new DataView(bytes.buffer).setUint32(0, bytes.length);
+    bytes.set(new TextEncoder().encode(type), 4); bytes.set(payload, 8); return bytes;
+  };
+  const concat = (...parts) => new Uint8Array(parts.flatMap(part => [...part]));
+  const header = new Uint8Array(version === 1 ? 96 : 84);
+  header[0] = version;
+  const view = new DataView(header.buffer), at = version === 1 ? 88 : 76;
+  view.setUint32(at, width * 65536); view.setUint32(at + 4, height * 65536);
+  const handler = new Uint8Array(12); handler.set(new TextEncoder().encode('vide'), 8);
+  return box('moov', box('trak', concat(box('tkhd', header), box('mdia', box('hdlr', handler)))));
+}
+
 export function canvasFixture() {
   const calls = [];
   let nodes = 0;

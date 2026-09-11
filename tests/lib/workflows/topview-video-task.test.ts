@@ -267,6 +267,21 @@ describe('Spaces Topview video recovery', () => {
     );
   });
 
+  it('carries explicit Clip Edit mode and typed media through Canvas execution', async () => {
+    const submit = vi.fn().mockResolvedValue(task);
+    const query = vi.fn().mockResolvedValue(queryResult('success', { url: 'https://cdn.example/edit.mp4' }));
+    installTopviewBridge(submit, query);
+    const node = workflowNode();
+    node.type = node.data.type = 'topview-video-seedance-2-5';
+    node.data.config = { prompt: 'Replace the uniform.', video_mode: 'edit', resolution: '1080',
+      source_video: 'https://cdn.example/source.mp4', audio_references: ['https://cdn.example/voice.wav'],
+      image_url: { urls: ['https://cdn.example/character.png'] } };
+    await executeWorkflow([node], [], workflowDispatch());
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ videoMode: 'edit', resolution: '1080',
+      medias: expect.arrayContaining([{ value: 'https://cdn.example/source.mp4', role: 'video' }, { value: 'https://cdn.example/voice.wav', role: 'audio' }, { value: 'https://cdn.example/character.png', role: 'image' }]) }));
+  });
+
   it('resumes a persisted task after a polling error without submitting again', async () => {
     const submit = vi.fn().mockResolvedValue(task);
     const query = vi.fn().mockRejectedValueOnce(new Error('Topview query timed out.'));

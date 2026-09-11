@@ -139,7 +139,7 @@ A multi-track timeline with dual source/timeline viewers, transport controls, an
 
 ### LLM Chat
 
-Context-aware AI assistant with full knowledge of your project — assets, timelines, transcripts, and elements.
+Context-aware AI assistant with full knowledge of your project — assets, timelines, transcripts, and elements. The Assistant also attaches canvas image previews and three timestamped frames per video to visual-capable providers. It prioritizes named/selected nodes and their inputs, includes up to six media references per message, and explicitly marks unavailable or omitted media. Video frames do not include audio or continuous playback. Previews are prepared per message and are not stored in chat history.
 
 - **Ask mode** — project-aware Q&A for notes, summaries, prompt ideas, and production questions
 - **Search mode** — find quotes, mentions, assets, and timeline moments with clickable citations that jump to the source
@@ -205,6 +205,16 @@ npm run dev
 This builds the native AVFoundation module and starts the Vite dev server with Electron. The app opens automatically.
 
 Development uses `http://localhost:5173` and keeps its browser session in `CineGen/dev-browser-session` inside the system application-support folder. Sign in to Cloud once in the dev app's project picker; that session is reused after restarting dev. The installed app and your regular browser have separate sign-ins. If port 5173 is already in use, stop the other dev server before starting again.
+
+### Cloud media previews
+
+The storage bucket needs CORS enabled for the assistant to read image pixels and extract video frames. An image can display in a node thumbnail while pixel extraction fails because the download response lacks CORS headers. The bucket configuration is tracked in [`storage.cors.json`](storage.cors.json):
+
+```bash
+gcloud storage buckets update gs://cinegen-734ba.firebasestorage.app --cors-file=storage.cors.json
+```
+
+This follows [Firebase's browser-download CORS configuration](https://firebase.google.com/docs/storage/web/download-files#cors_configuration), with GET/HEAD reads permitted across origins, including the installed app's opaque `file:` origin and local development ports. It does not grant storage permissions, change Firebase rules, or enable uploads. Firebase rules deployment does not apply this bucket setting; apply it separately when provisioning a bucket. The live CineGen bucket was updated on September 11, 2026.
 
 ### Production Build
 

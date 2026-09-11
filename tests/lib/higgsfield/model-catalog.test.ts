@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isHiggsfieldGenjutsu } from '@/lib/higgsfield/media-tools';
 import {
   HIGGSFIELD_CATALOG,
   HIGGSFIELD_MODEL_REGISTRY,
@@ -8,14 +9,14 @@ import {
 } from '@/lib/higgsfield/model-catalog';
 
 describe('generated Higgsfield model catalog', () => {
-  it('captures every model exposed by the authenticated CLI snapshot', () => {
-    expect(HIGGSFIELD_CATALOG.cli.version).toBe('0.1.28');
-    expect(HIGGSFIELD_MODEL_SCHEMAS).toHaveLength(101);
-    expect(new Set(HIGGSFIELD_MODEL_SCHEMAS.map((model) => model.job_set_type)).size).toBe(101);
+  it('preserves the bundled catalog with the latest targeted additions', () => {
+    expect(HIGGSFIELD_CATALOG.cli.version).toBe('1.1.23');
+    expect(HIGGSFIELD_MODEL_SCHEMAS).toHaveLength(103);
+    expect(new Set(HIGGSFIELD_MODEL_SCHEMAS.map((model) => model.job_set_type)).size).toBe(103);
     expect(HIGGSFIELD_MODEL_SCHEMAS.reduce<Record<string, number>>((counts, model) => {
       counts[model.type] = (counts[model.type] ?? 0) + 1;
       return counts;
-    }, {})).toEqual({ '3d': 13, audio: 6, image: 40, text: 1, video: 41 });
+    }, {})).toEqual({ '3d': 13, audio: 6, image: 40, text: 1, video: 43 });
   });
 
   it('preserves exact required/default/enum schema values', () => {
@@ -34,7 +35,7 @@ describe('generated Higgsfield model catalog', () => {
   });
 
   it('turns every raw model into one provider node and preserves legacy node ids', () => {
-    expect(Object.keys(HIGGSFIELD_MODEL_REGISTRY)).toHaveLength(101);
+    expect(Object.keys(HIGGSFIELD_MODEL_REGISTRY)).toHaveLength(103);
     expect(HIGGSFIELD_MODEL_REGISTRY['hf-soul-v2']?.id).toBe('text2image_soul_v2');
     expect(HIGGSFIELD_MODEL_REGISTRY['hf-nano-banana-pro']?.id).toBe('nano_banana_2');
     expect(HIGGSFIELD_MODEL_REGISTRY['hf-seedance-2']?.id).toBe('seedance_2_0');
@@ -57,7 +58,8 @@ describe('generated Higgsfield model catalog', () => {
         .toEqual(schema.job_set_type === 'seedance_2_5' ? ['medias'] : []);
       for (const param of schema.params) {
         const field = definition.inputs.find((candidate) => candidate.falParam === param.name);
-        expect(field?.required, `${schema.job_set_type}.${param.name}`).toBe(param.required);
+        const requiredByRule = isHiggsfieldGenjutsu(schema.job_set_type) && ['image_references', 'video_references'].includes(param.name);
+        expect(field?.required, `${schema.job_set_type}.${param.name}`).toBe(param.required || requiredByRule);
         expect(field?.default, `${schema.job_set_type}.${param.name}`).toEqual(param.default);
         expect(field?.schemaType, `${schema.job_set_type}.${param.name}`).toBe(param.type);
         if (param.enum) {

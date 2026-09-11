@@ -179,8 +179,8 @@ export function resolveStudioRecipe(
   }
 
   // Frames: mirror, then the field's own config URL, then an upstream filePicker.
-  const frame = (pick: (field: ModelInputField) => boolean, mirrorKey: string): string => {
-    const mirror = config[mirrorKey];
+  const frame = (pick: (field: ModelInputField) => boolean, mirrorKey?: string): string => {
+    const mirror = mirrorKey ? config[mirrorKey] : undefined;
     if (typeof mirror === 'string' && mirror) return mirror;
     const target = model.inputs.find(pick);
     if (!target) return '';
@@ -194,7 +194,7 @@ export function resolveStudioRecipe(
   const endAssetId = frame(isEndField, '__studioEndAssetId');
 
   const videoMode = parseStudioVideoMode(
-    config.__studioVideoMode,
+    config.video_mode === 'edit' ? 'edit' : config.__studioVideoMode,
     elementIds.length ? 'references' : 'frames',
   );
   // An edit is pointless without its clip, so a deleted asset drops the reference
@@ -202,11 +202,12 @@ export function resolveStudioRecipe(
   const editAssetId = typeof config.__studioEditAssetId === 'string'
     && assets.some((asset) => asset.id === config.__studioEditAssetId)
     ? config.__studioEditAssetId
-    : '';
+    : frame(field => field.id === 'source_video');
 
   const controls: StudioRecipe['controls'] = {};
   for (const input of model.inputs) {
     if (!CONTROL_FIELD_TYPES.has(input.fieldType)) continue;
+    if (videoMode === 'edit' && ['duration', 'aspect_ratio'].includes(input.id)) continue;
     const value = config[input.id];
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
       controls[input.id] = value;

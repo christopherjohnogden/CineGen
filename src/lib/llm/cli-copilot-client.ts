@@ -1,6 +1,7 @@
 import type { CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import type { CopilotVisualRefInput } from '@/lib/llm/copilot-visual-refs';
 import { cliChatErrorMessage } from './cli-chat-error';
+import type { LlmImageAttachment } from './image-attachments';
 
 export interface CliCopilotChatParams {
   requestId?: string;
@@ -13,6 +14,7 @@ export interface CliCopilotChatParams {
   userMessage: string;
   messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   visualRefs?: CopilotVisualRefInput[];
+  images?: LlmImageAttachment[];
 }
 
 export interface CliCopilotChatResult {

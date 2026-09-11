@@ -1,6 +1,7 @@
 import type { ModelDefinition, ModelInputField } from '@/types/workflow';
 import { topviewAcceptsAudioReferences } from './reference-capabilities';
 import { topviewMediaToolDefinitions } from './media-tools';
+import { supportsTopviewClipEdit } from './clip-edit';
 import gptImage25Catalog from './gpt-image-25.generated.json';
 
 export type TopviewCatalogOutput = 'image' | 'video' | 'audio';
@@ -293,6 +294,7 @@ function imageDefinition(model: CatalogModel): ModelDefinition {
 }
 
 function videoDefinition(model: CatalogModel): ModelDefinition {
+  const clipEdit = supportsTopviewClipEdit(model.submitModel ?? model.displayName);
   const ratios = fieldOptions(model, 'aspectRatio', DEFAULT_VIDEO_RATIOS);
   const resolutions = fieldOptions(model, 'resolution', DEFAULT_VIDEO_RESOLUTIONS);
   const durations = fieldOptions(model, 'duration', DEFAULT_VIDEO_DURATIONS);
@@ -305,6 +307,11 @@ function videoDefinition(model: CatalogModel): ModelDefinition {
   const inputs: ModelInputField[] = [
     { id: 'prompt', portType: 'text', label: 'Prompt', required: true, falParam: 'prompt', fieldType: 'port' },
   ];
+  if (clipEdit) inputs.push(
+    { id: 'video_mode', portType: 'text', label: 'Video mode', required: false, falParam: 'video_mode', fieldType: 'select', default: 'auto',
+      options: [{ value: 'auto', label: 'Generate' }, { value: 'edit', label: 'Clip Edit', description: 'Edit one source video at up to 1080p. Length and framing match the source. Requires Topview Canvas MCP.' }] },
+    { id: 'source_video', portType: 'video', label: 'Video to edit', required: false, falParam: 'input_video', fieldType: 'port', mediaRole: 'video', description: 'Clip Edit source. Use a 720p or larger MP4/MOV; choose Clip Edit in Video mode.' },
+  );
   if (supportsOmniReference) {
     inputs.push(
       // Keep the historical handle ID so existing Spaces connections migrate in place.

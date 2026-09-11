@@ -1,4 +1,5 @@
 import { assertTopviewCanvasPrompt } from './reference-capabilities';
+import { assertClipEditVideo } from './clip-edit';
 
 type Data = Record<string, any>;
 type Call = (name: string, args: Data) => Promise<unknown>;
@@ -52,6 +53,8 @@ function kind(reference: CanvasReference): 'image' | 'video' | 'audio' {
 
 /** Validate the live Canvas contract before uploading references or spending credits. */
 export function canvasAudioParameters(capability: Data, request: Data, references: CanvasReference[]): Data {
+  const editing = request.omniReferenceTaskType === 'edit';
+  if (editing && references.filter(ref => kind(ref) === 'video').length !== 1) throw new Error('Clip Edit needs exactly one source video.');
   const roles: Data[] = capability.inputRoles ?? capability.inputs ?? [];
   const counts: Data = {};
   for (const reference of references) {
@@ -71,7 +74,7 @@ export function canvasAudioParameters(capability: Data, request: Data, reference
   if (Number(request.generatingCount ?? 1) !== 1) throw new Error('Audio-reference video generation supports one output per request.');
   const properties = capability.parametersSchema?.properties ?? {};
   const parameters = { ...capability.defaults };
-  const fields = { duration: request.duration, resolution: request.resolution, aspectRatio: request.aspectRatio ?? request.ratio,
+  const fields = { duration: editing ? -1 : request.duration, resolution: request.resolution, aspectRatio: editing ? 'adaptive' : request.aspectRatio ?? request.ratio,
     nativeAudio: request.sound === undefined ? undefined : request.sound === true || request.sound === 'true' || request.sound === 'on',
     omniReferenceTaskType: request.omniReferenceTaskType };
   for (const [key, value] of Object.entries(fields)) {
@@ -106,7 +109,7 @@ export async function submitTopviewCanvasAudio(args: {
   const slug = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const capability = catalog.capabilities?.find((entry: Data) => entry.taskType === 'video_edit'
     && [entry.model, entry.displayName].some(value => slug(value) === slug(request.model)));
-  if (!capability || !catalog.capabilityVersion) throw new Error(`Topview Canvas does not currently expose ${request.model} with audio references.`);
+  if (!capability || !catalog.capabilityVersion) throw new Error(`Topview Canvas does not currently expose ${request.model} for this reference mode.`);
   const parameters = canvasAudioParameters(capability, request, references);
   const state = data(await call('get_topview_canvas_state', { canvasId, fields: ['nodes.geometry'] }));
   const y = (state.nodes ?? []).reduce((bottom: number, node: Data) => Math.max(bottom,
@@ -116,6 +119,7 @@ export async function submitTopviewCanvasAudio(args: {
     if (reference.value.startsWith('topview-file:')) throw new Error('Use the saved CineGen image URL for this audio-reference generation, rather than a temporary Topview upload ID.');
     const source = await args.load(reference);
     if (!source.bytes.byteLength) throw new Error('A reference file is empty.');
+    if (request.omniReferenceTaskType === 'edit' && kind(reference) === 'video') assertClipEditVideo(source.bytes);
     if (kind(reference) === 'audio' && (!['mp3', 'wav'].includes(source.format.toLowerCase()) || source.bytes.byteLength > 15 * 1024 * 1024)) {
       throw new Error('Seedance audio references must be MP3 or WAV files up to 15 MB.');
     }
@@ -145,7 +149,7 @@ export async function submitTopviewCanvasAudio(args: {
   }));
   if (!submitted.nodeId || !submitted.taskId) throw new Error('Topview did not return a complete generation receipt. Check Topview before starting another generation.');
   return { taskId: taskHandle({ canvasId, nodeId: submitted.nodeId, taskId: submitted.taskId }),
-    status: 'running', model: request.model, durationSec: parameters.duration, canvasId };
+    status: 'running', model: request.model, ...(parameters.duration > 0 ? { durationSec: parameters.duration } : {}), canvasId };
 }
 
 /** Resume the original Canvas node; never send an opaque Canvas task to the legacy query endpoint. */

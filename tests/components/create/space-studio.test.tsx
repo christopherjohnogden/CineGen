@@ -362,6 +362,35 @@ describe('Space Studio', () => {
     for (const key of Object.keys(mediaModels)) delete mediaModels[key];
   });
 
+  it.each(['hf-hf-mult-motion-control', 'hf-hf-mult-replace-object'])('runs %s with image and video references kept separate and an optional prompt', nodeType => {
+    const model = buildHiggsfieldModelRegistry()[nodeType];
+    mediaModels[nodeType] = model;
+    render(<SpaceStudio transfer={{ id: 'genjutsu-source', spaceId: 'space-a', attachments: [
+      { id: 'photo', name: 'Subject.png', kind: 'image', url: 'https://media.test/subject.png' },
+      { id: 'clip', name: 'Motion.mp4', kind: 'video', url: 'https://media.test/motion.mp4' },
+    ] }} />);
+    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
+    fireEvent.click(screen.getByRole('option', { name: new RegExp(model.name) }));
+    expect(screen.getByTestId('space-studio-generate')).toBeEnabled();
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form')!);
+    const action = workspaceHarness.dispatch.mock.calls.map(([action]) => action).find(action => action.type === 'SET_NODES');
+    expect(action.nodes[0].type).toBe(nodeType);
+    expect(action.nodes[0].data.config).toMatchObject({ image_references: { urls: ['https://media.test/subject.png'] }, video_references: 'https://media.test/motion.mp4', resolution: '720p', prompt: '' });
+    expect(action.nodes[0].data.config.duration).toBeUndefined();
+    expect(action.nodes[0].data.config.aspect_ratio).toBeUndefined();
+  });
+
+  it('blocks Genjutsu without a source video before creating a job', () => {
+    const model = buildHiggsfieldModelRegistry()['hf-hf-mult-motion-control'];
+    mediaModels[model.nodeType] = model;
+    render(<SpaceStudio />);
+    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
+    fireEvent.click(screen.getByRole('option', { name: /Genjutsu/ }));
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form')!);
+    expect(screen.getByText('Genjutsu requires exactly one source video.')).toBeInTheDocument();
+    expect(workspaceHarness.dispatch.mock.calls.some(([action]) => action.type === 'SET_NODES')).toBe(false);
+  });
+
   it('runs a selected Topaz image upscale with dimensions and a source, without a prompt', async () => {
     const model = buildHiggsfieldModelRegistry()['hf-topaz-image'];
     mediaModels[model.nodeType] = model;
@@ -925,8 +954,10 @@ describe('Space Studio', () => {
     expect(config.duration).toBe(-1);
     expect(config.__studioVideoMode).toBe('edit');
     expect(config.__studioEditAssetId).toBe('clip-1');
-    const reference = config.image_url as { urls?: string[] };
-    expect(reference.urls?.[0]).toContain('tunnel-walkout.mp4');
+    expect(config.video_mode).toBe('edit');
+    expect(config.aspect_ratio).toBe('adaptive');
+    expect(config.source_video).toContain('tunnel-walkout.mp4');
+    expect(screen.queryByTestId('space-studio-control-aspect_ratio-trigger')).not.toBeInTheDocument();
   });
 
   it('removes a multi-selection from the grid after one confirmation', () => {

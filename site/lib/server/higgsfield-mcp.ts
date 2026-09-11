@@ -1,4 +1,4 @@
-import { validateHiggsfieldMediaTool } from '@/lib/higgsfield/media-tools';
+import { isHiggsfieldGenjutsu, validateHiggsfieldMediaTool } from '@/lib/higgsfield/media-tools';
 import {
   SiteHttpError,
   contentTypeForName,
@@ -372,6 +372,9 @@ export async function toolArguments(tool: McpTool, value: unknown, env: RuntimeE
   setFirst(args, properties, ["resolution"], extra.resolution ?? params.resolution);
   setFirst(args, properties, ["quality"], extra.quality ?? params.quality);
   setFirst(args, properties, ["generate_audio", "audio"], extra.generate_audio);
+  if (isHiggsfieldGenjutsu(params.model)) {
+    for (const key of ['duration', 'duration_seconds', 'durationSec', 'aspect_ratio', 'aspectRatio', 'quality', 'generate_audio', 'audio']) delete args[key];
+  }
 
   const rawMedias = Array.isArray(params.medias) ? params.medias : [];
   const references = await Promise.all(rawMedias.flatMap((entry) => {
@@ -384,7 +387,8 @@ export async function toolArguments(tool: McpTool, value: unknown, env: RuntimeE
     if (nested) {
       args.medias = references.map((entry) => ({ value: entry.value,
         role: params.model === 'topaz_image' ? 'image_references' : params.model === 'topaz_video' ? 'video_references'
-          : params.model === 'sync_so' ? (/audio/.test(entry.role) ? 'input_audio' : 'input_video') : entry.role }));
+          : params.model === 'sync_so' ? (/audio/.test(entry.role) ? 'input_audio' : 'input_video')
+          : isHiggsfieldGenjutsu(params.model) ? (/video/.test(entry.role) ? 'video_references' : 'image_references') : entry.role }));
       return { params: args };
     }
     const field = ["reference_images", "image_urls", "images", "references", "medias", "media"]

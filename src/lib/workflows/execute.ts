@@ -1062,7 +1062,8 @@ async function executeModelNode(
       const configValue = expandedElements
         ? expandedElements.flatMap((element) => element.allUrls)
         : data.config[field.id];
-      const value = portValue ?? configValue ?? field.default;
+      const legacyEditMode = isTopviewVideoNode && field.id === 'video_mode' && data.config.__studioVideoMode === 'edit' ? 'edit' : undefined;
+      const value = portValue ?? configValue ?? legacyEditMode ?? field.default;
 
       const isMissing = value === undefined
         || value === null

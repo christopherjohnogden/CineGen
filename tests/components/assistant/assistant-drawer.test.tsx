@@ -4,7 +4,8 @@ import { AssistantDrawer } from '@/components/assistant/assistant-drawer';
 import { assistantStorageKey } from '@/lib/assistant/assistant';
 import { createInitialWorkspaceState } from '@/lib/mcp/workspace-state';
 
-const mocks = vi.hoisted(() => ({ detect: vi.fn(), run: vi.fn() }));
+const mocks = vi.hoisted(() => ({ detect: vi.fn(), run: vi.fn(), prepare: vi.fn() }));
+vi.mock('@/lib/assistant/canvas-visual-context', () => ({ prepareCanvasVisualContext: mocks.prepare }));
 vi.mock('@/lib/director/run-llm', () => ({ runDirectorTextJob: mocks.run }));
 vi.mock('@/lib/utils/api-key', () => ({ getApiKey: () => undefined, getOpenAiApiKey: () => undefined }));
 vi.mock('@/components/assistant/assistant-message', () => ({
@@ -22,8 +23,22 @@ describe('Assistant drawer', () => {
       { id: 'codex', installed: true, authenticated: true },
     ] });
     mocks.run.mockResolvedValue('Four image nodes.');
+    mocks.prepare.mockResolvedValue({ images: [], context: '' });
   });
   afterEach(cleanup);
+
+  it('attaches actual pixels and sends them through the selected provider', async () => {
+    const images = [{ label: 'Image 1', dataUrl: 'data:image/jpeg;base64,preview' }];
+    mocks.prepare.mockResolvedValue({ images, context: 'Attached image 1: Image 1' });
+    render(<AssistantDrawer open onClose={vi.fn()} projectId="vision" state={createInitialWorkspaceState()} dispatch={vi.fn()} />);
+    await screen.findByRole('button', { name: 'Codex' });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Describe these' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
+    expect(mocks.run.mock.calls[0][0]).toContain('Attached image 1: Image 1');
+    expect(mocks.run.mock.calls[0][4]).toEqual(images);
+    expect(localStorage.getItem(assistantStorageKey('vision'))).not.toContain('data:image');
+  });
 
   it('routes to signed-in Codex and supplies live nodes without replaying old errors', async () => {
     const state = createInitialWorkspaceState();
@@ -62,7 +77,7 @@ describe('Assistant drawer', () => {
     await screen.findByRole('button', { name: 'Codex' });
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello' } });
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter', ctrlKey: true });
-    expect(mocks.run).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(1));
     rerender(<AssistantDrawer {...props} projectId="new" />);
     await act(async () => finish('Reply from old project'));
     expect(screen.queryByText('Reply from old project')).not.toBeInTheDocument();

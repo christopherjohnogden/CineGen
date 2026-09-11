@@ -4,6 +4,7 @@ import { ALL_MODELS } from '../../src/lib/fal/models';
 import { buildTopviewModelRegistry, topviewRequestedModel, type TopviewGenerationCatalog } from '../../src/lib/topview/model-catalog';
 import { topviewVideoSubmitRoute, topviewPromptMaxCharacters } from '../../src/lib/topview/reference-capabilities';
 import { hasTopviewCanvasAudioTools } from '../../src/lib/topview/canvas-audio';
+import { topviewClipEditRequest } from '../../src/lib/topview/clip-edit';
 import type { RecordValue } from './firebase';
 
 export type GenerationProvider = 'topview' | 'higgsfield';
@@ -46,7 +47,13 @@ export async function connectedModels(token: string, provider: GenerationProvide
       audioReferenceConnection = { ready: false, reason: (error as Error).message };
     }
   }
-  return { connected: status.connected !== false, audioReferenceConnection, models: providerModels(provider, kind, catalog as TopviewGenerationCatalog | undefined) };
+  const clipEditConnection = provider === 'topview' ? {
+    ready: hasTopviewCanvasAudioTools(catalog?.tools ?? []), transport: 'canvas-mcp', model: 'Seedance 2.5',
+    resolutions: [480, 720, 1080], videoMode: 'edit', sourceInput: 'source_video',
+    promptMaxCharacters: topviewPromptMaxCharacters(catalog?.toolSchemas?.submit_topview_canvas_generation_task),
+    note: 'Use inputs.video_mode="edit" and one MP4/MOV source_video at 720p or larger. Clip Edit uses its own live Canvas capability, even if the ordinary generation catalog omits 1080p. Length and framing follow the source. Image and audio references remain optional.',
+  } : undefined;
+  return { connected: status.connected !== false, audioReferenceConnection, clipEditConnection, models: providerModels(provider, kind, catalog as TopviewGenerationCatalog | undefined) };
 }
 
 export function prepareProviderGeneration(args: RecordValue, available = providerModels(requestedProvider(args.provider))) {
@@ -74,7 +81,8 @@ export function prepareProviderGeneration(args: RecordValue, available = provide
       if (option) value = option.value;
     }
     if (field.fieldType === 'toggle' && typeof value !== 'boolean') throw new Error(`Expected true or false for ${field.id}`);
-    if (field.options && !field.options.some(o => String(o.value) === String(value))) throw new Error(`Unsupported value for ${field.id}=${String(value)}. ${model.name} allows: ${field.options.map(o => o.value).join(", ")}. Refresh cinegen_list_models for current provider options.`);
+    const editSetting = args.inputs.video_mode === 'edit' && ['resolution', 'duration', 'aspect_ratio'].includes(field.id);
+    if (!editSetting && field.options && !field.options.some(o => String(o.value) === String(value))) throw new Error(`Unsupported value for ${field.id}=${String(value)}. ${model.name} allows: ${field.options.map(o => o.value).join(", ")}. Refresh cinegen_list_models for current provider options.`);
     if (['image', 'video', 'audio', 'media'].includes(field.portType)) {
       for (const media of Array.isArray(value) ? value : [value]) {
         if (typeof media !== 'string' || !media.startsWith('https://')) throw new Error(`Use saved HTTPS media URLs for ${field.id}`);
@@ -100,6 +108,13 @@ export function prepareProviderGeneration(args: RecordValue, available = provide
       if (config[from] !== undefined && config[from] !== '') params[to] = from === 'duration' || from === 'generate_count' ? Number(config[from]) : config[from];
     }
     params.waitForCompletion = false;
+    if (config.video_mode === 'edit') {
+      params.videoMode = 'edit';
+      const edit = topviewClipEditRequest(params, medias);
+      params.durationSec = config.duration = -1;
+      params.aspectRatio = config.aspect_ratio = 'adaptive';
+      params.resolution = config.resolution = String(edit.resolution);
+    }
   } else { validateHiggsfieldMediaTool(model.id, config, medias); params.params = config; params.wait = false; if (!promptField) delete params.prompt; }
   return { provider, model, config, params, prompt };
 }

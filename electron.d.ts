@@ -292,6 +292,7 @@ export interface ElectronAPI {
       purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
       systemPrompt?: string;
       userMessage: string;
+      images?: Array<{ label: string; dataUrl: string }>;
       messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
     }) => Promise<{
       message: string;
@@ -308,6 +309,7 @@ export interface ElectronAPI {
       purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
       systemPrompt?: string;
       userMessage: string;
+      images?: Array<{ label: string; dataUrl: string }>;
       messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
     }) => Promise<{
       message: string;
@@ -324,6 +326,7 @@ export interface ElectronAPI {
       purpose?: 'copilot' | 'enhance-prompt' | 'json-job';
       systemPrompt?: string;
       userMessage: string;
+      images?: Array<{ label: string; dataUrl: string }>;
       messages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
       visualRefs?: Array<{
         label: string;
@@ -495,6 +498,7 @@ export interface ElectronAPI {
       aspectRatio?: string;
       resolution?: string;
       generateAudio?: boolean;
+      videoMode?: 'auto' | 'edit';
       medias?: Array<{ value: string; role?: string }>;
     }) => Promise<{
       taskId: string;
@@ -532,6 +536,7 @@ export interface ElectronAPI {
       aspectRatio?: string;
       resolution?: string;
       generateAudio?: boolean;
+      videoMode?: 'auto' | 'edit';
       medias?: Array<{ value: string; role?: string }>;
     }) => Promise<{
       url: string;

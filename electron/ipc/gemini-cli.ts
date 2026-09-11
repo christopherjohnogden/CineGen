@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { stageAssistantImages } from './assistant-image-attachments.js';
 import {
   buildGeminiUserMessageWithVisualRefs,
   cleanupEphemeralVisualRefs,
@@ -136,7 +137,9 @@ async function streamGeminiChatOnce(
     '-m',
     model,
     '--approval-mode',
-    options.hasVisualRefs ? 'yolo' : 'default',
+    // Canvas snapshots are already prepared for @-file loading; they do not
+    // require granting the assistant automatic permission to execute tools.
+    options.hasVisualRefs && !params.images?.length ? 'yolo' : 'default',
   ];
 
   if (options.hasVisualRefs) {
@@ -306,41 +309,52 @@ async function streamGeminiChat(
   const visualWorkspaceDir = getGeminiVisualWorkspaceDir();
   await mkdir(workDir, { recursive: true });
   await mkdir(visualWorkspaceDir, { recursive: true });
-  const preparedVisualRefs = await prepareCopilotVisualRefs(params.visualRefs ?? [], visualWorkspaceDir);
-  if ((params.visualRefs ?? []).length > 0 && preparedVisualRefs.length === 0) {
-    throw new Error('Could not load the attached /clip or /asset files for Gemini visual analysis. Use local video or image files.');
-  }
-
-  const hasVisualRefs = preparedVisualRefs.length > 0;
-  const effectiveParams: CliCopilotChatParams = {
-    ...params,
-    userMessage: buildGeminiUserMessageWithVisualRefs(params.userMessage, preparedVisualRefs),
-  };
-  const wantsResume = Boolean(params.resumeSessionId) && !params.injectProjectContext && !hasVisualRefs;
-
+  const staged = await stageAssistantImages(params.images);
   try {
-    return await streamGeminiChatOnce(requestId, effectiveParams, {
-      canResume: wantsResume,
-      hasVisualRefs,
-      preparedVisualRefs,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!wantsResume || !isMissingGeminiSessionError(message)) {
-      throw error;
+    const preparedVisualRefs = [...staged.refs, ...await prepareCopilotVisualRefs(params.visualRefs ?? [], visualWorkspaceDir)];
+    if ((params.visualRefs ?? []).length > 0 && preparedVisualRefs.length === 0) {
+      throw new Error('Could not load the attached /clip or /asset files for Gemini visual analysis. Use local video or image files.');
     }
 
-    return streamGeminiChatOnce(requestId, {
-      ...effectiveParams,
-      injectProjectContext: !hasVisualRefs,
-      contextRefresh: !hasVisualRefs,
-      resumeSessionId: undefined,
-    }, {
-      canResume: false,
-      hasVisualRefs,
-      preparedVisualRefs,
-    });
-  }
+    const hasVisualRefs = preparedVisualRefs.length > 0;
+    const visualMessage = buildGeminiUserMessageWithVisualRefs(params.userMessage, preparedVisualRefs);
+    const messages = params.messages ? [...params.messages] : undefined;
+    if (hasVisualRefs && messages?.length) {
+      const lastUser = messages.findLastIndex(message => message.role === 'user');
+      if (lastUser >= 0) messages[lastUser] = { ...messages[lastUser], content: visualMessage };
+      else messages.push({ role: 'user', content: visualMessage });
+    }
+    const effectiveParams: CliCopilotChatParams = {
+      ...params,
+      userMessage: visualMessage,
+      messages,
+    };
+    const wantsResume = Boolean(params.resumeSessionId) && !params.injectProjectContext && !hasVisualRefs;
+
+    try {
+      return await streamGeminiChatOnce(requestId, effectiveParams, {
+        canResume: wantsResume,
+        hasVisualRefs,
+        preparedVisualRefs,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!wantsResume || !isMissingGeminiSessionError(message)) {
+        throw error;
+      }
+
+      return await streamGeminiChatOnce(requestId, {
+        ...effectiveParams,
+        injectProjectContext: !hasVisualRefs,
+        contextRefresh: !hasVisualRefs,
+        resumeSessionId: undefined,
+      }, {
+        canResume: false,
+        hasVisualRefs,
+        preparedVisualRefs,
+      });
+    }
+  } finally { await staged.cleanup(); }
 }
 
 export function registerGeminiCliHandlers(): void {

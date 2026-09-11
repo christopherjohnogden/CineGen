@@ -8,6 +8,7 @@ import {
 
 import { topviewAcceptsAudioReferences, topviewVideoSubmitRoute, topviewAudioApiRequest } from "@/lib/topview/reference-capabilities";
 import { hasTopviewCanvasAudioTools, submitTopviewCanvasAudio, queryTopviewCanvasAudio, readTopviewCanvasTask } from "@/lib/topview/canvas-audio";
+import { isTopviewClipEdit, topviewClipEditRequest } from "@/lib/topview/clip-edit";
 
 const PROVIDER = "topview";
 const MCP_URL = "https://mcp.topview.ai/mcp";
@@ -2082,6 +2083,16 @@ export function createTopviewMcp(env: RuntimeEnv, workspaceId: string, requestOr
         documents = parseToolDocuments(await callTool(session, special === 'Video Lip Sync' ? 'cinegen_topview_lip_sync' : 'topview_avatar_video', built.request));
         taskId = findStringByKeys(documents, ['taskId', 'task_id']) ?? '';
         if (!taskId) throw new SiteHttpError(502, 'Topview did not return a receipt. Check Topview before starting another generation.', 'TOPVIEW_RESULT_INVALID');
+      } else if (!taskId && isTopviewClipEdit(params)) {
+        const request = topviewClipEditRequest(params, inputs);
+        topviewVideoSubmitRoute(undefined, request, Boolean(session.uid), hasTopviewCanvasAudioTools(session.tools.map(tool => tool.name)));
+        const submitted = await submitTopviewCanvasAudio({
+          call: (name, args) => callTool(session, name, args), request, references: inputs,
+          submitSchema: session.tools.find(tool => tool.name === 'submit_topview_canvas_generation_task')?.inputSchema,
+          load: reference => loadMedia(reference.value, env, workspaceId),
+        });
+        model = 'Seedance 2.5'; boardId = submitted.canvasId; durationSec = undefined;
+        documents = [submitted]; taskId = submitted.taskId;
       } else if (!taskId) {
         const config = await callTool(session, "topview_get_generation_config", { type: outputType, taskType, refresh: true });
         const preflight = buildRequest({ params, taskType, outputType, config: parseToolDocuments(config),

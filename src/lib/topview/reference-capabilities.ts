@@ -13,7 +13,7 @@ export function assertTopviewCanvasPrompt(prompt: unknown, schema: unknown): voi
   const maximum = topviewPromptMaxCharacters(schema);
   const length = Array.from(String(prompt ?? '')).length;
   if (maximum !== undefined && length > maximum) {
-    throw new Error(`Topview's Canvas audio-reference route accepts up to ${maximum.toLocaleString('en-US')} prompt characters; this prompt has ${length.toLocaleString('en-US')}. CineGen preserved the full prompt and did not submit a generation. Do not shorten or rewrite it without the user's approval.`);
+    throw new Error(`Topview's Canvas route accepts up to ${maximum.toLocaleString('en-US')} prompt characters; this prompt has ${length.toLocaleString('en-US')}. CineGen preserved the full prompt and did not submit a generation. Do not shorten or rewrite it without the user's approval.`);
   }
 }
 
@@ -33,6 +33,10 @@ export function topviewAcceptsAudioReferences(model: RecordValue): boolean {
 
 /** Select a transport before submission; never retry a paid task on another route. */
 export function topviewVideoSubmitRoute(schema: unknown, request: RecordValue, hasApiConnection: boolean, hasCanvasConnection = false): 'mcp' | 'api' | 'canvas-mcp' {
+  if (request.omniReferenceTaskType === 'edit') {
+    if (hasCanvasConnection) return 'canvas-mcp';
+    throw new Error('Clip Edit needs the Topview Canvas MCP connection. Reconnect Topview in Settings to refresh its tools. No generation was submitted.');
+  }
   if (request.taskType !== 'omni_reference' || !Array.isArray(request.inputAudios) || !request.inputAudios.length) return 'mcp';
   const top = record(schema);
   const requestSchema = record(record(top.properties).req ?? top);

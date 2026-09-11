@@ -16,6 +16,7 @@ import { AssistantMessageView } from '@/components/assistant/assistant-message';
 import { DirectorLlmPicker, type DirectorCliInfo } from '@/components/director/director-llm-picker';
 import type { DirectorLlmProvider } from '@/lib/director/cli-provider';
 import { runDirectorTextJob } from '@/lib/director/run-llm';
+import { prepareCanvasVisualContext } from '@/lib/assistant/canvas-visual-context';
 import { cliChatErrorMessage } from '@/lib/llm/cli-chat-error';
 import { isCliCopilotProvider, type CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { buildModeSystemPrompt, buildProjectContext } from '@/lib/llm/project-context';
@@ -137,6 +138,8 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
     setBusy(true);
     const epoch = ++requestEpoch.current;
     try {
+      const visual = await prepareCanvasVisualContext(state.nodes, state.edges, text, state.elements);
+      if (requestEpoch.current !== epoch) return;
       const projectContext = buildProjectContext({
         projectId,
         assets: state.assets,
@@ -158,9 +161,10 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
         projectContext,
         canvasAssistantContext(state.nodes, state.edges, activeSpace),
         nodeReferenceContext || null,
+        visual.context,
       ].filter((section): section is string => Boolean(section)).join('\n\n');
       const reply = stampDirectorTags(
-        (await runDirectorTextJob(systemPrompt, text, provider, next.filter((row) => !row.error))).trim() || 'No reply.',
+        (await runDirectorTextJob(systemPrompt, text, provider, next.filter((row) => !row.error), visual.images)).trim() || 'No reply.',
         state.director,
       );
       if (requestEpoch.current !== epoch) return;
@@ -258,8 +262,12 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
                 }
               }}
             />
-            <button type="button" className="asst-send" onClick={() => void send()} disabled={busy || !draft.trim() || !canSend}>
-              {busy ? '…' : '↑'}
+            <button type="button" className="asst-send" aria-label={busy ? 'Sending message' : 'Send message'} title="Send message" onClick={() => void send()} disabled={busy || !draft.trim() || !canSend}>
+              {busy ? <span className="asst-send__busy" aria-hidden="true" /> : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 19V5m-6 6 6-6 6 6" />
+                </svg>
+              )}
             </button>
           </div>
         </div>

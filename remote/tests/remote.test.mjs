@@ -11,6 +11,24 @@ before(async()=>{
 });
 afterEach(()=>{globalThis.fetch=originalFetch;});
 
+test('Genjutsu is discoverable in MCP with required typed references and both distinct modes', () => {
+  const models = api.providerModels('higgsfield', 'video').filter(model => model.name.startsWith('Genjutsu'));
+  assert.deepEqual(models.map(model => model.name).sort(), ['Genjutsu · Motion Transfer', 'Genjutsu · Object Replacement']);
+  for (const model of models) {
+    assert.equal(model.inputs.find(field => field.id === 'prompt').required, false);
+    assert.equal(model.inputs.find(field => field.id === 'image_references').required, true);
+    assert.equal(model.inputs.find(field => field.id === 'video_references').multiple, false);
+    const inputs = {image_references:['https://example.com/subject.png'], video_references:['https://example.com/motion.mp4'], resolution:1080};
+    const prepared = api.prepareProviderGeneration({provider:'higgsfield',model:model.nodeType,inputs});
+    assert.equal(prepared.params.model, model.id);
+    assert.equal(prepared.params.params.resolution, '1080p');
+    assert.deepEqual(prepared.params.medias, [{value:inputs.image_references[0],role:'image'}, {value:inputs.video_references[0],role:'video'}]);
+    assert.throws(() => api.prepareProviderGeneration({provider:'higgsfield',model:model.nodeType,inputs:{...inputs,video_references:[]}}), /one source video/);
+    assert.throws(() => api.prepareProviderGeneration({provider:'higgsfield',model:model.nodeType,inputs:{...inputs,image_references:[]}}), /reference image/);
+    assert.throws(() => api.prepareProviderGeneration({provider:'higgsfield',model:model.nodeType,inputs:{...inputs,video_references:[...inputs.video_references,'https://example.com/second.mp4']}}), /one source video/);
+  }
+});
+
 test('closed-client edits survive a fresh hydration using native project serialization',async()=>{
   const raw=api.createDefaultProjectState('Remote film');const library={version:1,elements:[],folders:[]};
   const edited=await api.editProject(raw,library,'cinegen_load_script',{text:'INT. STUDIO - DAY\n\nALICE opens a door.',title:'The Door'});
@@ -483,4 +501,19 @@ test('GPT Image 2.5 is discoverable and preserves both providers and variants',(
     assert.equal(hf.params.wait,false);assert.equal(hf.params.medias[0].role,'image');
   }
   assert.throws(()=>api.prepareProviderGeneration({provider:'higgsfield',model:'hf-gpt-image-2-5',inputs:{prompt:'Cup',variant:'invented'}}),/Unsupported/);
+});
+
+
+test('Clip Edit prepares the 1080p Canvas route independently of the ordinary generation catalog',()=>{
+  const catalog={configs:[{outputType:'video',taskType:'omni_reference',config:{models:[{displayName:'Seedance 2.5',submitModel:'Seedance 2.5',submitParameterOptions:{resolution:[480,720],duration:[5],aspectRatio:['16:9']}}]}}]};
+  const models=api.providerModels('topview','video',catalog);
+  const inputs={prompt:'Change the uniform.',video_mode:'edit',source_video:'https://media.example/source.mp4',resolution:'1080p',image_url:['https://media.example/character.png'],audio_references:['https://media.example/voice.wav']};
+  const prepared=api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs},models);
+  assert.equal(prepared.params.videoMode,'edit');
+  assert.equal(prepared.params.durationSec,-1);
+  assert.equal(prepared.params.aspectRatio,'adaptive');
+  assert.equal(prepared.params.resolution,'1080');
+  assert.deepEqual(prepared.params.medias.map(m=>m.role),['video','image','audio']);
+  assert.equal(prepared.config.video_mode,'edit');
+  assert.throws(()=>api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{...inputs,source_video:undefined}},models),/exactly one/);
 });

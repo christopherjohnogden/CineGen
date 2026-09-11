@@ -3,6 +3,7 @@ import { execFile, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import os from 'node:os';
+import type { LlmImageAttachment } from '@/lib/llm/image-attachments';
 
 const execFileAsync = promisify(execFile);
 
@@ -49,6 +50,7 @@ export interface CliCopilotChatParams {
   userMessage: string;
   messages?: CliCopilotMessage[];
   visualRefs?: CopilotVisualRefInput[];
+  images?: LlmImageAttachment[];
 }
 
 const PROVIDER_BINARIES: Record<CliLlmProviderId, string[]> = {

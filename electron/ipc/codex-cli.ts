@@ -5,6 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { compactCodexCliError } from '@/lib/llm/codex-cli-error';
 import { codexModelOverride } from '@/lib/llm/codex-model';
+import { stageAssistantImages } from './assistant-image-attachments.js';
 import {
   buildCliPathEnv,
   buildConversationPrompt,
@@ -97,7 +98,7 @@ async function streamCodexChat(
   }
 
   const model = codexModelOverride(params.model);
-  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
+  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext && !params.images?.length;
   const jsonJob = isHeadlessJsonJob(params);
   const prompt = canResume ? params.userMessage.trim() : buildCodexPrompt(params, jsonJob);
   const workDir = getCodexWorkspaceDir();
@@ -108,6 +109,10 @@ async function streamCodexChat(
   const args = ['exec', '--json', '-s', 'read-only', '--skip-git-repo-check',
     '--ignore-user-config', '--ignore-rules', '-C', workDir];
   if (model) args.push('-m', model);
+  const staged = await stageAssistantImages(params.images);
+  for (const ref of staged.refs) args.push('--image', ref.mediaPath);
+  // --image accepts multiple paths, so terminate options before the text prompt.
+  if (staged.refs.length && !jsonJob) args.push('--');
   if (canResume && params.resumeSessionId) {
     args.push('resume', params.resumeSessionId);
     if (!jsonJob) args.push(prompt);
@@ -124,88 +129,92 @@ async function streamCodexChat(
   let usage: CliUsageSummary | undefined;
   let lastAgentText = '';
 
-  return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
-      env: buildCliPathEnv(),
-      cwd: workDir,
-      stdio: jsonJob ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
-    });
+  try {
+    return await new Promise<{ message: string; sessionId?: string; usage?: CliUsageSummary; resumed: boolean }>((resolve, reject) => {
+      const child = spawn(binary, args, {
+        env: buildCliPathEnv(),
+        cwd: workDir,
+        stdio: jsonJob ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+      });
 
-    if (jsonJob) {
-      child.stdin?.write(prompt);
-      child.stdin?.end();
-    }
+      if (jsonJob) {
+        child.stdin?.write(prompt);
+        child.stdin?.end();
+      }
 
-    activeRequest = { child, requestId, provider: 'codex' };
+      activeRequest = { child, requestId, provider: 'codex' };
 
-    let lineBuffer = '';
+      let lineBuffer = '';
 
-    child.stdout?.on('data', (chunk: Buffer) => {
-      lineBuffer += chunk.toString();
+      child.stdout?.on('data', (chunk: Buffer) => {
+        lineBuffer += chunk.toString();
 
-      let newlineIdx: number;
-      while ((newlineIdx = lineBuffer.indexOf('\n')) >= 0) {
-        const line = lineBuffer.slice(0, newlineIdx).trim();
-        lineBuffer = lineBuffer.slice(newlineIdx + 1);
-        if (!line) continue;
+        let newlineIdx: number;
+        while ((newlineIdx = lineBuffer.indexOf('\n')) >= 0) {
+          const line = lineBuffer.slice(0, newlineIdx).trim();
+          lineBuffer = lineBuffer.slice(newlineIdx + 1);
+          if (!line) continue;
 
-        try {
-          const obj = JSON.parse(line) as Record<string, unknown>;
+          try {
+            const obj = JSON.parse(line) as Record<string, unknown>;
 
-          if (obj.type === 'thread.started' && typeof obj.thread_id === 'string') {
-            sessionId = obj.thread_id;
-          }
-
-          const parsedUsage = parseCodexUsage(obj);
-          if (parsedUsage) usage = parsedUsage;
-
-          if (obj.type === 'turn.failed') {
-            turnFailed = true;
-            const error = obj.error as { message?: string } | undefined;
-            failureMessage = error?.message ?? 'Codex turn failed.';
-          } else if (obj.type === 'error' && typeof obj.message === 'string') {
-            failureMessage = obj.message;
-          }
-
-          const agentText = extractCodexAgentText(obj);
-          if (agentText) {
-            const delta = agentText.startsWith(lastAgentText)
-              ? agentText.slice(lastAgentText.length)
-              : agentText;
-            lastAgentText = agentText;
-            fullContent = agentText;
-            if (delta) {
-              win?.webContents.send('llm:codex-stream', { requestId, token: delta });
+            if (obj.type === 'thread.started' && typeof obj.thread_id === 'string') {
+              sessionId = obj.thread_id;
             }
+
+            const parsedUsage = parseCodexUsage(obj);
+            if (parsedUsage) usage = parsedUsage;
+
+            if (obj.type === 'turn.failed') {
+              turnFailed = true;
+              const error = obj.error as { message?: string } | undefined;
+              failureMessage = error?.message ?? 'Codex turn failed.';
+            } else if (obj.type === 'error' && typeof obj.message === 'string') {
+              failureMessage = obj.message;
+            }
+
+            const agentText = extractCodexAgentText(obj);
+            if (agentText) {
+              const delta = agentText.startsWith(lastAgentText)
+                ? agentText.slice(lastAgentText.length)
+                : agentText;
+              lastAgentText = agentText;
+              fullContent = agentText;
+              if (delta) {
+                win?.webContents.send('llm:codex-stream', { requestId, token: delta });
+              }
+            }
+          } catch {
+            // skip malformed JSON lines
           }
-        } catch {
-          // skip malformed JSON lines
         }
-      }
+      });
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderrBuffer += chunk.toString();
+      });
+
+      child.on('error', (error) => {
+        if (activeRequest?.requestId === requestId) activeRequest = null;
+        reject(error);
+      });
+
+      child.on('close', (code) => {
+        if (activeRequest?.requestId === requestId) activeRequest = null;
+        win?.webContents.send('llm:codex-stream', { requestId, done: true });
+
+        const trimmed = fullContent.trim();
+        if (!trimmed || code !== 0 || turnFailed) {
+          reject(new Error(compactCodexCliError(failureMessage || stderrBuffer, code)));
+          return;
+        }
+
+        resolve({ message: trimmed, sessionId, usage, resumed: canResume });
+      });
     });
-
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderrBuffer += chunk.toString();
-    });
-
-    child.on('error', (error) => {
-      if (activeRequest?.requestId === requestId) activeRequest = null;
-      reject(error);
-    });
-
-    child.on('close', (code) => {
-      if (activeRequest?.requestId === requestId) activeRequest = null;
-      win?.webContents.send('llm:codex-stream', { requestId, done: true });
-
-      const trimmed = fullContent.trim();
-      if (!trimmed || code !== 0 || turnFailed) {
-        reject(new Error(compactCodexCliError(failureMessage || stderrBuffer, code)));
-        return;
-      }
-
-      resolve({ message: trimmed, sessionId, usage, resumed: canResume });
-    });
-  });
+  } finally {
+    await staged.cleanup();
+  }
 }
 
 export function registerCodexCliHandlers(): void {

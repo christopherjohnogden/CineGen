@@ -2,7 +2,8 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ handle: vi.fn(), spawn: vi.fn(), send: vi.fn() }));
+const mocks = vi.hoisted(() => ({ handle: vi.fn(), spawn: vi.fn(), send: vi.fn(), stage: vi.fn(), cleanup: vi.fn() }));
+vi.mock('../../../electron/ipc/assistant-image-attachments.js', () => ({ stageAssistantImages: mocks.stage }));
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/cinegen-test' },
   ipcMain: { handle: mocks.handle },
@@ -19,8 +20,8 @@ vi.mock('../../../electron/ipc/cli-llm-shared.js', () => ({
 import { registerCodexCliHandlers } from '../../../electron/ipc/codex-cli';
 
 describe('Codex assistant transport', () => {
-  beforeEach(() => { vi.clearAllMocks(); registerCodexCliHandlers(); });
-  async function run(model?: string, failure = false) {
+  beforeEach(() => { vi.clearAllMocks(); mocks.stage.mockResolvedValue({ refs: [], cleanup: mocks.cleanup }); registerCodexCliHandlers(); });
+  async function run(model?: string, failure = false, images: unknown[] = []) {
     mocks.spawn.mockImplementation(() => {
       const child = Object.assign(new EventEmitter(), {
         stdout: new EventEmitter(), stderr: new EventEmitter(),
@@ -39,7 +40,7 @@ describe('Codex assistant transport', () => {
       return child;
     });
     const handler = mocks.handle.mock.calls.find(([channel]) => channel === 'llm:codex-chat')![1];
-    return handler({}, { requestId: 'req', purpose: 'copilot', injectProjectContext: true, userMessage: 'Count nodes', systemPrompt: 'Live canvas: four images', model });
+    return handler({}, { requestId: 'req', purpose: 'copilot', injectProjectContext: true, userMessage: 'Count nodes', systemPrompt: 'Live canvas: four images', model, images });
   }
   it.each([undefined, 'auto', 'gpt-5.3-codex'])('uses the account default for %s, with isolated context', async (model) => {
     await expect(run(model)).resolves.toMatchObject({ message: 'Four image nodes.' });
@@ -47,6 +48,18 @@ describe('Codex assistant transport', () => {
     expect(args).not.toContain('-m');
     expect(args).toEqual(expect.arrayContaining(['--ignore-user-config', '--ignore-rules', '-C', '/tmp/cinegen-test/codex-workspace', 'read-only']));
     expect(args.at(-1)).toContain('Live canvas: four images');
+  });
+  it('separates image flags from the prompt and cleans up after success or failure', async () => {
+    const images = [{ label: 'Canvas image', dataUrl: 'preview' }];
+    mocks.stage.mockResolvedValue({ refs: [{ mediaPath: '/tmp/preview.png' }], cleanup: mocks.cleanup });
+    await run('auto', false, images);
+    const args = mocks.spawn.mock.calls[0][1];
+    expect(args.slice(-4, -1)).toEqual(['--image', '/tmp/preview.png', '--']);
+    expect(args.at(-1)).toContain('Count nodes');
+    expect(mocks.stage).toHaveBeenCalledWith(images);
+    expect(mocks.cleanup).toHaveBeenCalledTimes(1);
+    await expect(run('auto', true, images)).rejects.toThrow();
+    expect(mocks.cleanup).toHaveBeenCalledTimes(2);
   });
   it('honors an explicit Luna selection', async () => {
     await run('gpt-5.6-luna');

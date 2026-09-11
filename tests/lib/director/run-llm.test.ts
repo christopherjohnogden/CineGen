@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DIRECTOR_CLI_TIMEOUT_MS, directorCliJobPrompt, runDirectorJsonJob, runDirectorTextJob } from '@/lib/director/run-llm';
 import { directorShotlistParallel, parseDirectorLlmProvider, pickInstalledDirectorLlm } from '@/lib/director/cli-provider';
 import { invokeCliCopilotChat } from '@/lib/llm/cli-copilot-client';
-import { getOpenAiApiKey } from '@/lib/utils/api-key';
+import { getApiKey, getOpenAiApiKey } from '@/lib/utils/api-key';
 
 vi.mock('@/lib/llm/cli-copilot-client', () => ({
   invokeCliCopilotChat: vi.fn(async () => ({ message: '{"ok":true}' })),
@@ -15,6 +15,22 @@ vi.mock('@/lib/utils/api-key', () => ({
 }));
 
 describe('director CLI picker', () => {
+  it.each(['codex', 'luna', 'claude-code', 'gemini'] as const)('forwards canvas pixels to %s', async (provider) => {
+    const images = [{ label: 'Frame at 5s', dataUrl: 'data:image/jpeg;base64,preview' }];
+    await runDirectorTextJob('Canvas', 'What is happening?', provider, [], images);
+    expect(invokeCliCopilotChat).toHaveBeenLastCalledWith(provider === 'luna' ? 'codex' : provider, expect.objectContaining({ images }));
+  });
+  it('sends image data to hosted OpenAI and fal vision', async () => {
+    const images = [{ label: 'Canvas image', dataUrl: 'data:image/jpeg;base64,preview' }];
+    const openaiChat = vi.fn(async () => ({ message: 'Seen' }));
+    const run = vi.fn(async () => ({ output: 'Seen' }));
+    window.electronAPI = { llm: { openaiChat }, workflow: { run } } as unknown as typeof window.electronAPI;
+    await runDirectorTextJob('Canvas', 'Describe it', 'openai', [], images);
+    expect(openaiChat).toHaveBeenCalledWith(expect.objectContaining({ jsonObject: false, imageUrls: [images[0].dataUrl] }));
+    vi.mocked(getApiKey).mockReturnValueOnce('fal-test');
+    await runDirectorTextJob('Canvas', 'Describe it', 'fal', [], images);
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'fal-ai/any-llm/vision', inputs: expect.objectContaining({ image_urls: [images[0].dataUrl] }) }));
+  });
   it('routes assistant chat to Codex with the account default', async () => {
     vi.mocked(invokeCliCopilotChat).mockClear();
     await runDirectorTextJob('Live canvas', 'Count images', 'codex');

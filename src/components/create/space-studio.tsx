@@ -1,4 +1,5 @@
 import { isTopviewMediaTool } from '@/lib/topview/media-tools';
+import { isHiggsfieldGenjutsu, validateHiggsfieldMediaTool } from '@/lib/higgsfield/media-tools';
 import { resolveCloudMediaReference } from '@/lib/cloud/media-references';
 import {
   useCallback,
@@ -98,6 +99,7 @@ import {
 import { parseStudioVideoMode, type StudioVideoMode } from '@/lib/studio/video-mode';
 import { isSeedance2ModelName } from '@/lib/topview/model-catalog';
 import { TOPVIEW_INHERITED_VIDEO_DURATION } from '@/lib/topview/video-duration';
+import { clipEditResolutions, supportsTopviewClipEdit } from '@/lib/topview/clip-edit';
 import type { Asset } from '@/types/project';
 // Aliased: the DOM's global `Element` would otherwise win.
 import type { Element as CineElement } from '@/types/elements';
@@ -1001,8 +1003,9 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
   // An edit inherits its length from the clip it works on, so offering seconds
   // here would only be a number the provider throws away.
   const allControls = useMemo(
-    () => (editing ? modelControls.filter((field) => !isDurationField(field)) : modelControls),
-    [editing, modelControls],
+    () => modelControls.filter(field => field.id !== 'video_mode' && (!editing || (!isDurationField(field) && field.id !== 'aspect_ratio')))
+      .map(field => editing && model?.provider === 'topview' && supportsTopviewClipEdit(model.name) && field.id === 'resolution' ? { ...field, options: clipEditResolutions(field.options) } : field),
+    [editing, model, modelControls],
   );
   // Toggles live in the prompt card as chips; the settings row keeps the value
   // pickers, which then fit on a single line.
@@ -1328,7 +1331,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     // Infer the mode from what actually resolved — landing in References with
     // nothing attached and no explanation was the bug being fixed here.
     setVideoMode(parseStudioVideoMode(
-      node.data.config.__studioVideoMode,
+      node.data.config.video_mode === 'edit' ? 'edit' : node.data.config.__studioVideoMode,
       resolvedIds.length ? 'references' : 'frames',
     ));
     setEditAssetId(recipe.editAssetId);
@@ -1393,6 +1396,18 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       ? selectedElementIds.filter((id) => availableElements.some((element) => element.id === id))
       : [];
     const selectedReferenceField = referenceFieldFor(selectedModel);
+    const genjutsu = selectedModel.provider === 'higgsfield' && isHiggsfieldGenjutsu(selectedModel.id);
+    if (genjutsu) {
+      try {
+        validateHiggsfieldMediaTool(selectedModel.id, {}, [
+          ...attachedRefs.map(reference => ({ value: reference.url, role: reference.kind })),
+          ...elementIds.map(id => ({ value: id, role: 'image' })),
+        ]);
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : 'Check the Genjutsu references.');
+        return;
+      }
+    }
     const audioReferenceField = selectedModel.inputs.find(field => field.mediaRole === 'audio');
     if (attachedRefs.some(reference => reference.kind === 'audio') && !audioReferenceField && selectedModel.provider === 'topview') {
       setFormError(`${selectedModel.name} does not accept audio references. Choose Seedance 2.5 for images, video, and audio together.`);
@@ -1467,6 +1482,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     };
     const selectedControlFields = orderedControlFields(selectedModel);
     for (const field of selectedControlFields) {
+      if (field.id === 'video_mode') continue;
       if (editing && isDurationField(field)) continue;
       const value = controlValue(currentControlValues, field);
       if (value !== '') modelConfig[field.id] = value;
@@ -1478,7 +1494,13 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       const durationField = selectedControlFields.find(isDurationField);
       if (durationField) modelConfig[durationField.id] = TOPVIEW_INHERITED_VIDEO_DURATION;
     }
+    const topviewClipEdit = selectedModel.provider === 'topview' && supportsTopviewClipEdit(selectedModel.name);
+    if (topviewClipEdit) {
+      modelConfig.video_mode = editing ? 'edit' : 'auto';
+      if (editing) modelConfig.aspect_ratio = 'adaptive';
+    }
     for (const field of selectedModel.inputs.filter(field => ['image', 'video', 'audio', 'media'].includes(field.portType) && !['start_image', 'end_image'].includes(field.mediaRole ?? ''))) {
+      if (field.id === 'source_video') continue;
       const refs = attachedRefs.filter(ref => field.portType === 'media' && !['audio','video'].includes(field.mediaRole ?? '') ? ref.kind !== 'audio' : ref.kind === (field.mediaRole ?? field.portType));
       if (refs.length) {
         if (!field.multiple && refs.length > 1) { setFormError(`Choose one ${field.label.toLowerCase()}.`); return; }
@@ -1513,11 +1535,14 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     }
     const attachedUrls = attachedRefs.map((reference) => reference.url);
     const audioUrls = audioReferenceField ? attachedRefs.filter(reference => reference.kind === 'audio').map(reference => reference.url) : [];
-    const visualUrls = attachedUrls.filter(url => !audioUrls.includes(url));
+    const visualUrls = genjutsu
+      ? attachedRefs.filter(reference => reference.kind === 'image').map(reference => reference.url)
+      : attachedUrls.filter(url => !audioUrls.includes(url));
     // The clip leads the reference list so it reads as what the edit is about,
     // with the Elements after it as what to change it into.
     const editUrl = editVideo ? toFileUrl(editVideo.fileRef || editVideo.url) : '';
-    const referenceUrls = editUrl
+    if (topviewClipEdit && editUrl) modelConfig.source_video = editUrl;
+    const referenceUrls = editUrl && !topviewClipEdit
       ? [editUrl, ...visualUrls.filter((url) => url !== editUrl)]
       : visualUrls;
     if (audioUrls.length && audioReferenceField) modelConfig[audioReferenceField.id] = audioReferenceField.multiple ? audioUrls : audioUrls[0];

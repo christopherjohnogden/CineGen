@@ -1,6 +1,7 @@
 import { getCliProviderLabel, getDefaultModelForCliProvider, type CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { cancelCliCopilotChat, invokeCliCopilotChat } from '@/lib/llm/cli-copilot-client';
 import type { CopilotVisualRefInput } from '@/lib/llm/copilot-visual-refs';
+import type { LlmImageAttachment } from '@/lib/llm/image-attachments';
 import { decodeLocalMediaUrl } from '@/lib/media/asset-local-storage';
 import { getApiKey, getOpenAiApiKey } from '@/lib/utils/api-key';
 import {
@@ -265,6 +266,7 @@ export async function runDirectorTextJob(
   userMessage: string,
   provider: DirectorLlmProvider,
   messages?: Array<{ role: 'user' | 'assistant'; content: string }>,
+  images: LlmImageAttachment[] = [],
 ): Promise<string> {
   const prompt = { systemPrompt: systemPrompt.trim(), userMessage: userMessage.trim() };
   const cli = cliTransportFor(provider);
@@ -276,6 +278,7 @@ export async function runDirectorTextJob(
       systemPrompt: prompt.systemPrompt,
       userMessage: prompt.userMessage,
       messages,
+      images,
     });
     const text = result.message?.trim() ?? '';
     if (!text) throw new Error('The model returned no output.');
@@ -291,6 +294,7 @@ export async function runDirectorTextJob(
       systemPrompt: prompt.systemPrompt,
       userMessage: history || prompt.userMessage,
       jsonObject: false,
+      imageUrls: images.map(image => image.dataUrl),
     });
     const text = result.message?.trim() ?? '';
     if (!text) throw new Error('OpenAI returned no text output.');
@@ -301,6 +305,6 @@ export async function runDirectorTextJob(
     userMessage: (messages ?? []).length > 1
       ? (messages ?? []).map((row) => `${row.role === 'user' ? 'User' : 'Assistant'}:\n${row.content}`).join('\n\n')
       : prompt.userMessage,
-  });
+  }, images.map(image => image.dataUrl));
   return hosted.message;
 }

@@ -20,6 +20,19 @@ import { getCanvasNodeTypes } from '@/components/create/nodes';
 import { ALL_MODELS, installTopviewModelCatalog } from '@/lib/fal/models';
 import gptImage25Catalog from '@/lib/topview/gpt-image-25.generated.json';
 
+it.each(['hf-hf-mult-motion-control', 'hf-hf-mult-replace-object'])('renders %s as a video node with separate image and video inputs', type => {
+  const Card = getCanvasNodeTypes()[type];
+  expect(Card).toBe(ModelNode);
+  const { container, unmount } = render(<ReactFlowProvider>
+    <Card id={`genjutsu-${type}`} data={{ type, label: ALL_MODELS[type].name, config: {} }} type={type} isConnectable />
+  </ReactFlowProvider>);
+  expect(within(container).getByText(ALL_MODELS[type].name)).toBeInTheDocument();
+  for (const handle of ['prompt', 'image_references', 'video_references', 'video']) {
+    expect(container.querySelector(`[data-handleid="${handle}"]`)).not.toBeNull();
+  }
+  unmount();
+});
+
 it('renders late-loaded GPT Image 2.5 variants as complete model cards', () => {
   const original = {...ALL_MODELS};
   const variants = ['flare', 'sunburst'].map(variant => `topview-image-gpt-image-2-5-${variant}`);

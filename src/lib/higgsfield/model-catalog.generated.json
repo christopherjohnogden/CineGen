@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "cli": {
-    "version": "0.1.28",
-    "commit": "e7a475eb57e8824321309a9f5add6a88181b3079",
-    "builtAt": "2026-05-04T23:07:49Z"
+    "version": "1.1.23",
+    "commit": "dd8d00a83d46aa443eaa605a75c246e1226010c1",
+    "builtAt": "2026-08-08T19:50:15Z"
   },
   "models": [
     {
@@ -1923,6 +1923,100 @@
             "720p",
             "1080p"
           ]
+        }
+      ]
+    },
+    {
+      "display_name": "Genjutsu",
+      "job_set_type": "hf_mult_motion_control",
+      "type": "video",
+      "params": [
+        {
+          "name": "image_references",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "nullable": true,
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        },
+        {
+          "name": "video_references",
+          "type": "array",
+          "default": null,
+          "required": false
+        }
+      ],
+      "rules": [
+        {
+          "cel": "size(params.image_references) >= 1",
+          "message": "at least one image_references entry is required"
+        },
+        {
+          "cel": "size(params.video_references) == 1",
+          "message": "exactly one video_references entry is required"
+        }
+      ]
+    },
+    {
+      "display_name": "Genjutsu",
+      "job_set_type": "hf_mult_replace_object",
+      "type": "video",
+      "params": [
+        {
+          "name": "image_references",
+          "type": "array",
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "nullable": true,
+          "default": null,
+          "required": false
+        },
+        {
+          "name": "resolution",
+          "type": "string",
+          "default": "720p",
+          "required": false,
+          "enum": [
+            "480p",
+            "720p",
+            "1080p"
+          ]
+        },
+        {
+          "name": "video_references",
+          "type": "array",
+          "default": null,
+          "required": false
+        }
+      ],
+      "rules": [
+        {
+          "cel": "size(params.image_references) >= 1",
+          "message": "at least one image_references entry is required"
+        },
+        {
+          "cel": "size(params.video_references) == 1",
+          "message": "exactly one video_references entry is required"
         }
       ]
     },

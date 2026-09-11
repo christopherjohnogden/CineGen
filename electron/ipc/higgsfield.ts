@@ -1,4 +1,4 @@
-import { isHiggsfieldMediaTool, validateHiggsfieldMediaTool } from '../../src/lib/higgsfield/media-tools.js';
+import { isHiggsfieldGenjutsu, isHiggsfieldMediaTool, validateHiggsfieldMediaTool } from '../../src/lib/higgsfield/media-tools.js';
 // electron/ipc/higgsfield.ts
 //
 // Phase 0.2 — shared Higgsfield generation client. One service backs Spaces nodes, the Quick Edit
@@ -135,18 +135,21 @@ export function buildCreateArgs(params: HiggsfieldGenerateParams): string[] {
 
   for (const media of params.medias ?? []) {
     if (!media.value) continue;
-    args.push(MEDIA_ROLE_FLAG[media.role], media.value);
+    const flag = isHiggsfieldGenjutsu(params.model)
+      ? (media.role === 'video' ? '--video-references' : '--image-references')
+      : MEDIA_ROLE_FLAG[media.role];
+    args.push(flag, media.value);
   }
 
-  if (params.aspectRatio !== undefined) {
+  if (params.aspectRatio !== undefined && !isHiggsfieldGenjutsu(params.model)) {
     delete genericParams.aspect_ratio;
     appendParam('aspect_ratio', params.aspectRatio);
   }
-  if (params.durationSec !== undefined) {
+  if (params.durationSec !== undefined && !isHiggsfieldGenjutsu(params.model)) {
     delete genericParams.duration;
     if (params.durationSec > 0) appendParam('duration', params.durationSec);
   }
-  if (params.count !== undefined) {
+  if (params.count !== undefined && !isHiggsfieldGenjutsu(params.model)) {
     delete genericParams.count;
     if (params.count >= 1) appendParam('count', params.count);
   }

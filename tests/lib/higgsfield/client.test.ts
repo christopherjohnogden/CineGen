@@ -58,6 +58,17 @@ describe('generate cost', () => {
 });
 
 describe('buildCreateArgs', () => {
+  it.each(['hf_mult_motion_control', 'hf_mult_replace_object'])('passes %s workflow references to the CLI with the verified roles', model => {
+    const request = buildHiggsfieldWorkflowRequest(model, {
+      image_references: ['subject.png', 'subject-side.png'], video_references: ['motion.mp4'], resolution: '1080p',
+      duration: 10, aspect_ratio: '16:9', generate_audio: true,
+    }, 'video');
+    expect(buildCreateArgs({ ...request, aspectRatio: '16:9', durationSec: 10, count: 2 })).toEqual([
+      'generate', 'create', model, '--image-references', 'subject.png', '--image-references', 'subject-side.png',
+      '--video-references', 'motion.mp4', '--resolution', '1080p', '--wait', '--json',
+    ]);
+    expect(() => buildCreateArgs({ model, mediaType: 'video', medias: [{ value: 'motion.mp4', role: 'video' }] })).toThrow(/at least one reference image/);
+  });
   it('builds a minimal text-to-video create command with --wait --json', () => {
     const args = buildCreateArgs({ model: 'seedance_2_0', prompt: '  rain on a window  ', mediaType: 'video' });
     expect(args).toEqual(['generate', 'create', 'seedance_2_0', '--prompt', 'rain on a window', '--wait', '--json']);

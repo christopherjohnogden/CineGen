@@ -9,6 +9,7 @@ import { isIP } from 'node:net';
 import path from 'node:path';
 import { topviewAcceptsAudioReferences, topviewVideoSubmitRoute } from '@/lib/topview/reference-capabilities';
 import { hasTopviewCanvasAudioTools, submitTopviewCanvasAudio, queryTopviewCanvasAudio, readTopviewCanvasTask } from '@/lib/topview/canvas-audio';
+import { isTopviewClipEdit, topviewClipEditRequest } from '@/lib/topview/clip-edit';
 import {
   minimumEvenFrameSize,
   probeVideoFrameSize,
@@ -41,6 +42,7 @@ const MAX_MCP_TOOL_PAGES = 50;
 type JsonRecord = Record<string, unknown>;
 
 export interface TopviewGenerateParams {
+  videoMode?: 'auto' | 'edit';
   prompt: string;
   model?: string;
   durationSec?: number;
@@ -1710,6 +1712,20 @@ class TopviewMcpService {
     }
     this.validateGenerateParams(params);
     const references = normalizeTopviewReferences(params.medias);
+    if (isTopviewClipEdit({ ...params })) {
+      const request = topviewClipEditRequest({ ...params }, references);
+      topviewVideoSubmitRoute(undefined, request, false, hasTopviewCanvasAudioTools(session.tools.map(tool => tool.name)));
+      const submitted = await submitTopviewCanvasAudio({
+        call: (name, args) => this.callTool(session, name, args), request, references,
+        submitSchema: session.tools.find(tool => tool.name === 'submit_topview_canvas_generation_task')?.inputSchema,
+        load: async reference => {
+          const source = await loadReference(reference.value, reference.role as TopviewMediaRole);
+          return { bytes: source.bytes, format: source.format, mime: source.contentType };
+        },
+      });
+      return { result: { taskId: submitted.taskId, taskType: 'omni_reference', boardId: submitted.canvasId,
+        model: 'Seedance 2.5' }, documents: [submitted] };
+    }
     const taskType = topviewTaskTypeForMedias(params.medias);
     const boardId = await this.chooseBoard(session);
     const config = parseToolDocuments(await this.callTool(session, 'topview_get_generation_config', {

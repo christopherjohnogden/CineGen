@@ -5,6 +5,8 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import type { LlmImageAttachment } from '@/lib/llm/image-attachments';
+import { claudeImageMessage } from './assistant-image-attachments.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -23,6 +25,7 @@ interface ClaudeCodeChatParams {
   systemPrompt?: string;
   userMessage: string;
   messages?: ClaudeCodeMessage[];
+  images?: LlmImageAttachment[];
 }
 
 const CLAUDE_CANDIDATES = [
@@ -226,12 +229,14 @@ async function streamClaudeCodeChat(
   }
 
   const model = params.model?.trim() || 'sonnet';
-  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
+  const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext && !params.images?.length;
   const jsonJob = isHeadlessJsonJob(params);
+  const prompt = canResume ? params.userMessage.trim() : buildPrompt(params, jsonJob);
+  const imageMessage = params.images?.length ? claudeImageMessage(prompt, params.images) : undefined;
 
   const args = [
     '-p',
-    canResume ? params.userMessage.trim() : buildPrompt(params, jsonJob),
+    ...(imageMessage ? ['--input-format', 'stream-json'] : [prompt]),
     '--output-format',
     'stream-json',
     '--verbose',
@@ -293,8 +298,9 @@ async function streamClaudeCodeChat(
     const child = spawn(binary, args, {
       env: buildPathEnv(),
       ...(workDir ? { cwd: workDir } : {}),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [imageMessage ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+    if (imageMessage) child.stdin?.end(imageMessage);
 
     activeRequest = { child, requestId };
 

@@ -6,6 +6,22 @@ const {createHiggsfieldMcp,toolArguments,parseGeneration}=await import('../dist/
 const generateTool={name:'generate_image',inputSchema:{properties:{params:{type:'object',properties:{model:{type:'string'},prompt:{type:'string'},medias:{type:'array',items:{type:'object'}}},additionalProperties:true}}}};
 const waitTool={name:'jobs_wait',inputSchema:{properties:{jobs:{type:'array'},timeout_seconds:{type:'number'}}}};
 
+for (const model of ['hf_mult_motion_control', 'hf_mult_replace_object']) {
+  test(`${model} uses canonical MCP reference roles and supports 1080p without a prompt`, async () => {
+    const medias = [{value:'https://example.com/subject.png',role:'image'}, {value:'https://example.com/source.mp4',role:'video'}];
+    const result = await toolArguments({...generateTool, name:'generate_video'}, {model, medias, params:{resolution:'1080p',duration:10,aspect_ratio:'16:9',generate_audio:true}}, {}, 'test');
+    assert.deepEqual(result, {params:{model, resolution:'1080p', medias:[
+      {value:medias[0].value,role:'image_references'}, {value:medias[1].value,role:'video_references'},
+    ]}});
+    for (const [invalid, message] of [
+      [[], /one source video/], [[medias[1]], /reference image/],
+      [[...medias, medias[1]], /one source video/],
+      [[...medias, {value:'https://example.com/voice.wav',role:'audio'}], /Audio and frame/],
+    ]) await assert.rejects(toolArguments(generateTool, {model,medias:invalid}, {}, 'test'), message);
+    await assert.rejects(toolArguments(generateTool, {model,medias,params:{resolution:'4k'}}, {}, 'test'), /480p, 720p, or 1080p/);
+  });
+}
+
 test('nested Higgsfield generation parameters preserve model controls and canonical references',async()=>{
   const args=await toolArguments(generateTool,{model:'gpt_image_2_5',prompt:'Cup',params:{variant:'sunburst',quality:'max',resolution:'4k',background:'transparent',image_references:['https://media.example/ref.png'],__studioHidden:true},medias:[{value:'https://media.example/ref.png',role:'image'}]}, {}, 'test');
   assert.deepEqual(args,{params:{variant:'sunburst',quality:'max',resolution:'4k',background:'transparent',model:'gpt_image_2_5',prompt:'Cup',medias:[{value:'https://media.example/ref.png',role:'image'}]}});

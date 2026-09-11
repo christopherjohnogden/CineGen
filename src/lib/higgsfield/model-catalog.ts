@@ -1,4 +1,5 @@
 import catalogJson from './model-catalog.generated.json';
+import { isHiggsfieldGenjutsu } from './media-tools';
 import type { ModelDefinition, ModelInputField, PortType } from '@/types/workflow';
 
 export type HiggsfieldSchemaType = 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object' | 'null';
@@ -7,6 +8,7 @@ export type HiggsfieldCatalogOutputType = 'image' | 'video' | 'audio' | 'text' |
 export interface HiggsfieldParamSchema {
   name: string;
   type: HiggsfieldSchemaType;
+  nullable?: boolean;
   default: unknown;
   required: boolean;
   enum?: string[];
@@ -17,6 +19,7 @@ export interface HiggsfieldModelSchema {
   job_set_type: string;
   type: HiggsfieldCatalogOutputType;
   params: HiggsfieldParamSchema[];
+  rules?: Array<{ cel: string; message: string }>;
 }
 
 interface HiggsfieldCatalogFile {
@@ -167,6 +170,11 @@ function customizeWorkflowField(
   model: HiggsfieldModelSchema,
   field: ModelInputField,
 ): ModelInputField {
+  if (isHiggsfieldGenjutsu(model.job_set_type)) {
+    // The live schema expresses these requirements as cross-field CEL rules.
+    if (field.id === 'image_references') return { ...field, required: true, label: 'Reference images', description: 'At least one image showing the subject or object to use.' };
+    if (field.id === 'video_references') return { ...field, required: true, multiple: false, label: 'Source video', description: 'Exactly one video to transfer motion from or edit.' };
+  }
   if (model.job_set_type === 'topaz_image') {
     if (['output_width', 'output_height'].includes(field.id)) return { ...field, min: 1, step: 1, label: field.id === 'output_width' ? 'Output width (px)' : 'Output height (px)' };
     if (['sharpen', 'denoise', 'face_enhancement_strength', 'face_enhancement_creativity'].includes(field.id)) return { ...field, min: 0, max: 1, step: 0.05 };
@@ -357,9 +365,15 @@ export function buildHiggsfieldModelRegistry(
     registry[nodeType] = {
       id: model.job_set_type,
       nodeType,
-      name: model.job_set_type === 'topaz_image' ? 'Topaz Image Upscale' : model.job_set_type === 'topaz_video' ? 'Topaz Video Upscale' : model.display_name,
+      name: model.job_set_type === 'hf_mult_motion_control' ? 'Genjutsu · Motion Transfer'
+        : model.job_set_type === 'hf_mult_replace_object' ? 'Genjutsu · Object Replacement'
+        : model.job_set_type === 'topaz_image' ? 'Topaz Image Upscale' : model.job_set_type === 'topaz_video' ? 'Topaz Video Upscale' : model.display_name,
       category: outputType,
-      description: `Higgsfield ${model.type.toUpperCase()} model`,
+      description: model.job_set_type === 'hf_mult_motion_control'
+        ? 'Transfer motion from one source video to subjects in one or more reference images. Optional prompt; 480p, 720p, or 1080p.'
+        : model.job_set_type === 'hf_mult_replace_object'
+          ? 'Replace objects in one source video using one or more reference images. Optional prompt; 480p, 720p, or 1080p.'
+          : `Higgsfield ${model.type.toUpperCase()} model`,
       inputs: schemaInputs,
       outputType,
       outputs: [{ id: outputType, portType: outputType, label: outputType === 'model3d' ? '3D Model' : humanize(outputType) }],

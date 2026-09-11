@@ -7,6 +7,14 @@ import process from 'node:process';
 const ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
 const OUTPUT_PATH = path.join(ROOT, 'src/lib/higgsfield/model-catalog.generated.json');
 const CHECK_ONLY = process.argv.includes('--check');
+const SELECTED_MODELS = new Set();
+for (let index = 2; index < process.argv.length; index += 1) {
+  if (process.argv[index] === '--check') continue;
+  if (process.argv[index] !== '--model' || !process.argv[index + 1] || process.argv[index + 1].startsWith('--')) {
+    throw new Error('Usage: update-model-catalog.mjs [--check] [--model MODEL_ID ...]');
+  }
+  SELECTED_MODELS.add(process.argv[++index]);
+}
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 30_000;
 const CONCURRENCY = 8;
@@ -90,7 +98,8 @@ function validateList(value) {
   const ids = new Set();
   return value.map((entry, index) => {
     if (!entry || typeof entry !== 'object') throw new Error(`Model list entry ${index} was invalid.`);
-    const { display_name: displayName, job_set_type: id, type } = entry;
+    const { display_name: displayName, type } = entry;
+    const id = entry.job_set_type ?? entry.job_type;
     if (typeof displayName !== 'string' || !displayName.trim()) throw new Error(`Model ${index} has no display name.`);
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new Error(`Model ${index} has an invalid id.`);
     if (!MODEL_TYPES.has(type)) throw new Error(`Model ${id} has unknown output type ${String(type)}.`);
@@ -102,7 +111,7 @@ function validateList(value) {
 
 function validateSchema(value, expected) {
   if (!value || typeof value !== 'object') throw new Error(`Schema for ${expected.job_set_type} was invalid.`);
-  if (value.job_set_type !== expected.job_set_type) throw new Error(`Schema id mismatch for ${expected.job_set_type}.`);
+  if ((value.job_set_type ?? value.job_type) !== expected.job_set_type) throw new Error(`Schema id mismatch for ${expected.job_set_type}.`);
   if (value.display_name !== expected.display_name) throw new Error(`Schema display-name mismatch for ${expected.job_set_type}.`);
   if (value.type !== expected.type) throw new Error(`Schema output-type mismatch for ${expected.job_set_type}.`);
   if (!Array.isArray(value.params)) throw new Error(`Schema params for ${expected.job_set_type} were invalid.`);
@@ -114,20 +123,27 @@ function validateSchema(value, expected) {
     }
     if (names.has(param.name)) throw new Error(`Duplicate param ${param.name} for ${expected.job_set_type}.`);
     names.add(param.name);
-    if (!PARAM_TYPES.has(param.type)) throw new Error(`Param ${param.name} for ${expected.job_set_type} has unknown type ${String(param.type)}.`);
+    const nullable = typeof param.type === 'string' && param.type.endsWith('|null');
+    const type = nullable ? param.type.slice(0, -5) : param.type;
+    if (!PARAM_TYPES.has(type)) throw new Error(`Param ${param.name} for ${expected.job_set_type} has unknown type ${String(param.type)}.`);
     if (typeof param.required !== 'boolean') throw new Error(`Param ${param.name} for ${expected.job_set_type} has invalid required flag.`);
     if (param.enum !== undefined && (!Array.isArray(param.enum) || param.enum.some((item) => typeof item !== 'string'))) {
       throw new Error(`Param ${param.name} for ${expected.job_set_type} has an invalid enum.`);
     }
     return {
       name: param.name,
-      type: param.type,
+      type,
+      ...(nullable ? { nullable: true } : {}),
       default: param.default ?? null,
       required: param.required,
       ...(param.enum ? { enum: [...param.enum] } : {}),
     };
   });
-  return { ...expected, params };
+  const rules = value.rules;
+  if (rules !== undefined && (!Array.isArray(rules) || rules.some(rule => typeof rule?.cel !== 'string' || typeof rule?.message !== 'string'))) {
+    throw new Error(`Schema rules for ${expected.job_set_type} were invalid.`);
+  }
+  return { ...expected, params, ...(rules?.length ? { rules } : {}) };
 }
 
 function parseVersion(raw) {
@@ -151,14 +167,23 @@ async function mapConcurrent(items, worker) {
 async function main() {
   const cli = await findCli();
   const version = parseVersion(await run(cli, ['version', '--json']));
-  const list = validateList(parseJson(await run(cli, ['model', 'list', '--json']), 'Higgsfield model list'))
+  const liveList = parseJson(await run(cli, ['model', 'list', '--json']), 'Higgsfield model list');
+  const list = validateList(SELECTED_MODELS.size && Array.isArray(liveList)
+    ? liveList.filter(model => SELECTED_MODELS.has(model.job_set_type ?? model.job_type)) : liveList)
     .sort((a, b) => a.job_set_type.localeCompare(b.job_set_type));
-  const models = await mapConcurrent(list, async (model) => (
+  for (const id of SELECTED_MODELS) {
+    if (!list.some(model => model.job_set_type === id)) throw new Error(`Model ${id} was not in the live catalog.`);
+  }
+  const refreshed = await mapConcurrent(list.filter(model => !SELECTED_MODELS.size || SELECTED_MODELS.has(model.job_set_type)), async (model) => (
     validateSchema(
       parseJson(await run(cli, ['model', 'get', model.job_set_type, '--json']), `Schema for ${model.job_set_type}`),
       model,
     )
   ));
+  // A targeted refresh preserves models from other catalog/CLI versions.
+  const previous = SELECTED_MODELS.size ? JSON.parse(await readFile(OUTPUT_PATH, 'utf8')).models : [];
+  const models = [...previous.filter(model => !SELECTED_MODELS.has(model.job_set_type)), ...refreshed]
+    .sort((a, b) => a.job_set_type.localeCompare(b.job_set_type));
   const payload = `${JSON.stringify({ schemaVersion: 1, cli: version, models }, null, 2)}\n`;
 
   if (CHECK_ONLY) {

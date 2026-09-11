@@ -134,6 +134,7 @@ async function runTopviewWorkflow(params: WorkflowRunParams, options: WorkflowRu
     const request = {
       prompt,
       model: requestedModel,
+      videoMode: params.inputs.video_mode === 'edit' ? 'edit' as const : 'auto' as const,
       ...(duration !== undefined && Number.isFinite(duration) ? { durationSec: duration } : {}),
       aspectRatio: typeof params.inputs.aspect_ratio === 'string' ? params.inputs.aspect_ratio : undefined,
       resolution: typeof params.inputs.resolution === 'string' ? params.inputs.resolution : undefined,
