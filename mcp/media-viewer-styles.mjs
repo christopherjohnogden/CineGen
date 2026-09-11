@@ -1,11 +1,13 @@
 export const css = `
-/* Keep the document canvas transparent; dark native controls belong inside the app. */
-:root{--bg:#1c1d1f;--surface:#27282a;--line:#303134;--ink:#efede8;--muted:#969594;--gold:#d8ad70}
-*{box-sizing:border-box}html,body{margin:0;width:100%;min-height:100%;background:transparent;color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+/* Paint the iframe canvas to match its host. A transparent document can expose
+   the host webview's white backing surface even when the chat is dark. */
+:root{color-scheme:dark;--page:var(--color-background-primary,#141414);--bg:#1c1d1f;--surface:var(--color-background-secondary,#27282a);--line:var(--color-border-primary,#303134);--ink:var(--color-text-primary,#efede8);--muted:var(--color-text-secondary,#aaa49a);--gold:#d8ad70}
+:root[data-theme="light"]{color-scheme:light;--page:var(--color-background-primary,#ffffff);--bg:#f6f5f2;--surface:var(--color-background-secondary,#edece8);--line:var(--color-border-primary,#d7d5cf);--ink:var(--color-text-primary,#242320);--muted:var(--color-text-secondary,#67635b);--gold:#8a5c1e}
+*{box-sizing:border-box}html,body{margin:0;width:100%;min-height:100%;background:var(--page);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer;border:1px solid var(--line);border-radius:9px;background:#222326;min-height:40px;padding:8px 12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background .16s,border-color .16s,transform .16s;-webkit-tap-highlight-color:transparent}
 button:active{transform:scale(.98)}button:disabled{opacity:.4;cursor:default}button svg{flex-shrink:0}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}[hidden]{display:none!important}
 @media(hover:hover){button:hover{background:#303134;border-color:#716351}.card-view:hover{background:#222326}.tile-preview:hover{background:#d8ad70;color:#161616}}
-#app{color-scheme:dark;position:relative;width:100%;max-width:760px;margin:auto;padding:18px;--viewer-height:620px}
+#app{position:relative;width:100%;max-width:760px;margin:auto;padding:18px;--viewer-height:620px}
 #app.is-ready{height:auto;padding:8px;display:flex;flex-direction:column;min-height:0;border:0;border-radius:0;background:transparent;box-shadow:none}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 7px 4px;flex-shrink:0;min-height:47px}.header-controls{display:flex;gap:2px;align-items:center}.collection-title{font:inherit;min-height:42px;padding:3px 0;gap:7px;background:transparent;border:0}.collection-title svg{order:2;width:12px;height:12px;color:#9c8b71}.logomark{display:grid;place-items:center;min-height:36px;width:36px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--gold)}.logomark svg{width:23px;height:23px}
 .brand{font:650 9px/1.3 ui-monospace,monospace;letter-spacing:.19em;color:var(--gold);margin:0 0 3px}h1{font-size:19px;line-height:1.25;font-weight:620;letter-spacing:-.035em;margin:0}h2{font-size:14px;line-height:1.35;margin:0;font-weight:600}h3{font-size:11px}.icon-button{width:40px;height:40px;padding:0;background:transparent;border-color:transparent;color:#b9b6b0}.small{min-height:36px;font-size:12px;padding:6px 10px}
@@ -53,6 +55,15 @@ html{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;scrollba
 @keyframes shimmer{to{background-position:-200% 0}}
 @media(max-width:520px){h1{font-size:17px}.toolbar{padding:0 5px 2px}.search{flex-wrap:wrap}.search input{font-size:16px;flex-basis:65%}.search select{flex-basis:100%;max-width:none;width:100%;height:34px;font-size:12px;padding:5px 9px}.search button{font-size:0;width:40px;padding:0}.search button svg{width:17px;height:17px}.selection-bar{padding:9px 7px calc(9px + var(--safe-bottom,0px))}.selection-main{gap:8px}.selection-main>.primary{min-width:120px}.frame.large,.large img,.large video{max-height:290px}.card-body h2{font-size:11px}.card-body{padding-left:7px;padding-right:7px}.tile-meta{font-size:10px}}
 @media(max-height:400px){header{min-height:40px;padding-bottom:0}.toolbar{padding-bottom:0}.selection-bar{padding-top:7px;padding-bottom:7px}.selection-help{display:none}.collection-info{min-height:28px}.filter-tabs{margin-bottom:4px}.filter-tabs button{min-height:26px}}
+/* Preserve contrast when a host explicitly supplies a light theme. Media and
+   prism surfaces retain their own dark playback treatment. */
+:root[data-theme="light"] button,:root[data-theme="light"] input,:root[data-theme="light"] select,:root[data-theme="light"] textarea,:root[data-theme="light"] .collection-menu,:root[data-theme="light"] .selection-bar{background:var(--bg);color:var(--ink);border-color:var(--line)}
+:root[data-theme="light"] .collection-title,:root[data-theme="light"] .icon-button,:root[data-theme="light"] .logomark,:root[data-theme="light"] .card-view,:root[data-theme="light"] .link,:root[data-theme="light"] .back,:root[data-theme="light"] .result-toggle{background:transparent}
+:root[data-theme="light"] .result-pill{background:var(--surface);color:var(--ink)}
+:root[data-theme="light"] .result-prompt,:root[data-theme="light"] .result-facts dd{color:var(--ink)}
+:root[data-theme="light"] .library-footer,:root[data-theme="light"] .library-status,:root[data-theme="light"] .result-facts dt,:root[data-theme="light"] .facts span,:root[data-theme="light"] .empty,:root[data-theme="light"] .result-count,:root[data-theme="light"] .selection-help{color:var(--muted)}
+:root[data-theme="light"] .result-panel,:root[data-theme="light"] .prompt{border-color:var(--line)}
+:root[data-theme="light"] .primary,:root[data-theme="light"] .card-use{background:var(--gold);color:white}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .library-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;min-height:35px;padding:6px 8px calc(4px + var(--safe-bottom,0px));font-size:10px;color:#aaa49a}.library-count{font-variant-numeric:tabular-nums}.library-status{color:#c2b18f}.library-footer .small{min-height:28px;padding:3px 8px;font-size:10px}.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.browse-references{margin-top:10px;font-size:12px;width:100%}
 `;

@@ -33,7 +33,18 @@ function mountViewer() {
     });
   }
   function applyHostContext(context = {}) {
+    if (context.theme && context.theme !== hostContext.theme && !context.styles) hostContext.styles = undefined;
     hostContext = { ...hostContext, ...context };
+    const theme = hostContext.theme ?? window.openai?.theme;
+    document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+    const colors = hostContext.styles?.variables || {};
+    // Use the host's color tokens, not arbitrary CSS or remote stylesheets.
+    for (const name of ['--color-background-primary', '--color-background-secondary', '--color-border-primary', '--color-text-primary', '--color-text-secondary']) {
+      const value = colors[name], probe = document.createElement('span');
+      if (typeof value === 'string') probe.style.color = value;
+      if (probe.style.color && !['transparent', 'inherit', 'initial', 'unset', 'currentcolor'].includes(probe.style.color.toLowerCase())) document.documentElement.style.setProperty(name, value);
+      else document.documentElement.style.removeProperty(name);
+    }
     const dimensions = hostContext.containerDimensions || {};
     const limit = dimensions.height ?? dimensions.maxHeight ?? window.openai?.maxHeight;
     const width = document.documentElement.clientWidth;
@@ -93,7 +104,9 @@ function mountViewer() {
         throw new Error('The chat did not send a readable CineGen view.');
       }
       clearTimeout(startupTimer); message = '';
+      const initialView = !current || current.projectId !== data.projectId || current.refresh.name !== data.refresh.name;
       if (current && current.projectId !== data.projectId) { chosen.clear(); galleryPositions.clear(); detailPanels.clear(); selected = null; destination = ''; }
+      if (initialView && data.mode === 'media' && data.total === 1 && data.items.length === 1 && !data.hasMore) selected = data.items[0].id;
       current = data; moreRequest = null; moreError = ''; destination ||= data.activeSpaceId || data.spaces?.[0]?.id || '';
       render(); schedule(true);
     } catch (error) { showError(error.message); }
@@ -261,7 +274,7 @@ function mountViewer() {
   function media(item, detail) {
     if (item.presetId) return diagram(item);
     const frame = element('div', `frame ${detail ? 'large' : ''}`);
-    const thumbnail = safeUrl(item.thumbnailUrl || item.posterUrl), url = safeUrl(item.previewUrl);
+    const thumbnail = safeUrl(item.thumbnailUrl || item.posterUrl), url = safeUrl(item.previewUrl) || safeUrl(item.url);
     const isPoster = !detail && item.kind === 'video' && thumbnail;
     const source = !detail && item.kind === 'image' ? thumbnail || url : isPoster ? thumbnail : url;
     if (['image', 'video'].includes(item.kind) && activeStatuses.has(item.status) && !url && !safeUrl(item.url)) {
@@ -663,7 +676,7 @@ function mountViewer() {
     if (msg.method === 'ui/resource-teardown') { disposed = true; clearTimeout(timer); clearTimeout(startupTimer); clearTimeout(elapsedTimer); root.querySelectorAll('video,audio').forEach(view => { view.pause(); view._observer?.disconnect(); }); for (const entry of pending.values()) clearTimeout(entry.timeout); pending.clear(); window.parent.postMessage({ jsonrpc: '2.0', id: msg.id, result: {} }, hostOrigin); }
   });
   startupTimer = setTimeout(() => { if (!current) showError('The chat connection did not deliver your library.'); }, 20000);
-  window.addEventListener('openai:set_globals', event => { applyHostContext(); if (event.detail?.globals?.toolOutput) receive(event.detail.globals.toolOutput); });
+  window.addEventListener('openai:set_globals', event => { applyHostContext(event.detail?.globals?.theme ? { theme: event.detail.globals.theme } : {}); if (event.detail?.globals?.toolOutput) receive(event.detail.globals.toolOutput); });
   if (window.openai?.toolOutput) receive(window.openai.toolOutput);
   applyHostContext();
   new ResizeObserver(() => { reportSize(); updateScrollHint(); }).observe(root);
@@ -674,7 +687,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.2' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.3' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

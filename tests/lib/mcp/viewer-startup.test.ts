@@ -61,6 +61,48 @@ function mount({ preloaded = false, uri = api.MEDIA_RESOURCE.uri } = {}) {
 }
 
 describe('deployed MCP viewer startup', () => {
+  it('uses a dark canvas fallback and adopts host colors without repainting the player', async () => {
+    const view = mount();
+    expect(view.document.documentElement.dataset.theme).toBe('dark');
+    await view.initialize({ theme: 'dark', styles: { variables: {
+      '--color-background-primary': '#141414', '--color-text-primary': '#faf9f5',
+    } } });
+    view.result();
+    const card = view.document.querySelector('.card');
+    expect(view.document.documentElement.style.getPropertyValue('--color-background-primary')).toBe('#141414');
+    view.send({ method: 'ui/notifications/host-context-changed', params: { theme: 'light', styles: { variables: {
+      '--color-background-primary': '#faf9f5', '--color-text-primary': '#262624',
+    } } } });
+    expect(view.document.documentElement.dataset.theme).toBe('light');
+    expect(view.document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('#262624');
+    expect(view.document.querySelector('.card')).toBe(card);
+    view.send({ method: 'ui/notifications/host-context-changed', params: { theme: 'dark' } });
+    expect(view.document.documentElement.dataset.theme).toBe('dark');
+    expect(view.document.documentElement.style.getPropertyValue('--color-background-primary')).toBe('');
+  });
+
+  it('accepts legacy host theme updates and ignores invalid color styles', async () => {
+    const view = mount();
+    await view.initialize({ styles: { variables: { '--color-background-primary': 'url(https://untrusted.example/style)', '--color-text-primary': 'transparent' } } });
+    expect(view.document.documentElement.style.getPropertyValue('--color-background-primary')).toBe('');
+    expect(view.document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('');
+    view.window.dispatchEvent(new view.window.CustomEvent('openai:set_globals', { detail: { globals: { theme: 'light' } } }));
+    expect(view.document.documentElement.dataset.theme).toBe('light');
+  });
+
+  it('opens a single Show Media video in the full player and still lets the user browse the gallery', async () => {
+    const view = mount(); await view.initialize();
+    const single = { ...page, mode: 'media', total: 1, items: [{ id: 'clip', title: 'AI punch4 CU navy 1080', kind: 'video', status: 'complete', url: 'https://media.example/clip.mp4', prompt: 'An interview close-up.' }], refresh: { name: 'cinegen_show_media', arguments: { assetIds: ['clip'] } } };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: single } });
+    expect(view.document.querySelector('.result-player video[controls]')).not.toBeNull();
+    expect(view.document.querySelector('.grid')).toBeNull();
+    expect(view.document.querySelector('.result-prompt')?.parentElement?.hidden).toBe(true);
+    (view.document.querySelector('.back') as HTMLButtonElement).click();
+    expect(view.document.querySelectorAll('.card')).toHaveLength(1);
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: single } });
+    expect(view.document.querySelectorAll('.card')).toHaveLength(1);
+  });
+
   it('keeps the checked-in browser artifact in sync with its source', async () => {
     expect(await readFile('mcp/media-viewer-script.mjs', 'utf8')).toBe(await compileMcpViewer());
   });
@@ -78,7 +120,7 @@ describe('deployed MCP viewer startup', () => {
   });
 
   it('serves the fixed script to hosts still using a cached resource URI', async () => {
-    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v5.html', 'ui://cinegen/media-viewer-v6.html']) {
+    for (const uri of ['ui://cinegen/media-viewer-v1.html', 'ui://cinegen/media-viewer-v2.html', 'ui://cinegen/media-viewer-v3.html', 'ui://cinegen/media-viewer-v4.html', 'ui://cinegen/media-viewer-v5.html', 'ui://cinegen/media-viewer-v6.html', 'ui://cinegen/media-viewer-v16.html']) {
       expect(api.readMediaResource(uri).contents[0].uri).toBe(uri);
       const view = mount({ uri }); await view.initialize(); view.result();
       expect(view.document.querySelectorAll('.card')).toHaveLength(7);
