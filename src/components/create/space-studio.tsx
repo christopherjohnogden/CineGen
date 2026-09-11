@@ -38,6 +38,7 @@ import { StudioPromptAssistant } from './studio-prompt-assistant';
 import { StudioAudioReference } from './studio-audio-reference';
 import { StudioReferencePreview, previewAttachedReference, previewElementReference, type ReferencePreview } from './studio-reference-preview';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
+import { captureGenerationMetadata } from '@/lib/studio/generation-metadata';
 import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
 import {
@@ -1971,7 +1972,8 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
           type: 'image',
           url: item.url,
           createdAt: timestamp(),
-          metadata: { generatedVia: 'studio-generation', sourceNodeId: item.id },
+          metadata: { generatedVia: 'studio-generation', sourceNodeId: item.id,
+            generation: captureGenerationMetadata(item.node, item.model, state, state, item.url) },
         };
         if (!existing) dispatch({ type: 'ADD_ASSET', asset });
       } else {
@@ -1982,7 +1984,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     } catch (error) {
       showNotice(error instanceof Error ? error.message : 'Could not use this clip as a reference.', 'error');
     }
-  }, [assetFromFrame, clipById, dispatch, reuseGeneration, showNotice, state.assets, useAsStartFrame]);
+  }, [assetFromFrame, clipById, dispatch, reuseGeneration, showNotice, state, useAsStartFrame]);
 
   // A clip in the feed lives on its node, not in the asset library, so editing
   // one has to file it first — otherwise the only editable videos would be the
@@ -1999,7 +2001,8 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       type: 'video',
       url: item.url,
       createdAt: timestamp(),
-      metadata: { generatedVia: 'studio-generation', sourceNodeId: item.id },
+      metadata: { generatedVia: 'studio-generation', sourceNodeId: item.id,
+        generation: captureGenerationMetadata(item.node, item.model, state, state, item.url) },
     };
     if (!existing) dispatch({ type: 'ADD_ASSET', asset });
     setVideoMode('edit');
@@ -2008,7 +2011,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     setViewerId(null);
     showNotice('Loaded as the video to edit.');
     if (coarsePointer) composerRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }, [clipById, coarsePointer, dispatch, showNotice, state.assets]);
+  }, [clipById, coarsePointer, dispatch, showNotice, state]);
 
   const extendClip = useCallback(async (id: string) => {
     const item = clipById(id);

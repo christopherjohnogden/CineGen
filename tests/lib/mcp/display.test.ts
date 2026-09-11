@@ -165,6 +165,39 @@ describe('MCP media displays', () => {
     expect(result.items.find(item => item.assetId === 'imported')).toMatchObject({ prompt: '', references: [] });
     expect(result.items.find(item => item.assetId === 'imported')?.nodeId).toBeUndefined();
   });
+  it('follows CineGen sourceNodeId after the generated file has been copied to another URL', async () => {
+    const { state, handlers } = setup();
+    state.nodes = [{ id: 'source-node', type: 'nano-banana-2', position: { x: 0, y: 0 }, data: { type: 'nano-banana-2', label: 'Original',
+      config: { prompt: 'Original prompt', image_url: cloud + '&reference=1' }, result: { status: 'complete', url: cloud } } }];
+    state.assets = [{ id: 'copied', name: 'Rehosted result', type: 'image', url: cloud + '&copy=1', createdAt: 'now',
+      metadata: { generatedVia: 'studio-generation', sourceNodeId: 'source-node' } }];
+    const shown = await handlers.cinegen_show_media({ assetIds: ['copied'] }) as DisplayPage;
+    expect(shown.items[0]).toMatchObject({ url: cloud + '&copy=1', prompt: 'Original prompt', model: 'Nano Banana 2' });
+    expect(shown.items[0].references?.map(ref => ref.url)).toEqual([cloud + '&reference=1']);
+  });
+  it('reads imported provider provenance independently of Canvas nodes and safely resolves referenced assets', async () => {
+    const { state, handlers } = setup();
+    state.nodes = []; state.spaces = [];
+    state.assets = [
+      { id: 'voice', name: 'Character voice', type: 'audio', url: '/private/voice.wav', sourceUrl: cloud + '&voice=1', createdAt: 'now' },
+      { id: 'recovered', name: 'Recovered Topview result', type: 'video', url: cloud, createdAt: 'now', metadata: {
+        topviewTaskId: 'provider-task', generation: { version: 1, prompt: 'Keep the same performance.', model: 'Seedance 2.5', provider: 'topview', providerNodeId: 'external-node',
+          references: [{ id: 'original', title: 'Original video', kind: 'video', url: cloud + '&original=1' },
+            { kind: 'audio', assetId: 'voice' }, { title: 'Local image', kind: 'image', url: 'file:///private/image.png' }] } } },
+    ];
+    const shown = await handlers.cinegen_show_media({ assetIds: ['recovered'] }) as DisplayPage;
+    expect(shown.items[0]).toMatchObject({ prompt: 'Keep the same performance.', model: 'Seedance 2.5', provider: 'topview' });
+    expect(shown.items[0].references).toEqual([
+      expect.objectContaining({ title: 'Original video', kind: 'video', url: cloud + '&original=1' }),
+      expect.objectContaining({ title: 'Character voice', kind: 'audio', url: cloud + '&voice=1' }),
+      expect.objectContaining({ title: 'Local image', url: null, previewUrl: null }),
+    ]);
+    expect(shown.items[0].nodeId).toBeUndefined(); expect(JSON.stringify(shown)).not.toContain('/private/');
+    // An explicitly empty saved recipe must not acquire a newer node's inputs.
+    (state.assets[1].metadata!.generation as any).references = [];
+    const again = await handlers.cinegen_show_media({ assetIds: ['recovered'] }) as DisplayPage;
+    expect(again.items[0].references).toEqual([]);
+  });
   it('sends exact references into another Studio Space, persists on reload, and is idempotent', async () => {
     let state = createInitialWorkspaceState();
     state.spaces = [{ id: 'first', name: 'First', nodes: [], edges: [] }, { id: 'second', name: 'Second', nodes: [], edges: [] }]; state.activeSpaceId = 'first';

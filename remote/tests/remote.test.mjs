@@ -440,6 +440,28 @@ test('uploaded media can be sent to Studio, serialized and rehydrated without a 
   assert.equal(repeat.changed,false);assert.deepEqual(repeat.result.nodeIds,edited.result.nodeIds);
 });
 
+test('imported Topview provenance can be repaired through the advertised asset tool and survives cloud reload',async()=>{
+  const raw=api.createDefaultProjectState('Recovered result');
+  const url='https://firebasestorage.googleapis.com/result.mp4';
+  raw.assets=[{id:'recovered',project_id:raw.project.id,name:'Recovered result',type:'video',source_url:url,
+    metadata:JSON.stringify({topviewTaskId:'original-task',customNote:'keep me'}),created_at:'now'}];
+  const library={elements:[],folders:[]};
+  const generation={version:1,provider:'topview',model:'Seedance 2.5',prompt:'Keep the same performance.',
+    providerTaskId:'original-task',providerCanvasId:'external-canvas',providerNodeId:'external-node',
+    references:[{title:'Source clip',kind:'video',url:'https://firebasestorage.googleapis.com/reference.mp4'},
+      {title:'Character',kind:'image',url:'https://firebasestorage.googleapis.com/character.png'}]};
+  globalThis.fetch=async()=>{throw new Error('Metadata repair must not call a provider or render');};
+  const edited=await api.editProject(raw,library,'cinegen_asset',{action:'update',assetId:'recovered',patch:{metadata:{generation}}});
+  assert.equal(edited.changed,true);
+  const reloaded=JSON.parse(JSON.stringify(edited.state));
+  const asset=api.hydrate(reloaded,library).assets[0];
+  assert.equal(asset.metadata.topviewTaskId,'original-task');assert.equal(asset.metadata.customNote,'keep me');
+  const shown=await api.editProject(reloaded,library,'cinegen_show_media',{assetIds:['recovered']});
+  assert.equal(shown.changed,false);assert.equal(shown.result.items[0].prompt,generation.prompt);
+  assert.equal(shown.result.items[0].model,'Seedance 2.5');
+  assert.deepEqual(shown.result.items[0].references.map(ref=>ref.url),generation.references.map(ref=>ref.url));
+});
+
 test('ordered cloud batch reads snapshots, isolates missing jobs and retains durable saving status',async()=>{
   const raw=api.createDefaultProjectState('Batch review'), originalLoad=api.CloudStore.prototype.load, originalSave=api.CloudStore.prototype.save;
   const paths=[];const env={PUBLIC_ORIGIN:'https://cinegen.example',JOBS:{idFromName:name=>name,get:name=>({fetch:async(url)=>{

@@ -340,6 +340,7 @@ function mountViewer() {
         if (detailPanels.get(key) === name) detailPanels.delete(key); else detailPanels.set(key, name);
         // Expand only the information panel. Rebuilding the viewer would stop playback.
         update();
+        if (!body.hidden) body.scrollIntoView?.({ block: 'nearest' });
       }, 'result-toggle');
       trigger.id = `${id}-button`; trigger.setAttribute('aria-controls', id);
       if (count) trigger.append(element('span', 'result-count', String(count)));
@@ -693,7 +694,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.5' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.6' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

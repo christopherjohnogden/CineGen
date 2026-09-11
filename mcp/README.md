@@ -137,6 +137,44 @@ opens the Studio feed. A generation completing after a Space switch updates its
 original Space. `cinegen_get_generations` reads the active Space; use
 `cinegen_read` to inspect another Space.
 
+## Imported generation prompts and references
+
+`cinegen_show_media` resolves a saved asset's exact Canvas/Studio output and its
+`metadata.sourceNodeId` (a CineGen node ID). Provider node IDs must not be stored
+in that field. A Topview task ID alone does not provide its prompt or references.
+
+For an imported/recovered result without a CineGen node, first read the original
+provider generation. Then use `cinegen_asset` with `action: "update"`, the existing
+`assetId`, and `patch.metadata.generation` containing the **verified** original
+inputs. The field is part of the advertised tool schema:
+
+```json
+{
+  "version": 1,
+  "provider": "topview",
+  "model": "Seedance 2.5",
+  "prompt": "The original generation prompt",
+  "providerTaskId": "actual-task-id",
+  "providerCanvasId": "actual-topview-canvas-id",
+  "providerNodeId": "actual-topview-node-id",
+  "references": [
+    { "title": "Original source video", "kind": "video", "url": "https://example.com/original.mp4" },
+    { "title": "Character", "kind": "image", "assetId": "existing-cinegen-image-asset-id" }
+  ]
+}
+```
+
+Reference kinds are `image`, `video`, and `audio`; use the original durable URL
+or an existing CineGen `assetId`. Optional thumbnail URLs are supported. Keep
+provider IDs only when verified. This snapshot survives Canvas edits/deletion
+and takes precedence over the live node's inputs, including an explicitly empty
+reference list. Other asset metadata is preserved during updates. New cloud
+generation assets and Studio saves capture this record automatically.
+
+Adding a source file to the library alone does **not** associate it with a
+result. **Select reference** selects an input for future use; it does not repair
+generation history. Viewing or repairing this metadata never submits a render.
+
 ## Boundaries
 
 This is broad production-workflow coverage, not a promise that every UI gesture

@@ -5,6 +5,7 @@ import { MODEL_REGISTRY, resolveVideoModelEndpoint, sanitizeVideoInputsForEndpoi
 import { CloudStore, refreshIdentity, type Identity, type RecordValue } from './firebase';
 import { hydrate, serialize } from './headless';
 import { createWorkflowNodeFromSpec } from '../../src/lib/llm/space-node-factory';
+import { captureGenerationMetadata } from '../../src/lib/studio/generation-metadata';
 
 export const generationTools = [
   {name:'cinegen_list_models',description:'List connected Topview models and input fields by default. Seedance 2.5 supports image, video, and audio references; audio input is separate from generated sound. Use provider higgsfield ONLY when the user explicitly requests Higgsfield. Uses the existing CineGen website provider connections; no fal key is needed.',inputSchema:{type:'object' as const,properties:{provider:{type:'string',enum:['topview','higgsfield'],description:'Defaults to topview. Higgsfield only on explicit user request.'},kind:{type:'string',enum:['image','video']}},additionalProperties:false}},
@@ -189,7 +190,9 @@ export class GenerationJob extends DurableObject {
         const node=space.nodes.find(n=>n.id===job.nodeId)!;
         node.data.result={status:'complete',url:job.url};node.data.generations=[...new Set([...(node.data.generations??[]),job.url])];
         if(space.id===state.activeSpaceId)state.nodes=space.nodes;
-        if(!state.assets.some(a=>a.id===job.nodeId))state.assets.push({id:job.nodeId,name:`${prepared.model.name} generation`,type:prepared.model.outputType as 'image'|'video',url:job.url,fileRef:job.url,thumbnailUrl:prepared.model.outputType==='image'?job.url:undefined,createdAt:job.createdAt});
+        if(!state.assets.some(a=>a.id===job.nodeId))state.assets.push({id:job.nodeId,name:`${prepared.model.name} generation`,type:prepared.model.outputType as 'image'|'video',url:job.url,fileRef:job.url,thumbnailUrl:prepared.model.outputType==='image'?job.url:undefined,createdAt:job.createdAt,
+          metadata:{generatedVia:'studio-generation',sourceNodeId:job.nodeId,generation:{...captureGenerationMetadata({...node,data:{...node.data,config:prepared.config}},prepared.model,{nodes:[],edges:[]},state,job.url),
+            ...(job.providerTask?.taskId?{providerTaskId:job.providerTask.taskId}:{})}}});
         await store.save(loaded,serialize(loaded.state,state,loaded.metadata.useSqlite!==false));job.status='complete';delete job.error;
       }
       if(job.status==='running'&&Date.now()-Date.parse(job.createdAt)>24*3600000){job.status='needs_attention';job.error='Generation has been pending for more than 24 hours. Check the provider before retrying.';}

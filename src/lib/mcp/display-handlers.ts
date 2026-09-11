@@ -3,7 +3,8 @@ import { DISPLAY_TOOLS, DISPLAY_ACTION_TOOLS, displayUrl, previewUrl } from '../
 import { FILM_PRESETS } from '../../../mcp/film-presets.mjs';
 import { canvasMedia, canvasPrompt, studioFeedModel } from '@/lib/studio/canvas-import';
 import { resolveStudioRecipe } from '@/lib/studio/recipe';
-import { materializeElementLooks, elementImagesForVariation } from '@/lib/elements/variations';
+import { generationInputReferences, savedGenerationReferences, type GenerationReference } from '@/lib/studio/generation-metadata';
+import { materializeElementLooks } from '@/lib/elements/variations';
 import { generateId } from '@/lib/utils/ids';
 import type { Asset } from '@/types/project';
 import type { McpHost, McpHostState, McpToolHandler } from './types';
@@ -17,7 +18,7 @@ export interface DisplayItem {
   requestId?: string; spaceId?: string; spaceName?: string; folderId?: string; folderName?: string;
   model?: string; provider?: string; createdAt?: string; startedAt?: number; error?: string; unavailableReason?: string;
   width?: number; height?: number; duration?: number; resolution?: string; aspectRatio?: string;
-  references?: { id: string; title: string; url: string | null; previewUrl: string | null; thumbnailUrl?: string | null; kind: string; elementId?: string; imageId?: string; variationId?: string }[];
+  references?: GenerationReference[];
   galleryImages?: DisplayItem[];
   elementCard?: boolean; elementType?: string; referenceCount?: number; variationName?: string;
   generationIndex?: number; batchIndex?: number; source?: string;
@@ -59,39 +60,7 @@ function page(title: string, mode: DisplayPage['mode'], items: DisplayItem[], na
 function assetFor(state: McpHostState, url: unknown) {
   return state.assets.find(asset => asset.url === url || asset.sourceUrl === url || asset.fileRef === url);
 }
-function inputReferences(state: McpHostState, config: Record<string, unknown>, model: ReturnType<typeof studioFeedModel>, space: ReturnType<typeof spacesFor>[number], nodeId: string) {
-  const references: NonNullable<DisplayItem['references']> = [];
-  const add = (value: unknown, title: string, kind = 'image', id = title, elementId?: string) => {
-    const url = displayUrl(value);
-    if (!url || references.some(ref => ref.url === url)) return;
-    const asset = assetFor(state, value);
-    const thumbnailUrl = previewUrl(asset?.thumbnailUrl);
-    references.push({ id, title, kind, url, previewUrl: thumbnailUrl || previewUrl(url), thumbnailUrl, elementId });
-  };
-  const visit = (value: unknown, title: string, kind: string) => {
-    if (typeof value === 'string') add(value, title, kind);
-    else if (Array.isArray(value)) value.forEach((entry, i) => visit(entry, `${title} ${i + 1}`, kind));
-    else {
-      const ref = record(value);
-      for (const key of ['url', 'urls', 'images', 'image_urls', 'media']) if (ref[key]) visit(ref[key], title, kind);
-      const variations = record(ref.elementVariationIds);
-      for (const id of Array.isArray(ref.assetIds) ? ref.assetIds : []) {
-        const asset = state.assets.find(asset => asset.id === id);
-        if (asset) add(asset.url, asset.name, asset.type, asset.id);
-      }
-      for (const id of Array.isArray(ref.elementIds) ? ref.elementIds : []) {
-        const element = state.elements.find(e => e.id === id);
-        if (element) for (const image of elementImagesForVariation(element, text(variations[element.id]) || undefined)) add(image.url, element.name, 'image', image.id, element.id);
-      }
-    }
-  };
-  for (const field of model?.inputs ?? []) if (['image', 'video', 'audio', 'media'].includes(field.portType)) visit(config[field.id], field.label, field.portType === 'media' ? 'image' : field.portType);
-  for (const edge of space.edges.filter(edge => edge.target === nodeId)) {
-    const source = space.nodes.find(node => node.id === edge.source);
-    if (source) for (const media of canvasMedia(source, state.elements)) add(media.url, media.name, media.kind, media.id);
-  }
-  return references.slice(0, 24);
-}
+
 function generationItems(state: McpHostState, args: Record<string, unknown>): DisplayItem[] {
   const spaces = spacesFor(state);
   if (args.spaceId && !spaces.some(space => space.id === args.spaceId)) throw new McpToolError('That Space was not found. Read the project context for its current ID.');
@@ -124,7 +93,7 @@ function generationItems(state: McpHostState, args: Record<string, unknown>): Di
           title: output.name || node.data.label || model?.name || 'Generation', kind: output.kind, status: historical ? 'complete' : status,
           ...mediaFields(output.url, asset?.thumbnailUrl || config.thumbnailUrl || config.posterUrl),
           ...dimensions(asset, config), prompt: (model && resolveStudioRecipe(node, model, space.nodes, space.edges, state.assets).prompt) || output.prompt || canvasPrompt(node), model: model?.name,
-          provider: model ? model.provider ?? 'fal' : undefined, spaceId: space.id, spaceName: space.name, references: inputReferences(state, config, model, space, node.id),
+          provider: model ? model.provider ?? 'fal' : undefined, spaceId: space.id, spaceName: space.name, references: generationInputReferences(state, config, model, space, node.id),
           source: node.data.type === 'filePicker' ? 'Canvas upload' : 'Generation',
           createdAt: text(config.__studioCreatedAt) || asset?.createdAt,
           startedAt: historical ? undefined : positive(node.data.result?.progressStartedAt),
@@ -183,18 +152,22 @@ function libraryItems(state: McpHostState, args: Record<string, unknown>): Displ
     if (output.url && !byUrl.has(`${output.kind}:${output.url}`)) byUrl.set(`${output.kind}:${output.url}`, output);
   }
   const items: DisplayItem[] = state.assets.map(asset => {
-    const generation = byAsset.get(asset.id) || [asset.url, asset.sourceUrl, asset.fileRef]
-      .map(url => byUrl.get(`${asset.type}:${displayUrl(url)}`)).find(Boolean);
     const metadata = asset.metadata ?? {};
+    const saved = record(metadata.generation);
+    const sourceNodeId = text(saved.sourceNodeId || metadata.sourceNodeId);
+    const generation = byAsset.get(asset.id) || [asset.url, asset.sourceUrl, asset.fileRef]
+      .map(url => byUrl.get(`${asset.type}:${displayUrl(url)}`)).find(Boolean)
+      || (sourceNodeId ? outputs.find(output => output.nodeId === sourceNodeId && output.kind === asset.type) : undefined);
+    const hasSnapshot = saved.version === 1 && Array.isArray(saved.references);
     return { id: `asset:${asset.id}`, assetId: asset.id, title: asset.name, kind: asset.type,
       status: asset.status === 'processing' ? 'pending' : 'complete', ...mediaFields(displayUrl(asset.url) || asset.sourceUrl || asset.url, asset.thumbnailUrl),
       ...dimensions(asset, { width: generation?.width, height: generation?.height, duration: generation?.duration,
-        resolution: generation?.resolution, aspectRatio: generation?.aspectRatio, ...metadata }),
-      prompt: text(metadata.prompt) || generation?.prompt || '', createdAt: asset.createdAt,
-      model: text(metadata.model) || (generation?.source === 'Generation' ? generation.model : undefined),
-      provider: text(metadata.provider) || (generation?.source === 'Generation' ? generation.provider : undefined),
+        resolution: text(saved.resolution) || generation?.resolution, aspectRatio: text(saved.aspectRatio) || generation?.aspectRatio, ...metadata }),
+      prompt: hasSnapshot ? text(saved.prompt) : text(metadata.prompt) || generation?.prompt || '', createdAt: asset.createdAt,
+      model: text(saved.model) || text(metadata.model) || (generation?.source === 'Generation' ? generation.model : undefined),
+      provider: text(saved.provider) || text(metadata.provider) || (generation?.source === 'Generation' ? generation.provider : undefined),
       nodeId: generation?.nodeId, spaceId: generation?.spaceId, spaceName: generation?.spaceName,
-      generationIndex: generation?.generationIndex, references: generation?.references ?? [],
+      generationIndex: generation?.generationIndex, references: hasSnapshot ? savedGenerationReferences(saved.references, state.assets) : generation?.references ?? [],
       source: 'Asset library', folderId: asset.folderId, folderName: state.mediaFolders?.find(folder => folder.id === asset.folderId)?.name };
   });
   const known = new Set(state.assets.flatMap(asset => [asset.url, asset.sourceUrl]).filter(Boolean));
