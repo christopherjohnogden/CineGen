@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const flowHarness = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
+  renderers: {} as Record<string, () => null>,
 }));
 
 const workspaceHarness = vi.hoisted(() => ({
@@ -39,7 +40,7 @@ vi.mock('@/components/workspace/workspace-shell', () => ({
   }),
 }));
 
-vi.mock('@/components/create/nodes', () => ({ nodeTypes: {} }));
+vi.mock('@/components/create/nodes', () => ({ getCanvasNodeTypes: () => ({ ...flowHarness.renderers }) }));
 vi.mock('@/components/create/edges/animated-edge', () => ({ edgeTypes: {} }));
 vi.mock('@/components/create/node-palette', () => ({ NodePalette: () => null }));
 const helperHarness = vi.hoisted(() => ({
@@ -72,6 +73,7 @@ vi.mock('@/lib/workflows/port-compatibility', () => ({
 }));
 
 import { WorkflowCanvas } from '@/components/create/workflow-canvas';
+import { TOPVIEW_CATALOG_UPDATED_EVENT } from '@/lib/topview/live-model-catalog';
 
 const modelNode = {
   id: 'video-model',
@@ -102,6 +104,7 @@ describe('WorkflowCanvas node click and drag behavior', () => {
     workspaceHarness.dispatch.mockClear();
     helperHarness.result = { horizontal: null, vertical: null };
     flowHarness.props = null;
+    flowHarness.renderers = {};
     localStorage.setItem('cinegen_mobile_canvas_guide_seen', '1');
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: vi.fn(() => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
@@ -111,6 +114,31 @@ describe('WorkflowCanvas node click and drag behavior', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it('registers models that arrive after mount without replacing saved Canvas nodes', () => {
+    const savedNodes = ['flare', 'sunburst'].map(variant => ({
+      ...modelNode,
+      id: `saved-${variant}`,
+      type: `topview-image-gpt-image-2-5-${variant}`,
+      data: {type: `topview-image-gpt-image-2-5-${variant}`, label: variant, config: {prompt: 'Keep my prompt'}},
+    }));
+    workspaceHarness.state = {...workspaceHarness.state, nodes: savedNodes};
+    const {rerender} = render(<WorkflowCanvas />);
+    const initial = flowHarness.props?.nodeTypes;
+    rerender(<WorkflowCanvas />);
+    expect(flowHarness.props?.nodeTypes).toBe(initial);
+
+    const modelCard = () => null;
+    for (const node of savedNodes) flowHarness.renderers[node.type] = modelCard;
+    act(() => window.dispatchEvent(new CustomEvent(TOPVIEW_CATALOG_UPDATED_EVENT)));
+    const refreshed = flowHarness.props?.nodeTypes as Record<string, unknown>;
+    expect(refreshed).not.toBe(initial);
+    for (const node of savedNodes) expect(refreshed[node.type]).toBe(modelCard);
+    expect(workspaceHarness.state?.nodes).toBe(savedNodes);
+    expect(workspaceHarness.dispatch).not.toHaveBeenCalled();
+    rerender(<WorkflowCanvas />);
+    expect(flowHarness.props?.nodeTypes).toBe(refreshed);
   });
 
   it('offers Send to Studio on a right-clicked, unselected desktop file', () => {

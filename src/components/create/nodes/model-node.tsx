@@ -33,9 +33,13 @@ const HEADER_HEIGHT = 40;
 const PORT_SPACING = 28;
 const DEFAULT_MEDIA_NODE_WIDTH = 300;
 const DEFAULT_MEDIA_NODE_HEIGHT = 168.75;
+const MIN_MEDIA_NODE_WIDTH = 180;
+const MIN_MEDIA_NODE_HEIGHT = 101.25;
 
-function positiveDimension(value: number | null | undefined, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+function mediaDimension(value: number | null | undefined, fallback: number, minimum: number): number {
+  // React Flow's fallback cards can persist 150 × 40/58 measurements before
+  // the model catalog arrives. Those are smaller than our resize controls allow.
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum ? value : fallback;
 }
 
 interface PortEntry {
@@ -569,8 +573,8 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
       void runNode(id);
     }
   };
-  const mediaNodeWidth = positiveDimension(width, DEFAULT_MEDIA_NODE_WIDTH);
-  const mediaNodeHeight = positiveDimension(height, DEFAULT_MEDIA_NODE_HEIGHT);
+  const mediaNodeWidth = mediaDimension(width, DEFAULT_MEDIA_NODE_WIDTH, MIN_MEDIA_NODE_WIDTH);
+  const mediaNodeHeight = mediaDimension(height, DEFAULT_MEDIA_NODE_HEIGHT, MIN_MEDIA_NODE_HEIGHT);
 
   return (
     <div
@@ -582,8 +586,8 @@ function ModelNodeInner({ id, data, selected, width, height }: ModelNodeProps) {
       {isFullBleedVisual && (
         <NodeResizer
           isVisible={!!selected}
-          minWidth={180}
-          minHeight={101.25}
+          minWidth={MIN_MEDIA_NODE_WIDTH}
+          minHeight={MIN_MEDIA_NODE_HEIGHT}
           maxWidth={960}
           maxHeight={540}
           keepAspectRatio

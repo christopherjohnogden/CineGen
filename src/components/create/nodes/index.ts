@@ -13,15 +13,7 @@ import { GroupNode } from './group-node';
 import { ModelNode } from './model-node';
 import { getAllModelNodeTypes } from '@/lib/fal/models';
 
-const modelEntries = getAllModelNodeTypes().reduce<Record<string, typeof ModelNode>>(
-  (acc, nodeType) => {
-    acc[nodeType] = ModelNode;
-    return acc;
-  },
-  {},
-);
-
-export const nodeTypes: Record<string, React.ComponentType<any>> = {
+const utilityNodeTypes: Record<string, React.ComponentType<any>> = {
   group: GroupNode,
   prompt: PromptNode,
   elevenLabsAudio: ElevenLabsAudioNode,
@@ -35,7 +27,14 @@ export const nodeTypes: Record<string, React.ComponentType<any>> = {
   filePicker: FilePickerNode,
   shotBoard: ShotBoardNode,
   storyboarder: StoryboarderNode,
-  ...modelEntries,
 };
+
+/** Read after catalog updates, rather than freezing the renderer list at startup. */
+export function getCanvasNodeTypes(): Record<string, React.ComponentType<any>> {
+  return {
+    ...utilityNodeTypes,
+    ...Object.fromEntries(getAllModelNodeTypes().map(nodeType => [nodeType, ModelNode])),
+  };
+}
 
 export { BaseNode } from './base-node';

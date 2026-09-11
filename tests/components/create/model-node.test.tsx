@@ -16,6 +16,42 @@ vi.mock('@/components/create/workflow-canvas', () => ({
 }));
 
 import { GenerationTabs, ModelNode } from '@/components/create/nodes/model-node';
+import { getCanvasNodeTypes } from '@/components/create/nodes';
+import { ALL_MODELS, installTopviewModelCatalog } from '@/lib/fal/models';
+import gptImage25Catalog from '@/lib/topview/gpt-image-25.generated.json';
+
+it('renders late-loaded GPT Image 2.5 variants as complete model cards', () => {
+  const original = {...ALL_MODELS};
+  const variants = ['flare', 'sunburst'].map(variant => `topview-image-gpt-image-2-5-${variant}`);
+  for (const type of variants) delete ALL_MODELS[type];
+  try {
+    const startupRenderers = getCanvasNodeTypes();
+    for (const type of variants) expect(startupRenderers[type]).toBeUndefined();
+    installTopviewModelCatalog({configs: gptImage25Catalog.models.map(model => ({
+      outputType: 'image', taskType: model.taskType, config: {models: [model]},
+    }))});
+    const liveRenderers = getCanvasNodeTypes();
+    for (const type of variants) {
+      const Card = liveRenderers[type];
+      expect(Card).toBe(ModelNode);
+      const data = {type, label: ALL_MODELS[type].name, config: {prompt: 'Preserve this prompt', quality: 'high', resolution: '2K'}};
+      const {container, unmount} = render(<ReactFlowProvider>
+        <Card id={`existing-${type}`} data={data} type={type} selected={false} width={150} height={type.endsWith('flare') ? 40 : 58} isConnectable />
+      </ReactFlowProvider>);
+      expect(within(container).getByText(ALL_MODELS[type].name)).toBeInTheDocument();
+      expect(container.querySelector('.model-node--media')).toHaveStyle({width: '300px', height: '168.75px'});
+      expect(within(container).getByRole('button', {name: /Run Model/})).toBeEnabled();
+      for (const handle of ['prompt', 'image_url', 'image']) {
+        expect(container.querySelector(`[data-handleid="${handle}"]`)).not.toBeNull();
+      }
+      expect(data.config).toEqual({prompt: 'Preserve this prompt', quality: 'high', resolution: '2K'});
+      unmount();
+    }
+  } finally {
+    for (const key of Object.keys(ALL_MODELS)) delete ALL_MODELS[key];
+    Object.assign(ALL_MODELS, original);
+  }
+});
 
 describe('ModelNode visual sizing', () => {
   it('uses a visible default size while React Flow reports zero initial dimensions', () => {

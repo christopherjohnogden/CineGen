@@ -21,7 +21,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { nodeTypes } from './nodes';
+import { getCanvasNodeTypes } from './nodes';
+import { useTopviewModelCatalogVersion } from './use-topview-model-catalog';
 import { edgeTypes } from './edges/animated-edge';
 import { NodePalette } from './node-palette';
 import { NodeInspector } from './node-inspector';
@@ -138,6 +139,10 @@ interface WorkflowCanvasProps {
 function WorkflowCanvasInner({ onSendToStudio }: WorkflowCanvasProps) {
   const { state, dispatch, projectId } = useWorkspace();
   const { screenToFlowPosition, fitView } = useReactFlow();
+  const catalogVersion = useTopviewModelCatalogVersion();
+  // React Flow needs a new renderer map when a connected catalog adds models.
+  // Keep it stable during ordinary Canvas edits, pans, and drags.
+  const nodeTypes = useMemo(() => getCanvasNodeTypes(), [catalogVersion]);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [palettePos, setPalettePos] = useState({ x: 0, y: 0 });
