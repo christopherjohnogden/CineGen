@@ -12,6 +12,7 @@ import {
 } from '@/lib/llm/skill-actions';
 import type { WorkspaceState } from '@/types/workspace';
 import { AssistantMarkdown } from './assistant-markdown';
+import { cliChatErrorMessage } from '@/lib/llm/cli-chat-error';
 
 interface AssistantMessageViewProps {
   message: AssistantMessage;
@@ -25,7 +26,7 @@ export function AssistantMessageView({
   message, priorUser, state, dispatch, onApplied,
 }: AssistantMessageViewProps) {
   const action = useMemo(() => {
-    if (message.role !== 'assistant') return null;
+    if (message.role !== 'assistant' || message.error) return null;
     const parsed = resolveSkillActionForMessage(message.content, {
       activeSpaceName: state.spaces.find((space) => space.id === state.activeSpaceId)?.name ?? null,
       userMessage: priorUser ?? null,
@@ -37,7 +38,7 @@ export function AssistantMessageView({
     return <div className="asst-m asst-m--user">{message.content}</div>;
   }
 
-  const body = visibleAssistantContent(message.content);
+  const body = message.error ? cliChatErrorMessage(message.content) : visibleAssistantContent(message.content);
 
   return (
     <div className="asst-turn">

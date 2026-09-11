@@ -1,5 +1,6 @@
 import type { CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import type { CopilotVisualRefInput } from '@/lib/llm/copilot-visual-refs';
+import { cliChatErrorMessage } from './cli-chat-error';
 
 export interface CliCopilotChatParams {
   requestId?: string;
@@ -30,15 +31,19 @@ export async function invokeCliCopilotChat(
   provider: CliLlmProviderId,
   params: CliCopilotChatParams,
 ): Promise<CliCopilotChatResult> {
-  switch (provider) {
-    case 'claude-code':
-      return window.electronAPI.llm.claudeCodeChat(params);
-    case 'codex':
-      return window.electronAPI.llm.codexChat(params);
-    case 'gemini':
-      return window.electronAPI.llm.geminiChat(params);
-    default:
-      throw new Error(`Unsupported CLI provider: ${provider satisfies never}`);
+  try {
+    switch (provider) {
+      case 'claude-code':
+        return await window.electronAPI.llm.claudeCodeChat(params);
+      case 'codex':
+        return await window.electronAPI.llm.codexChat(params);
+      case 'gemini':
+        return await window.electronAPI.llm.geminiChat(params);
+      default:
+        throw new Error(`Unsupported CLI provider: ${provider satisfies never}`);
+    }
+  } catch (error) {
+    throw new Error(cliChatErrorMessage(error));
   }
 }
 

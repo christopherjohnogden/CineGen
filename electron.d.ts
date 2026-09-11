@@ -278,6 +278,7 @@ export interface ElectronAPI {
       providers: Array<{
         id: 'claude-code' | 'codex' | 'gemini';
         installed: boolean;
+        authenticated?: boolean;
         path?: string;
         version?: string;
       }>;

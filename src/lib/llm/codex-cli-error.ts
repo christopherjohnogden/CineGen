@@ -1,4 +1,6 @@
-/** Codex json-jobs inherit ~/.codex/config.toml MCP servers and dump their
+import { cliChatErrorMessage } from './cli-chat-error';
+
+/** Older Codex jobs inherit ~/.codex/config.toml MCP servers and dump their
  *  fatals into stderr even when the real failure is a ChatGPT quota. Keep the
  *  user-facing error to the line that matters. */
 export function compactCodexCliError(stderr: string, exitCode?: number | null): string {
@@ -20,5 +22,5 @@ export function compactCodexCliError(stderr: string, exitCode?: number | null): 
     })
     .join('\n')
     .trim();
-  return cleaned || `Codex exited with code ${exitCode ?? 'unknown'}`;
+  return cleaned ? cliChatErrorMessage(cleaned) : `Codex exited with code ${exitCode ?? 'unknown'}`;
 }

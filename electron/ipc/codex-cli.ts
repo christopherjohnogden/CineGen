@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { compactCodexCliError } from '@/lib/llm/codex-cli-error';
+import { codexModelOverride } from '@/lib/llm/codex-model';
 import {
   buildCliPathEnv,
   buildConversationPrompt,
@@ -95,20 +96,18 @@ async function streamCodexChat(
     throw new Error('No chat message provided.');
   }
 
-  const model = params.model?.trim() || 'gpt-5.3-codex';
+  const model = codexModelOverride(params.model);
   const canResume = Boolean(params.resumeSessionId) && !params.injectProjectContext;
   const jsonJob = isHeadlessJsonJob(params);
   const prompt = canResume ? params.userMessage.trim() : buildCodexPrompt(params, jsonJob);
-  const workDir = jsonJob ? getCodexWorkspaceDir() : undefined;
-  if (workDir) await mkdir(workDir, { recursive: true });
+  const workDir = getCodexWorkspaceDir();
+  await mkdir(workDir, { recursive: true });
 
-  const args = ['exec', '--json', '-s', 'read-only', '-m', model, '--skip-git-repo-check'];
-  if (jsonJob) {
-    // Spawn used to inherit Electron's cwd (the CineGen repo) and ~/.codex/config.toml,
-    // which boots the user's MCP fleet (Cloudflare, Linear, …) on every shotlist batch.
-    args.push('--ignore-user-config', '--ignore-rules');
-    if (workDir) args.push('-C', workDir);
-  }
+  // Use the authenticated CLI's default, without inheriting unrelated MCP
+  // servers, project instructions, or a stale model in the user's config.
+  const args = ['exec', '--json', '-s', 'read-only', '--skip-git-repo-check',
+    '--ignore-user-config', '--ignore-rules', '-C', workDir];
+  if (model) args.push('-m', model);
   if (canResume && params.resumeSessionId) {
     args.push('resume', params.resumeSessionId);
     if (!jsonJob) args.push(prompt);
@@ -119,6 +118,8 @@ async function streamCodexChat(
   const win = getMainWindow();
   let fullContent = '';
   let stderrBuffer = '';
+  let failureMessage = '';
+  let turnFailed = false;
   let sessionId: string | undefined;
   let usage: CliUsageSummary | undefined;
   let lastAgentText = '';
@@ -159,8 +160,11 @@ async function streamCodexChat(
           if (parsedUsage) usage = parsedUsage;
 
           if (obj.type === 'turn.failed') {
+            turnFailed = true;
             const error = obj.error as { message?: string } | undefined;
-            stderrBuffer += error?.message ?? 'Codex turn failed.';
+            failureMessage = error?.message ?? 'Codex turn failed.';
+          } else if (obj.type === 'error' && typeof obj.message === 'string') {
+            failureMessage = obj.message;
           }
 
           const agentText = extractCodexAgentText(obj);
@@ -185,17 +189,17 @@ async function streamCodexChat(
     });
 
     child.on('error', (error) => {
-      activeRequest = null;
+      if (activeRequest?.requestId === requestId) activeRequest = null;
       reject(error);
     });
 
     child.on('close', (code) => {
-      activeRequest = null;
+      if (activeRequest?.requestId === requestId) activeRequest = null;
       win?.webContents.send('llm:codex-stream', { requestId, done: true });
 
       const trimmed = fullContent.trim();
-      if (!trimmed) {
-        reject(new Error(compactCodexCliError(stderrBuffer, code)));
+      if (!trimmed || code !== 0 || turnFailed) {
+        reject(new Error(compactCodexCliError(failureMessage || stderrBuffer, code)));
         return;
       }
 

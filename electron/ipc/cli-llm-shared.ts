@@ -18,6 +18,7 @@ export interface CliUsageSummary {
 export interface CliProviderDetectResult {
   id: CliLlmProviderId;
   installed: boolean;
+  authenticated?: boolean;
   path?: string;
   version?: string;
 }
@@ -123,8 +124,31 @@ export async function resolveCliBinary(provider: CliLlmProviderId): Promise<stri
     }
   }
 
-  binaryCache.set(provider, null);
   return null;
+}
+
+/** Auth commands are read-only; an unsupported command/timeout stays unknown. */
+export async function detectCliAuthentication(provider: CliLlmProviderId, binary: string): Promise<boolean | undefined> {
+  if (provider === 'gemini') return undefined;
+  const args = provider === 'codex' ? ['login', 'status'] : ['auth', 'status'];
+  let output = '';
+  try {
+    const result = await execFileAsync(binary, args, { env: buildCliPathEnv(), timeout: 8000 });
+    output = `${result.stdout}\n${result.stderr}`;
+  } catch (error) {
+    const result = error as { stdout?: string; stderr?: string };
+    output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  }
+  if (provider === 'codex') {
+    if (/not logged in/i.test(output)) return false;
+    if (/logged in using/i.test(output)) return true;
+  } else {
+    try {
+      const result = JSON.parse(output.trim()) as { loggedIn?: boolean };
+      if (typeof result.loggedIn === 'boolean') return result.loggedIn;
+    } catch { /* Older versions may not support auth status. */ }
+  }
+  return undefined;
 }
 
 export async function detectCliProvider(provider: CliLlmProviderId): Promise<CliProviderDetectResult> {
@@ -141,6 +165,7 @@ export async function detectCliProvider(provider: CliLlmProviderId): Promise<Cli
     return {
       id: provider,
       installed: true,
+      authenticated: await detectCliAuthentication(provider, binary),
       path: binary,
       version: stdout.trim(),
     };

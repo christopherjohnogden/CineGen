@@ -1,4 +1,6 @@
 import type { Node } from '@xyflow/react';
+import type { Edge } from '@xyflow/react';
+import { NODE_REGISTRY } from '@/lib/workflows/node-registry';
 import type { DirectorShow } from '@/types/director';
 import type { WorkflowNodeData } from '@/types/workflow';
 import {
@@ -17,6 +19,7 @@ export interface AssistantMessage {
   role: 'user' | 'assistant';
   content: string;
   applied?: boolean;
+  error?: boolean;
 }
 
 export interface AssistantThread {
@@ -55,6 +58,7 @@ export function loadAssistantThread(projectId: string): AssistantThread | null {
       role: row.role,
       content: row.content,
       ...(row.applied ? { applied: true } : {}),
+      ...(row.role === 'assistant' && (row.error || /^Error invoking remote method 'llm:/.test(row.content)) ? { error: true } : {}),
     }));
     return { provider, messages };
   } catch {
@@ -68,10 +72,41 @@ export function saveAssistantThread(projectId: string, thread: AssistantThread):
 
 export function pickAssistantProvider(
   preferred: DirectorLlmProvider | undefined,
-  providers: Array<{ id: string; installed: boolean }>,
+  providers: Array<{ id: string; installed: boolean; authenticated?: boolean }>,
   readiness: DirectorLlmReadiness = {},
 ): DirectorLlmProvider {
   return pickInstalledDirectorLlm(preferred ?? 'claude-code', providers, readiness);
+}
+
+/** Use the live canvas, not its last persisted Space snapshot. This is node
+ * metadata; URLs and filenames alone must never be described as image vision. */
+export function canvasAssistantContext(
+  nodes: Node<WorkflowNodeData>[],
+  edges: Edge[],
+  space?: { id: string; name: string } | null,
+): string {
+  const rows = nodes.filter((node) => node.type !== 'group');
+  return [
+    'ACTIVE CANVAS (live node inventory; supersedes saved Space counts)',
+    space ? `Space: ${space.name} (${space.id})` : null,
+    `Nodes: ${rows.length}`,
+    'These are node records, not attached image pixels. You can identify and count nodes, read prompts and connections. Do not claim to visually inspect media that has not been attached.',
+    ...rows.map((node) => {
+      const definition = NODE_REGISTRY[node.data.type];
+      return JSON.stringify({
+        nodeId: node.id,
+        type: node.data.type,
+        label: node.data.label,
+        selected: Boolean(node.selected),
+        outputs: definition?.outputs.map((port) => port.type),
+        config: compactNodeConfig(node.data.config),
+        status: node.data.result?.status ?? 'idle',
+        hasMedia: Boolean(node.data.result?.url || node.data.config.fileUrl),
+      });
+    }),
+    'Connections:',
+    ...edges.map((edge) => `${edge.source}:${edge.sourceHandle ?? 'output'} -> ${edge.target}:${edge.targetHandle ?? 'input'}`),
+  ].filter((line): line is string => Boolean(line)).join('\n');
 }
 
 const APPLYABLE_STEPS = new Set([

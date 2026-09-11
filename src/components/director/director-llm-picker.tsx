@@ -9,6 +9,7 @@ import type { DirectorLlmProvider } from '@/lib/director/cli-provider';
 export interface DirectorCliInfo {
   id: CliLlmProviderId;
   installed: boolean;
+  authenticated?: boolean;
 }
 
 interface DirectorLlmPickerProps {
@@ -58,14 +59,17 @@ export function DirectorLlmPicker({
     ...CLI_LLM_PROVIDER_IDS.map((id) => ({
       id: id as DirectorLlmProvider,
       name: getCliProviderLabel(id),
-      sub: providers[id]?.installed ? 'Local CLI' : 'Not installed',
-      disabled: !providers[id]?.installed,
+      sub: !providers[id]?.installed ? 'Not installed'
+        : providers[id]?.authenticated === false ? 'Sign in required'
+        : providers[id]?.authenticated ? 'Signed in · Local CLI' : 'Local CLI',
+      disabled: !providers[id]?.installed || providers[id]?.authenticated === false,
     })),
     {
       id: 'luna' as const,
       name: 'ChatGPT Luna',
-      sub: providers.codex?.installed ? 'GPT-5.6 · ChatGPT Codex quota' : 'Install Codex CLI',
-      disabled: !providers.codex?.installed,
+      sub: !providers.codex?.installed ? 'Install Codex CLI'
+        : providers.codex.authenticated === false ? 'Sign in to Codex' : 'GPT-5.6 · ChatGPT Codex quota',
+      disabled: !providers.codex?.installed || providers.codex?.authenticated === false,
     },
     {
       id: 'openai' as const,

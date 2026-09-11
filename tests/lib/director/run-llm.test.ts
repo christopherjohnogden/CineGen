@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DIRECTOR_CLI_TIMEOUT_MS, directorCliJobPrompt, runDirectorJsonJob } from '@/lib/director/run-llm';
+import { DIRECTOR_CLI_TIMEOUT_MS, directorCliJobPrompt, runDirectorJsonJob, runDirectorTextJob } from '@/lib/director/run-llm';
 import { directorShotlistParallel, parseDirectorLlmProvider, pickInstalledDirectorLlm } from '@/lib/director/cli-provider';
 import { invokeCliCopilotChat } from '@/lib/llm/cli-copilot-client';
 import { getOpenAiApiKey } from '@/lib/utils/api-key';
@@ -15,6 +15,14 @@ vi.mock('@/lib/utils/api-key', () => ({
 }));
 
 describe('director CLI picker', () => {
+  it('routes assistant chat to Codex with the account default', async () => {
+    vi.mocked(invokeCliCopilotChat).mockClear();
+    await runDirectorTextJob('Live canvas', 'Count images', 'codex');
+    expect(invokeCliCopilotChat).toHaveBeenCalledWith('codex', expect.objectContaining({
+      model: 'auto', purpose: 'copilot', systemPrompt: 'Live canvas', userMessage: 'Count images',
+    }));
+    vi.mocked(invokeCliCopilotChat).mockClear();
+  });
   it('keeps an installed pick and otherwise takes the first installed CLI', () => {
     expect(parseDirectorLlmProvider('gemini')).toBe('gemini');
     expect(parseDirectorLlmProvider('nope')).toBe('claude-code');

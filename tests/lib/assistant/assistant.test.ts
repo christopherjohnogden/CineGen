@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import {
   assistantActionRunnable,
+  canvasAssistantContext,
   assistantProviderReady,
   directorBrief,
   pickAssistantProvider,
@@ -11,6 +12,24 @@ import {
 } from '@/lib/assistant/assistant';
 
 describe('assistant', () => {
+  it('skips an installed but signed-out Claude account', () => {
+    expect(pickAssistantProvider('claude-code', [
+      { id: 'claude-code', installed: true, authenticated: false },
+      { id: 'codex', installed: true, authenticated: true },
+    ])).toBe('codex');
+  });
+  it('includes every live canvas image node, even when only a prompt is selected', () => {
+    const nodes = Array.from({ length: 4 }, (_, i) => ({
+      id: `image-${i}`, type: 'filePicker', position: { x: i, y: 0 },
+      data: { type: 'filePicker', label: `Reference ${i}`, config: { fileType: 'image', fileUrl: 'data:image/png;base64,private-bytes' } },
+    }));
+    const context = canvasAssistantContext(nodes, [{ id: 'edge', source: 'image-0', target: 'image-1' }], { id: 'live-space', name: 'Current Space' });
+    expect(context).toContain('Nodes: 4');
+    for (const node of nodes) expect(context).toContain(node.id);
+    expect(context).toContain('image-0:output -> image-1:input');
+    expect(context).toContain('not attached image pixels');
+    expect(context).not.toContain('private-bytes');
+  });
   it('picks an installed CLI, preferring the saved one', () => {
     const providers = [
       { id: 'claude-code', installed: false },

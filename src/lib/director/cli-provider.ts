@@ -65,10 +65,10 @@ export function cliProviderFor(provider: DirectorLlmProvider): CliLlmProviderId 
 
 export function pickInstalledDirectorLlm(
   preferred: DirectorLlmProvider,
-  providers: Array<{ id: string; installed: boolean }>,
+  providers: Array<{ id: string; installed: boolean; authenticated?: boolean }>,
   readiness: DirectorLlmReadiness = {},
 ): DirectorLlmProvider {
-  const ready = new Set(providers.filter((row) => row.installed).map((row) => row.id));
+  const ready = new Set(providers.filter((row) => row.installed && row.authenticated !== false).map((row) => row.id));
   if (preferred === 'fal') {
     if (readiness.falReady) return preferred;
   } else if (preferred === 'openai') {

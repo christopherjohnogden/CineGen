@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { WorkspaceState } from '@/types/workspace';
 import {
   ASSISTANT_SYSTEM,
+  canvasAssistantContext,
   assistantProviderReady,
   directorBrief,
   loadAssistantThread,
@@ -15,6 +16,7 @@ import { AssistantMessageView } from '@/components/assistant/assistant-message';
 import { DirectorLlmPicker, type DirectorCliInfo } from '@/components/director/director-llm-picker';
 import type { DirectorLlmProvider } from '@/lib/director/cli-provider';
 import { runDirectorTextJob } from '@/lib/director/run-llm';
+import { cliChatErrorMessage } from '@/lib/llm/cli-chat-error';
 import { isCliCopilotProvider, type CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { buildModeSystemPrompt, buildProjectContext } from '@/lib/llm/project-context';
 import type { CopilotActionDispatch } from '@/lib/llm/skill-actions';
@@ -47,11 +49,13 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
+  const requestEpoch = useRef(0);
+  const providerChanged = useRef(false);
   messagesRef.current = messages;
   const installed = {
-    'claude-code': cliProviders['claude-code'].installed,
-    codex: cliProviders.codex.installed,
-    gemini: cliProviders.gemini.installed,
+    'claude-code': cliProviders['claude-code'].installed && cliProviders['claude-code'].authenticated !== false,
+    codex: cliProviders.codex.installed && cliProviders.codex.authenticated !== false,
+    gemini: cliProviders.gemini.installed && cliProviders.gemini.authenticated !== false,
   };
   const canSend = assistantProviderReady(provider, installed, { falReady, openaiReady });
   const selectedNode = state.activeTab === 'create'
@@ -66,6 +70,7 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
       return;
     }
     const stored = loadAssistantThread(projectId);
+    providerChanged.current = false;
     if (stored) {
       setMessages(stored.messages);
       setProvider(stored.provider);
@@ -77,22 +82,27 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
     setFalReady(fal);
     setOpenaiReady(openai);
     let cancelled = false;
-    window.electronAPI.llm.cliDetect().then(({ providers }) => {
+    const refreshConnections = () => window.electronAPI.llm.cliDetect().then(({ providers }) => {
       if (cancelled) return;
       const next = { ...EMPTY_CLI };
       for (const row of providers) {
-        if (isCliCopilotProvider(row.id)) next[row.id] = { id: row.id, installed: row.installed };
+        if (isCliCopilotProvider(row.id)) next[row.id] = row;
       }
       setCliProviders(next);
-      setProvider(pickAssistantProvider(stored?.provider, providers, {
+      if (!providerChanged.current) setProvider(pickAssistantProvider(stored?.provider, providers, {
         falReady: fal,
         openaiReady: openai,
       }));
     }).catch(() => {});
+    void refreshConnections();
+    window.addEventListener('focus', refreshConnections);
     setHydrated(true);
     const id = window.setTimeout(() => inputRef.current?.focus(), 40);
     return () => {
       cancelled = true;
+      requestEpoch.current++;
+      setBusy(false);
+      window.removeEventListener('focus', refreshConnections);
       window.clearTimeout(id);
     };
   }, [open, projectId]);
@@ -125,6 +135,7 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
     messagesRef.current = next;
     setMessages(next);
     setBusy(true);
+    const epoch = ++requestEpoch.current;
     try {
       const projectContext = buildProjectContext({
         projectId,
@@ -133,7 +144,8 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
         timelines: state.timelines,
         activeTimelineId: state.activeTimelineId,
         elements: state.elements,
-        spaces: state.spaces,
+        spaces: state.spaces.map((space) => space.id === state.activeSpaceId
+          ? { ...space, nodes: state.nodes, edges: state.edges } : space),
         activeSpaceId: state.activeSpaceId,
         mode: 'ask',
         focusQuery: text,
@@ -144,22 +156,25 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
         buildModeSystemPrompt('ask'),
         directorBrief(state.director),
         projectContext,
+        canvasAssistantContext(state.nodes, state.edges, activeSpace),
         nodeReferenceContext || null,
       ].filter((section): section is string => Boolean(section)).join('\n\n');
       const reply = stampDirectorTags(
-        (await runDirectorTextJob(systemPrompt, text, provider, next)).trim() || 'No reply.',
+        (await runDirectorTextJob(systemPrompt, text, provider, next.filter((row) => !row.error))).trim() || 'No reply.',
         state.director,
       );
+      if (requestEpoch.current !== epoch) return;
       const withReply = [...messagesRef.current, { role: 'assistant' as const, content: reply }];
       messagesRef.current = withReply;
       setMessages(withReply);
     } catch (error) {
-      const fail = error instanceof Error ? error.message : 'Assistant failed.';
-      const withFail = [...messagesRef.current, { role: 'assistant' as const, content: fail }];
+      if (requestEpoch.current !== epoch) return;
+      const fail = cliChatErrorMessage(error);
+      const withFail = [...messagesRef.current, { role: 'assistant' as const, content: fail, error: true }];
       messagesRef.current = withFail;
       setMessages(withFail);
     } finally {
-      setBusy(false);
+      if (requestEpoch.current === epoch) setBusy(false);
     }
   };
 
@@ -175,11 +190,11 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
             providers={cliProviders}
             falReady={falReady}
             openaiReady={openaiReady}
-            onChange={setProvider}
+            onChange={(value) => { providerChanged.current = true; setProvider(value); }}
             title="Model for this assistant"
-            menuLabel="Director LLM"
+            menuLabel="Assistant model"
           />
-          <button type="button" className="asst-iconbtn" onClick={() => setMessages([])} title="New chat">New</button>
+          <button type="button" className="asst-iconbtn" disabled={busy} onClick={() => setMessages([])} title="New chat">New</button>
           <button type="button" className="asst-iconbtn" onClick={onClose} aria-label="Close">✕</button>
         </header>
         <div className="asst-msgs">
@@ -222,7 +237,11 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
             </div>
           )}
           {!canSend && (
-            <p className="asst-hint">Pick an installed CLI, or add a fal.ai / OpenAI key in Settings.</p>
+            <p className="asst-hint">{provider === 'claude-code' && cliProviders['claude-code'].authenticated === false
+              ? 'Claude Code is signed out. Sign in with “claude” in Terminal, then return here, or choose Codex.'
+              : (provider === 'codex' || provider === 'luna') && cliProviders.codex.authenticated === false
+                ? 'Codex is signed out. Run “codex login” in Terminal, then return here.'
+                : 'Choose a signed-in assistant, or add a fal.ai / OpenAI key in Settings.'}</p>
           )}
           <div className="asst-inputbox">
             <textarea

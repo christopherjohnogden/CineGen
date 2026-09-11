@@ -15,10 +15,8 @@ export type CliLlmProviderId = 'claude-code' | 'codex' | 'gemini';
 export const CLI_LLM_PROVIDER_IDS: CliLlmProviderId[] = ['claude-code', 'codex', 'gemini'];
 
 export const CODEX_MODELS = [
+  { id: 'auto', label: 'Codex default' },
   { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-  { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
-  { id: 'gpt-5.4', label: 'GPT-5.4' },
-  { id: 'o3', label: 'o3' },
 ] as const;
 
 export const GEMINI_MODELS = [
@@ -58,7 +56,7 @@ export function getDefaultModelForCliProvider(provider: CliLlmProviderId): strin
     case 'claude-code':
       return 'sonnet';
     case 'codex':
-      return 'gpt-5.3-codex';
+      return 'auto';
     case 'gemini':
       return 'gemini-2.5-flash';
     default:
