@@ -46,7 +46,9 @@ describe('MCP tool catalogue', () => {
       const schema = TOOL_CATALOG.find((tool) => tool.name === name)?.inputSchema as { required?: string[] };
       return schema?.required ?? [];
     };
-    expect(required('cinegen_generate')).toEqual(['prompt']);
+    // Lip sync, upscaling and audio-driven avatars do not require a prompt.
+    // Prompt-based models validate their required inputs after model selection.
+    expect(required('cinegen_generate')).toEqual([]);
     expect(required('cinegen_load_script')).toEqual(['text']);
     expect(required('cinegen_set_shotlist')).toEqual(['shotlist']);
     expect(required('cinegen_create_element')).toEqual(['name']);

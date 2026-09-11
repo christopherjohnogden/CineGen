@@ -16,7 +16,7 @@ export interface DisplayItem {
   requestId?: string; spaceId?: string; spaceName?: string; folderId?: string; folderName?: string;
   model?: string; provider?: string; createdAt?: string; startedAt?: number; error?: string; unavailableReason?: string;
   width?: number; height?: number; duration?: number; resolution?: string; aspectRatio?: string;
-  references?: { id: string; title: string; url: string | null; previewUrl: string | null; kind: string; elementId?: string; imageId?: string; variationId?: string }[];
+  references?: { id: string; title: string; url: string | null; previewUrl: string | null; thumbnailUrl?: string | null; kind: string; elementId?: string; imageId?: string; variationId?: string }[];
   galleryImages?: DisplayItem[];
   elementCard?: boolean; elementType?: string; referenceCount?: number; variationName?: string;
   generationIndex?: number; batchIndex?: number; source?: string;
@@ -64,7 +64,8 @@ function inputReferences(state: McpHostState, config: Record<string, unknown>, m
     const url = displayUrl(value);
     if (!url || references.some(ref => ref.url === url)) return;
     const asset = assetFor(state, value);
-    references.push({ id, title, kind, url, previewUrl: previewUrl(asset?.thumbnailUrl) || previewUrl(url), elementId });
+    const thumbnailUrl = previewUrl(asset?.thumbnailUrl);
+    references.push({ id, title, kind, url, previewUrl: thumbnailUrl || previewUrl(url), thumbnailUrl, elementId });
   };
   const visit = (value: unknown, title: string, kind: string) => {
     if (typeof value === 'string') add(value, title, kind);

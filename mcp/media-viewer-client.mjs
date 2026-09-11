@@ -150,6 +150,8 @@ function mountViewer() {
   }
   function resume() {
     updateElapsedTimes();
+    // A preloaded result can be visible before the host finishes connecting.
+    if (!ready && !window.openai?.callTool) return;
     if (!disposed && current && document.visibilityState !== 'hidden' && Date.now() - lastRefresh > 5000) void refresh({}, true);
   }
   async function copyText(value) {
@@ -262,7 +264,7 @@ function mountViewer() {
     const thumbnail = safeUrl(item.thumbnailUrl || item.posterUrl), url = safeUrl(item.previewUrl);
     const isPoster = !detail && item.kind === 'video' && thumbnail;
     const source = !detail && item.kind === 'image' ? thumbnail || url : isPoster ? thumbnail : url;
-    if (item.kind === 'video' && activeStatuses.has(item.status) && !url && !safeUrl(item.url)) {
+    if (['image', 'video'].includes(item.kind) && activeStatuses.has(item.status) && !url && !safeUrl(item.url)) {
       frame.append(generationPrism(item, detail)); return frame;
     }
     if (!source || !detail && item.kind === 'audio') {
@@ -308,20 +310,15 @@ function mountViewer() {
   }
   function resultDetails(item, panel) {
     panel.classList.add('result-detail');
-    const player = media(item, true); player.classList.add('result-player');
-    const ratio = item.width && item.height ? [item.width, item.height] : String(item.aspectRatio || '').split(':').map(Number);
-    if (ratio.length === 2 && ratio.every(n => Number.isFinite(n) && n > 0)) player.style.aspectRatio = `${ratio[0]} / ${ratio[1]}`;
-    panel.append(player);
-    const heading = element('div', 'item-heading result-heading'), title = element('h2', '', item.title);
-    title.title = item.title; heading.append(title, badge(item)); panel.append(heading);
-    if (item.error) panel.append(element('p', 'notice', item.error));
-
     const controls = element('div', 'result-controls'), contents = element('div', 'result-panels');
     controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', 'Media information');
     const key = `${current.projectId || ''}:${item.id}`, disclosures = [];
     const update = () => {
       const active = detailPanels.get(key);
-      for (const entry of disclosures) { const open = entry.name === active; entry.trigger.setAttribute('aria-expanded', String(open)); entry.body.hidden = !open; }
+      for (const entry of disclosures) {
+        const open = entry.name === active;
+        entry.trigger.setAttribute('aria-expanded', String(open)); entry.body.hidden = !open; entry.onToggle?.(open);
+      }
       if (panel.isConnected) reportSize();
     };
     const add = (name, label, body, count) => {
@@ -335,25 +332,69 @@ function mountViewer() {
       if (count) trigger.append(element('span', 'result-count', String(count)));
       trigger.append(icon('down'));
       body.id = id; body.classList.add('result-panel'); body.setAttribute('role', 'region'); body.setAttribute('aria-labelledby', trigger.id);
-      disclosures.push({ name, trigger, body }); controls.append(trigger); contents.append(body);
+      const entry = { name, trigger, body };
+      disclosures.push(entry); controls.append(trigger); contents.append(body); return entry;
     };
     if (item.prompt) {
-      const prompt = element('div'), actions = element('div', 'actions');
+      const summary = element('div', 'result-summary'), preview = element('p', 'result-prompt-preview', item.prompt);
+      const prompt = element('div', 'result-prompt-full'), actions = element('div', 'actions');
       prompt.append(element('p', 'result-prompt', item.prompt));
       actions.append(button('Copy prompt', () => copyText(item.prompt), 'small', 'copy'), button('Use prompt', () => sendSelection([item], 'prompt'), 'small', 'arrow')); prompt.append(actions);
-      add('prompt', 'Prompt', prompt);
+      const entry = add('prompt', 'Show more', prompt);
+      entry.trigger.classList.add('prompt-expand');
+      entry.onToggle = open => {
+        preview.hidden = open;
+        entry.trigger.setAttribute('aria-label', open ? 'Collapse prompt' : 'Expand prompt');
+        entry.trigger.replaceChildren(document.createTextNode(open ? 'Show less' : 'Show more'), icon('down'));
+      };
+      summary.append(preview, prompt, entry.trigger); panel.append(summary);
     }
+
+    const metadata = element('div', 'result-metadata'), pills = element('div', 'result-pills');
+    pills.setAttribute('aria-label', 'Generation settings');
+    const model = element('span', 'result-pill result-model'), modelName = element('span', '', item.model || item.title || (item.kind === 'video' ? 'Video' : 'Image'));
+    model.title = modelName.textContent; model.append(icon(item.kind === 'video' ? 'film' : 'image'), modelName); pills.append(model);
+    if (item.aspectRatio) pills.append(element('span', 'result-pill', item.aspectRatio));
+    if (Number.isFinite(item.duration) && item.duration > 0) pills.append(element('span', 'result-pill', `${Number(item.duration.toFixed(1))}s`));
+    metadata.append(pills);
     if (item.references?.length) {
-      const refs = element('div', 'input-references');
-      for (const ref of item.references) {
+      const refs = element('div', 'input-references'), thumbs = element('div', 'result-ref-thumbnails');
+      thumbs.setAttribute('role', 'group'); thumbs.setAttribute('aria-label', `${item.references.length} attached references`);
+      for (const [index, ref] of item.references.entries()) {
+        const source = safeUrl(ref.thumbnailUrl || ref.posterUrl || (ref.kind === 'image' ? ref.previewUrl || ref.url : ''));
         const cell = button(ref.title, () => openLink(ref.url), 'reference');
-        if (safeUrl(ref.previewUrl) && ref.kind === 'image') { const img = element('img'); img.src = ref.previewUrl; img.alt = ref.title; img.loading = 'lazy'; cell.prepend(img); }
+        cell.disabled = busy || !safeUrl(ref.url);
+        if (source) { const img = element('img'); img.src = source; img.alt = ''; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; cell.prepend(img); }
+        else cell.prepend(icon(ref.kind === 'audio' ? 'audio' : ref.kind === 'video' ? 'play' : 'image'));
         refs.append(cell);
+        if (index < 3) {
+          const thumb = button('', () => openLink(ref.url), 'result-ref-thumb');
+          thumb.title = ref.title; thumb.setAttribute('aria-label', `Open reference ${index + 1}: ${ref.title}`);
+          thumb.disabled = busy || !safeUrl(ref.url);
+          if (source) { const image = element('img'); image.src = source; image.alt = ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.onerror = () => { image.remove(); thumb.prepend(icon(ref.kind === 'video' ? 'play' : ref.kind === 'audio' ? 'audio' : 'image')); }; thumb.append(image); }
+          else thumb.append(icon(ref.kind === 'video' ? 'play' : ref.kind === 'audio' ? 'audio' : 'image'));
+          if (ref.kind === 'audio') thumb.classList.add('audio-reference');
+          if (ref.kind === 'video' && source) { const mark = element('span', 'reference-kind'); mark.append(icon('play')); thumb.append(mark); }
+          thumbs.append(thumb);
+        }
       }
       const body = element('div'); body.append(refs); add('references', 'References', body, item.references.length);
+      if (item.references.length > 3) {
+        const more = button(`+${item.references.length - 3}`, () => { detailPanels.set(key, 'references'); update(); body.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, 'result-ref-thumb references-more');
+        more.setAttribute('aria-label', `Show all ${item.references.length} references`); thumbs.append(more);
+      }
+      metadata.append(thumbs);
     }
+    panel.append(metadata);
+
+    const player = media(item, true); player.classList.add('result-player');
+    player.setAttribute('aria-label', item.title || (item.kind === 'video' ? 'Generated video' : 'Generated image'));
+    const ratio = item.width && item.height ? [item.width, item.height] : String(item.aspectRatio || '').split(':').map(Number);
+    if (ratio.length === 2 && ratio.every(n => Number.isFinite(n) && n > 0)) player.style.aspectRatio = `${ratio[0]} / ${ratio[1]}`;
+    panel.append(player);
+    if (item.error) panel.append(element('p', 'notice', item.error));
     const info = element('div'), facts = element('dl', 'result-facts');
-    const rows = [['Space', item.spaceName], ['Folder', item.folderName], ['Model', item.model], ['Provider', item.provider],
+    const rows = [['Name', item.title], ['Space', item.spaceName], ['Folder', item.folderName], ['Model', item.model], ['Provider', item.provider],
       ['Resolution', item.resolution], ['Dimensions', item.width && item.height ? `${item.width} × ${item.height}` : ''],
       ['Aspect ratio', item.aspectRatio], ['Duration', item.duration ? `${item.duration.toFixed(1)} sec` : ''], ['Lens', item.lens],
       ['Take', item.generationIndex !== undefined ? item.generationIndex + 1 : '']];
@@ -366,7 +407,7 @@ function mountViewer() {
     if (safeUrl(current.projectUrl)) actions.append(button('Open CineGen', () => openLink(current.projectUrl), 'small', 'external'));
     if (actions.children.length) info.append(actions);
     if (info.children.length) add('details', 'Details', info);
-    if (disclosures.length) panel.append(controls, contents);
+    const footer = element('div', 'result-footer'); footer.append(controls, badge(item)); panel.append(footer, contents);
     update();
     if (detailPanels.size > 50) detailPanels.delete(detailPanels.keys().next().value);
     return panel;
@@ -561,6 +602,7 @@ function mountViewer() {
     if (scrollPositions.size > 50) scrollPositions.delete(scrollPositions.keys().next().value);
     root.querySelectorAll('video,audio').forEach(view => { view.pause(); view._observer?.disconnect(); }); root.replaceChildren(); root.classList.add('is-ready'); root.classList.toggle('multi-select', multiSelect);
     const item = current.mode === 'job' ? current.items[0] : current.items.find(item => item.id === selected);
+    root.classList.toggle('is-result', Boolean(item && !item.elementCard && !item.presetId && ['image', 'video'].includes(item.kind)));
     const header = element('header'), titles = { elements: current.refresh.arguments.view === 'images' ? 'References' : 'Elements', media: 'Assets', generations: 'Generations', batch: 'Results', job: 'Result', presets: 'Film presets' };
     const heading = element('h1'), title = button(titles[current.mode] || current.title, () => { collectionsOpen = !collectionsOpen; render(); }, 'collection-title', 'down');
     title.setAttribute('aria-expanded', String(collectionsOpen)); title.setAttribute('aria-controls', 'collection-menu'); heading.append(title);
@@ -634,7 +676,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.6.4' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.0' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

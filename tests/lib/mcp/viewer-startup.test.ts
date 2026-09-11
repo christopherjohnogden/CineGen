@@ -91,6 +91,18 @@ describe('deployed MCP viewer startup', () => {
     expect(view.document.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('waits for the host connection before refreshing a preloaded result on pageshow', async () => {
+    const view = mount({ preloaded: true });
+    view.window.dispatchEvent(new view.window.Event('pageshow'));
+    view.window.dispatchEvent(new view.window.Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelector('.feedback')).toBeNull();
+    expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
+    await view.initialize();
+    view.window.dispatchEvent(new view.window.Event('pageshow'));
+    expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(true);
+  });
+
   it('renders preloaded and later legacy ChatGPT tool output without requiring a standard bridge', async () => {
     const preloaded = mount({ preloaded: true });
     const later = mount();
@@ -230,6 +242,14 @@ describe('deployed MCP viewer startup', () => {
     video.currentTime = 12;
     const pause = vi.spyOn(video, 'pause');
     const toggles = [...view.document.querySelectorAll<HTMLButtonElement>('.result-toggle')];
+    const preview = view.document.querySelector<HTMLElement>('.result-prompt-preview')!;
+    expect(preview.textContent).toBe(item.prompt);
+    expect(preview.hidden).toBe(false);
+    expect(view.document.querySelector('.prompt-expand')?.textContent).toBe('Show more');
+    expect([...view.document.querySelectorAll('.result-pill')].map(pill => pill.textContent)).toEqual(['Seedance 2.5', '16:9', '30s']);
+    const blocks = [...view.document.querySelector('.result-detail')!.children];
+    expect(blocks.indexOf(view.document.querySelector('.result-summary')!)).toBeLessThan(blocks.indexOf(view.document.querySelector('.result-metadata')!));
+    expect(blocks.indexOf(view.document.querySelector('.result-metadata')!)).toBeLessThan(blocks.indexOf(view.document.querySelector('.result-player')!));
     expect(toggles.map(button => button.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false']);
     expect([...view.document.querySelectorAll<HTMLElement>('.result-panel')].every(panel => panel.hidden)).toBe(true);
     for (const toggle of toggles) {
@@ -237,6 +257,8 @@ describe('deployed MCP viewer startup', () => {
       expect(toggle.getAttribute('aria-expanded')).toBe('true');
       expect(view.document.getElementById(toggle.getAttribute('aria-controls')!)?.hidden).toBe(false);
       expect(view.document.querySelectorAll('.result-panel:not([hidden])')).toHaveLength(1);
+      expect(preview.hidden).toBe(toggle === toggles[0]);
+      expect(toggles[0].textContent).toBe(toggle === toggles[0] ? 'Show less' : 'Show more');
       expect(view.document.querySelector('video')).toBe(video);
       expect(video.currentTime).toBe(12);
     }
@@ -245,6 +267,63 @@ describe('deployed MCP viewer startup', () => {
     expect(view.document.querySelector('.result-actions')?.textContent).toContain('Open video');
     toggles[2].click(); expect(view.document.querySelectorAll('.result-panel:not([hidden])')).toHaveLength(0);
     expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
+  });
+
+  it('opens exact attached references from compact thumbnails and reveals overflow without rebuilding the player', async () => {
+    const view = mount(); await view.initialize();
+    const base = 'https://firebasestorage.googleapis.com/';
+    const references = [
+      { title: 'First frame', kind: 'image', url: base + 'original.png', previewUrl: base + 'preview.png' },
+      { title: 'Motion', kind: 'video', url: base + 'reference.mp4', posterUrl: base + 'poster.png' },
+      { title: 'Voice', kind: 'audio', url: base + 'voice.mp3' },
+      { title: 'Last frame', kind: 'image', url: base + 'last.png' },
+      { title: 'Color', kind: 'image', url: base + 'color.png' },
+    ];
+    const data = { ...page, mode: 'job', total: 1, items: [{ id: 'film', title: 'Film', kind: 'video', status: 'complete',
+      prompt: 'A short scene.', url: base + 'film.mp4', previewUrl: base + 'film.mp4', references }],
+      refresh: { name: 'cinegen_job_display', arguments: { nodeId: 'film' } } };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
+    const video = view.document.querySelector('video')!;
+    video.currentTime = 8;
+    const thumbs = [...view.document.querySelectorAll<HTMLButtonElement>('.result-ref-thumb')];
+    expect(thumbs).toHaveLength(4);
+    expect(thumbs[0].querySelector('img')?.src).toBe(base + 'preview.png');
+    expect(thumbs[1].querySelector('img')?.src).toBe(base + 'poster.png');
+    expect(thumbs[2].classList.contains('audio-reference')).toBe(true);
+    expect(thumbs[3].textContent).toBe('+2');
+    for (let i = 0; i < 3; i++) {
+      thumbs[i].click();
+      const call = view.host.postMessage.mock.calls.filter(([m]) => m.method === 'ui/open-link').at(-1)![0];
+      expect(call.params.url).toBe(references[i].url);
+      view.send({ id: call.id, result: {} }); await vi.advanceTimersByTimeAsync(0);
+    }
+    thumbs[3].click();
+    expect(view.document.querySelector('.input-references')?.parentElement?.hidden).toBe(false);
+    expect(view.document.querySelectorAll('.input-references .reference')).toHaveLength(5);
+    expect(view.document.querySelector('video')).toBe(video);
+    expect(video.currentTime).toBe(8);
+    expect(video.pause).not.toHaveBeenCalled();
+    expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
+    // A refreshed snapshot keeps the chosen disclosure open.
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
+    expect(view.document.querySelector('.input-references')?.parentElement?.hidden).toBe(false);
+  });
+
+  it('renders an image job with the same prism and clears it when the image is ready', async () => {
+    const view = mount(); await view.initialize();
+    const item = { id: 'image-job', title: 'GPT Image 2.5 Flare', model: 'GPT Image 2.5 Flare', kind: 'image', status: 'running', url: null,
+      createdAt: new Date(Date.now() - 25000).toISOString(), aspectRatio: '1:1' };
+    const data = { ...page, mode: 'job', total: 1, items: [item], refresh: { name: 'cinegen_job_display', arguments: { nodeId: item.id } } };
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
+    expect(view.document.querySelector('.result-player .prism-edge')).not.toBeNull();
+    expect(view.document.querySelector('.generation-clock')?.textContent).toBe('0:25');
+    expect(view.document.querySelector('.result-summary')).toBeNull();
+    expect(view.document.querySelector('.result-ref-thumbnails')).toBeNull();
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...data, items: [{ ...item, status: 'complete',
+      url: 'https://firebasestorage.googleapis.com/ready.png', previewUrl: 'https://firebasestorage.googleapis.com/ready.png' }] } } });
+    expect(view.document.querySelector('.generation-loading')).toBeNull();
+    expect(view.document.querySelector('.result-player img')).not.toBeNull();
+    expect(view.document.querySelector('.result-footer .status')?.textContent).toBe('Ready');
   });
 
   it('keeps checking beyond five minutes, retries connection failures, and resumes after backgrounding', async () => {
@@ -297,7 +376,7 @@ describe('deployed MCP viewer startup', () => {
     expect(view.document.querySelector('.card-use')?.textContent).toBe('Use');
     expect(view.document.querySelector('.selection-bar')).toBeNull();
     (view.document.querySelectorAll('.tile-preview')[3] as HTMLButtonElement).click();
-    expect(view.document.querySelector('.detail h2')?.textContent).toContain('1970 Charger R/T — 4');
+    expect(view.document.querySelector('.result-player')?.getAttribute('aria-label')).toBe('1970 Charger R/T — 4');
     (view.document.querySelector('.back') as HTMLButtonElement).click();
     expect(content().scrollTop).toBe(217);
     expect(view.document.querySelectorAll('.card-view')[3].getAttribute('aria-pressed')).toBe('true');

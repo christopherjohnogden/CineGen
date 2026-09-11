@@ -156,8 +156,21 @@ describe('MCP media displays', () => {
       { id: 'out', name: 'Output', type: 'image', url: cloud, thumbnailUrl: cloud + '&thumb=1', width: 1920, height: 1080, createdAt: '' }];
     const shown = await handlers.cinegen_job_display({ nodeId: 'generated' }) as DisplayPage;
     expect(shown.items[0]).toMatchObject({ thumbnailUrl: cloud + '&thumb=1', width: 1920, height: 1080, resolution: '2K', aspectRatio: '16:9' });
-    expect(shown.items[0].references).toEqual([expect.objectContaining({ url: reference, previewUrl: reference })]);
+    expect(shown.items[0].references).toEqual([expect.objectContaining({ url: reference, previewUrl: reference, thumbnailUrl: null })]);
     expect(JSON.stringify(shown)).not.toContain('/local/');
+  });
+  it('includes safe poster thumbnails for attached video files without using the video as an image', async () => {
+    const { state, handlers, runNode } = setup();
+    const reference = cloud + '&motion=1', poster = cloud + '&poster=1';
+    state.nodes = [
+      { id: 'generated', type: 'nano-banana-2', position: { x: 0, y: 0 }, data: { type: 'nano-banana-2', label: 'The doorway', config: { prompt: 'The doorway' }, result: { status: 'complete', url: cloud } } },
+      node('reference', 'video', { config: { fileUrl: reference, fileType: 'video' } }) as any,
+    ];
+    state.edges = [{ id: 'reference-edge', source: 'reference', target: 'generated' }];
+    state.assets = [{ id: 'ref', name: 'Reference clip', type: 'video', url: reference, thumbnailUrl: poster, createdAt: '' }];
+    const shown = await handlers.cinegen_job_display({ nodeId: 'generated' }) as DisplayPage;
+    expect(shown.items[0].references).toEqual([expect.objectContaining({ url: reference, kind: 'video', thumbnailUrl: poster })]);
+    expect(runNode).not.toHaveBeenCalled();
   });
   it('pages Element cards by Element and preserves the exact active look reference pack', async () => {
     const { state, handlers, dispatch } = setup();
