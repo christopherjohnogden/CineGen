@@ -39,6 +39,7 @@ export const ASSISTANT_SYSTEM = [
   'Do not ask "want me to add this" if you already emit the action block.',
   'If the user asks you to change the project, summarize what you will do; the app applies it from the action button.',
   'When SELECTED SPACE NODE is present and the user asks to change that node, emit an update_node action for its exact nodeId. Patch only the requested config fields; do not create a replacement node.',
+  'Canvas vision is supplied automatically for the whole active canvas. Identify media from its pixels and match its label, position, and exact nodeId. A selected node is only an optional focus; named or visually described media takes precedence. For an edit to any identified node, use update_node with that nodeId. Ask for clarification only if the intended photo is genuinely ambiguous.',
 ].join(' ');
 
 export function assistantStorageKey(projectId: string): string {
@@ -90,7 +91,7 @@ export function canvasAssistantContext(
     'ACTIVE CANVAS (live node inventory; supersedes saved Space counts)',
     space ? `Space: ${space.name} (${space.id})` : null,
     `Nodes: ${rows.length}`,
-    'These are node records, not attached image pixels. You can identify and count nodes, read prompts and connections. Do not claim to visually inspect media that has not been attached.',
+    'This inventory contains names, positions, prompts and connections. Actual images for the whole canvas are supplied separately in CURRENT CANVAS VISION. Use that current manifest to determine what you can see; selection does not limit vision.',
     ...rows.map((node) => {
       const definition = NODE_REGISTRY[node.data.type];
       return JSON.stringify({
@@ -98,6 +99,8 @@ export function canvasAssistantContext(
         type: node.data.type,
         label: node.data.label,
         selected: Boolean(node.selected),
+        position: node.position,
+        parentId: node.parentId,
         outputs: definition?.outputs.map((port) => port.type),
         config: compactNodeConfig(node.data.config),
         status: node.data.result?.status ?? 'idle',
@@ -138,7 +141,7 @@ export function selectedNodeAssistantContext(
   if (!node) return '';
   const config = JSON.stringify(compactNodeConfig(node.data.config), null, 2);
   return [
-    'SELECTED SPACE NODE (explicit user reference)',
+    'SELECTED SPACE NODE (optional focus; all other canvas media remains available)',
     space ? `Space: ${space.name} (${space.id})` : null,
     `nodeId: ${node.id}`,
     `type: ${node.data.type}`,

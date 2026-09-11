@@ -4,7 +4,7 @@ import os from 'node:os';
 import { MAX_ASSISTANT_IMAGES, MAX_ASSISTANT_IMAGE_BYTES, type LlmImageAttachment } from '@/lib/llm/image-attachments';
 
 export function decodeAssistantImages(images: LlmImageAttachment[] = []) {
-  if (images.length > MAX_ASSISTANT_IMAGES) throw new Error('Too many canvas previews attached. Select fewer nodes.');
+  if (images.length > MAX_ASSISTANT_IMAGES) throw new Error('Too many canvas previews in one request. Please try again.');
   let total = 0;
   return images.map(image => {
     if (typeof image.dataUrl !== 'string' || image.dataUrl.length > MAX_ASSISTANT_IMAGE_BYTES * 4 / 3 + 100) throw new Error('Canvas preview is too large.');
@@ -12,7 +12,7 @@ export function decodeAssistantImages(images: LlmImageAttachment[] = []) {
     if (!match) throw new Error('Canvas preview must be a JPEG, PNG, or WebP image.');
     const bytes = Buffer.from(match[2], 'base64');
     total += bytes.length;
-    if (total > MAX_ASSISTANT_IMAGE_BYTES) throw new Error('Canvas previews are too large. Select fewer nodes.');
+    if (total > MAX_ASSISTANT_IMAGE_BYTES) throw new Error('Canvas previews are too large to send. Please try again.');
     const mime = match[1] as 'image/jpeg' | 'image/png' | 'image/webp';
     const valid = mime === 'image/jpeg' ? bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
       : mime === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))

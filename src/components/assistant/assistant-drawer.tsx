@@ -17,6 +17,7 @@ import { DirectorLlmPicker, type DirectorCliInfo } from '@/components/director/d
 import type { DirectorLlmProvider } from '@/lib/director/cli-provider';
 import { runDirectorTextJob } from '@/lib/director/run-llm';
 import { prepareCanvasVisualContext } from '@/lib/assistant/canvas-visual-context';
+import { answerWithCanvasVision } from '@/lib/assistant/canvas-inspection';
 import { cliChatErrorMessage } from '@/lib/llm/cli-chat-error';
 import { isCliCopilotProvider, type CliLlmProviderId } from '@/lib/llm/claude-code-session';
 import { buildModeSystemPrompt, buildProjectContext } from '@/lib/llm/project-context';
@@ -46,6 +47,7 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [visionStatus, setVisionStatus] = useState('');
   const [hydrated, setHydrated] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -136,10 +138,12 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
     messagesRef.current = next;
     setMessages(next);
     setBusy(true);
+    setVisionStatus('Reading canvas…');
     const epoch = ++requestEpoch.current;
     try {
       const visual = await prepareCanvasVisualContext(state.nodes, state.edges, text, state.elements);
       if (requestEpoch.current !== epoch) return;
+      setVisionStatus(visual.total ? `${visual.readable} of ${visual.total} canvas media read${visual.readable < visual.total ? ' · some sources unavailable' : ''}` : '');
       const projectContext = buildProjectContext({
         projectId,
         assets: state.assets,
@@ -161,10 +165,11 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
         projectContext,
         canvasAssistantContext(state.nodes, state.edges, activeSpace),
         nodeReferenceContext || null,
-        visual.context,
       ].filter((section): section is string => Boolean(section)).join('\n\n');
       const reply = stampDirectorTags(
-        (await runDirectorTextJob(systemPrompt, text, provider, next.filter((row) => !row.error), visual.images)).trim() || 'No reply.',
+        (await answerWithCanvasVision(visual, (context, images) => runDirectorTextJob(
+          [systemPrompt, context].filter(Boolean).join('\n\n'), text, provider, next.filter((row) => !row.error), images,
+        ), () => requestEpoch.current === epoch)).trim() || 'No reply.',
         state.director,
       );
       if (requestEpoch.current !== epoch) return;
@@ -230,11 +235,12 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
           <div ref={bottomRef} />
         </div>
         <div className="asst-composer">
+          <p className="asst-hint" role="status">{busy && visionStatus ? visionStatus : 'Canvas images and video frames are included automatically.'}</p>
           {selectedNode && (
             <div className="asst-node-ref" aria-live="polite">
               <span className="asst-node-ref__icon" aria-hidden="true">◇</span>
               <span className="asst-node-ref__body">
-                <span className="asst-node-ref__eyebrow">Referenced node</span>
+                <span className="asst-node-ref__eyebrow">Focused node · full canvas included</span>
                 <span className="asst-node-ref__name">{selectedNode.data.label}</span>
               </span>
               <span className="asst-node-ref__type">{selectedNode.data.type}</span>
@@ -251,9 +257,7 @@ export function AssistantDrawer({ open, onClose, projectId, state, dispatch }: A
             <textarea
               ref={inputRef}
               value={draft}
-              placeholder={selectedNode
-                ? `Ask me to change ${selectedNode.data.label}…`
-                : 'Ask a question or tell me what to do…'}
+              placeholder="Ask about anything on your canvas…"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {

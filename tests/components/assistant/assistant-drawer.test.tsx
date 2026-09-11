@@ -23,7 +23,7 @@ describe('Assistant drawer', () => {
       { id: 'codex', installed: true, authenticated: true },
     ] });
     mocks.run.mockResolvedValue('Four image nodes.');
-    mocks.prepare.mockResolvedValue({ images: [], context: '' });
+    mocks.prepare.mockResolvedValue({ images: [], overview: [], packed: false, details: new Map(), total: 0, readable: 0, context: '' });
   });
   afterEach(cleanup);
 

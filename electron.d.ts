@@ -217,6 +217,7 @@ export interface ElectronAPI {
     }) => Promise<{ prompt: string }>;
   };
   llm: {
+    canvasImagePreview?: (source: string) => Promise<string>;
     chat: (params: {
       apiKey?: string;
       model?: string;

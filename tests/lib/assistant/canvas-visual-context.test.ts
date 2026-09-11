@@ -1,12 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Node } from '@xyflow/react';
 import type { WorkflowNodeData } from '@/types/workflow';
-import { canvasVisualSources, prepareCanvasVisualContext, videoSampleTimes } from '@/lib/assistant/canvas-visual-context';
+import { canvasVisualSources, captureCanvasVisual, prepareCanvasVisualContext, videoSampleTimes } from '@/lib/assistant/canvas-visual-context';
 
 const file = (id: string, type = 'image'): Node<WorkflowNodeData> => ({ id, type: 'filePicker', position: { x: 0, y: 0 },
   data: { type: 'filePicker', label: id, config: { fileUrl: `https://media.example/${id}`, fileType: type } } });
 
 describe('Canvas visual context', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('falls back to desktop decoding when image pixels are blocked by CORS', async () => {
+    class FailedImage extends EventTarget {
+      crossOrigin = '';
+      set src(_value: string) { queueMicrotask(() => this.dispatchEvent(new Event('error'))); }
+      removeAttribute() {}
+    }
+    vi.stubGlobal('Image', FailedImage);
+    const read = vi.fn().mockResolvedValue('data:image/jpeg;base64,decoded');
+    const previous = window.electronAPI;
+    window.electronAPI = { llm: { canvasImagePreview: read } } as unknown as typeof window.electronAPI;
+    try {
+      const result = await captureCanvasVisual({ nodeId: 'image', label: 'Room', url: 'https://media.example/room.png', mediaType: 'image' });
+      expect(read).toHaveBeenCalledWith('https://media.example/room.png');
+      expect(result).toEqual([{ label: 'Room', dataUrl: 'data:image/jpeg;base64,decoded' }]);
+    } finally { window.electronAPI = previous; }
+  });
   it('attaches all four input images with stable node labels, even for follow-up questions', async () => {
     const nodes = ['one', 'two', 'three', 'four'].map(id => file(id));
     const capture = vi.fn(async (source) => [{ label: source.label, dataUrl: `data:image/jpeg;base64,${source.nodeId}` }]);
@@ -16,13 +33,13 @@ describe('Canvas visual context', () => {
     expect(capture).toHaveBeenCalledTimes(4);
   });
 
-  it('prioritizes selected prompt inputs and reports omitted nodes', () => {
+  it('prioritizes selected prompt inputs without excluding any other node', () => {
     const nodes = Array.from({ length: 8 }, (_, i) => file(`image-${i}`));
     nodes.push({ id: 'prompt', type: 'prompt', selected: true, position: { x: 0, y: 0 }, data: { type: 'prompt', label: 'Prompt', config: {} } });
     const result = canvasVisualSources(nodes, [{ id: 'edge', source: 'image-7', target: 'prompt' }], 'What about this?');
     expect(result.sources[0].nodeId).toBe('image-7');
-    expect(result.sources).toHaveLength(6);
-    expect(result.omitted).toHaveLength(2);
+    expect(result.sources).toHaveLength(8);
+    expect(result.sources.map(source => source.nodeId)).toContain('image-0');
   });
 
   it('includes the four recent image inputs when older uploads and results fill a mixed canvas', () => {
@@ -31,10 +48,10 @@ describe('Canvas visual context', () => {
     const generated = { ...file('result'), data: { type: 'custom-video', label: 'Result', config: {}, result: { url: 'https://media.example/result.mp4' } } };
     const nodes = [file('old-video', 'video'), ...oldImages, ...screenshots, generated];
     const result = canvasVisualSources(nodes, [], 'Can you see the 4 images input on the canvas?');
-    expect(result.sources).toHaveLength(6);
+    expect(result.sources).toHaveLength(13);
     for (const node of screenshots) expect(result.sources.some(source => source.nodeId === node.id)).toBe(true);
-    expect(result.sources.every(source => source.mediaType === 'image')).toBe(true);
-    expect(result.omitted.some(source => source.nodeId === 'result')).toBe(true);
+    expect(result.sources.filter(source => source.mediaType === 'image')).toHaveLength(11);
+    expect(result.sources.some(source => source.nodeId === 'result')).toBe(true);
     expect(nodes[0].id).toBe('old-video');
   });
 
@@ -74,5 +91,35 @@ describe('Canvas visual context', () => {
     expect(videoSampleTimes(10)).toEqual([0, 5, 9.9]);
     expect(videoSampleTimes(0.05).every(time => time < 0.05)).toBe(true);
     expect(() => videoSampleTimes(Infinity)).toThrow();
+  });
+
+  it('includes all four screenshots in a follow-up even with older media and a selected node', async () => {
+    const nodes = [...Array.from({ length: 10 }, (_, i) => file(`older-${i}`)), ...Array.from({ length: 4 }, (_, i) => file(`screenshot-${i}`))];
+    nodes[10].selected = true;
+    const result = await prepareCanvasVisualContext(nodes, [], 'what do you see?', [], async source => [{ label: source.label, dataUrl: 'data:image/jpeg;base64,ok' }]);
+    expect(result.images).toHaveLength(14);
+    expect(result.readable).toBe(14);
+    for (let i = 0; i < 4; i++) expect(result.context).toContain(`[node screenshot-${i}]`);
+    expect(result.context).toContain('Earlier chat claims');
+    expect(result.context).not.toContain('Ask the user to select');
+  });
+
+  it('resolves missing type, file URLs and the active generated take', () => {
+    const upload = file('photo');
+    upload.data.config = { fileUrl: 'file:///Users/test/A%20photo.png' };
+    const generated = { ...file('take'), data: { type: 'custom-image', label: 'Take', config: {}, result: { url: 'https://media.example/old.jpg' }, generations: ['https://media.example/current.jpg'], activeGeneration: 0 } };
+    expect(canvasVisualSources([upload, generated], [], '').sources.map(source => source.url)).toEqual(['local-media://file/Users/test/A%20photo.png', 'https://media.example/current.jpg']);
+  });
+
+  it('packs every source on a large canvas and retains exact-node closeups', async () => {
+    const nodes = Array.from({ length: 40 }, (_, i) => file(`image-${i}`));
+    const capture = vi.fn(async source => [{ label: source.label, dataUrl: 'data:image/jpeg;base64,ok' }]);
+    const pack = vi.fn(async frames => ({ packed: true, images: [{ label: frames.map((f: { label: string }) => f.label).join('\n'), dataUrl: 'data:image/jpeg;base64,sheet' }] }));
+    const result = await prepareCanvasVisualContext(nodes, [], '', [], capture, pack);
+    expect(capture).toHaveBeenCalledTimes(40);
+    expect(pack.mock.calls[0][0]).toHaveLength(40);
+    expect(result.readable).toBe(40);
+    expect(result.details.size).toBe(40);
+    expect(result.context).toContain('[node image-39]');
   });
 });

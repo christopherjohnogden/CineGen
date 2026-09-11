@@ -115,9 +115,9 @@ async function streamCodexChat(
   if (staged.refs.length && !jsonJob) args.push('--');
   if (canResume && params.resumeSessionId) {
     args.push('resume', params.resumeSessionId);
-    if (!jsonJob) args.push(prompt);
+    if (!jsonJob) args.push('-');
   } else if (!jsonJob) {
-    args.push(prompt);
+    args.push('-');
   }
 
   const win = getMainWindow();
@@ -134,13 +134,14 @@ async function streamCodexChat(
       const child = spawn(binary, args, {
         env: buildCliPathEnv(),
         cwd: workDir,
-        stdio: jsonJob ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      if (jsonJob) {
-        child.stdin?.write(prompt);
-        child.stdin?.end();
-      }
+      // Canvas inventories and tile manifests can exceed macOS's argument
+      // length limit. Send all prompts through stdin, just like JSON jobs.
+      child.stdin?.on('error', () => { /* A rejected CLI may close stdin first; close reports its error. */ });
+      child.stdin?.write(prompt);
+      child.stdin?.end();
 
       activeRequest = { child, requestId, provider: 'codex' };
 

@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     generatePrompt: (params: unknown) => ipcRenderer.invoke('music:generate-prompt', params),
   },
   llm: {
+    canvasImagePreview: (source: string) => ipcRenderer.invoke('llm:canvas-image-preview', source),
     chat: (params: unknown) => ipcRenderer.invoke('llm:chat', params),
     localChat: (params: unknown) => ipcRenderer.invoke('llm:local-chat', params),
     localModels: () => ipcRenderer.invoke('llm:local-models'),

@@ -1,4 +1,4 @@
-import "./main-BIflpFkK.js";
+import "./main-DsrDVAB_.js";
 import "electron";
 import "node:fs/promises";
 import "node:fs";

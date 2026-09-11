@@ -2,7 +2,7 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ handle: vi.fn(), spawn: vi.fn(), send: vi.fn(), stage: vi.fn(), cleanup: vi.fn() }));
+const mocks = vi.hoisted(() => ({ handle: vi.fn(), spawn: vi.fn(), send: vi.fn(), stage: vi.fn(), cleanup: vi.fn(), write: vi.fn() }));
 vi.mock('../../../electron/ipc/assistant-image-attachments.js', () => ({ stageAssistantImages: mocks.stage }));
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/cinegen-test' },
@@ -25,7 +25,7 @@ describe('Codex assistant transport', () => {
     mocks.spawn.mockImplementation(() => {
       const child = Object.assign(new EventEmitter(), {
         stdout: new EventEmitter(), stderr: new EventEmitter(),
-        stdin: { write: vi.fn(), end: vi.fn() },
+        stdin: { on: vi.fn(), write: mocks.write, end: vi.fn() },
       });
       setTimeout(() => {
         // Codex can report a reconnect before successfully completing a turn.
@@ -47,7 +47,8 @@ describe('Codex assistant transport', () => {
     const args = mocks.spawn.mock.calls[0][1];
     expect(args).not.toContain('-m');
     expect(args).toEqual(expect.arrayContaining(['--ignore-user-config', '--ignore-rules', '-C', '/tmp/cinegen-test/codex-workspace', 'read-only']));
-    expect(args.at(-1)).toContain('Live canvas: four images');
+    expect(args.at(-1)).toBe('-');
+    expect(mocks.write).toHaveBeenCalledWith(expect.stringContaining('Live canvas: four images'));
   });
   it('separates image flags from the prompt and cleans up after success or failure', async () => {
     const images = [{ label: 'Canvas image', dataUrl: 'preview' }];
@@ -55,7 +56,8 @@ describe('Codex assistant transport', () => {
     await run('auto', false, images);
     const args = mocks.spawn.mock.calls[0][1];
     expect(args.slice(-4, -1)).toEqual(['--image', '/tmp/preview.png', '--']);
-    expect(args.at(-1)).toContain('Count nodes');
+    expect(args.at(-1)).toBe('-');
+    expect(mocks.write).toHaveBeenCalledWith(expect.stringContaining('Count nodes'));
     expect(mocks.stage).toHaveBeenCalledWith(images);
     expect(mocks.cleanup).toHaveBeenCalledTimes(1);
     await expect(run('auto', true, images)).rejects.toThrow();
@@ -65,6 +67,16 @@ describe('Codex assistant transport', () => {
     await run('gpt-5.6-luna');
     const args = mocks.spawn.mock.calls[0][1];
     expect(args[args.indexOf('-m') + 1]).toBe('gpt-5.6-luna');
+  });
+  it('passes every canvas image to Codex, not only the selected one', async () => {
+    const images = Array.from({ length: 14 }, (_, i) => ({ label: `Image ${i}`, dataUrl: `preview-${i}` }));
+    const refs = images.map((_, i) => ({ mediaPath: `/tmp/canvas-${i}.jpg` }));
+    mocks.stage.mockResolvedValue({ refs, cleanup: mocks.cleanup });
+    await run('auto', false, images);
+    const args = mocks.spawn.mock.calls[0][1] as string[];
+    expect(args.filter(arg => arg === '--image')).toHaveLength(14);
+    expect(args).toEqual(expect.arrayContaining(refs.map(ref => ref.mediaPath)));
+    expect(mocks.cleanup).toHaveBeenCalledTimes(1);
   });
   it('reports the structured failure instead of treating partial text as success', async () => {
     await expect(run('auto', true)).rejects.toThrow('Account request rejected.');

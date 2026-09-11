@@ -26,6 +26,7 @@ import { registerLLMChatHandlers } from './ipc/llm-chat.js';
 import { registerClaudeCodeHandlers } from './ipc/claude-code.js';
 import { registerCliLlmDetectHandlers } from './ipc/cli-llm-detect.js';
 import { registerCodexCliHandlers } from './ipc/codex-cli.js';
+import { registerCanvasImagePreview } from './ipc/canvas-image-preview.js';
 import { registerOpenAiLlmHandlers } from './ipc/openai-llm.js';
 import { registerElevenLabsHandlers } from './ipc/elevenlabs.js';
 import { registerPromptHandlers } from './ipc/prompts.js';
@@ -431,6 +432,7 @@ app.whenReady().then(async () => {
   registerClaudeCodeHandlers();
   registerCliLlmDetectHandlers();
   registerCodexCliHandlers();
+  registerCanvasImagePreview();
   registerOpenAiLlmHandlers();
   registerTeamProviderHandlers();
   registerElevenLabsHandlers();

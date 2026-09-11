@@ -27,7 +27,7 @@ describe('assistant', () => {
     expect(context).toContain('Nodes: 4');
     for (const node of nodes) expect(context).toContain(node.id);
     expect(context).toContain('image-0:output -> image-1:input');
-    expect(context).toContain('not attached image pixels');
+    expect(context).toContain('selection does not limit vision');
     expect(context).not.toContain('private-bytes');
   });
   it('picks an installed CLI, preferring the saved one', () => {
