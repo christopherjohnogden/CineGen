@@ -18,6 +18,7 @@ import { createDefaultTimeline } from '@/lib/editor/timeline-operations';
 import { migrateSequenceToTimelines } from '@/lib/editor/timeline-migration';
 import { TopTabs, type LlmCopilotNavStatus } from './top-tabs';
 import { WorkspaceLoadingState } from './workspace-loading-state';
+import { useCloudAuthRecovery } from './use-cloud-auth-recovery';
 import { ElementsTab } from '@/components/elements/elements-tab';
 import { CreateTab } from '@/components/create/create-tab';
 import { EditTab } from '@/components/edit/edit-tab';
@@ -328,6 +329,12 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [hydrationComplete, setHydrationComplete] = useState(false);
   const [hydrationError, setHydrationError] = useState<string | null>(null);
+  const retryProjectLoad = useCallback(() => {
+    setHydrationComplete(false);
+    setHydrationError(null);
+    setLoadAttempt(attempt => attempt + 1);
+  }, []);
+  useCloudAuthRecovery(hydrationError, retryProjectLoad);
   const elementsLibraryReadyRef = useRef(false);
   const [openSkillBuilderSignal, setOpenSkillBuilderSignal] = useState(0);
   const [llmHasActiveSkill, setLlmHasActiveSkill] = useState(false);
@@ -1456,7 +1463,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         {hydrationError ? (
           <WorkspaceLoadingState
             error={hydrationError}
-            onRetry={() => { setHydrationComplete(false); setHydrationError(null); setLoadAttempt(attempt => attempt + 1); }}
+            onRetry={retryProjectLoad}
             onBack={onBackToHome}
           />
         ) : !hydrationComplete ? (

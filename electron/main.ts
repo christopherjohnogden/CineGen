@@ -1,4 +1,5 @@
 import { registerClaudeMcp } from './ipc/claude-mcp.js';
+import { configureBrowserSession } from './browser-session.js';
 import { app, BrowserWindow, ipcMain, nativeImage, protocol, powerMonitor } from 'electron';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
@@ -143,6 +144,7 @@ function configureUserDataPath(): { preferredUserDataPath: string; legacyUserDat
 }
 
 const userDataPaths = configureUserDataPath();
+configureBrowserSession();
 
 try {
   app.setName(APP_DISPLAY_NAME);

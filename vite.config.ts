@@ -117,6 +117,9 @@ export default defineConfig({
     },
   },
   base: './',
+  // Cloud login belongs to an origin. Never silently move dev to a new port
+  // (and an empty login store) when another dev server is already running.
+  server: { host: 'localhost', port: 5173, strictPort: true },
   test: {
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],

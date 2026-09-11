@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import type { ProjectMeta } from '../../../electron';
 import { cloudDb, waitForCloudAuth } from './firebase';
+import { CLOUD_SIGN_IN_REQUIRED } from './auth-errors';
 import { prepareStateForCloudMedia } from './media';
 import {
   ensureProjectAccess,
@@ -288,7 +289,7 @@ export function saveCloudProject(projectId: string, state: unknown, useSqlite: b
 
 export async function loadCloudProject<T = unknown>(projectId: string, signal?: AbortSignal): Promise<T> {
   const user = await waitForCloudAuth();
-  if (!user) throw new Error('Sign in to CineGen Cloud to open this project.');
+  if (!user) throw new Error(CLOUD_SIGN_IN_REQUIRED);
   const { ownerId, revision, state } = await readCloudProject(user, projectId, signal);
   signal?.throwIfAborted();
   const restored = restoreCloudMediaReferences(state as T);

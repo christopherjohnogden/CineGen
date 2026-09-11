@@ -204,6 +204,8 @@ npm run dev
 
 This builds the native AVFoundation module and starts the Vite dev server with Electron. The app opens automatically.
 
+Development uses `http://localhost:5173` and keeps its browser session in `CineGen/dev-browser-session` inside the system application-support folder. Sign in to Cloud once in the dev app's project picker; that session is reused after restarting dev. The installed app and your regular browser have separate sign-ins. If port 5173 is already in use, stop the other dev server before starting again.
+
 ### Production Build
 
 ```bash

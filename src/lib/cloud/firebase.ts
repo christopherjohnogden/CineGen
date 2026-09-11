@@ -2,8 +2,8 @@ import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   browserLocalPersistence,
   getAuth,
+  initializeAuth,
   onAuthStateChanged,
-  setPersistence,
   type User,
 } from 'firebase/auth';
 import {
@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
+import { CLOUD_AUTH_RESTORE_TIMEOUT } from './auth-errors';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyDhxfLpKNqAMJWFCiUPaQiINUk2U2Wv9gA',
@@ -25,11 +26,20 @@ const firebaseConfig = {
 };
 
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const cloudAuth = getAuth(firebaseApp);
-
-void setPersistence(cloudAuth, browserLocalPersistence).catch((error) => {
-  console.warn('[cloud] Firebase auth persistence could not be enabled:', error);
-});
+function initializeCloudAuth() {
+  try {
+    // Choose the shared, durable store before Firebase restores a user. Starting
+    // with getAuth() and then switching stores can migrate/delete the session
+    // underneath another window as the project manager opens the workspace.
+    return initializeAuth(firebaseApp, { persistence: browserLocalPersistence });
+  } catch (error) {
+    // An existing instance can survive a development hot reload. Reuse it;
+    // never change persistence on a live, authenticated instance.
+    if ((error as { code?: string }).code === 'auth/already-initialized') return getAuth(firebaseApp);
+    throw error;
+  }
+}
+export const cloudAuth = initializeCloudAuth();
 
 function needsMobileSafeFirestore(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -59,21 +69,20 @@ const AUTH_READY_TIMEOUT_MS = 12_000;
 
 export function waitForCloudAuth(): Promise<User | null> {
   if (cloudAuth.currentUser) return Promise.resolve(cloudAuth.currentUser);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
     let timeoutId: number | undefined;
     let unsubscribe = () => {};
-    const finish = (user: User | null) => {
+    const finish = (user: User | null, error?: Error) => {
       if (settled) return;
       settled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
       unsubscribe();
-      resolve(user);
+      if (error) reject(error); else resolve(user);
     };
-    unsubscribe = onAuthStateChanged(cloudAuth, finish);
-    // Some iOS in-app browsers can leave Firebase persistence initialization
-    // pending indefinitely. Treat that as signed out so the UI can offer a
-    // recovery path instead of showing a permanent loading screen.
-    timeoutId = window.setTimeout(() => finish(cloudAuth.currentUser), AUTH_READY_TIMEOUT_MS);
+    timeoutId = window.setTimeout(() => finish(cloudAuth.currentUser, cloudAuth.currentUser ? undefined
+      : new Error(CLOUD_AUTH_RESTORE_TIMEOUT)), AUTH_READY_TIMEOUT_MS);
+    unsubscribe = onAuthStateChanged(cloudAuth, user => finish(user), error => finish(null, error));
+    if (settled) unsubscribe();
   });
 }
