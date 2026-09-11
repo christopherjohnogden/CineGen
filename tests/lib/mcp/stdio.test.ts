@@ -48,7 +48,7 @@ it('serves the UI resource and forwards display data as structuredContent over s
         { id: 3, method: 'tools/call', params: { name: 'cinegen_show_generations', arguments: {} } },
       ].map(message => JSON.stringify({ jsonrpc: '2.0', ...message })).join('\n') + '\n');
     });
-    expect(output.find(item => item.id === 1).result.resources[0].uri).toBe('ui://cinegen/media-viewer-v14.html');
+    expect(output.find(item => item.id === 1).result.resources[0].uri).toBe('ui://cinegen/media-viewer-v15.html');
     expect(output.find(item => item.id === 2).result.contents[0].text).toContain('ui/initialize');
     expect(output.find(item => item.id === 3).result.structuredContent).toEqual(data);
     expect(output.find(item => item.id === 3).result.content[0].text).toContain('No matching media');
