@@ -145,7 +145,7 @@ test('MCP initializes, advertises tools, validates input and returns saved read-
   const request=(method,params={})=>new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
   const initialized=await (await api.handleMcp(request('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}}),env,ctx)).json();
   assert.equal(initialized.result.serverInfo.name,'cinegen');
-  assert.equal(initialized.result.serverInfo.version,'1.8.5');
+  assert.equal(initialized.result.serverInfo.version,'1.8.6');
   assert.match(initialized.result.instructions,/cinegen_studio_create/);
   const listed=await (await api.handleMcp(request('tools/list'),env,ctx)).json();
   assert.ok(listed.result.tools.some(t=>t.name==='cinegen_load_script'));
@@ -318,7 +318,7 @@ test('MCP lists Topview by default and sends authenticated Topview jobs without 
     if(u.endsWith('/topview/modelCatalog'))return Response.json({ok:true,result:{configs:[]}});
     throw new Error(`Unexpected provider: ${u}`);
   };
-  const env={PUBLIC_ORIGIN:'https://cinegen.example',JOBS:{idFromName:n=>n,get:()=>({fetch:async(_,options)=>{queued=JSON.parse(options.body);return Response.json({status:'queued',provider:queued.args.provider});}})}};
+  const env={PUBLIC_ORIGIN:'https://cinegen.example',JOBS:{idFromName:n=>n,get:()=>({fetch:async(_,options)=>{queued=JSON.parse(options.body);return Response.json({status:'queued',provider:queued.args.provider,nodeId:'new-node',kind:queued.prepared.model.outputType,model:queued.prepared.model.name,prompt:queued.prepared.config.prompt});}})}};
   const ctx={props:{uid:'owner',email:'owner@example.com',refreshToken:'refresh'}};
   const invoke=async(name,args)=>{
     const request=new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})});
@@ -330,9 +330,12 @@ test('MCP lists Topview by default and sends authenticated Topview jobs without 
     const started=await invoke('cinegen_generate',{projectId:raw.project.id,requestId:'default',model:'topview-image-seedream-4-5',inputs:{prompt:'A sunrise'}});
     assert.equal(started.result.isError,undefined,started.result.content[0].text);
     assert.equal(queued.args.provider,'topview');assert.equal(queued.prepared.provider,'topview');assert.equal(queued.identity.falKey,undefined);
+    assert.equal(started.result.structuredContent.mode,'job');assert.equal(started.result.structuredContent.items[0].status,'queued');
+    assert.equal(started.result.structuredContent.items[0].prompt,'A sunrise');assert.equal(started.result.structuredContent.refresh.name,'cinegen_job_display');
     api.CloudStore.prototype.load=async()=>({state:raw,library:{elements:[{id:'hero',name:'Mara',type:'character',voice:{description:'Soft and smoky'}}]},metadata:{}});
     const video=await invoke('cinegen_generate',{projectId:raw.project.id,requestId:'voice-video',model:'topview-video-seedance-2-5',elementIds:['hero'],inputs:{prompt:'She speaks.'}});
     assert.equal(video.result.isError,undefined,video.result.content[0].text);
+    assert.equal(video.result.structuredContent.items[0].kind,'video');assert.equal(video.result.structuredContent.items[0].status,'queued');
     assert.match(queued.prepared.params.prompt,/Mara: Soft and smoky/);
     assert.equal(queued.prepared.prompt,'She speaks.');
     assert.ok(!calls.some(u=>/fal\.run|higgsfield/.test(u)));
@@ -538,4 +541,117 @@ test('Clip Edit prepares the 1080p Canvas route independently of the ordinary ge
   assert.deepEqual(prepared.params.medias.map(m=>m.role),['video','image','audio']);
   assert.equal(prepared.config.video_mode,'edit');
   assert.throws(()=>api.prepareProviderGeneration({model:'topview-video-seedance-2-5',inputs:{...inputs,source_video:undefined}},models),/exactly one/);
+});
+
+test('tracking an external Topview Canvas render persists its exact receipt and never submits work',async()=>{
+  const values=new Map();let alarms=0,queries=0,paid=0;
+  const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>values.has(k)?structuredClone(values.get(k)):undefined,put:async(k,v)=>values.set(k,structuredClone(v)),setAlarm:async()=>{alarms++;}}};
+  const originalLoad=api.CloudStore.prototype.load,originalSave=api.CloudStore.prototype.save;
+  let raw=api.createDefaultProjectState('Tracked film');const library={elements:[],folders:[]};
+  api.CloudStore.prototype.load=async()=>({state:structuredClone(raw),library,metadata:{useSqlite:true},ownerId:'owner'});
+  api.CloudStore.prototype.save=async(_,state)=>{raw=structuredClone(state);};
+  const identity={uid:'owner',email:'owner@example.com',refreshToken:'refresh'};
+  const generation={version:1,prompt:'Keep the original performance.',resolution:'1080',aspectRatio:'16:9',references:[{kind:'video',title:'Original clip',url:'https://firebasestorage.googleapis.com/ref.mp4'}]};
+  const args={projectId:raw.project.id,requestId:'track-1',model:'topview-video-seedance-2-5',taskId:'original-task',canvasId:'external-canvas',providerNodeId:'external-node',title:'Tracked edit',startedAt:new Date(Date.now()-60000).toISOString(),generation};
+  const request=(path='track',overrides={})=>new Request('https://job/'+path,{method:'POST',body:JSON.stringify({identity,args:{...args,...overrides}})});
+  globalThis.fetch=async(url,options)=>{
+    const u=String(url);
+    if(u.includes('securetoken'))return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});
+    if(u.endsWith('/topview/generate')) {
+      const params=JSON.parse(options.body).args[0];
+      if(!params.taskId){paid++;throw new Error('Tracking must never submit');}
+      assert.deepEqual(api.readTopviewCanvasTask(params.taskId),{canvasId:'external-canvas',nodeId:'external-node',taskId:'original-task'});
+      assert.equal(params.waitForCompletion,false);assert.equal(params.prompt,undefined);assert.equal(params.medias,undefined);queries++;
+      return Response.json({ok:true,result:queries===1?{status:'running'}:{status:'success',url:'https://cdn.example/finished.mp4'}});
+    }
+    if(u==='https://cdn.example/finished.mp4')return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':'video/mp4'}});
+    if(u.includes('firebasestorage')&&options.method==='POST')return Response.json({downloadTokens:'download-token'});
+    if(u.includes('firebasestorage'))return new Response('',{status:404});
+    throw new Error('Unexpected network call '+u);
+  };
+  try {
+    const first=await (await new api.GenerationJob(ctx,{}).fetch(request())).json();
+    assert.equal(first.status,'running');assert.equal(first.kind,'video');assert.equal(first.createdAt,args.startedAt);
+    assert.equal(first.prompt,generation.prompt);assert.equal(first.references[0].kind,'video');assert.equal(queries,0);
+    const again=await (await new api.GenerationJob(ctx,{}).fetch(request())).json();assert.equal(again.nodeId,first.nodeId);
+    assert.equal((await new api.GenerationJob(ctx,{}).fetch(request('track',{taskId:'other-task'}))).status,409);
+    await new api.GenerationJob(ctx,{}).alarm();
+    const reopened=api.hydrate(raw,library);assert.equal(reopened.nodes.length,1);assert.equal(reopened.nodes[0].data.result.status,'running');
+    assert.notEqual(reopened.nodes[0].id,args.providerNodeId);assert.equal(queries,0);
+    const shown=await api.editProject(raw,library,'cinegen_show_generations',{});
+    assert.equal(shown.result.items[0].references[0].url,generation.references[0].url);
+    await new api.GenerationJob(ctx,{}).alarm();assert.equal(values.get('job').status,'running');assert.equal(queries,1);
+    const alarmsBefore=alarms;
+    await new api.GenerationJob(ctx,{}).fetch(request('snapshot'));assert.equal(queries,1);assert.equal(alarms,alarmsBefore);
+    const interrupted=values.get('job');interrupted.status='needs_attention';interrupted.error='Reconnect Topview';interrupted.attempts=12;values.set('job',interrupted);
+    const attention=await(await new api.GenerationJob(ctx,{}).fetch(request('snapshot'))).json();assert.equal(attention.status,'needs_attention');assert.equal(alarms,alarmsBefore);
+    const resumed=await(await new api.GenerationJob(ctx,{}).fetch(request())).json();assert.equal(resumed.nodeId,first.nodeId);assert.equal(resumed.status,'running');
+    await new api.GenerationJob(ctx,{}).alarm();assert.equal(values.get('job').status,'complete');assert.equal(queries,2);assert.equal(paid,0);
+    const final=api.hydrate(raw,library);assert.equal(final.assets.length,1);assert.equal(final.assets[0].metadata.generation.providerTaskId,args.taskId);
+    assert.deepEqual(final.assets[0].metadata.generation.references,generation.references);assert.equal(final.assets[0].name,args.title);
+    const media=await api.editProject(raw,library,'cinegen_show_media',{});assert.equal(media.result.items[0].prompt,generation.prompt);
+    await new api.GenerationJob(ctx,{}).fetch(request());await new api.GenerationJob(ctx,{}).alarm();assert.equal(queries,2);assert.equal(paid,0);
+  } finally {api.CloudStore.prototype.load=originalLoad;api.CloudStore.prototype.save=originalSave;}
+});
+
+test('external tracking validates receipts without applying new-generation limits',()=>{
+  const base={projectId:'project',requestId:'receipt',model:'topview-video-seedance-2-5',taskId:'original'};
+  assert.throws(()=>api.prepareTrackedGeneration({...base,canvasId:'canvas'}),/both canvasId/);
+  assert.throws(()=>api.prepareTrackedGeneration({...base,providerNodeId:'node'}),/both canvasId/);
+  assert.throws(()=>api.prepareTrackedGeneration({...base,taskId:''}));
+  assert.throws(()=>api.prepareTrackedGeneration({...base,provider:'higgsfield'}));
+  assert.throws(()=>api.prepareTrackedGeneration({...base,model:'unknown'}),/matching Topview/);
+  const tracked=api.prepareTrackedGeneration({...base,canvasId:'canvas',providerNodeId:'node',generation:{version:1,resolution:'1080',references:[]}});
+  assert.equal(tracked.prepared.config.resolution,'1080');assert.equal(tracked.prepared.params.prompt,undefined);
+  assert.equal(api.prepareTrackedGeneration({...base,taskType:'omni_reference'}).providerTask.taskId,'original');
+});
+
+test('MCP returns a live widget immediately for tracking, then refreshes only snapshots',async()=>{
+  const raw=api.createDefaultProjectState('Live tracking');const originalLoad=api.CloudStore.prototype.load;
+  api.CloudStore.prototype.load=async()=>({state:raw,library:{elements:[],folders:[]},metadata:{useSqlite:true}});
+  const paths=[],values=new Map();
+  const durableCtx={blockConcurrencyWhile:fn=>fn(),storage:{get:async k=>values.get(k),put:async(k,v)=>values.set(k,structuredClone(v)),setAlarm:async()=>{}}};
+  const durable=new api.GenerationJob(durableCtx,{});
+  const env={PUBLIC_ORIGIN:'https://cinegen.example',JOBS:{idFromName:n=>n,get:()=>({fetch:async(url,options)=>{paths.push(url);return durable.fetch(new Request(url,options));}})}};
+  const ctx={props:{uid:'owner',email:'owner@example.com',refreshToken:'refresh'}};
+  globalThis.fetch=async url=>{assert.match(String(url),/securetoken.googleapis.com/);return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});};
+  const send=async(method,params={})=>(await(await api.handleMcp(new Request('https://cinegen.example/mcp',{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})}),env,ctx)).json()).result;
+  try {
+    const tools=(await send('tools/list')).tools;
+    const resource=tools.find(t=>t.name==='cinegen_job_display')._meta.ui.resourceUri;
+    for(const name of ['cinegen_generate','cinegen_track_generation'])assert.equal(tools.find(t=>t.name===name)._meta.ui.resourceUri,resource);
+    const args={projectId:raw.project.id,requestId:'tracked',model:'topview-video-seedance-2-5',taskId:'task',canvasId:'canvas',providerNodeId:'node',generation:{version:1,prompt:'A quiet scene.',references:[]}};
+    const result=await send('tools/call',{name:'cinegen_track_generation',arguments:args});
+    assert.equal(result.isError,undefined,result.content[0].text);const data=result.structuredContent;
+    assert.equal(data.mode,'job');assert.equal(data.items[0].status,'running');assert.equal(data.items[0].kind,'video');assert.equal(data.items[0].prompt,args.generation.prompt);
+    assert.equal(data.items[0].url,null);assert.equal(data.requestId,args.requestId);assert.ok(data.nodeId);
+    assert.equal(data.refresh.name,'cinegen_job_display');assert.deepEqual(paths,['https://job/track']);
+    const refreshed=await send('tools/call',{name:data.refresh.name,arguments:data.refresh.arguments});
+    assert.equal(refreshed.structuredContent.items[0].status,'running');assert.deepEqual(paths,['https://job/track','https://job/snapshot']);
+    const invalid=await send('tools/call',{name:'cinegen_track_generation',arguments:{...args,requestId:'bad',canvasId:undefined}});
+    assert.equal(invalid.isError,true);assert.equal(paths.length,2);
+  } finally {api.CloudStore.prototype.load=originalLoad;}
+});
+
+test('a failed tracked provider render stays failed without a replacement submission',async()=>{
+  const args={provider:'topview',projectId:'project',requestId:'failed-track',model:'topview-video-seedance-2-5',taskId:'failed-original',canvasId:'canvas',providerNodeId:'node'};
+  const prepared=api.prepareTrackedGeneration(args);
+  let record={args,tracked:true,trackingRegistered:true,prepared:prepared.prepared,providerTask:prepared.providerTask,generationMetadata:prepared.provenance,
+    identity:{uid:'owner',email:'owner@example.com',refreshToken:'refresh'},nodeId:'cinegen-node',status:'running',createdAt:new Date().toISOString(),attempts:0};
+  let polls=0,alarms=0;
+  const ctx={blockConcurrencyWhile:fn=>fn(),storage:{get:async()=>structuredClone(record),put:async(_,value)=>{record=structuredClone(value);},setAlarm:async()=>{alarms++;}}};
+  const originalLoad=api.CloudStore.prototype.load;
+  api.CloudStore.prototype.load=async()=>({state:api.createDefaultProjectState('Failure'),library:{elements:[],folders:[]},metadata:{useSqlite:true}});
+  globalThis.fetch=async(url,options)=>{
+    if(String(url).includes('securetoken'))return Response.json({project_id:'48352992061',id_token:'token',user_id:'owner',refresh_token:'refresh'});
+    assert.match(String(url),/topview\/generate$/);const params=JSON.parse(options.body).args[0];
+    assert.equal(api.readTopviewCanvasTask(params.taskId).taskId,args.taskId);assert.equal(params.prompt,undefined);polls++;
+    return Response.json({ok:true,result:{status:'fail',error:'Provider rejected this task'}});
+  };
+  try {
+    await new api.GenerationJob(ctx,{}).alarm();assert.equal(record.status,'failed');assert.equal(record.error,'Provider rejected this task');
+    await new api.GenerationJob(ctx,{}).alarm();assert.equal(polls,1);assert.equal(alarms,0);
+    const result=await(await new api.GenerationJob(ctx,{}).fetch(new Request('https://job/snapshot',{method:'POST',body:JSON.stringify({identity:{uid:'owner'},args})}))).json();
+    assert.equal(result.status,'failed');assert.equal(result.url,null);assert.equal(result.identity,undefined);
+  } finally {api.CloudStore.prototype.load=originalLoad;}
 });

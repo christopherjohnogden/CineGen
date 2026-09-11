@@ -10813,12 +10813,12 @@ function describe(description) {
   return ch;
 }
 // @__NO_SIDE_EFFECTS__
-function meta(metadata2) {
+function meta(metadata) {
   const ch = new $ZodCheck({ check: "meta" });
   ch._zod.onattach = [
     (inst) => {
       const existing = globalRegistry.get(inst) ?? {};
-      globalRegistry.add(inst, { ...existing, ...metadata2 });
+      globalRegistry.add(inst, { ...existing, ...metadata });
     }
   ];
   ch._zod.check = () => {
@@ -13880,7 +13880,7 @@ var DISPLAY_INSTRUCTIONS = "Use cinegen_show_reference_elements for Elements, ci
 var id2 = { type: "string", minLength: 1, maxLength: 160 };
 var ids = { type: "array", items: id2, minItems: 1, maxItems: 24, uniqueItems: true };
 var page = { offset: { type: "integer", minimum: 0, default: 0 }, limit: { type: "integer", minimum: 1, maximum: 24, default: 9 } };
-var metadata = {
+var MEDIA_TOOL_METADATA = {
   ui: { resourceUri: MEDIA_RESOURCE_URI, visibility: ["model", "app"] },
   "openai/outputTemplate": MEDIA_RESOURCE_URI,
   "openai/widgetAccessible": true,
@@ -13924,7 +13924,7 @@ var DISPLAY_TOOLS = [
     description: "Show one CineGen image or video in an inline viewer with playback, prompt and job status. Supply nodeId from a generation response, or requestId for a durable cloud job (requestId lookup requires the remote server; local desktop uses nodeId). Read-only: never generates, spends credits or resumes saving. Use cinegen_get_jobs separately when a save retry is wanted.",
     inputSchema: { type: "object", properties: { nodeId: id2, requestId: id2, spaceId: id2 }, anyOf: [{ required: ["nodeId"] }, { required: ["requestId"] }], additionalProperties: false }
   }
-].map((tool2) => ({ ...tool2, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: metadata }));
+].map((tool2) => ({ ...tool2, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: MEDIA_TOOL_METADATA }));
 var isDisplayTool = (name) => DISPLAY_TOOLS.some((tool2) => tool2.name === name);
 var DISPLAY_ACTION_TOOLS = [{
   name: "cinegen_send_to_studio",

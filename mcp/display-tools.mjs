@@ -5,7 +5,7 @@ export const DISPLAY_INSTRUCTIONS = 'Use cinegen_show_reference_elements for Ele
 const id = { type: 'string', minLength: 1, maxLength: 160 };
 const ids = { type: 'array', items: id, minItems: 1, maxItems: 24, uniqueItems: true };
 const page = { offset: { type: 'integer', minimum: 0, default: 0 }, limit: { type: 'integer', minimum: 1, maximum: 24, default: 9 } };
-const metadata = {
+export const MEDIA_TOOL_METADATA = {
   ui: { resourceUri: MEDIA_RESOURCE_URI, visibility: ['model', 'app'] },
   'openai/outputTemplate': MEDIA_RESOURCE_URI,
   'openai/widgetAccessible': true,
@@ -43,7 +43,7 @@ export const DISPLAY_TOOLS = [
     description: 'Show one CineGen image or video in an inline viewer with playback, prompt and job status. Supply nodeId from a generation response, or requestId for a durable cloud job (requestId lookup requires the remote server; local desktop uses nodeId). Read-only: never generates, spends credits or resumes saving. Use cinegen_get_jobs separately when a save retry is wanted.',
     inputSchema: { type: 'object', properties: { nodeId: id, requestId: id, spaceId: id }, anyOf: [{ required: ['nodeId'] }, { required: ['requestId'] }], additionalProperties: false },
   },
-].map(tool => ({ ...tool, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: metadata }));
+].map(tool => ({ ...tool, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: MEDIA_TOOL_METADATA }));
 
 export const isDisplayTool = name => DISPLAY_TOOLS.some(tool => tool.name === name);
 

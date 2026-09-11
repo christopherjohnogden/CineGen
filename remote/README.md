@@ -79,3 +79,53 @@ A Claude-local file or sandbox link is not a public audio URL: upload that audio
 ElevenLabs Audio nodes now run inside CineGen. Connect an ElevenLabs API key in the node or character voice panel; the key is validated and encrypted in the workspace vault. Speech uses the saved character voice or selected ElevenLabs voice with Eleven v3; sound effects use Eleven Sound Effects v2. The result plays on the node and is saved to Firebase, with a recoverable copy in Cloudflare R2. No Claude handoff is needed. Character editors can design voice previews, choose/save a voice, and generate sample dialogue inside the app.
 
 `cinegen_audio` supports `prepare`, `read`, `generate`, and `attach`. For `generate`, supply an existing audio `nodeId` and a unique `requestId`; reuse that ID to retrieve or finish saving the same paid take. A new request ID submits another generation. The provider's 5,000-character Eleven v3 limit includes performance tags; dialogue is never truncated. Voice description remains separate from spoken dialogue.
+
+## Live tracking of renders started outside CineGen
+
+`cinegen_generate` returns the prism viewer immediately, including the queued
+state. Its response still includes the job receipt as the first text content
+and also includes a complete MCP Apps `structuredContent` page. Do not wait for
+the finished file before displaying it.
+
+For a task already submitted with Topview's own tools, immediately call the
+remote-only `cinegen_track_generation`. This registers a Studio tracking node,
+returns the same live viewer, and saves the finished media in the background.
+It never calls a submission endpoint. A Topview Canvas receipt must include
+all three original IDs; use `providerNodeId` for Topview's output node, never
+invent a CineGen `nodeId`:
+
+```json
+{
+  "projectId": "actual-cinegen-project-id",
+  "requestId": "stable-tracking-id",
+  "model": "topview-video-seedance-2-5",
+  "taskId": "actual-topview-task-id",
+  "canvasId": "actual-topview-canvas-id",
+  "providerNodeId": "actual-topview-output-node-id",
+  "title": "Clip edit",
+  "generation": {
+    "version": 1,
+    "prompt": "The exact submitted prompt",
+    "resolution": "1080",
+    "references": [
+      { "kind": "video", "title": "Source clip", "url": "https://example.com/original.mp4" }
+    ]
+  }
+}
+```
+
+These are placeholders, not valid generation IDs. Copy verified values from
+the original provider receipt and inputs. Ordinary Topview API/MCP tasks use
+`taskId` with optional `taskType`/`boardId`, omitting both Canvas fields. Omit
+unknown provenance instead of guessing. `startedAt` can carry the original
+submission timestamp for the elapsed-time display.
+
+The same Topview account must be connected in **CineGen Settings**. A Topview
+connection in Claude alone is not shared with CineGen. Reuse `requestId` when
+retrying registration or after repairing a disconnected provider; a changed
+receipt under the same ID is rejected. Background status checks run every five
+seconds; the open widget refreshes snapshots every eight seconds and stops
+polling on completion. Refreshing the widget cannot resume saves or submit
+work. Use `cinegen_get_jobs` to retry a failed save or re-register the same
+tracking request after fixing provider access. A tracking error never falls
+back to a fresh generation.

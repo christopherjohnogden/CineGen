@@ -43,8 +43,10 @@ export function readTopviewCanvasTask(value: unknown): { canvasId: string; nodeI
   throw new Error('The saved Topview Canvas task is invalid. No new generation was submitted.');
 }
 
-function taskHandle(value: { canvasId: string; nodeId: string; taskId: string }): string {
-  return TASK_PREFIX + btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+export function topviewCanvasTaskHandle(value: { canvasId: string; nodeId: string; taskId: string }): string {
+  const handle = TASK_PREFIX + btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  readTopviewCanvasTask(handle);
+  return handle;
 }
 
 function kind(reference: CanvasReference): 'image' | 'video' | 'audio' {
@@ -148,7 +150,7 @@ export async function submitTopviewCanvasAudio(args: {
     parameters, inputs, layout: { x: 0, y: y + Math.ceil(references.length / 4) * 300, width: 640, height: 400 },
   }));
   if (!submitted.nodeId || !submitted.taskId) throw new Error('Topview did not return a complete generation receipt. Check Topview before starting another generation.');
-  return { taskId: taskHandle({ canvasId, nodeId: submitted.nodeId, taskId: submitted.taskId }),
+  return { taskId: topviewCanvasTaskHandle({ canvasId, nodeId: submitted.nodeId, taskId: submitted.taskId }),
     status: 'running', model: request.model, ...(parameters.duration > 0 ? { durationSec: parameters.duration } : {}), canvasId };
 }
 

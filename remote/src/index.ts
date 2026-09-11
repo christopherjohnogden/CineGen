@@ -14,6 +14,7 @@ import { z } from 'zod';
 z.config({ jitless: true });
 import { providerRpc, requestedProvider, connectedModels, prepareProviderGeneration } from './providers';
 import { generationTools, models, prepareGeneration } from './jobs';
+import { prepareTrackedGeneration } from './tracked-generation';
 export { GenerationJob } from './jobs';
 
 interface Env { OAUTH_KV: KVNamespace; OAUTH_PROVIDER: OAuthHelpers; JOBS: DurableObjectNamespace; PUBLIC_ORIGIN: string; ALLOWED_EMAILS: string }
@@ -26,7 +27,7 @@ const projectTool = { name:'cinegen_project',description:'List or create saved C
 async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Identity}) {
   const origin=request.headers.get('origin');
   if(origin && origin!==env.PUBLIC_ORIGIN) return new Response('Origin not allowed',{status:403});
-  const server = new Server({name:'cinegen',version:'1.8.5'},{capabilities:{tools:{},resources:{}},instructions:DISPLAY_INSTRUCTIONS+' '+'Character Elements can carry voice descriptions, ElevenLabs voice IDs and saved audio samples. cinegen_audio action generate runs ElevenLabs Audio nodes directly with the ElevenLabs account connected inside CineGen, returning saved playable audio. prepare makes a node without charging; generate requires a unique requestId, which must be reused to recover the same take. No outside chat handoff is required. Character voices can be designed and selected in CineGen. This is an explicit ElevenLabs workflow, not a fal.ai fallback. Read the character voice before writing dialogue; pass elementIds to cinegen_generate so saved voice direction is included in video prompts. Preserve user prompts in full. Never shorten or rewrite a prompt to fit a provider limit without user approval. CineGen has no global 4,000-character generation limit; audioReferenceConnection.promptMaxCharacters applies only to the indicated Topview audio-reference route. Lip sync, talking avatars, and upscaling are separate explicit model choices; never run them automatically after a generation. Check cinegen_list_models available and unavailableReason before selecting a tool. Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. Topview Seedance 2.5 accepts image, video, and audio input references together. Use inputs.audio_references for MP3/WAV URLs and inputs.image_url for images/videos. The connected Topview Canvas route requires at least one image or video alongside audio; generate_audio controls output sound, not reference support. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
+  const server = new Server({name:'cinegen',version:'1.8.6'},{capabilities:{tools:{},resources:{}},instructions:DISPLAY_INSTRUCTIONS+' '+'Generation viewers must appear immediately, not after completion. cinegen_generate returns the live prism widget while queued/running. If you submit directly through Topview tools, immediately call cinegen_track_generation with the original task receipt and verified prompt/references. Never wait to import the finished file before opening the viewer, invent a CineGen node ID, or call cinegen_generate again for the existing render. Tracking polls the original task and saves it without another generation. Refresh tools/list if cinegen_track_generation is missing. '+'Character Elements can carry voice descriptions, ElevenLabs voice IDs and saved audio samples. cinegen_audio action generate runs ElevenLabs Audio nodes directly with the ElevenLabs account connected inside CineGen, returning saved playable audio. prepare makes a node without charging; generate requires a unique requestId, which must be reused to recover the same take. No outside chat handoff is required. Character voices can be designed and selected in CineGen. This is an explicit ElevenLabs workflow, not a fal.ai fallback. Read the character voice before writing dialogue; pass elementIds to cinegen_generate so saved voice direction is included in video prompts. Preserve user prompts in full. Never shorten or rewrite a prompt to fit a provider limit without user approval. CineGen has no global 4,000-character generation limit; audioReferenceConnection.promptMaxCharacters applies only to the indicated Topview audio-reference route. Lip sync, talking avatars, and upscaling are separate explicit model choices; never run them automatically after a generation. Check cinegen_list_models available and unavailableReason before selecting a tool. Topview is the default generation provider. Use Higgsfield only when the user explicitly requests it; never auto-fallback and never ask for a fal key. Both use the provider connections already set up in CineGen. Topview Seedance 2.5 accepts image, video, and audio input references together. Use inputs.audio_references for MP3/WAV URLs and inputs.image_url for images/videos. The connected Topview Canvas route requires at least one image or video alongside audio; generate_audio controls output sound, not reference support. For Spaces Studio mode, use cinegen_studio_create to prepare image/video items without spending credits. Use cinegen_generate for actual unattended Studio generation. cinegen_nodes creates Canvas nodes, and cinegen_create_space creates template-based Canvas layouts. Studio items retain prompts and settings and can later be placed on Canvas. Refresh tools/list if cinegen_studio_create is missing from your cached tool index.'});
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [MEDIA_RESOURCE] }));
   server.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => readMediaResource(params.uri));
   server.setRequestHandler(ListToolsRequestSchema,async()=>({tools:[projectTool,...remoteTools,...generationTools]}));
@@ -101,10 +102,14 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
         const catalog=await connectedModels(auth.token,provider,args.kind);
         result={provider,defaultProvider:'topview',backupProvider:'higgsfield',automaticFallback:false,connected:catalog.connected,audioReferenceConnection:catalog.audioReferenceConnection,clipEditConnection:catalog.clipEditConnection,models:catalog.models.map(m=>({nodeType:m.nodeType,name:m.name,kind:m.outputType,available:!m.unavailableReason,unavailableReason:m.unavailableReason,inputs:m.inputs}))};
       }
-      else if(params.name==='cinegen_generate'||params.name==='cinegen_get_jobs') {
+      else if(params.name==='cinegen_generate'||params.name==='cinegen_get_jobs'||params.name==='cinegen_track_generation') {
         const projectId=safeId(args.projectId),requestId=safeId(args.requestId);
         const loadedGeneration = await store.load(projectId);
         let prepared;
+        if(params.name==='cinegen_track_generation') {
+          args.provider='topview';
+          prepared=prepareTrackedGeneration(args).prepared;
+        }
         if(params.name==='cinegen_generate') {
           args.provider=requestedProvider(args.provider);
           const catalog=await connectedModels(auth.token,args.provider);
@@ -120,9 +125,18 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
           }
         }
         const job=env.JOBS.get(env.JOBS.idFromName(`${identity.uid}:${projectId}:${requestId}`));
-        const response=await job.fetch(`https://job/${params.name==='cinegen_get_jobs'?'read':'start'}`,{method:'POST',body:JSON.stringify({identity,args,prepared})});
+        const response=await job.fetch(`https://job/${params.name==='cinegen_get_jobs'?'read':params.name==='cinegen_track_generation'?'track':'start'}`,{method:'POST',body:JSON.stringify({identity,args,prepared})});
         result=await response.json();
         if(!response.ok)throw new Error((result as any).error??'Job unavailable.');
+        if(params.name!=='cinegen_get_jobs') {
+          const snapshot=result as Record<string,unknown>;
+          const data=displayJobSnapshot({...snapshot,projectId,requestId});
+          data.projectId=projectId;
+          data.projectUrl=`https://cinegen-film.vercel.app/?project=${encodeURIComponent(projectId)}&storage=db`;
+          const shown=displayResult(data);
+          return {...shown,content:[{type:'text' as const,text:JSON.stringify(result)},...shown.content],
+            structuredContent:{...data,requestId,nodeId:snapshot.nodeId,status:snapshot.status}};
+        }
       }
       else if(params.name==='cinegen_project') {
         if(args.action==='list') result=await store.projects();
@@ -167,7 +181,7 @@ async function mcp(request:Request, env:Env, ctx:ExecutionContext & {props:Ident
 const defaultHandler={async fetch(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url);
   if(url.origin!==env.PUBLIC_ORIGIN) return new Response('Unknown host',{status:400});
-  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1,version:'1.8.5',displayTools:remoteTools.filter(t=>isDisplayTool(t.name)).map(t=>t.name)});
+  if(url.pathname==='/health') return Response.json({status:'ready',service:'cinegen-remote',tools:remoteTools.length+generationTools.length+1,version:'1.8.6',displayTools:remoteTools.filter(t=>isDisplayTool(t.name)).map(t=>t.name)});
   if(url.pathname==='/') return page(`<h1>CineGen Connect</h1><p>Work on your saved CineGen projects from Claude or ChatGPT, even while your Mac is closed.</p><label>Connection URL</label><code>${html(env.PUBLIC_ORIGIN)}/mcp</code><p>Add this URL as a custom connector, then sign in with your CineGen Cloud account.</p><small>Sign into the same cloud account in CineGen on desktop and the website to see your saved work. Local-only projects must sync first.</small>`);
   if(url.pathname!=='/authorize') return new Response('Not found',{status:404});
   try {

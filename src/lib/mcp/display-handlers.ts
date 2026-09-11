@@ -71,6 +71,7 @@ function generationItems(state: McpHostState, args: Record<string, unknown>): Di
       if (Array.isArray(args.nodeIds) && !args.nodeIds.includes(node.id)) continue;
       if (!args.includeHidden && node.data.config.__studioHiddenFromFeed) continue;
       const model = studioFeedModel(node), config = node.data.config;
+      const snapshot = record(config.__studioGenerationMetadata);
       const media = canvasMedia(node, state.elements);
       const versions = [...new Set([...(node.data.generations ?? []), node.data.result?.url].filter((url): url is string => Boolean(url)))];
       if (args.allTakes && versions.length > 1) {
@@ -89,11 +90,13 @@ function generationItems(state: McpHostState, args: Record<string, unknown>): Di
         const asset = assetFor(state, output.url);
         const generationIndex = output.key.startsWith('output-') ? Number(output.key.slice(7)) : undefined;
         const historical = args.allTakes && generationIndex !== undefined && output.url !== node.data.result?.url;
+        const savedReferences = snapshot.version === 1 && Array.isArray(snapshot.references)
+          && (snapshot.outputUrl ? snapshot.outputUrl === output.url : !node.data.generations?.length);
         items.push({ id: output.id, nodeId: node.id, assetId: asset?.id, generationIndex,
           title: output.name || node.data.label || model?.name || 'Generation', kind: output.kind, status: historical ? 'complete' : status,
           ...mediaFields(output.url, asset?.thumbnailUrl || config.thumbnailUrl || config.posterUrl),
           ...dimensions(asset, config), prompt: (model && resolveStudioRecipe(node, model, space.nodes, space.edges, state.assets).prompt) || output.prompt || canvasPrompt(node), model: model?.name,
-          provider: model ? model.provider ?? 'fal' : undefined, spaceId: space.id, spaceName: space.name, references: generationInputReferences(state, config, model, space, node.id),
+          provider: model ? model.provider ?? 'fal' : undefined, spaceId: space.id, spaceName: space.name, references: savedReferences ? savedGenerationReferences(snapshot.references, state.assets) : generationInputReferences(state, config, model, space, node.id),
           source: node.data.type === 'filePicker' ? 'Canvas upload' : 'Generation',
           createdAt: text(config.__studioCreatedAt) || asset?.createdAt,
           startedAt: historical ? undefined : positive(node.data.result?.progressStartedAt),
@@ -257,8 +260,11 @@ export function createDisplayHandlers(host: McpHost): Record<string, McpToolHand
 /** Durable status is authoritative; this never calls the save-retry endpoint. */
 export function displayJobSnapshot(job: Record<string, unknown>, existing?: DisplayPage): DisplayPage {
   const base = existing?.items[0];
-  const item: DisplayItem = { id: text(job.nodeId) || text(job.requestId), title: base?.title || 'Generation', kind: base?.kind || (job.kind === 'video' ? 'video' : 'image'),
-    prompt: base?.prompt || '', ...base, nodeId: text(job.nodeId), requestId: text(job.requestId),
+  const item: DisplayItem = { id: text(job.nodeId) || text(job.requestId), title: base?.title || text(job.title) || text(job.model) || 'Generation', kind: base?.kind || (job.kind === 'video' ? 'video' : 'image'),
+    prompt: text(job.prompt) || base?.prompt || '', model: text(job.model) || base?.model,
+    references: base?.references?.length ? base.references : savedGenerationReferences(job.references, []),
+    resolution: text(job.resolution) || base?.resolution, aspectRatio: text(job.aspectRatio) || base?.aspectRatio,
+    ...base, nodeId: text(job.nodeId), requestId: text(job.requestId),
     status: text(job.status), ...mediaFields(job.url, job.url ? base?.thumbnailUrl : undefined), createdAt: text(job.createdAt),
     startedAt: positive(Date.parse(text(job.createdAt))) ?? base?.startedAt, provider: text(job.provider),
     error: text(job.error) || undefined, unavailableReason: job.status === 'not_found' ? 'This job was not found.' : undefined };
