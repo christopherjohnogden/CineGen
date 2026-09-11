@@ -348,10 +348,12 @@ function mountViewer() {
       const entry = { name, trigger, body };
       disclosures.push(entry); controls.append(trigger); contents.append(body); return entry;
     };
-    if (item.prompt) {
+    {
       const prompt = element('div'), actions = element('div', 'actions');
-      prompt.append(element('p', 'result-prompt', item.prompt));
-      actions.append(button('Copy prompt', () => copyText(item.prompt), 'small', 'copy'), button('Use prompt', () => sendSelection([item], 'prompt'), 'small', 'arrow')); prompt.append(actions);
+      if (item.prompt) {
+        prompt.append(element('p', 'result-prompt', item.prompt));
+        actions.append(button('Copy prompt', () => copyText(item.prompt), 'small', 'copy'), button('Use prompt', () => sendSelection([item], 'prompt'), 'small', 'arrow')); prompt.append(actions);
+      } else prompt.append(element('p', 'meta', 'No prompt was saved with this media. Imported files may not include their original generation details.'));
       add('prompt', 'Prompt', prompt);
     }
 
@@ -389,6 +391,10 @@ function mountViewer() {
         more.setAttribute('aria-label', `Show all ${item.references.length} references`); thumbs.append(more);
       }
       metadata.append(thumbs);
+    } else {
+      const body = element('div');
+      body.append(element('p', 'meta', 'No attached references were saved with this media.'));
+      add('references', 'References', body);
     }
     panel.append(metadata);
 
@@ -687,7 +693,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.4' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.5' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

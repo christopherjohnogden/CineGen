@@ -114,6 +114,23 @@ describe('deployed MCP viewer startup', () => {
     expect(await readFile('mcp/media-viewer-script.mjs', 'utf8')).toBe(await compileMcpViewer());
   });
 
+  it('keeps Prompt and References available when an imported file has no recipe', async () => {
+    const view = mount(); await view.initialize();
+    view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: { ...page, mode: 'media', total: 1,
+      items: [{ id: 'imported', title: 'Imported video', kind: 'video', status: 'complete', url: 'https://media.example/clip.mp4' }],
+      refresh: { name: 'cinegen_show_media', arguments: {} } } } });
+    const player = view.document.querySelector('video');
+    const controls = Array.from(view.document.querySelectorAll('.result-toggle')) as HTMLButtonElement[];
+    expect(controls.map(button => button.textContent)).toEqual(['Prompt', 'References', 'Details']);
+    expect(controls.every(button => button.getAttribute('aria-expanded') === 'false')).toBe(true);
+    controls[0].click();
+    expect(view.document.querySelector('.result-panel:not([hidden])')?.textContent).toContain('No prompt was saved');
+    controls[1].click();
+    expect(view.document.querySelector('.result-panel:not([hidden])')?.textContent).toContain('No attached references were saved');
+    expect(view.document.querySelector('video')).toBe(player);
+    expect(view.document.querySelector('.result-ref-thumbnails')).toBeNull();
+  });
+
   it('starts after the deployment transforms and renders all seven Element references', async () => {
     const view = mount();
     await view.initialize();
@@ -338,9 +355,9 @@ describe('deployed MCP viewer startup', () => {
       { title: 'Last frame', kind: 'image', url: base + 'last.png' },
       { title: 'Color', kind: 'image', url: base + 'color.png' },
     ];
-    const data = { ...page, mode: 'job', total: 1, items: [{ id: 'film', title: 'Film', kind: 'video', status: 'complete',
+    const data = { ...page, mode: 'media', total: 1, items: [{ id: 'film', title: 'Film', kind: 'video', status: 'complete',
       prompt: 'A short scene.', url: base + 'film.mp4', previewUrl: base + 'film.mp4', references }],
-      refresh: { name: 'cinegen_job_display', arguments: { nodeId: 'film' } } };
+      refresh: { name: 'cinegen_show_media', arguments: { assetIds: ['film'] } } };
     view.send({ method: 'ui/notifications/tool-result', params: { structuredContent: data } });
     const video = view.document.querySelector('video')!;
     video.currentTime = 8;

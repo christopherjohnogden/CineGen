@@ -118,6 +118,53 @@ describe('MCP media displays', () => {
     const paged = await handlers.cinegen_show_generation_batch({ jobs, offset: 2, limit: 1 }) as DisplayPage;
     expect(paged.items[0].batchIndex).toBe(3); expect(paged.hasMore).toBe(true);
   });
+  it('restores a saved asset’s recipe from the exact generation in another Space', async () => {
+    const { state, handlers, dispatch, runNode } = setup();
+    const reference = cloud + '&reference=1', video = cloud + '&motion=1', output = cloud + '&output=1';
+    state.nodes = [];
+    state.assets = [
+      { id: 'saved', name: 'Renamed saved take', type: 'image', url: '/local/saved.png', sourceUrl: output, width: 1920, height: 1080, createdAt: 'now' },
+      { id: 'ref', name: 'Character', type: 'image', url: reference, createdAt: 'now' },
+      { id: 'motion', name: 'Motion clip', type: 'video', url: video, thumbnailUrl: cloud + '&poster=1', createdAt: 'now' },
+    ];
+    state.spaces[1].nodes = [
+      { id: 'generated', type: 'nano-banana-2', position: { x: 0, y: 0 }, data: { type: 'nano-banana-2', label: 'Original name',
+        config: { image_url: reference, resolution: '2K', __studioHiddenFromFeed: true },
+        generations: [output, cloud + '&newer=1'], activeGeneration: 1, result: { status: 'complete', url: cloud + '&newer=1' } } },
+      { id: 'prompt', type: 'prompt', position: { x: 0, y: 0 }, data: { type: 'prompt', label: 'Prompt', config: { prompt: 'Use the character and motion references.' } } },
+      node('motion-input', 'video', { config: { fileUrl: video, fileType: 'video' } }) as any,
+      node('import-copy', 'image', { config: { fileUrl: output, fileType: 'image', __studioMedia: true, __studioPrompt: 'Copy prompt' } }) as any,
+    ];
+    state.spaces[1].edges = [
+      { id: 'prompt-edge', source: 'prompt', target: 'generated', targetHandle: 'prompt' },
+      { id: 'motion-edge', source: 'motion-input', target: 'generated' },
+    ];
+    const before = JSON.stringify(state);
+    const result = await handlers.cinegen_show_media({ assetIds: ['saved'] }) as DisplayPage;
+    const item = result.items[0];
+    expect(item).toMatchObject({ id: 'asset:saved', title: 'Renamed saved take', nodeId: 'generated', spaceName: 'Other',
+      url: output, status: 'complete', generationIndex: 0, prompt: 'Use the character and motion references.',
+      model: 'Nano Banana 2', provider: 'fal', resolution: '2K', aspectRatio: '16:9', width: 1920, height: 1080 });
+    expect(item.references).toEqual([
+      expect.objectContaining({ url: reference, kind: 'image' }),
+      expect.objectContaining({ url: video, kind: 'video', thumbnailUrl: cloud + '&poster=1' }),
+    ]);
+    expect(JSON.stringify(result)).not.toContain('/local/');
+    expect(JSON.stringify(state)).toBe(before); expect(dispatch).not.toHaveBeenCalled(); expect(runNode).not.toHaveBeenCalled();
+  });
+  it('preserves saved prompts and does not borrow a recipe from an unrelated generation', async () => {
+    const { state, handlers } = setup();
+    state.nodes = [{ id: 'generated', type: 'nano-banana-2', position: { x: 0, y: 0 }, data: { type: 'nano-banana-2', label: 'Same name',
+      config: { prompt: 'A different prompt', image_url: cloud + '&input=1' }, result: { status: 'complete', url: cloud } } }];
+    state.assets = [
+      { id: 'saved', name: 'Saved', type: 'image', url: cloud, metadata: { prompt: 'Original saved prompt' }, createdAt: 'now' },
+      { id: 'imported', name: 'Same name', type: 'image', url: cloud + '&input=1', createdAt: 'now' },
+    ];
+    const result = await handlers.cinegen_show_media({}) as DisplayPage;
+    expect(result.items.find(item => item.assetId === 'saved')?.prompt).toBe('Original saved prompt');
+    expect(result.items.find(item => item.assetId === 'imported')).toMatchObject({ prompt: '', references: [] });
+    expect(result.items.find(item => item.assetId === 'imported')?.nodeId).toBeUndefined();
+  });
   it('sends exact references into another Studio Space, persists on reload, and is idempotent', async () => {
     let state = createInitialWorkspaceState();
     state.spaces = [{ id: 'first', name: 'First', nodes: [], edges: [] }, { id: 'second', name: 'Second', nodes: [], edges: [] }]; state.activeSpaceId = 'first';

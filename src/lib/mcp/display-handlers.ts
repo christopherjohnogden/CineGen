@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DISPLAY_TOOLS, DISPLAY_ACTION_TOOLS, displayUrl, previewUrl } from '../../../mcp/display-tools.mjs';
 import { FILM_PRESETS } from '../../../mcp/film-presets.mjs';
 import { canvasMedia, canvasPrompt, studioFeedModel } from '@/lib/studio/canvas-import';
+import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { materializeElementLooks, elementImagesForVariation } from '@/lib/elements/variations';
 import { generateId } from '@/lib/utils/ids';
 import type { Asset } from '@/types/project';
@@ -122,8 +123,8 @@ function generationItems(state: McpHostState, args: Record<string, unknown>): Di
         items.push({ id: output.id, nodeId: node.id, assetId: asset?.id, generationIndex,
           title: output.name || node.data.label || model?.name || 'Generation', kind: output.kind, status: historical ? 'complete' : status,
           ...mediaFields(output.url, asset?.thumbnailUrl || config.thumbnailUrl || config.posterUrl),
-          ...dimensions(asset, config), prompt: output.prompt || canvasPrompt(node), model: model?.name,
-          provider: model?.provider, spaceId: space.id, spaceName: space.name, references: inputReferences(state, config, model, space, node.id),
+          ...dimensions(asset, config), prompt: (model && resolveStudioRecipe(node, model, space.nodes, space.edges, state.assets).prompt) || output.prompt || canvasPrompt(node), model: model?.name,
+          provider: model ? model.provider ?? 'fal' : undefined, spaceId: space.id, spaceName: space.name, references: inputReferences(state, config, model, space, node.id),
           source: node.data.type === 'filePicker' ? 'Canvas upload' : 'Generation',
           createdAt: text(config.__studioCreatedAt) || asset?.createdAt,
           startedAt: historical ? undefined : positive(node.data.result?.progressStartedAt),
@@ -171,10 +172,31 @@ function elementCards(state: McpHostState, args: Record<string, unknown>): Displ
   });
 }
 function libraryItems(state: McpHostState, args: Record<string, unknown>): DisplayItem[] {
-  const items: DisplayItem[] = state.assets.map(asset => ({ id: `asset:${asset.id}`, assetId: asset.id, title: asset.name, kind: asset.type,
-    status: asset.status === 'processing' ? 'pending' : 'complete', ...mediaFields(displayUrl(asset.url) || asset.sourceUrl || asset.url, asset.thumbnailUrl),
-    ...dimensions(asset, asset.metadata), prompt: text(asset.metadata?.prompt), createdAt: asset.createdAt,
-    source: 'Asset library', folderId: asset.folderId, folderName: state.mediaFolders?.find(folder => folder.id === asset.folderId)?.name }));
+  // Saved assets usually retain only the file, while their recipe lives on a
+  // Canvas/Studio node. Match exact outputs across every Space and take; never
+  // infer a relationship from a title or from a model's input reference.
+  const outputs = generationItems(state, { allTakes: true, includeHidden: true })
+    .sort((a, b) => Number(b.source === 'Generation') - Number(a.source === 'Generation'));
+  const byAsset = new Map<string, DisplayItem>(), byUrl = new Map<string, DisplayItem>();
+  for (const output of outputs) {
+    if (output.assetId && !byAsset.has(output.assetId)) byAsset.set(output.assetId, output);
+    if (output.url && !byUrl.has(`${output.kind}:${output.url}`)) byUrl.set(`${output.kind}:${output.url}`, output);
+  }
+  const items: DisplayItem[] = state.assets.map(asset => {
+    const generation = byAsset.get(asset.id) || [asset.url, asset.sourceUrl, asset.fileRef]
+      .map(url => byUrl.get(`${asset.type}:${displayUrl(url)}`)).find(Boolean);
+    const metadata = asset.metadata ?? {};
+    return { id: `asset:${asset.id}`, assetId: asset.id, title: asset.name, kind: asset.type,
+      status: asset.status === 'processing' ? 'pending' : 'complete', ...mediaFields(displayUrl(asset.url) || asset.sourceUrl || asset.url, asset.thumbnailUrl),
+      ...dimensions(asset, { width: generation?.width, height: generation?.height, duration: generation?.duration,
+        resolution: generation?.resolution, aspectRatio: generation?.aspectRatio, ...metadata }),
+      prompt: text(metadata.prompt) || generation?.prompt || '', createdAt: asset.createdAt,
+      model: text(metadata.model) || (generation?.source === 'Generation' ? generation.model : undefined),
+      provider: text(metadata.provider) || (generation?.source === 'Generation' ? generation.provider : undefined),
+      nodeId: generation?.nodeId, spaceId: generation?.spaceId, spaceName: generation?.spaceName,
+      generationIndex: generation?.generationIndex, references: generation?.references ?? [],
+      source: 'Asset library', folderId: asset.folderId, folderName: state.mediaFolders?.find(folder => folder.id === asset.folderId)?.name };
+  });
   const known = new Set(state.assets.flatMap(asset => [asset.url, asset.sourceUrl]).filter(Boolean));
   for (const space of spacesFor(state)) for (const node of space.nodes.filter(node => node.data.type === 'filePicker' && !node.data.config.__studioMedia)) {
     for (const media of canvasMedia(node, state.elements)) {
