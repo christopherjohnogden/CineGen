@@ -317,7 +317,7 @@ function mountViewer() {
       const active = detailPanels.get(key);
       for (const entry of disclosures) {
         const open = entry.name === active;
-        entry.trigger.setAttribute('aria-expanded', String(open)); entry.body.hidden = !open; entry.onToggle?.(open);
+        entry.trigger.setAttribute('aria-expanded', String(open)); entry.body.hidden = !open;
       }
       if (panel.isConnected) reportSize();
     };
@@ -336,18 +336,10 @@ function mountViewer() {
       disclosures.push(entry); controls.append(trigger); contents.append(body); return entry;
     };
     if (item.prompt) {
-      const summary = element('div', 'result-summary'), preview = element('p', 'result-prompt-preview', item.prompt);
-      const prompt = element('div', 'result-prompt-full'), actions = element('div', 'actions');
+      const prompt = element('div'), actions = element('div', 'actions');
       prompt.append(element('p', 'result-prompt', item.prompt));
       actions.append(button('Copy prompt', () => copyText(item.prompt), 'small', 'copy'), button('Use prompt', () => sendSelection([item], 'prompt'), 'small', 'arrow')); prompt.append(actions);
-      const entry = add('prompt', 'Show more', prompt);
-      entry.trigger.classList.add('prompt-expand');
-      entry.onToggle = open => {
-        preview.hidden = open;
-        entry.trigger.setAttribute('aria-label', open ? 'Collapse prompt' : 'Expand prompt');
-        entry.trigger.replaceChildren(document.createTextNode(open ? 'Show less' : 'Show more'), icon('down'));
-      };
-      summary.append(preview, prompt, entry.trigger); panel.append(summary);
+      add('prompt', 'Prompt', prompt);
     }
 
     const metadata = element('div', 'result-metadata'), pills = element('div', 'result-pills');
@@ -405,6 +397,11 @@ function mountViewer() {
     if (selectable(item)) actions.append(button(chosen.has(item.id) ? 'Selected' : 'Select reference', () => toggle(item), 'small', chosen.has(item.id) ? 'check' : 'plus'));
     if (safeUrl(item.url)) actions.append(button(`Open ${item.kind}`, () => openLink(item.url), 'small', 'external'));
     if (safeUrl(current.projectUrl)) actions.append(button('Open CineGen', () => openLink(current.projectUrl), 'small', 'external'));
+    actions.append(button('Refresh result', () => refresh(), 'small', 'refresh'));
+    actions.append(button('Browse library', () => {
+      if (current.mode === 'job') refresh({ offset: 0, limit: pageSize }, false, 'cinegen_show_generations');
+      else { selected = null; render(); schedule(); }
+    }, 'small', 'film'));
     if (actions.children.length) info.append(actions);
     if (info.children.length) add('details', 'Details', info);
     const footer = element('div', 'result-footer'); footer.append(controls, badge(item)); panel.append(footer, contents);
@@ -604,6 +601,7 @@ function mountViewer() {
     const item = current.mode === 'job' ? current.items[0] : current.items.find(item => item.id === selected);
     root.classList.toggle('is-result', Boolean(item && !item.elementCard && !item.presetId && ['image', 'video'].includes(item.kind)));
     const header = element('header'), titles = { elements: current.refresh.arguments.view === 'images' ? 'References' : 'Elements', media: 'Assets', generations: 'Generations', batch: 'Results', job: 'Result', presets: 'Film presets' };
+    header.hidden = root.classList.contains('is-result');
     const heading = element('h1'), title = button(titles[current.mode] || current.title, () => { collectionsOpen = !collectionsOpen; render(); }, 'collection-title', 'down');
     title.setAttribute('aria-expanded', String(collectionsOpen)); title.setAttribute('aria-controls', 'collection-menu'); heading.append(title);
     const controls = element('div', 'header-controls');
@@ -676,7 +674,7 @@ function mountViewer() {
   window.addEventListener('online', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('resize', () => { applyHostContext(); root.querySelector('.gallery-picture')?._restore?.(); updateScrollHint(); maybeLoadMore(); });
-  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.1' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
+  request('ui/initialize', { appInfo: { name: 'CineGen Creative Library', version: '2.7.2' }, appCapabilities: { availableDisplayModes: ['inline'] }, protocolVersion: '2026-01-26' })
     .then(result => { capabilities = result.hostCapabilities || {}; applyHostContext(result.hostContext); ready = true; notify('ui/notifications/initialized', {}); reportSize(); maybeLoadMore(); schedule(true); })
     .catch(() => { if (!current) showError('The chat connection did not respond.'); });
 }

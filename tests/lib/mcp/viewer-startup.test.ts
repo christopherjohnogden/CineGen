@@ -40,6 +40,7 @@ function mount({ preloaded = false, uri = api.MEDIA_RESOURCE.uri } = {}) {
   const host = { postMessage: vi.fn() };
   Object.defineProperty(window, 'parent', { value: host });
   window.ResizeObserver = class { observe() {} disconnect() {} } as any;
+  window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} } as any;
   window.console.error = vi.fn();
   Object.defineProperty(window.HTMLElement.prototype, 'getBoundingClientRect', { value() { return { height: 800, width: 390 }; } });
   Object.defineProperty(window.document, 'visibilityState', { value: 'visible', configurable: true });
@@ -242,14 +243,15 @@ describe('deployed MCP viewer startup', () => {
     video.currentTime = 12;
     const pause = vi.spyOn(video, 'pause');
     const toggles = [...view.document.querySelectorAll<HTMLButtonElement>('.result-toggle')];
-    const preview = view.document.querySelector<HTMLElement>('.result-prompt-preview')!;
-    expect(preview.textContent).toBe(item.prompt);
-    expect(preview.hidden).toBe(false);
-    expect(view.document.querySelector('.prompt-expand')?.textContent).toBe('Show more');
+    expect(view.document.querySelector('.result-prompt-preview')).toBeNull();
+    expect(view.document.querySelector('.result-prompt')?.textContent).toBe(item.prompt);
+    expect(toggles.map(toggle => toggle.textContent)).toEqual(['Prompt', 'References1', 'Details']);
+    expect(view.document.querySelector('header')?.hidden).toBe(true);
     expect([...view.document.querySelectorAll('.result-pill')].map(pill => pill.textContent)).toEqual(['Seedance 2.5', '16:9', '30s']);
     const blocks = [...view.document.querySelector('.result-detail')!.children];
-    expect(blocks.indexOf(view.document.querySelector('.result-summary')!)).toBeLessThan(blocks.indexOf(view.document.querySelector('.result-metadata')!));
     expect(blocks.indexOf(view.document.querySelector('.result-metadata')!)).toBeLessThan(blocks.indexOf(view.document.querySelector('.result-player')!));
+    expect(blocks.indexOf(view.document.querySelector('.result-player')!)).toBeLessThan(blocks.indexOf(view.document.querySelector('.result-footer')!));
+    expect(toggles.every(toggle => toggle.closest('.result-footer'))).toBe(true);
     expect(toggles.map(button => button.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false']);
     expect([...view.document.querySelectorAll<HTMLElement>('.result-panel')].every(panel => panel.hidden)).toBe(true);
     for (const toggle of toggles) {
@@ -257,8 +259,7 @@ describe('deployed MCP viewer startup', () => {
       expect(toggle.getAttribute('aria-expanded')).toBe('true');
       expect(view.document.getElementById(toggle.getAttribute('aria-controls')!)?.hidden).toBe(false);
       expect(view.document.querySelectorAll('.result-panel:not([hidden])')).toHaveLength(1);
-      expect(preview.hidden).toBe(toggle === toggles[0]);
-      expect(toggles[0].textContent).toBe(toggle === toggles[0] ? 'Show less' : 'Show more');
+      expect(toggles[0].textContent).toBe('Prompt');
       expect(view.document.querySelector('video')).toBe(video);
       expect(video.currentTime).toBe(12);
     }
@@ -267,6 +268,15 @@ describe('deployed MCP viewer startup', () => {
     expect(view.document.querySelector('.result-actions')?.textContent).toContain('Open video');
     toggles[2].click(); expect(view.document.querySelectorAll('.result-panel:not([hidden])')).toHaveLength(0);
     expect(view.host.postMessage.mock.calls.some(([m]) => m.method === 'tools/call')).toBe(false);
+    toggles[2].click();
+    [...view.document.querySelectorAll<HTMLButtonElement>('.result-actions button')].find(button => button.textContent === 'Browse library')!.click();
+    const browse = view.host.postMessage.mock.calls.find(([m]) => m.method === 'tools/call')![0];
+    expect(browse.params).toEqual({ name: 'cinegen_show_generations', arguments: { projectId: 'fixture', offset: 0, limit: 9 } });
+    view.send({ id: browse.id, result: { structuredContent: { ...page, mode: 'generations', items: [item], total: 1,
+      refresh: { name: 'cinegen_show_generations', arguments: { projectId: 'fixture' } } } } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(view.document.querySelector('header')?.hidden).toBe(false);
+    expect(view.document.querySelectorAll('.grid .card')).toHaveLength(1);
   });
 
   it('opens exact attached references from compact thumbnails and reveals overflow without rebuilding the player', async () => {
