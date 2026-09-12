@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, useId } from 'react';
 import { NODE_REGISTRY } from '@/lib/workflows/node-registry';
 import { ALL_MODELS } from '@/lib/fal/models';
 import { areWorkflowPortsCompatible } from '@/lib/workflows/port-compatibility';
@@ -6,6 +6,7 @@ import {
   compareModelsByProvider,
   isLegacyTopviewAutomaticModel,
   MODEL_PROVIDER_LABELS,
+  type ModelProvider,
 } from '@/lib/workflows/provider-model-options';
 import { useTopviewModelCatalogVersion } from '@/components/create/use-topview-model-catalog';
 import type { NodeCategory, PortType } from '@/types/workflow';
@@ -29,6 +30,18 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'pod',        label: 'Pod'        },
 ];
 
+const PROVIDERS = Object.entries(MODEL_PROVIDER_LABELS) as [ModelProvider, string][];
+// Topview and Higgsfield already have their own tabs.
+const CLOUD_PROVIDERS_WITHOUT_TABS: ModelProvider[] = ['fal', 'kie'];
+const HIDDEN_PROVIDERS_KEY = 'cinegen:canvas:hidden-providers';
+
+function loadHiddenProviders(): ModelProvider[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(HIDDEN_PROVIDERS_KEY) ?? '[]');
+    return Array.isArray(stored) ? PROVIDERS.map(([id]) => id).filter(id => stored.includes(id)) : [];
+  } catch { return []; }
+}
+
 const CATEGORY_ORDER: NodeCategory[] = ['utility', 'text', 'image', 'image-edit', 'video', 'model3d', 'audio'];
 const CATEGORY_LABELS: Record<NodeCategory, string> = {
   utility:      'UTILITY',
@@ -51,6 +64,10 @@ function modelTypeBadge(outputType: string): string {
 export function NodePalette({ position, onSelect, onClose, sourcePortType = null }: NodePaletteProps) {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<Tab>('all');
+  const [hiddenProviders, setHiddenProviders] = useState(loadHiddenProviders);
+  const [providersOpen, setProvidersOpen] = useState(false);
+  const providerPanelId = useId();
+  const firstProviderRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const topviewCatalogVersion = useTopviewModelCatalogVersion();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +75,26 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
   const listRef = useRef<HTMLDivElement>(null);
 
   const openAbove = position.y > window.innerHeight / 2;
+  const visibleTabs = TABS.filter(({ id }) => id === 'all' || (id === 'cloud'
+    ? CLOUD_PROVIDERS_WITHOUT_TABS.some(provider => !hiddenProviders.includes(provider))
+    : !hiddenProviders.includes(id)));
+  const activeTab = visibleTabs.some(({ id }) => id === tab) ? tab : 'all';
+
+  useEffect(() => {
+    try { localStorage.setItem(HIDDEN_PROVIDERS_KEY, JSON.stringify(hiddenProviders)); } catch { /* Keep filtering usable when storage is unavailable. */ }
+  }, [hiddenProviders]);
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.key === HIDDEN_PROVIDERS_KEY || event.key === null) setHiddenProviders(loadHiddenProviders());
+    };
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
+  }, []);
+  useEffect(() => { if (activeTab !== tab) setTab(activeTab); }, [activeTab, tab]);
+  useEffect(() => {
+    if (providersOpen) firstProviderRef.current?.focus();
+    else inputRef.current?.focus();
+  }, [providersOpen]);
 
   const filteredGroups = useMemo(() => {
     const entries = Object.values(NODE_REGISTRY).filter((n) => {
@@ -67,28 +104,29 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
       const modelDef = ALL_MODELS[n.type];
       const provider = modelDef ? (modelDef.provider ?? 'fal') : null;
       if (modelDef && isLegacyTopviewAutomaticModel(modelDef)) return false;
+      if (provider && hiddenProviders.includes(provider)) return false;
 
-      if (tab === 'cloud') {
+      if (activeTab === 'cloud') {
         if (!n.isModel) return false;
         return provider === 'topview' || provider === 'fal' || provider === 'kie' || provider === 'higgsfield';
       }
-      if (tab === 'topview') {
+      if (activeTab === 'topview') {
         if (!n.isModel) return false;
         return provider === 'topview';
       }
-      if (tab === 'higgsfield') {
+      if (activeTab === 'higgsfield') {
         if (!n.isModel) return false;
         return provider === 'higgsfield';
       }
-      if (tab === 'local') {
+      if (activeTab === 'local') {
         if (!n.isModel) return false;
         return provider === 'local';
       }
-      if (tab === 'runpod') {
+      if (activeTab === 'runpod') {
         if (!n.isModel) return false;
         return provider === 'runpod';
       }
-      if (tab === 'pod') {
+      if (activeTab === 'pod') {
         if (!n.isModel) return false;
         return provider === 'pod';
       }
@@ -113,15 +151,14 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
         nodes: filtered.filter((n) => n.category === cat).sort(compareModelsByProvider),
       }))
       .filter((g) => g.nodes.length > 0);
-  }, [search, sourcePortType, tab, topviewCatalogVersion]);
+  }, [search, sourcePortType, activeTab, hiddenProviders, topviewCatalogVersion]);
 
   const flatList = useMemo(
     () => filteredGroups.flatMap((g) => g.nodes),
     [filteredGroups],
   );
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
-  useEffect(() => { setSelectedIndex(0); }, [search, tab]);
+  useEffect(() => { setSelectedIndex(0); }, [search, activeTab, hiddenProviders]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -145,6 +182,15 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Checkbox Space/Enter and Escape belong to the provider picker, not the
+      // canvas's global Space shortcut or the highlighted model underneath it.
+      e.stopPropagation();
+      if (providersOpen) {
+        if (e.key === 'Escape') { e.preventDefault(); setProvidersOpen(false); }
+        return;
+      }
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if ((e.target as HTMLElement).closest('button')) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedIndex((i) => Math.min(i + 1, flatList.length - 1));
@@ -154,17 +200,13 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (flatList[selectedIndex]) onSelect(flatList[selectedIndex].type);
-      } else if (e.key === 'Escape') {
-        onClose();
       } else if (e.code === 'Space' && !search) {
         e.preventDefault();
         onClose();
       }
     },
-    [flatList, selectedIndex, onSelect, onClose, search],
+    [flatList, selectedIndex, onSelect, onClose, search, providersOpen],
   );
-
-  const isEmpty = false;
 
   return (
     <div
@@ -177,6 +219,12 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
           : { top: position.y }),
       }}
       onKeyDown={handleKeyDown}
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest('input[type="text"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setProvidersOpen(true);
+      }}
     >
       {sourcePortType && (
         <div className="np__connection-context">
@@ -204,14 +252,57 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
             </svg>
           </button>
         )}
+        <button
+          type="button"
+          className={`np__provider-toggle${providersOpen || hiddenProviders.length ? ' np__provider-toggle--active' : ''}`}
+          aria-label="Choose visible providers"
+          aria-expanded={providersOpen}
+          aria-controls={providerPanelId}
+          title="Choose visible providers · or right-click this menu"
+          onClick={() => setProvidersOpen(open => !open)}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 7h7m6 0h3M4 17h3m6 0h7" /><circle cx="14" cy="7" r="3" /><circle cx="10" cy="17" r="3" />
+          </svg>
+          {hiddenProviders.length > 0 && <span className="np__provider-count">{hiddenProviders.length}</span>}
+        </button>
       </div>
 
+      {providersOpen ? (
+        <div className="np__providers" id={providerPanelId} role="group" aria-label="Visible providers">
+          <div className="np__providers-heading">
+            <strong>Visible providers</strong>
+            <span>Choose which models appear in this menu.</span>
+          </div>
+          <div className="np__provider-options">
+            {PROVIDERS.map(([id, label], index) => (
+              <label key={id} className="np__provider-option">
+                <input
+                  ref={index === 0 ? firstProviderRef : undefined}
+                  type="checkbox"
+                  checked={!hiddenProviders.includes(id)}
+                  onChange={(event) => {
+                    const visible = event.currentTarget.checked;
+                    setHiddenProviders(current => visible ? current.filter(provider => provider !== id) : [...current, id]);
+                  }}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="np__providers-footer">
+            <button type="button" onClick={() => setHiddenProviders([])} disabled={!hiddenProviders.length}>Show all</button>
+            <button type="button" className="np__providers-done" onClick={() => setProvidersOpen(false)}>Done</button>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* Tabs */}
       <div className="np__tabs">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.id}
-            className={`np__tab${tab === t.id ? ' np__tab--active' : ''}`}
+            className={`np__tab${activeTab === t.id ? ' np__tab--active' : ''}`}
             onClick={() => setTab(t.id)}
           >
             {t.label}
@@ -221,18 +312,12 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
 
       {/* List */}
       <div className="np__list" ref={listRef}>
-        {isEmpty ? (
-          <div className="np__coming-soon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <circle cx="12" cy="12" r="9" /><path d="M12 8v4l2 2" />
-            </svg>
-            <span>Coming soon</span>
-          </div>
-        ) : flatList.length === 0 ? (
+        {flatList.length === 0 ? (
           <div className="np__empty">
             {sourcePortType && !search
               ? `No compatible nodes for this ${sourcePortType} output`
-              : `No results for "${search}"`}
+              : search ? `No results for "${search}"` : 'No models from your visible providers'}
+            {hiddenProviders.length > 0 && <button type="button" onClick={() => setProvidersOpen(true)}>Manage providers</button>}
           </div>
         ) : (
           filteredGroups.map((group) => (
@@ -275,6 +360,8 @@ export function NodePalette({ position, onSelect, onClose, sourcePortType = null
           ))
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
