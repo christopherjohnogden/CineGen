@@ -5,6 +5,7 @@ import type { ExportJob } from './export';
 import type { WorkflowNodeData, WorkflowRun } from './workflow';
 import type { Element, ElementFolder } from './elements';
 import type { DirectorShow } from './director';
+import type { ProjectSet } from './sets';
 import type { ProjectProviderUsage } from '@/lib/providers/project-usage';
 
 export type ProjectTab = 'elements' | 'create' | 'director' | 'edit' | 'llm' | 'export' | 'settings';
@@ -36,4 +37,5 @@ export interface WorkspaceState {
   elementFolders: ElementFolder[];
   director: DirectorShow;
   providerUsage: ProjectProviderUsage;
+  sets: ProjectSet[];
 }

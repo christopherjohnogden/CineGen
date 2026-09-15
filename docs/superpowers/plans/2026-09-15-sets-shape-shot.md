@@ -57,11 +57,16 @@ Spark documents **no** depth API. It does document per-splat colour editing and 
 
 **Files:** Create `scratch/depth-spike/` (not shipped)
 
-- [ ] **Step 1:** Load a sample `.ply`, render a normal pass via `SparkViewpoint({target:{width,height}})` + `renderReadTarget()`.
-- [ ] **Step 2:** Attempt a depth pass by recolouring each splat from view-space Z and re-rendering; composite mannequin depth from a standard `MeshDepthMaterial` pass.
-- [ ] **Step 3:** Record the verdict in the spec doc.
+- [x] **RESOLVED — depth is IN. No spike needed; all four references ship.**
 
-**Falsified if** per-splat recolour is not reachable. Fallback: ship v1 with **three** references (plate, composite, stand-in) and the slot table collapses to @image1–@image3 — the brief already designates depth as the first thing to drop.
+Verified against the installed `@sparkjsdev/spark@2.2.0` type definitions, not the docs:
+- `setDepthColor(splats: SplatMesh, minDepth: number, maxDepth: number, reverse?: boolean)` and
+  `makeDepthColorModifier(...)` ship in `modifiers/depthColor` — a first-class, one-call depth pass.
+- `SparkViewpoint` exposes `target?: { width, height, superXY? } & THREE.RenderTargetOptions`,
+  `readTarget(): Promise<Uint8Array>` and `renderReadTarget({ scene, camera }): Promise<Uint8Array>`.
+- `SparkRenderer` exposes `depthTest` / `depthWrite`, so splats and GLB mannequins occlude correctly.
+
+The docs site documents none of this; the shipped types do.
 
 ---
 

@@ -51,6 +51,7 @@ import { generateId, timestamp } from '@/lib/utils/ids';
 import { loadAvailableProject, saveAvailableProject, watchCloudProject } from '@/lib/cloud/projects';
 import { loadAvailableElementsLibrary, saveAvailableElementsLibrary } from '@/lib/cloud/elements';
 import { setActiveFundingProject } from '@/lib/cloud/funding';
+import { normalizeProjectSets } from '@/lib/sets/normalize';
 import { startOwnerFundingRelay } from '@/lib/cloud/funding-relay';
 import {
   normalizeProjectProviderUsage,
@@ -193,6 +194,7 @@ const UNDOABLE_ACTIONS: WorkspaceAction['type'][] = [
   'ADD_ELEMENT', 'UPDATE_ELEMENT', 'REMOVE_ELEMENT', 'REMOVE_ELEMENTS',
   'MOVE_ELEMENTS', 'ADD_ELEMENT_FOLDER', 'UPDATE_ELEMENT_FOLDER', 'REMOVE_ELEMENT_FOLDER',
   'SET_DIRECTOR',
+  'ADD_SET', 'UPDATE_SET', 'REMOVE_SET',
 ];
 
 interface HistoryState {
@@ -1147,6 +1149,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             ? workflowState.openSpaceIds.filter((value): value is string => typeof value === 'string')
             : [];
           const providerUsage = normalizeProjectProviderUsage(workflowState.providerUsage);
+          const sets = normalizeProjectSets(workflowState.sets);
           const assets = (dbState.assets as Record<string, unknown>[]).map(assetFromRow);
           const mediaFolders = (dbState.mediaFolders as Record<string, unknown>[]).map(folderFromRow);
 
@@ -1172,6 +1175,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
               elementFolders: [],
               director,
               providerUsage,
+              sets,
             },
           });
           loadElementsLibraryAfterProject();
@@ -1200,6 +1204,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
             ? snapshot.openSpaceIds.filter((value): value is string => typeof value === 'string')
             : [];
           const providerUsage = normalizeProjectProviderUsage(snapshot.providerUsage);
+          const sets = normalizeProjectSets(snapshot.sets);
           const AUDIO_EXTS = /\.(mp3|wav|ogg|aac|m4a|flac|webm)(\?|$)/i;
           const rawAssets = (snapshot.assets ?? []) as Asset[];
           // Migrate: fix audio assets that were saved as 'image' before audio type support
@@ -1220,6 +1225,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
               elementFolders: [],
               director,
               providerUsage,
+              sets,
             },
           });
           loadElementsLibraryAfterProject();
@@ -1260,6 +1266,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           elements: current.elements, elementFolders: current.elementFolders,
           director: useSqlite ? directorFromWorkflow(workflow) : directorFromSnapshot(raw as unknown as ProjectSnapshot),
           providerUsage: normalizeProjectProviderUsage(useSqlite ? workflow.providerUsage : raw.providerUsage),
+          sets: normalizeProjectSets(useSqlite ? workflow.sets : raw.sets),
         };
       };
       // Cancel a debounced closure containing the old workspace before advancing
@@ -1330,6 +1337,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
           openSpaceIds: [...state.openSpaceIds],
           director: state.director,
           providerUsage: state.providerUsage,
+          sets: state.sets,
         },
         elements: [],
         exports: state.exports.map((ex) => ({
@@ -1363,6 +1371,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
         elements: [],
         director: state.director,
         providerUsage: state.providerUsage,
+        sets: state.sets,
       }, false);
     }
   }, [state, hydrationComplete, hydrationError, projectId, useSqlite]);
@@ -1405,6 +1414,7 @@ export function WorkspaceShell({ projectId, useSqlite = false, onBackToHome }: {
     state.exports,
     state.director,
     state.providerUsage,
+    state.sets,
     hydrationComplete,
     hydrationError,
   ]);

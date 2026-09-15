@@ -30,7 +30,7 @@ export function mergeProjectUpdate(base: unknown, local: unknown, remote: unknow
 
 export function mergeLiveWorkspace(base: WorkspaceState, local: WorkspaceState, remote: WorkspaceState): WorkspaceState {
   const merged = { ...remote };
-  for (const key of ['spaces', 'assets', 'mediaFolders', 'timelines', 'exports', 'director', 'providerUsage'] as const) {
+  for (const key of ['spaces', 'assets', 'mediaFolders', 'timelines', 'exports', 'director', 'providerUsage', 'sets'] as const) {
     (merged as any)[key] = mergeProjectUpdate(base[key], local[key], remote[key]);
   }
   const space = merged.spaces.find(space => space.id === local.activeSpaceId) ?? merged.spaces[0];

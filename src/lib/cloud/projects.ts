@@ -133,7 +133,7 @@ function createDefaultCloudProject(name: string) {
     workflow: {
       nodes: [], edges: [],
       spaces: [{ id: spaceId, name: 'Space 1', createdAt: now, nodes: [], edges: [] }],
-      activeSpaceId: spaceId, openSpaceIds: [spaceId], director: defaultDirector(),
+      activeSpaceId: spaceId, openSpaceIds: [spaceId], director: defaultDirector(), sets: [],
     },
     elements: [], exports: [], director: defaultDirector(),
   };

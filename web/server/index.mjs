@@ -153,6 +153,7 @@ function createDefaultProjectState(name) {
     },
     assets: [],
     mediaFolders: [],
+    sets: [],
     timelines: [{
       id: timelineId,
       project_id: id,
@@ -642,6 +643,7 @@ function buildRpcHandlers(store) {
     exports: state.exports,
     elements: state.elements,
     director: state.director ?? state.workflow?.director ?? EMPTY_DIRECTOR,
+    sets: state.sets ?? state.workflow?.sets ?? [],
   });
 
   const handlers = new Map([

@@ -6,6 +6,7 @@ import type { Timeline } from '@/types/timeline';
 import type { WorkflowNodeData, WorkflowRun } from '@/types/workflow';
 import type { ExportJob } from '@/types/export';
 import type { Element, ElementFolder } from '@/types/elements';
+import type { ProjectSet } from '@/types/sets';
 import type { DirectorShow } from '@/types/director';
 import { createEmptyDirectorShow } from '@/lib/director/create-show';
 import { createDefaultTimeline } from '@/lib/editor/timeline-operations';
@@ -54,6 +55,9 @@ export type WorkspaceAction =
   | { type: 'SET_ELEMENTS_LIBRARY'; elements: Element[]; elementFolders: ElementFolder[] }
   | { type: 'SET_DIRECTOR'; director: DirectorShow }
   | { type: 'OBSERVE_PROVIDER_USAGE'; observation: ProviderBalanceObservation }
+  | { type: 'ADD_SET'; set: ProjectSet }
+  | { type: 'UPDATE_SET'; setId: string; updates: Partial<ProjectSet> }
+  | { type: 'REMOVE_SET'; setId: string }
   | { type: 'UPDATE_NODE_CONFIG'; nodeId: string; config: Record<string, unknown> }
   | { type: 'APPLY_ELEMENT_MENTION'; nodeId: string; elementId: string; config: Record<string, unknown> }
   | { type: 'HYDRATE'; payload: HydratePayload }
@@ -76,6 +80,7 @@ interface HydratePayload {
   elementFolders: ElementFolder[];
   director: DirectorShow;
   providerUsage: WorkspaceState['providerUsage'];
+  sets: ProjectSet[];
 }
 
 function normalizeWorkflowNodes(nodes: Node<WorkflowNodeData>[]): Node<WorkflowNodeData>[] {
@@ -210,6 +215,7 @@ return {
   elementFolders: [],
   director: createEmptyDirectorShow(),
   providerUsage: {},
+  sets: [],
 };
 
 }
@@ -564,6 +570,19 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
       return providerUsage === state.providerUsage ? state : { ...state, providerUsage };
     }
 
+    case 'ADD_SET':
+      if (state.sets.some((set) => set.id === action.set.id)) return state;
+      return { ...state, sets: [...state.sets, action.set] };
+
+    case 'UPDATE_SET':
+      return {
+        ...state,
+        sets: state.sets.map((set) => (set.id === action.setId ? { ...set, ...action.updates } : set)),
+      };
+
+    case 'REMOVE_SET':
+      return { ...state, sets: state.sets.filter((set) => set.id !== action.setId) };
+
     case 'HYDRATE': {
       const hydratedTimelines = action.payload.timelines;
       const hydratedSpaces = normalizeWorkflowSpaces(action.payload.spaces, action.payload.nodes, action.payload.edges);
@@ -591,6 +610,7 @@ export function workspaceReducer(state: WorkspaceState, action: WorkspaceAction)
         elementFolders: action.payload.elementFolders ?? [],
         director: action.payload.director,
         providerUsage: action.payload.providerUsage,
+        sets: action.payload.sets,
       };
     }
 

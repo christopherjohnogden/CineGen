@@ -167,6 +167,7 @@ export interface FullProjectState {
     activeSpaceId?: string;
     openSpaceIds?: string[];
     director?: unknown;
+    sets?: unknown[];
   };
   elements: ElementRow[];
   exports: ExportJobRow[];
@@ -576,6 +577,7 @@ export function getWorkflowState(
         ? record.openSpaceIds.filter((value): value is string => typeof value === 'string')
         : undefined,
       director: record.director,
+      sets: Array.isArray(record.sets) ? record.sets : undefined,
     };
   }
   return {
@@ -604,6 +606,7 @@ export function saveWorkflowState(
         activeSpaceId: workflow.activeSpaceId ?? null,
         openSpaceIds: workflow.openSpaceIds ?? [],
         director: workflow.director ?? null,
+        sets: workflow.sets ?? [],
       }),
     ],
   );
