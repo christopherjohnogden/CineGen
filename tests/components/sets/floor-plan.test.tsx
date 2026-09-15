@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { FloorPlan } from '@/components/sets/floor-plan';
 import type { ProjectSet } from '@/types/sets';
+
+afterEach(cleanup);
 
 function makeSet(overrides: Partial<ProjectSet> = {}): ProjectSet {
   return {
@@ -18,11 +20,9 @@ function makeSet(overrides: Partial<ProjectSet> = {}): ProjectSet {
 }
 
 describe('FloorPlan', () => {
-  it('renders an empty Set without a degenerate viewBox', () => {
+  it('hides the map when the Set has nothing to plot', () => {
     render(<FloorPlan set={makeSet()} />);
-    const svg = screen.getByRole('img', { name: /Overhead plan of Diner/ });
-    expect(svg).toBeInTheDocument();
-    expect(svg.getAttribute('viewBox')).toBe('0 0 100 100');
+    expect(screen.queryByTestId('floor-plan')).not.toBeInTheDocument();
   });
 
   it('draws one labelled dot per mark', () => {
@@ -56,5 +56,10 @@ describe('FloorPlan', () => {
       />,
     );
     expect(container.querySelectorAll('.floor-plan__standin')).toHaveLength(1);
+    const panel = screen.getByTestId('floor-plan');
+    expect(panel).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('Overhead map'));
+    expect(panel).toHaveAttribute('open');
+    expect(screen.getByRole('img', { name: 'Overhead plan of Diner' })).toBeVisible();
   });
 });

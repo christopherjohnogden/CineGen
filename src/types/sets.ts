@@ -31,6 +31,8 @@ export interface SetCamera {
   /** Metres, world space. */
   position: [number, number, number];
   target: [number, number, number];
+  /** Camera up direction, including roll from the rotation rings. */
+  up?: [number, number, number];
   focalMm: number;
   sensorWidthMm: number;
   sensorHeightMm: number;
@@ -44,6 +46,39 @@ export interface SetCamera {
 
 export type SplatFormat = 'ply' | 'spz' | 'sog' | 'splat' | 'ksplat';
 
+/** Plane equation normal.dot(point) + constant = 0, in scan coordinates. */
+export interface SetFloorPlane {
+  normal: [number, number, number];
+  constant: number;
+  /** Editable grid/gizmo origin, in the same scan coordinates. */
+  origin?: [number, number, number];
+  /** Square floor guide width in scan units; does not resize the scan. */
+  size?: number;
+  /** In-plane grid X direction in scan coordinates, preserving its rotation. */
+  xAxis?: [number, number, number];
+}
+
+export interface SetStandIn {
+  /** Hidden stand-ins keep their placement but are omitted from the viewer and renders. */
+  visible?: boolean;
+  id: string;
+  heightM: number;
+  pose: 'standing' | 'sitting' | 'walking' | 'kneeling';
+  x: number;
+  z: number;
+  /** Full world-space feet position; x/z are retained for maps and legacy sets. */
+  position?: [number, number, number];
+  facing: number;
+  elementId?: string;
+  label?: string;
+}
+
+export type SetStartView = Pick<SetCamera, 'position' | 'target' | 'up'> & {
+  /** Optional vertical field of view, in degrees, from the capture camera. */
+  verticalFov?: number;
+  sourceImage?: string;
+};
+
 export interface ProjectSet {
   id: string;
   name: string;
@@ -54,6 +89,8 @@ export interface ProjectSet {
   splatFormat?: SplatFormat;
   /** A small orbit still, used as the library card's face. */
   thumbnailUrl?: string;
+  /** Preferred opening pose in scan-local coordinates. */
+  startView?: SetStartView;
   /** Which axis the capture treats as up. Scans vary; the viewer corrects on load. */
   upAxis: 'y' | 'z';
   /**
@@ -72,6 +109,8 @@ export interface ProjectSet {
    * float its mannequins and report negative eye heights.
    */
   groundY?: number;
+  floorPlane?: SetFloorPlane;
+  standIns?: SetStandIn[];
   /** Multiplier taking the capture's units to metres. */
   scaleToMeters: number;
   marks: SetMark[];

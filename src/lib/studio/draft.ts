@@ -13,6 +13,7 @@
  * cloud revision, and it should not follow you to another machine.
  */
 
+import type { SetCamera } from '@/types/sets';
 import { parseStudioVideoMode, type StudioVideoMode } from './video-mode';
 
 export interface ComposerAttachment {
@@ -23,6 +24,9 @@ export interface ComposerAttachment {
 }
 
 export interface ComposerDraft {
+  modelType?: string;
+  controlValuesByModel?: Record<string, Record<string, string | number | boolean>>;
+  shapeShotCamera?: { setId: string; camera: SetCamera; block: string } | null;
   prompt: string;
   outputKind: 'image' | 'video';
   videoMode: StudioVideoMode;
@@ -111,6 +115,9 @@ export function readComposerDraft(projectId: string): ComposerDraft {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
+      modelType: typeof parsed.modelType === 'string' ? parsed.modelType : '',
+      controlValuesByModel: parsed.controlValuesByModel && typeof parsed.controlValuesByModel === 'object' && !Array.isArray(parsed.controlValuesByModel) ? parsed.controlValuesByModel as ComposerDraft['controlValuesByModel'] : {},
+      shapeShotCamera: parsed.shapeShotCamera && typeof parsed.shapeShotCamera === 'object' ? parsed.shapeShotCamera as ComposerDraft['shapeShotCamera'] : null,
       prompt: typeof parsed.prompt === 'string' ? parsed.prompt : '',
       outputKind: parsed.outputKind === 'image' ? 'image' : 'video',
       videoMode: parseStudioVideoMode(parsed.videoMode, 'references'),

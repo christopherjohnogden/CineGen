@@ -53,6 +53,7 @@ function normalizeCamera(value: unknown): SetCamera[] {
   const record = value as Record<string, unknown>;
   const position = vec3(record.position);
   const target = vec3(record.target);
+  const up = vec3(record.up);
   if (!position || !target) return [];
 
   const focalMm = num(record.focalMm) ?? 50;
@@ -64,6 +65,7 @@ function normalizeCamera(value: unknown): SetCamera[] {
     createdAt: str(record.createdAt, timestamp()),
     position,
     target,
+    ...(up && Math.hypot(...up) > 0 ? { up } : {}),
     focalMm,
     sensorWidthMm,
     sensorHeightMm,
@@ -91,6 +93,39 @@ export function normalizeProjectSets(value: unknown): ProjectSet[] {
     const scale = num(record.scaleToMeters);
     const rotation = vec3(record.rotationDeg);
     const groundY = num(record.groundY);
+    const floorRecord = record.floorPlane && typeof record.floorPlane === 'object' ? record.floorPlane as Record<string, unknown> : undefined;
+    const normal = vec3(floorRecord?.normal), constant = num(floorRecord?.constant);
+    const length = normal ? Math.hypot(...normal) : 0;
+    const floorOrigin = vec3(floorRecord?.origin);
+    const floorSize = num(floorRecord?.size);
+    const floorXAxis = vec3(floorRecord?.xAxis);
+    const floorPlane = normal && length > 1e-8 && constant !== undefined
+      ? { normal: normal.map(v => v / length) as [number, number, number], constant: constant / length,
+        ...(floorOrigin ? { origin: floorOrigin } : {}),
+        ...(floorXAxis && Math.hypot(...floorXAxis) > 1e-8 ? { xAxis: floorXAxis } : {}),
+        ...(floorSize !== undefined && floorSize > 0 ? { size: floorSize } : {}) } : undefined;
+    const standIns = Array.isArray(record.standIns) ? record.standIns.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const entry = item as Record<string, unknown>;
+      const x = num(entry.x), z = num(entry.z);
+      if (x === undefined || z === undefined) return [];
+      const pose: 'standing' | 'sitting' | 'walking' | 'kneeling' = entry.pose === 'sitting' || entry.pose === 'walking' || entry.pose === 'kneeling' ? entry.pose : 'standing';
+      return [{ id: str(entry.id, generateId()), heightM: Math.max(.01, Math.min(10, num(entry.heightM) ?? 1.8)), pose,
+        x, z, facing: num(entry.facing) ?? 0,
+        ...(typeof entry.visible === 'boolean' ? { visible: entry.visible } : {}),
+        ...(vec3(entry.position) ? { position: vec3(entry.position)! } : {}),
+        ...(typeof entry.label === 'string' ? { label: entry.label } : {}),
+        ...(typeof entry.elementId === 'string' ? { elementId: entry.elementId } : {}),
+      }];
+    }) : undefined;
+    const start = record.startView && typeof record.startView === 'object'
+      ? record.startView as Record<string, unknown> : undefined;
+    const startPosition = vec3(start?.position), startTarget = vec3(start?.target), startUp = vec3(start?.up);
+    const startView = startPosition && startTarget && startPosition.some((v, i) => Math.abs(v - startTarget[i]) > 1e-8)
+      ? { position: startPosition, target: startTarget, ...(startUp && Math.hypot(...startUp) > 0 ? { up: startUp } : {}),
+        ...(typeof start?.verticalFov === 'number' && Number.isFinite(start.verticalFov) && start.verticalFov > 0 && start.verticalFov < 179 ? { verticalFov: start.verticalFov } : {}),
+        ...(typeof start?.sourceImage === 'string' ? { sourceImage: start.sourceImage } : {}),
+      } : undefined;
 
     return [{
       id: str(record.id, generateId()),
@@ -103,6 +138,9 @@ export function normalizeProjectSets(value: unknown): ProjectSet[] {
       upAxis: record.upAxis === 'z' ? 'z' : 'y',
       ...(rotation ? { rotationDeg: rotation } : {}),
       ...(groundY !== undefined ? { groundY } : {}),
+      ...(floorPlane ? { floorPlane } : {}),
+      ...(standIns ? { standIns } : {}),
+      ...(startView ? { startView } : {}),
       scaleToMeters: scale !== undefined && scale > 0 ? scale : 1,
       marks: Array.isArray(record.marks) ? record.marks.flatMap(normalizeMark) : [],
       cameras: Array.isArray(record.cameras) ? record.cameras.flatMap(normalizeCamera) : [],

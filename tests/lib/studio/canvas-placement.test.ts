@@ -291,3 +291,15 @@ describe('studio canvas placement', () => {
     expect(nextPlacedSlot(base)).toEqual(nextPlacedSlot([authored('a1')]));
   });
 });
+
+
+it('keeps Set shot PNGs ahead of Character Elements when expanding the canvas graph', () => {
+  const urls=['plate','composite','depth','standin'].map(pass=>`https://media.test/${pass}.png`);
+  const node=generation('set-shot',{__studioShapeShotSetId:'room',__studioAttachedRefs:urls,__studioElementIds:['actor']});
+  const graph=placeStudioNodeOnCanvas([node],[],'set-shot',[]);
+  const refs=graph.edges.filter(edge=>edge.targetHandle?.startsWith('extra_images_'));
+  expect(refs.map(edge=>edge.targetHandle)).toEqual(['extra_images_0','extra_images_1','extra_images_2','extra_images_3','extra_images_4']);
+  expect(refs.slice(0,4).map(edge=>graph.nodes.find(node=>node.id===edge.source)?.data.config.fileUrl)).toEqual(urls);
+  expect(graph.nodes.find(node=>node.id===refs[4].source)?.data.type).toBe('element');
+  expect(graph.edges.some(edge=>edge.targetHandle==='start_image'||edge.targetHandle==='end_image')).toBe(false);
+});

@@ -1,7 +1,7 @@
 {
   "name": "cinegen-desktop",
   "productName": "CineGen",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "AI Film Production Studio — Desktop Application",
   "private": true,
   "main": "dist-electron/main.js",
@@ -14,7 +14,7 @@
     "build:mcp": "node scripts/build-mcp.mjs",
     "build": "npm run build:native && vite build && npm run build:mcp",
     "preview": "npm run build && electron .",
-    "package": "npm run build && electron-builder",
+    "package": "npm run build && electron-builder --config electron-builder.yml",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:funding": "node scripts/cloud/owner-funding-smoke.mjs",

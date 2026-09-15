@@ -7,6 +7,7 @@ import { CreateTimeline } from './create-timeline';
 // three + Spark are large and none of the three Vite configs chunks; keep them
 // out of the main bundle by only reaching Sets through a dynamic import.
 const SetsView = lazy(() => import('@/components/sets/sets-view').then((m) => ({ default: m.SetsView })));
+import type { ShapeShotTarget } from '@/lib/sets/shape-shot';
 import type { PreviewMode } from './timeline-preview';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import { generateId, timestamp } from '@/lib/utils/ids';
@@ -161,12 +162,13 @@ function ProviderBudgetCard() {
 }
 
 export function CreateTab() {
-  const { state, dispatch } = useWorkspace();
+  const { state, dispatch, projectId } = useWorkspace();
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('pip');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [viewMode, setViewMode] = useState<SpaceViewMode>(getInitialSpaceViewMode);
+  const [shapeShotTarget, setShapeShotTarget] = useState<ShapeShotTarget | null>(null);
   const [studioTransfer, setStudioTransfer] = useState<StudioTransfer | null>(null);
   const [activePanel, setActivePanel] = useState<SidebarPanel>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -352,8 +354,8 @@ export function CreateTab() {
   ];
 
   return (
-    <div className={`create-tab${timelineOpen ? ' create-tab--timeline-open' : ''}${!sidebarOpen ? ' create-tab--sidebar-collapsed' : ''}${isMobile ? ' create-tab--mobile' : ''}`}>
-      {isMobile && sidebarOpen && (
+    <div className={`create-tab${viewMode === 'sets' ? ' create-tab--sets' : ''}${timelineOpen ? ' create-tab--timeline-open' : ''}${!sidebarOpen ? ' create-tab--sidebar-collapsed' : ''}${isMobile ? ' create-tab--mobile' : ''}`}>
+      {viewMode !== 'sets' && isMobile && sidebarOpen && (
         <button
           type="button"
           className="cs-mobile-scrim"
@@ -640,13 +642,18 @@ export function CreateTab() {
           </div>
           {viewMode === 'sets' && (
             <div className="create-tab__studio">
-              <Suspense fallback={null}><SetsView /></Suspense>
+              <Suspense fallback={null}><SetsView key={projectId} target={shapeShotTarget} onSent={(destination = 'studio', nodeId) => {
+                handleViewModeChange(destination);
+                if (nodeId) requestAnimationFrame(() => requestAnimationFrame(() => {
+                  window.dispatchEvent(new CustomEvent('cinegen:fit-node', { detail: nodeId }));
+                }));
+              }} /></Suspense>
             </div>
           )}
-          {viewMode === 'studio' && (
-            <div className="create-tab__studio">
+          {(viewMode === 'studio' || viewMode === 'sets') && (
+            <div className="create-tab__studio" hidden={viewMode !== 'studio'}>
               <SpaceStudio onOpenInCanvas={handleOpenNodeInCanvas} onHideFromCanvas={handleHideNodeFromCanvas}
-                transfer={studioTransfer} onTransferConsumed={() => setStudioTransfer(null)} />
+                onShapeShotTarget={setShapeShotTarget} transfer={studioTransfer} onTransferConsumed={() => setStudioTransfer(null)} />
             </div>
           )}
         </div>

@@ -32,6 +32,8 @@ import { executeFromNode, type WorkflowDispatch } from '@/lib/workflows/execute'
 import { generateId, timestamp } from '@/lib/utils/ids';
 import { toFileUrl } from '@/lib/utils/file-url';
 import { getMediaTypeForFile, resolveMediaFileUrl, getLocalPathForFile, detectMediaTypeFromExt } from '@/lib/utils/media-file';
+import { prepareShotAssets } from '@/lib/sets/shot-assets';
+import { placeStudioNodeOnCanvas } from '@/lib/studio/canvas-placement';
 import { nextStudioSlot } from '@/lib/studio/layout';
 import { isPlacedOnCanvas } from '@/lib/studio/canvas-placement';
 import { isStudioMedia, studioFeedModel, type StudioTransfer } from '@/lib/studio/canvas-import';
@@ -45,7 +47,8 @@ import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
 // Lazy: Shape Shot pulls in three + Spark, which must not land in the main chunk.
 const ShapeShotModal = lazy(() => import('@/components/sets/shape-shot-modal').then((m) => ({ default: m.ShapeShotModal })));
-import type { ShapeShotResult } from '@/components/sets/shape-shot-modal';
+import type { ShapeShotResult, ShapeShotTarget } from '@/lib/sets/shape-shot';
+import { shapeShotSize } from '@/lib/sets/shape-shot';
 import {
   endFieldFor,
   isImageField,
@@ -764,6 +767,7 @@ export interface SpaceStudioProps {
   onHideFromCanvas?: (nodeId: string) => void;
   transfer?: StudioTransfer | null;
   onTransferConsumed?: () => void;
+  onShapeShotTarget?: (target: ShapeShotTarget) => void;
 }
 
 const CARD_SIZE_LABELS = { s: 'Small', m: 'Medium', l: 'Large' } as const;
@@ -808,8 +812,10 @@ const FAVOURITE_MODEL_NAMES: Record<'image' | 'video', string[]> = {
   video: [DEFAULT_VIDEO_MODEL_NAME],
 };
 
-export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTransferConsumed }: SpaceStudioProps = {}) {
+export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTransferConsumed, onShapeShotTarget }: SpaceStudioProps = {}) {
   const { state, dispatch, projectId } = useWorkspace();
+  const liveWorkspace = useRef(state);
+  liveWorkspace.current = state;
   const catalogVersion = useTopviewModelCatalogVersion();
   // A reload, a restart, or a hot reload in dev must not empty the composer:
   // the next Generate would go out without the references you attached, and you
@@ -822,8 +828,8 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
   // WorkspaceState also reaches this component structurally through the MCP
   // host-state path, where an older caller may not carry the collection.
   const projectSets = state.sets ?? [];
-  const [shapeShotCamera, setShapeShotCamera] = useState<{ setId: string; camera: SetCamera; block: string } | null>(null);
-  const [modelType, setModelType] = useState('');
+  const [shapeShotCamera, setShapeShotCamera] = useState<{ setId: string; camera: SetCamera; block: string } | null>(draft.shapeShotCamera ?? null);
+  const [modelType, setModelType] = useState(draft.modelType ?? '');
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>(draft.elementIds);
   const [missingReferences, setMissingReferences] = useState(0);
   const [startAssetId, setStartAssetId] = useState(draft.startAssetId);
@@ -832,7 +838,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
   const [editPickerOpen, setEditPickerOpen] = useState(false);
   const [controlValuesByModel, setControlValuesByModel] = useState<
     Record<string, Record<string, ControlValue>>
-  >({});
+  >(draft.controlValuesByModel ?? {});
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all');
   const [feedView, setFeedView] = useState<FeedView>(() => readFeedView());
   const [cardSize, setCardSize] = useState<ClipCardSize>(() => readCardSize());
@@ -1328,6 +1334,10 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     setOutputKind(kind);
     setModelType(feedModel.nodeType);
     setPrompt(recipe.prompt);
+    const savedSetId = node.data.config.__studioShapeShotSetId;
+    const savedCamera = node.data.config.__studioShapeShotCamera;
+    setShapeShotCamera(typeof savedSetId === 'string' && savedCamera && typeof savedCamera === 'object'
+      ? { setId: savedSetId, camera: savedCamera as SetCamera, block: '' } : null);
     if (recipe.presetId) setPresetId(recipe.presetId);
     setSelectedElementIds(resolvedIds);
     const storedAttachments = node.data.config.__studioAttachedRefs ?? [];
@@ -1740,8 +1750,10 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       editAssetId,
       dockPromptPx,
       dockBarPx,
+      shapeShotCamera,
+      modelType, controlValuesByModel,
     });
-  }, [attachedRefs, dockBarPx, dockPromptPx, editAssetId, endAssetId, outputKind, projectId, prompt, selectedElementIds, startAssetId, videoMode]);
+  }, [modelType, controlValuesByModel, shapeShotCamera, attachedRefs, dockBarPx, dockPromptPx, editAssetId, endAssetId, outputKind, projectId, prompt, selectedElementIds, startAssetId, videoMode]);
 
   // The visit ends when the Studio unmounts or the page goes away; everything
   // created after that is "New" next time.
@@ -1955,8 +1967,10 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
   const shapeShotReferenceBudget = useMemo(() => {
     const capacity = referenceField ? mediaFieldCapacity(referenceField) : 4;
     const spoken = attachedRefs.length + selectedElementIds.length;
-    return Math.max(2, Math.min(4, (Number.isFinite(capacity) ? capacity : 30) - spoken));
+    return Math.max(0, Math.min(4, (referenceField ? (Number.isFinite(capacity) ? capacity : 30) : 0) - spoken));
   }, [attachedRefs.length, referenceField, selectedElementIds.length]);
+
+  const setViewReferenceCapacity = referenceField && isImageField(referenceField) ? mediaFieldCapacity(referenceField) : 0;
 
   /** The aspect the pending generation will output, for framing and render size. */
   const outputAspect = useMemo(() => {
@@ -1965,27 +1979,111 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     return typeof value === 'string' && value !== 'adaptive' ? value : '16:9';
   }, [controls, controlValuesByModel, modelType]);
 
-  /**
-   * Take the Shape Shot renders into the composer.
-   *
-   * The files go through attachLocalFile one at a time so they reuse the normal
-   * asset path and land in attach order — that order is what makes the slot tags
-   * (@image1 the plate, @image2 the composite, …) name the right reference.
-   *
-   * The camera block is appended to the prompt AND mirrored to its own config
-   * key, because `__studioPromptBody` is an unconditional override on Reuse set
-   * to the undecorated body: without the mirror the block is silently lost the
-   * moment a generation is reused.
-   */
+  /** Resolve files sequentially, prepend the shot's numbered slots, and append
+   * its camera description without replacing the user's draft. */
   const handleShapeShotAttach = useCallback(async (result: ShapeShotResult) => {
-    if (outputKind === 'video') setVideoMode('references');
-    for (const file of result.files) {
-      await attachLocalFile(file);
-    }
-    setPrompt((current) => (current.trim() ? `${current.trim()}\n\n${result.promptBlock}` : result.promptBlock));
+    const singleView = result.mode === 'view';
+    if (result.files.length > (singleView ? setViewReferenceCapacity : shapeShotReferenceBudget)) throw new Error('There are not enough reference slots. Remove a reference or choose another model.');
+    // Resolve each file in order, then publish the batch atomically. Failed uploads
+    // leave the prompt and reference slots untouched, so retry cannot duplicate them.
+    const assets = await prepareShotAssets(result);
+    for (const asset of assets) dispatch({ type: 'ADD_ASSET', asset });
+    setAttachedRefs(current => [...assets.map(asset => ({ id: asset.id, url: asset.url, name: asset.name, kind: 'image' as const })), ...(singleView ? [] : current)]);
+    if (singleView) setSelectedElementIds([]);
+    setVideoMode('references');
+    setPrompt(current => {
+      const base = singleView && shapeShotCamera?.block ? current.replace(shapeShotCamera.block, '').trim() : current;
+      return [base, result.promptBlock].filter(part => part.trim()).join('\n\n');
+    });
     setShapeShotCamera({ setId: result.setId, camera: result.camera, block: result.promptBlock });
-    showNotice(`${result.files.length} Shape Shot references attached.`);
-  }, [attachLocalFile, outputKind, showNotice]);
+    showNotice(singleView ? 'Current view attached as the only image reference.' : `${result.files.length} Set references attached. Your prompt is preserved.`);
+  }, [dispatch, shapeShotReferenceBudget, setViewReferenceCapacity, shapeShotCamera, showNotice]);
+
+  const sendShapeShotToCanvas = useCallback(async (result: ShapeShotResult): Promise<string> => {
+    const singleView = result.mode === 'view';
+    if (!model || !referenceField || result.files.length > (singleView ? setViewReferenceCapacity : shapeShotReferenceBudget)) throw new Error('Choose a model with enough reference slots for this shot.');
+    const destinationSpace = state.activeSpaceId;
+    const assets = await prepareShotAssets(result);
+    const live = liveWorkspace.current;
+    if (live.activeSpaceId !== destinationSpace) throw new Error('The active Space changed. Return to your destination Space and send the shot again.');
+    const body = singleView ? result.promptBlock : [prompt, result.promptBlock].filter(part => part.trim()).join('\n\n');
+    const text = singleView || (model.provider === 'topview' && isTopviewMediaTool(model.name)) ? body : composePresetPrompt(body, activePreset);
+    const elementIds = singleView ? [] : selectedElementIds.filter(id => availableElements.some(element => element.id === id));
+    const elementVariationIds = Object.fromEntries(availableElements.filter(element => elementIds.includes(element.id) && element.activeVariationId)
+      .map(element => [element.id, element.activeVariationId]));
+    const urls = [...assets.map(asset => asset.url), ...(singleView ? [] : attachedRefs.filter(ref => ref.kind !== 'audio').map(ref => ref.url))];
+    const config: Record<string, unknown> = {
+      __studioGenerated: true, __studioCreatedAt: timestamp(), __studioOutputType: outputKind,
+      __studioVideoMode: 'references', __studioPrompt: text, __studioPromptBody: text,
+      __studioElementIds: elementIds, __studioElementVariationIds: elementVariationIds,
+      __studioElementNames: elementIds.map(id => availableElements.find(element => element.id === id)?.name ?? ''),
+      __studioAttachedRefs: urls, __studioShapeShotSetId: result.setId, __studioShapeShotCamera: result.camera,
+    };
+    for (const field of orderedControlFields(model)) {
+      if (field.id === 'video_mode') continue;
+      const value = controlValue(controlValuesByModel[modelType], field);
+      if (value !== '') config[field.id] = value;
+    }
+    if (model.provider === 'topview' && supportsTopviewClipEdit(model.name)) config.video_mode = 'auto';
+    const promptField = promptFieldFor(model);
+    if (promptField) config[promptField.id] = text;
+    config[referenceField.id] = model.provider === 'higgsfield' && !promptField && !elementIds.length
+      ? (referenceField.multiple ? urls : urls[0]) : { urls, elementIds, elementVariationIds };
+    const audioField = model.inputs.find(field => field.mediaRole === 'audio');
+    const audio = singleView ? [] : attachedRefs.filter(ref => ref.kind === 'audio').map(ref => ref.url);
+    if (audioField && audio.length) config[audioField.id] = audioField.multiple ? audio : audio[0];
+    const node = createWorkflowNodeFromSpec({ nodeType: model.nodeType, label: `${model.name} · Set shot`, config }, { x: 0, y: 0 });
+    const graph = placeStudioNodeOnCanvas([...live.nodes, node], live.edges, node.id, [...live.assets, ...assets]);
+    for (const asset of assets) dispatch({ type: 'ADD_ASSET', asset });
+    dispatch({ type: 'SET_NODES', nodes: graph.nodes });
+    dispatch({ type: 'SET_EDGES', edges: graph.edges });
+    return node.id;
+  }, [model, referenceField, shapeShotReferenceBudget, setViewReferenceCapacity, state.activeSpaceId, prompt, activePreset, selectedElementIds,
+    availableElements, attachedRefs, outputKind, controlValuesByModel, modelType, dispatch]);
+
+  const shapeOutputSize = useMemo(() => {
+    const field = controls.find(field => field.id === 'resolution' || field.id === 'image_size');
+    const value = field ? controlValue(controlValuesByModel[modelType], field) : undefined;
+    const label = field?.options?.find(option => String(option.value) === String(value))?.label;
+    return shapeShotSize(outputAspect, label && /^\d+(?:p|k)$/i.test(label) ? label : value);
+  }, [controls, controlValuesByModel, modelType, outputAspect]);
+  const setSendModels = useMemo(() => {
+    void catalogVersion;
+    return providerModelOptions(['image', 'image-edit', 'video']).filter(option => {
+      const candidate = getModelDefinition(option.key);
+      const field = candidate && referenceFieldFor(candidate);
+      return candidate && !candidate.unavailableReason && field && isImageField(field)
+        && canUseInStudio(candidate, candidate.category === 'video' ? 'video' : 'image');
+    });
+  }, [catalogVersion]);
+  const selectSetSendModel = useCallback((key: string) => {
+    if (!setSendModels.some(option => option.key === key)) return;
+    const candidate = getModelDefinition(key)!;
+    setOutputKind(candidate.category === 'video' ? 'video' : 'image');
+    setModelType(key);
+  }, [setSendModels]);
+  const setSendOutputControl = useCallback((id: string, value: string) => {
+    const field = controls.find(field => field.id === id);
+    const option = field?.options?.find(option => String(option.value) === value);
+    if (!option) return;
+    setControlValuesByModel(current => ({ ...current, [modelType]: { ...current[modelType], [id]: option.value } }));
+  }, [controls, modelType]);
+  useEffect(() => {
+    onShapeShotTarget?.({ aspect: outputAspect, ...shapeOutputSize,
+      modelId: modelType, models: setSendModels, selectModel: selectSetSendModel,
+      outputControls: controls.filter(field => isAspectField(field) || field.id === 'resolution' || field.id === 'image_size')
+        .filter(field => field.options?.length).map(field => ({ id: field.id, label: field.label,
+          value: String(controlValue(controlValuesByModel[modelType], field)),
+          options: field.options!.map(option => ({ value: String(option.value), label: option.label })) })),
+      setOutputControl: setSendOutputControl,
+      maxReferences: shapeShotReferenceBudget, viewMaxReferences: setViewReferenceCapacity,
+      label: `${state.spaces.find(space => space.id === state.activeSpaceId)?.name ?? 'Space'} / ${model?.name ?? 'Studio'}`,
+      unavailable: !model ? 'Choose a model first.' : model.unavailableReason || (setViewReferenceCapacity < 1
+        ? 'Choose a model with a free image reference slot, or remove a reference in Studio.' : undefined),
+      attach: handleShapeShotAttach, sendToCanvas: sendShapeShotToCanvas });
+  }, [sendShapeShotToCanvas, onShapeShotTarget, outputAspect, shapeOutputSize, shapeShotReferenceBudget, handleShapeShotAttach,
+    model, setViewReferenceCapacity, state.activeSpaceId, state.spaces, modelType, setSendModels, selectSetSendModel, controls, controlValuesByModel, setSendOutputControl]);
+
 
   const saveShapeShotCamera = useCallback((setId: string, camera: SetCamera) => {
     const target = projectSets.find((entry) => entry.id === setId);
@@ -3806,6 +3904,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
           <ShapeShotModal
             sets={projectSets}
             aspect={outputAspect}
+            outputSize={shapeOutputSize}
             maxReferences={shapeShotReferenceBudget}
             onClose={() => setShapeShotOpen(false)}
             onAttach={handleShapeShotAttach}

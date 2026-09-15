@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { SparkRenderer, SplatMesh, modifiers, utils as sparkUtils, type SplatMeshOptions } from '@sparkjsdev/spark';
 
-import type { ProjectSet, SetCamera } from '@/types/sets';
+import type { ProjectSet, SetCamera, SetStandIn } from '@/types/sets';
+import { standInPosition } from './floor';
+import mannequinData from '@/assets/mannequin/poses.json';
 import { FULL_FRAME, aspectRatio, verticalFov, type SensorSize } from './optics';
 
 /**
@@ -62,23 +64,11 @@ export function applyScanTuning(spark: SparkRenderer, tuning: ScanTuning): void 
 /** Layer 0 is the splat environment, layer 1 the stand-ins. */
 export const LAYER_ENVIRONMENT = 0;
 export const LAYER_STANDIN = 1;
+export const LAYER_PLACEMENT_GUIDES = 2;
 
 export type PoseId = 'standing' | 'sitting' | 'walking' | 'kneeling';
 
-export interface StandIn {
-  id: string;
-  /** Metres, head to toe. */
-  heightM: number;
-  pose: PoseId;
-  /** World position on the ground plane, metres. */
-  x: number;
-  z: number;
-  /** Radians. */
-  facing: number;
-  /** Set when this stand-in was placed from a Character Element. */
-  elementId?: string;
-  label?: string;
-}
+export type StandIn = SetStandIn;
 
 export interface SceneContext {
   scene: THREE.Scene;
@@ -90,58 +80,51 @@ export interface SceneContext {
   dispose(): void;
 }
 
-/** A mannequin built from primitives — no external asset, no loader, no network. */
+/** CC0 Quaternius human mesh, baked into four poses and normalized to 1 m standing. */
 export function buildMannequin(standIn: StandIn): THREE.Group {
   const group = new THREE.Group();
-  const h = Math.max(0.3, standIn.heightM);
-
-  // Deliberately flat and untextured: this is a placement guide, and it has to
-  // read as obviously synthetic in the stand-in pass so the model excludes it.
-  const material = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.85, metalness: 0 });
-
-  const add = (geo: THREE.BufferGeometry, y: number, x = 0, z = 0) => {
-    const mesh = new THREE.Mesh(geo, material);
-    mesh.position.set(x, y, z);
-    mesh.layers.set(LAYER_STANDIN);
-    group.add(mesh);
-    return mesh;
-  };
-
-  // Proportions as fractions of height, adjusted per pose.
-  const seated = standIn.pose === 'sitting';
-  const kneeling = standIn.pose === 'kneeling';
-  const effective = seated ? h * 0.62 : kneeling ? h * 0.72 : h;
-
-  const headR = h * 0.047;
-  const torsoH = effective * 0.34;
-  const legH = effective - torsoH - headR * 2;
-
-  add(new THREE.CapsuleGeometry(h * 0.055, Math.max(0.05, legH * 0.5), 4, 8), legH * 0.5, -h * 0.045);
-  add(new THREE.CapsuleGeometry(h * 0.055, Math.max(0.05, legH * 0.5), 4, 8), legH * 0.5, h * 0.045);
-  add(new THREE.CapsuleGeometry(h * 0.1, torsoH * 0.6, 4, 10), legH + torsoH * 0.5);
-  add(new THREE.SphereGeometry(headR, 14, 12), legH + torsoH + headR);
-  // Arms — offset forward when walking so the silhouette reads as motion.
-  const armZ = standIn.pose === 'walking' ? h * 0.06 : 0;
-  add(new THREE.CapsuleGeometry(h * 0.032, torsoH * 0.55, 4, 8), legH + torsoH * 0.5, -h * 0.13, armZ);
-  add(new THREE.CapsuleGeometry(h * 0.032, torsoH * 0.55, 4, 8), legH + torsoH * 0.5, h * 0.13, -armZ);
-
+  const height = THREE.MathUtils.clamp(standIn.heightM, .01, 10);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(mannequinData.poses[standIn.pose], 3));
+  geometry.setIndex(mannequinData.indices);
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardMaterial({ color: 0xaeb5bd, roughness: .75, metalness: .05 });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'Human mannequin';
+  mesh.layers.set(LAYER_STANDIN);
+  group.add(mesh);
+  group.scale.setScalar(height);
   group.position.set(standIn.x, 0, standIn.z);
   group.rotation.y = standIn.facing;
   group.userData.standInId = standIn.id;
   return group;
 }
 
-export function syncStandIns(group: THREE.Group, standIns: StandIn[], groundY = 0): void {
+export function syncStandIns(group: THREE.Group, standIns: StandIn[], ground: number | THREE.Plane = 0): void {
   for (const child of [...group.children]) {
     group.remove(child);
+    const materials = new Set<THREE.Material>();
     child.traverse((node) => {
-      if (node instanceof THREE.Mesh) node.geometry.dispose();
+      if (node instanceof THREE.Mesh) {
+        node.geometry.dispose();
+        for (const material of Array.isArray(node.material) ? node.material : [node.material]) materials.add(material);
+      }
     });
+    materials.forEach(material => material.dispose());
   }
   // Mannequins are built standing on y=0, so the whole group rides the scan's
   // floor rather than the world origin.
-  group.position.y = groundY;
-  for (const standIn of standIns) group.add(buildMannequin(standIn));
+  const floor = typeof ground === 'number' ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -ground) : ground;
+  group.position.y = 0;
+  const up = floor.normal.clone();
+  if (up.y < 0) up.negate();
+  for (const standIn of standIns) {
+    if (standIn.visible === false) continue;
+    const mannequin = buildMannequin(standIn);
+    mannequin.position.copy(standInPosition(standIn, floor));
+    mannequin.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), up));
+    group.add(mannequin);
+  }
 }
 
 /**
@@ -161,10 +144,11 @@ export function applySetOrientation(splat: SplatMesh, set: Pick<ProjectSet, 'upA
 /** Apply a saved camera record to a live three.js camera. */
 export function applyCamera(
   camera: THREE.PerspectiveCamera,
-  record: Pick<SetCamera, 'position' | 'target' | 'focalMm' | 'aspect'>,
+  record: Pick<SetCamera, 'position' | 'target' | 'up' | 'focalMm' | 'aspect'>,
   sensor: SensorSize = FULL_FRAME,
 ): void {
   camera.position.set(...record.position);
+  camera.up.set(...(record.up ?? [0, 1, 0])).normalize();
   camera.lookAt(new THREE.Vector3(...record.target));
   camera.fov = verticalFov(record.focalMm, sensor);
   camera.aspect = aspectRatio(record.aspect);
@@ -239,6 +223,7 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
     await splat.initialized;
   }
 
+  let disposed = false;
   return {
     scene,
     camera,
@@ -247,11 +232,24 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
     splat,
     standInGroup,
     dispose() {
-      syncStandIns(standInGroup, [], 0);
-      splat?.dispose?.();
-      spark.dispose();
-      scene.clear();
-      renderer.dispose();
+      if (disposed) return;
+      disposed = true;
+      // Spark 2.2 queues updates/sorts outside the render loop. Cancel those
+      // before releasing their targets, and let an active GPU read finish.
+      spark.autoUpdate = false;
+      spark.sortDirty = false;
+      clearTimeout(spark.updateTimeoutId);
+      clearTimeout(spark.sortTimeoutId);
+      spark.updateTimeoutId = spark.sortTimeoutId = -1;
+      const release = () => {
+        if (spark.sorting) { setTimeout(release, 16); return; }
+        syncStandIns(standInGroup, [], 0);
+        splat?.dispose?.();
+        spark.dispose();
+        scene.clear();
+        renderer.dispose();
+      };
+      release();
     },
   };
 }
@@ -266,6 +264,7 @@ function applyPassVisibility(ctx: SceneContext, kind: PassKind): () => void {
   const splatWasVisible = splat?.visible ?? false;
   const standInsWereVisible = standInGroup.visible;
   const maskWas = camera.layers.mask;
+  camera.layers.disable(LAYER_PLACEMENT_GUIDES);
 
   if (kind === 'plate') {
     if (splat) splat.visible = true;

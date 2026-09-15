@@ -2,25 +2,16 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import type { ProjectSet, SetCamera } from '@/types/sets';
 import type { StandIn } from '@/lib/sets/scene';
-import { ALL_PASSES, type PassKind } from '@/lib/sets/scene';
 import { FULL_FRAME, aspectRatio, renderSize, type SensorSize } from '@/lib/sets/optics';
-import { buildCameraPrompt, REFERENCE_TAGS } from '@/lib/sets/camera-prompt';
 import { toFileUrl } from '@/lib/utils/file-url';
-import { generateId } from '@/lib/utils/ids';
 import type { SetViewerHandle } from './set-viewer';
-import { FloorPlan } from './floor-plan';
 import '@/styles/shape-shot.css';
 
 const SetViewer = lazy(() => import('./set-viewer').then((m) => ({ default: m.SetViewer })));
 
-/** The files and text an attach hands back to the composer, in slot order. */
-export interface ShapeShotResult {
-  files: File[];
-  /** Per-slot tags plus the camera block, already assembled. */
-  promptBlock: string;
-  camera: SetCamera;
-  setId: string;
-}
+export type { ShapeShotResult } from '@/lib/sets/shape-shot';
+import { captureShapeShot, passesWithinBudget, type ShapeShotResult } from '@/lib/sets/shape-shot';
+export { passesWithinBudget } from '@/lib/sets/shape-shot';
 
 export interface ShapeShotModalProps {
   sets: ProjectSet[];
@@ -30,6 +21,7 @@ export interface ShapeShotModalProps {
   aspect: string;
   /** Long edge in pixels for the renders. */
   longEdge?: number;
+  outputSize?: { width: number; height: number };
   /** Elements the user can pull a stand-in height from. */
   onClose: () => void;
   onAttach: (result: ShapeShotResult) => void | Promise<void>;
@@ -38,30 +30,11 @@ export interface ShapeShotModalProps {
   maxReferences?: number;
 }
 
-const PASS_FILENAMES: Record<PassKind, string> = {
-  plate: 'shape-shot-plate.png',
-  composite: 'shape-shot-composite.png',
-  depth: 'shape-shot-depth.png',
-  standin: 'shape-shot-standin.png',
-};
-
-/**
- * Which passes survive a reference-slot budget.
- *
- * The brief fixes the order: depth goes first, then the stand-in pass. The
- * plate and the composite always stay — without the plate the model invents the
- * environment, and without the composite it invents the framing.
- */
-export function passesWithinBudget(budget: number): PassKind[] {
-  if (budget >= 4) return [...ALL_PASSES];
-  if (budget === 3) return ['plate', 'composite', 'standin'];
-  return ['plate', 'composite'];
-}
-
 export function ShapeShotModal({
   sets,
   aspect,
   longEdge = 1280,
+  outputSize,
   onClose,
   onAttach,
   onSaveCamera,
@@ -76,9 +49,7 @@ export function ShapeShotModal({
     } catch { /* falls through to the first Set */ }
     return usable[0]?.id ?? null;
   });
-  const [standIns, setStandIns] = useState<StandIn[]>([
-    { id: generateId(), heightM: 1.8, pose: 'standing', x: 0, z: 0, facing: Math.PI, label: 'Stand-in 1' },
-  ]);
+  const [standIns, setStandIns] = useState<StandIn[]>([]);
   const [focalMm, setFocalMm] = useState(35);
   const [sensor, setSensor] = useState<SensorSize>(FULL_FRAME);
   const [busy, setBusy] = useState(false);
@@ -86,6 +57,8 @@ export function ShapeShotModal({
   const viewerRef = useRef<SetViewerHandle | null>(null);
 
   const set = useMemo(() => usable.find((entry) => entry.id === setId) ?? null, [usable, setId]);
+
+  useEffect(() => { setStandIns(set?.standIns ?? []); }, [setId]);
 
   useEffect(() => {
     if (!setId) return;
@@ -104,38 +77,17 @@ export function ShapeShotModal({
     setBusy(true);
     setError('');
     try {
-      const kinds = passesWithinBudget(maxReferences);
-      const { width, height } = renderSize(aspectRatio(aspect), longEdge);
-      const blobs = await handle.capture(kinds, width, height);
-
-      const files = kinds.map((kind) => new File([blobs[kind]], PASS_FILENAMES[kind], { type: 'image/png' }));
-
-      const camera = handle.readCamera(`Shape Shot ${new Date().toLocaleString()}`);
-      const prompt = buildCameraPrompt({
-        focalMm,
-        sensor,
-        cameraHeightM: camera.position[1],
-        subjectDistanceM: handle.subjectDistance(),
-        subjectFrameX: handle.subjectFrameX(),
-        subject: standIns[0],
-      });
-
-      // Slot tags first, in reference order, then the camera block. The tags
-      // name @imageN, so they must match the order the files are attached in.
-      const tags = kinds.map((kind) => REFERENCE_TAGS[kind]).join(' ');
-      onSaveCamera?.(set.id, camera);
-      await onAttach({
-        files,
-        promptBlock: `${tags} ${prompt.block}`.replace(/\s+/g, ' ').trim(),
-        camera,
-        setId: set.id,
-      });
+      const { width, height } = outputSize ?? renderSize(aspectRatio(aspect), longEdge);
+      const result = await captureShapeShot(handle, { setId: set.id, width, height,
+        maxReferences, focalMm, sensor, subject: standIns.find(entry => entry.visible !== false) });
+      await onAttach(result);
+      onSaveCamera?.(set.id, result.camera);
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not render this shot.');
       setBusy(false);
     }
-  }, [aspect, focalMm, longEdge, maxReferences, onAttach, onClose, onSaveCamera, sensor, set, standIns]);
+  }, [aspect, outputSize, focalMm, longEdge, maxReferences, onAttach, onClose, onSaveCamera, sensor, set, standIns]);
 
   return (
     <div className="shape-shot" role="dialog" aria-modal="true" aria-label="Shape Shot" data-testid="shape-shot">
@@ -173,7 +125,6 @@ export function ShapeShotModal({
                   onSetChange={(updates) => onSetChange?.(set.id, updates)}
                 />
               </Suspense>
-              <FloorPlan set={set} standIns={standIns} />
             </>
           ) : (
             <p className="shape-shot__loading">
@@ -192,7 +143,7 @@ export function ShapeShotModal({
             className="shape-shot__attach"
             data-testid="shape-shot-attach"
             onClick={attach}
-            disabled={!set || busy}
+            disabled={!set || busy || maxReferences < 2}
           >
             {busy ? 'Rendering…' : 'Attach'}
           </button>

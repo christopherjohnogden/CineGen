@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ShapeShotTarget } from '@/lib/sets/shape-shot';
 import type { Asset } from '@/types/project';
 import type { ModelDefinition, WorkflowNodeData } from '@/types/workflow';
 import { topviewMediaToolDefinitions } from '@/lib/topview/media-tools';
@@ -261,7 +262,7 @@ vi.mock('@/lib/workflows/provider-model-options', () => ({
           // Listed last so the default is chosen by name, not by position.
           { key: 'video-seedance', label: 'Topview AI · Seedance 2.5' },
         ]
-      : [{ key: 'image-one', label: 'Topview AI · Image Model' }]), ...Object.values(mediaModels)
+      : []), ...(categories.includes('image') ? [{ key: 'image-one', label: 'Topview AI · Image Model' }] : []), ...Object.values(mediaModels)
         .filter(model => categories.includes(model.category))
         .map(model => ({key: model.nodeType, label: `${model.provider} · ${model.name}`}))]
   ),
@@ -1589,4 +1590,112 @@ describe('Space Studio', () => {
 
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
+  it('receives a Set shot first in reference order, appends the prompt, and carries its camera into generation', async () => {
+    localStorage.setItem('cinegen_studio_draft:studio-test-project', JSON.stringify({
+      prompt: 'Keep the original action.', videoMode: 'frames', attachments: [
+        { id: 'earlier', url: 'https://media.test/earlier.png', name: 'Earlier.png', kind: 'image' },
+      ],
+    }));
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      file: { getPathForFile: (file: File) => `/Users/chris/Pictures/${file.name}` },
+    };
+    let count = 0;
+    vi.mocked(createWorkflowNodeFromSpec).mockImplementation((spec: any, position: any) => ({
+      id: `set-shot-${++count}`, type: spec.nodeType, position,
+      data: { type: spec.nodeType, label: spec.label, config: spec.config },
+    }) as never);
+    const receiveTarget = vi.fn();
+    const mounted = render(<SpaceStudio onShapeShotTarget={receiveTarget} />);
+    await waitFor(() => expect(receiveTarget.mock.lastCall?.[0].maxReferences).toBe(4));
+    const target: ShapeShotTarget = receiveTarget.mock.lastCall![0];
+    expect(target).toMatchObject({ width: 1280, height: 720, aspect: '16:9' });
+    const camera = { id:'saved-angle',name:'Angle',createdAt:'2026-09-15',position:[0,1.6,4],target:[0,1,0],focalMm:50,sensorWidthMm:36,sensorHeightMm:24,aspect:'16:9',fovDiagonal:47 } as any;
+    await act(async () => target.attach({ setId:'room', camera, promptBlock:'@image1 is the plate. Preserve this camera.',
+      files:['plate','composite','depth','standin'].map(kind => new File(['x'],`shape-shot-${kind}.png`,{type:'image/png'})) }));
+    expect(screen.getByRole('textbox',{name:'Prompt'})).toHaveValue('Keep the original action.\n\n@image1 is the plate. Preserve this camera.');
+    const persisted = JSON.parse(localStorage.getItem('cinegen_studio_draft:studio-test-project')!);
+    expect(persisted.videoMode).toBe('references');
+    expect(persisted.attachments.map((entry:any)=>entry.name)).toEqual(['shape-shot-plate.png','shape-shot-composite.png','shape-shot-depth.png','shape-shot-standin.png','Earlier.png']);
+    expect(persisted.shapeShotCamera.camera.id).toBe('saved-angle');
+    // Remount tests the actual draft path used when leaving and returning to Studio.
+    mounted.unmount(); render(<SpaceStudio />);
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form')!);
+    const action = workspaceHarness.dispatch.mock.calls.map(([action])=>action).find(action=>action.type==='SET_NODES');
+    expect(action).toBeDefined();
+    const config = action.nodes[0].data.config;
+    expect(config.__studioShapeShotSetId).toBe('room');
+    expect(config.__studioShapeShotCamera).toEqual(camera);
+    expect((config.__studioAttachedRefs as string[]).map(url=>url.split('/').pop())).toEqual(['shape-shot-plate.png','shape-shot-composite.png','shape-shot-depth.png','shape-shot-standin.png','earlier.png']);
+    expect(config.start_image).toBeUndefined();
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+  });
+
+  it('sends a connected Set shot to Canvas without changing the Studio draft or launching a run', async () => {
+    localStorage.setItem('cinegen_studio_draft:studio-test-project', JSON.stringify({prompt:'Original action.',videoMode:'frames'}));
+    (window as unknown as {electronAPI:unknown}).electronAPI={file:{getPathForFile:(file:File)=>`/Users/chris/Pictures/${file.name}`}};
+    let count=0;
+    vi.mocked(createWorkflowNodeFromSpec).mockImplementation((spec:any,position:any)=>({id:`canvas-shot-${++count}`,type:spec.nodeType,position,
+      data:{type:spec.nodeType,label:spec.label,config:spec.config}}) as never);
+    const received=vi.fn();render(<SpaceStudio onShapeShotTarget={received}/>);
+    await waitFor(()=>expect(received.mock.lastCall?.[0].maxReferences).toBe(4));
+    const target:ShapeShotTarget=received.mock.lastCall![0];
+    const camera={id:'cam',name:'Angle',createdAt:'',position:[0,2,4],target:[0,1,0],focalMm:50,sensorWidthMm:36,sensorHeightMm:24,aspect:'16:9',fovDiagonal:47} as any;
+    let id=''; await act(async()=>{id=await target.sendToCanvas!({setId:'room',camera,promptBlock:'@image1 is the plate.',files:['plate','composite','depth','standin'].map(pass=>new File(['x'],`${pass}.png`,{type:'image/png'}))});});
+    const actions=workspaceHarness.dispatch.mock.calls.map(([action])=>action);
+    const nodes=actions.find(action=>action.type==='SET_NODES').nodes;
+    const edges=actions.find(action=>action.type==='SET_EDGES').edges;
+    const shot=nodes.find((node:any)=>node.id===id);
+    expect(shot.data.config).toMatchObject({__studioCanvasPlaced:true,__studioVideoMode:'references',__studioShapeShotSetId:'room',__studioShapeShotCamera:camera});
+    expect(shot.data.config.prompt).toContain('Original action.\n\n@image1 is the plate.');
+    expect(nodes.filter((node:any)=>node.type==='filePicker').map((node:any)=>node.data.config.fileName)).toEqual(['plate.png','composite.png','depth.png','standin.png']);
+    expect(edges.filter((edge:any)=>edge.target===id)).toHaveLength(5);
+    expect(edges.some((edge:any)=>edge.targetHandle==='start_image')).toBe(false);
+    expect(screen.getByRole('textbox',{name:'Prompt'})).toHaveValue('Original action.');
+    expect(executeFromNode).not.toHaveBeenCalled();
+    delete (window as unknown as {electronAPI?:unknown}).electronAPI;
+  });
+
+  it('switches the Set send target to an image model and sends one screenshot to either destination', async () => {
+    localStorage.setItem('cinegen_studio_draft:studio-test-project', JSON.stringify({ prompt: '@image1 old plate @image2 old composite @image3 depth @image4 standin',
+      shapeShotCamera: { setId: 'old', camera: { id: 'old-camera' }, block: '@image1 old plate @image2 old composite @image3 depth @image4 standin' },
+      attachments: Array.from({ length: 15 }, (_, index) => ({ id: `old-${index}`, name: `old-${index}.png`, url: `https://media.test/old-${index}.png`, kind: 'image' })),
+      elementIds: ['character-old'] }));
+    (window as any).electronAPI = { file: { getPathForFile: (file: File) => `/Users/chris/Pictures/${file.name}` } };
+    let count = 0;
+    vi.mocked(createWorkflowNodeFromSpec).mockImplementation((spec: any, position: any) => ({ id: `single-view-${++count}`, type: spec.nodeType, position,
+      data: { type: spec.nodeType, label: spec.label, config: spec.config } }) as never);
+    const received = vi.fn(); render(<SpaceStudio onShapeShotTarget={received} />);
+    await waitFor(() => expect(received.mock.lastCall?.[0].models.some((model: any) => model.key === 'image-one')).toBe(true));
+    await act(async () => received.mock.lastCall![0].selectModel('image-one'));
+    await waitFor(() => expect(received.mock.lastCall?.[0].modelId).toBe('image-one'));
+    const target: ShapeShotTarget = received.mock.lastCall![0];
+    expect(target.unavailable).toBeUndefined();
+    expect(target.maxReferences).toBe(0);
+    expect(target.viewMaxReferences).toBe(15);
+    expect(target.outputControls?.[0].id).toBe('aspect_ratio');
+    const result = { mode: 'view' as const, setId: 'room', camera: { id: 'angle' } as any, promptBlock: '',
+      files: [new File(['png'], 'set-view.png', { type: 'image/png' })] };
+    let id = ''; await act(async () => { id = await target.sendToCanvas!(result); });
+    const nodes = workspaceHarness.dispatch.mock.calls.map(([action]) => action).find(action => action.type === 'SET_NODES').nodes;
+    const node = nodes.find((entry: any) => entry.id === id);
+    expect(node.type).toBe('image-one');
+    expect(node.data.config.__studioOutputType).toBe('image');
+    expect(node.data.config.__studioAttachedRefs).toHaveLength(1);
+    expect(node.data.config.prompt).toBe('');
+    expect(node.data.config.__studioElementIds).toEqual([]);
+    expect(nodes.filter((entry: any) => entry.type === 'prompt')).toHaveLength(0);
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('@image1 old plate @image2 old composite @image3 depth @image4 standin');
+    expect(nodes.filter((entry: any) => entry.type === 'filePicker')).toHaveLength(1);
+    expect(executeFromNode).not.toHaveBeenCalled();
+    await act(async () => target.attach(result));
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('');
+    const draft = JSON.parse(localStorage.getItem('cinegen_studio_draft:studio-test-project')!);
+    expect(draft.attachments).toHaveLength(1);
+    expect(draft.attachments[0].name).toBe('set-view.png');
+    expect(draft.elementIds).toEqual([]);
+    expect(draft.videoMode).toBe('references');
+    expect(draft.modelType).toBe('image-one');
+    delete (window as any).electronAPI;
+  });
+
 });

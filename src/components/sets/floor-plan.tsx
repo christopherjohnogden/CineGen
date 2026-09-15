@@ -2,6 +2,7 @@ import type { ProjectSet } from '@/types/sets';
 import type { StandIn } from '@/lib/sets/scene';
 import { cameraFrustum, planBounds, toPlan } from '@/lib/sets/floor-plan';
 import { horizontalFov } from '@/lib/sets/optics';
+import '@/styles/floor-plan.css';
 
 const SIZE = 100;
 
@@ -13,11 +14,13 @@ const SIZE = 100;
  * lib and only the drawing lives here.
  */
 export function FloorPlan({ set, standIns = [] }: { set: ProjectSet; standIns?: StandIn[] }) {
+  standIns = standIns.filter(entry => entry.visible !== false);
+  if (!set.marks.length && !set.cameras.length && !standIns.length) return null;
   const bounds = planBounds(set.marks, set.cameras, standIns);
 
   return (
-    <figure className="floor-plan" data-testid="floor-plan">
-      <figcaption className="floor-plan__caption">Overhead</figcaption>
+    <details className="floor-plan" data-testid="floor-plan">
+      <summary className="floor-plan__caption">Overhead map</summary>
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={`Overhead plan of ${set.name}`}>
         <rect x="0" y="0" width={SIZE} height={SIZE} className="floor-plan__ground" />
 
@@ -51,6 +54,7 @@ export function FloorPlan({ set, standIns = [] }: { set: ProjectSet; standIns?: 
           return <circle key={standIn.id} className="floor-plan__standin" cx={point.x} cy={point.y} r="2.2" />;
         })}
       </svg>
-    </figure>
+      <p className="floor-plan__legend">Saved cameras, marks, and stand-ins.</p>
+    </details>
   );
 }

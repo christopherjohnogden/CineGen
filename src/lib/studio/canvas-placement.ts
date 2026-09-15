@@ -164,14 +164,17 @@ export function expandStudioInputs(
   const elementIds = Array.isArray(config.__studioElementIds)
     ? config.__studioElementIds.filter((id): id is string => typeof id === 'string')
     : [];
-  if (referenceField && elementIds.length > 0) {
+  const addElements = () => {
+    if (!referenceField || !elementIds.length) return;
     const elementNode = stack(createWorkflowNodeFromSpec(
-      { nodeType: 'element', label: 'Element', config: { elementIds } },
+      { nodeType: 'element', label: 'Element', config: { elementIds, elementVariationIds: config.__studioElementVariationIds } },
       { x: originX, y: 0 },
     ));
     const handle = nextReferenceHandle();
     if (handle) connect(elementNode, handle, 'element');
-  }
+  };
+  const setShot = Boolean(config.__studioShapeShotSetId);
+  if (!setShot) addElements();
 
   // Attached references were pasted in as URLs rather than picked from Elements,
   // so each one comes back as its own file node.
@@ -188,6 +191,8 @@ export function expandStudioInputs(
       if (handle) connect(refNode, handle, 'media');
     }
   }
+
+  if (setShot) addElements();
 
   for (const [field, assetId, label] of [
     [startFieldFor(model), config.__studioStartAssetId, 'Start Frame'],

@@ -47,6 +47,22 @@ describe('buildMannequin', () => {
   it('carries its id so a click in the viewer can resolve back to the stand-in', () => {
     expect(buildMannequin(standIn({ id: 'booth-3' })).userData.standInId).toBe('booth-3');
   });
+
+  it('supports tiny figures for scans with uncalibrated units, without a hidden minimum', () => {
+    const figure = buildMannequin(standIn({ heightM: .04 }));
+    const bounds = new THREE.Box3().setFromObject(figure);
+    expect(bounds.min.y).toBeCloseTo(0, 6);
+    expect(bounds.max.y).toBeCloseTo(.04, 6);
+  });
+
+  it('anchors every human pose at the soles and uses the detailed mesh', () => {
+    for (const pose of ['standing', 'walking', 'sitting', 'kneeling'] as const) {
+      const figure = buildMannequin(standIn({ pose }));
+      expect(new THREE.Box3().setFromObject(figure).min.y).toBeCloseTo(0, 6);
+      const mesh = figure.children[0] as THREE.Mesh;
+      expect(mesh.geometry.index!.count).toBeGreaterThan(30000);
+    }
+  });
 });
 
 describe('syncStandIns', () => {

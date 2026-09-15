@@ -1,0 +1,63 @@
+/* ── Overhead plan ── */
+
+.floor-plan {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px;
+  background: rgba(8, 9, 12, 0.85);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.floor-plan__caption {
+  cursor: pointer;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.floor-plan svg {
+  display: block;
+  width: min(100%, 190px);
+  height: auto;
+  margin: 10px auto 0;
+}
+
+.floor-plan__ground {
+  fill: var(--bg-input);
+}
+
+.floor-plan__camera polygon {
+  fill: rgba(212, 160, 84, 0.18);
+  stroke: rgba(212, 160, 84, 0.5);
+  stroke-width: 0.5;
+}
+
+.floor-plan__camera circle {
+  fill: var(--accent);
+}
+
+.floor-plan__mark circle {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 0.6;
+}
+
+.floor-plan__mark text {
+  font-size: 3.4px;
+  fill: var(--text-secondary);
+}
+
+.floor-plan__standin {
+  fill: var(--text-primary);
+}
+
+.floor-plan__legend {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
