@@ -45,22 +45,16 @@ import { registerVisionHandlers } from './ipc/vision.js';
 import { registerCopilotVideoAnalysisHandlers } from './ipc/copilot-video-analysis.js';
 import { registerAcousticHandlers } from './ipc/acoustic-analysis.js';
 
-// macOS dev builds software-rasterize by default: the GPU process does not
-// survive sleep/wake here and takes the window with it. `CINEGEN_GPU=1` opts
-// back in for the session, which is what any WebGL work (the 3D Set viewer)
-// needs to be iterated on — at the cost of that wake stability. Packaged
-// builds are unaffected and always keep hardware acceleration.
-const GPU_FORCED_ON = process.env.CINEGEN_GPU === '1';
+// The Set viewer needs WebGL, so development uses hardware acceleration just
+// like packaged builds. Keep software rendering as an explicit troubleshooting
+// opt-out; managed windows already recover after sleep/wake below.
+const GPU_DISABLED_FOR_DEV =
+  process.platform === 'darwin' && !app.isPackaged && process.env.CINEGEN_GPU === '0';
 
-const SHOULD_DISABLE_GPU_FOR_DEV_WAKE =
-  process.platform === 'darwin' && !app.isPackaged && !GPU_FORCED_ON;
-
-if (SHOULD_DISABLE_GPU_FOR_DEV_WAKE) {
+if (GPU_DISABLED_FOR_DEV) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('disable-gpu-compositing');
-  console.log('[app] hardware acceleration disabled for macOS dev wake stability');
-} else if (GPU_FORCED_ON && !app.isPackaged) {
-  console.log('[app] CINEGEN_GPU=1 — hardware acceleration forced on; sleep/wake may be unstable');
+  console.log('[app] CINEGEN_GPU=0 — hardware acceleration disabled; the 3D Set viewer is unavailable');
 }
 
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
