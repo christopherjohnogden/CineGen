@@ -3810,6 +3810,7 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
             onClose={() => setShapeShotOpen(false)}
             onAttach={handleShapeShotAttach}
             onSaveCamera={saveShapeShotCamera}
+            onSetChange={(setId, updates) => dispatch({ type: 'UPDATE_SET', setId, updates })}
           />
         </Suspense>
       )}

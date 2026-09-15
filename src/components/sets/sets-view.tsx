@@ -77,6 +77,12 @@ export function SetsView() {
 
   const splatUrl = selected?.splatPath ? toFileUrl(selected.splatPath) : undefined;
 
+  /** Orientation trim is per-Set and sticky: dial it in once, never again. */
+  const updateSelected = useCallback((updates: Partial<ProjectSet>) => {
+    if (!selectedId) return;
+    dispatch({ type: 'UPDATE_SET', setId: selectedId, updates: { ...updates, updatedAt: timestamp() } });
+  }, [dispatch, selectedId]);
+
   return (
     <div className="sets-view" data-testid="sets-view">
       <header className="sets-view__bar">
@@ -129,6 +135,7 @@ export function SetsView() {
                     onFocalChange={setFocalMm}
                     sensor={sensor}
                     onSensorChange={setSensor}
+                    onSetChange={updateSelected}
                   />
                 </Suspense>
                 <FloorPlan set={selected} standIns={standIns} />

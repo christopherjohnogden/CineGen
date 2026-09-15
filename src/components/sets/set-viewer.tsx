@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 import type { ProjectSet, SetCamera } from '@/types/sets';
 import {
@@ -15,6 +16,7 @@ import {
 } from '@/lib/sets/optics';
 import {
   applyCamera,
+  applySetOrientation,
   createScene,
   renderPass,
   rgbaToPngBlob,
@@ -63,6 +65,8 @@ export interface SetViewerProps {
   showThirds?: boolean;
   /** Hide the side panel when the host supplies its own controls. */
   controls?: boolean;
+  /** Persist orientation trim back onto the Set. */
+  onSetChange?: (updates: Partial<ProjectSet>) => void;
   handleRef?: Ref<SetViewerHandle>;
 }
 
@@ -80,12 +84,14 @@ export function SetViewer({
   onSensorChange,
   showThirds = true,
   controls = true,
+  onSetChange,
   handleRef,
 }: SetViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const ctxRef = useRef<SceneContext | null>(null);
   const rafRef = useRef<number | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [, forceReadout] = useState(0);
@@ -111,6 +117,7 @@ export function SetViewer({
         const loop = () => {
           if (disposed || !ctxRef.current) return;
           const live = ctxRef.current;
+          controlsRef.current?.update();
           live.renderer.render(live.scene, live.camera);
           rafRef.current = requestAnimationFrame(loop);
         };
@@ -130,12 +137,19 @@ export function SetViewer({
       ctxRef.current = null;
     };
     // Rebuilding on a new scan or a new Set is intended; stand-ins sync separately.
-  }, [set.id, splatUrl, set.upAxis, set.scaleToMeters]);
+  }, [set.id, splatUrl]);
 
   useEffect(() => {
     const ctx = ctxRef.current;
     if (ctx) syncStandIns(ctx.standInGroup, standIns);
   }, [standIns]);
+
+  // Re-orienting must not rebuild the scene — reloading a 500MB scan on every
+  // nudge of a rotation slider would make the trim unusable.
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (ctx?.splat) applySetOrientation(ctx.splat, set);
+  }, [set.upAxis, set.rotationDeg, set.scaleToMeters, status]);
 
   // --- camera --------------------------------------------------------------
   useEffect(() => {
@@ -165,66 +179,127 @@ export function SetViewer({
     return () => observer.disconnect();
   }, [ratio, status]);
 
-  // --- orbit / dolly -------------------------------------------------------
+  // --- navigation ----------------------------------------------------------
+  // OrbitControls rather than a hand-rolled orbit: it gives left-drag orbit,
+  // right-drag (and two-finger) pan, wheel dolly, damping, and a movable target,
+  // which is what makes a scan explorable instead of pinned to one spot.
   useEffect(() => {
+    const ctx = ctxRef.current;
     const canvas = canvasRef.current;
-    if (!canvas || status !== 'ready') return;
+    if (!ctx || !canvas || status !== 'ready') return;
 
-    let dragging = false;
-    let lastX = 0;
-    let lastY = 0;
-    const target = new THREE.Vector3(0, 1.2, 0);
+    const controls = new OrbitControls(ctx.camera, canvas);
+    controls.target.set(0, 1.2, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.screenSpacePanning = true;
+    controls.panSpeed = 0.9;
+    controls.zoomSpeed = 0.9;
+    controls.rotateSpeed = 0.8;
+    // A scan can be centimetres or tens of metres across; clamping tightly here
+    // is what made the old controls feel like they would not zoom.
+    controls.minDistance = 0.05;
+    controls.maxDistance = 2000;
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    controls.addEventListener('change', () => forceReadout((n) => n + 1));
+    controlsRef.current = controls;
 
-    const orbit = (dx: number, dy: number) => {
-      const ctx = ctxRef.current;
-      if (!ctx) return;
-      const offset = ctx.camera.position.clone().sub(target);
-      const spherical = new THREE.Spherical().setFromVector3(offset);
-      spherical.theta -= dx * 0.005;
-      spherical.phi = THREE.MathUtils.clamp(spherical.phi - dy * 0.005, 0.05, Math.PI - 0.05);
-      ctx.camera.position.copy(target).add(new THREE.Vector3().setFromSpherical(spherical));
-      ctx.camera.lookAt(target);
-      forceReadout((n) => n + 1);
-    };
+    const onContextMenu = (event: MouseEvent) => event.preventDefault();
+    canvas.addEventListener('contextmenu', onContextMenu);
 
-    const onDown = (event: PointerEvent) => {
-      dragging = true;
-      lastX = event.clientX;
-      lastY = event.clientY;
-      canvas.setPointerCapture(event.pointerId);
-    };
-    const onMove = (event: PointerEvent) => {
-      if (!dragging) return;
-      orbit(event.clientX - lastX, event.clientY - lastY);
-      lastX = event.clientX;
-      lastY = event.clientY;
-    };
-    const onUp = (event: PointerEvent) => {
-      dragging = false;
-      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    };
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const ctx = ctxRef.current;
-      if (!ctx) return;
-      const offset = ctx.camera.position.clone().sub(target);
-      offset.multiplyScalar(event.deltaY > 0 ? 1.1 : 0.9);
-      if (offset.length() > 0.2 && offset.length() < 500) {
-        ctx.camera.position.copy(target).add(offset);
-        ctx.camera.lookAt(target);
-        forceReadout((n) => n + 1);
-      }
-    };
-
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => {
-      canvas.removeEventListener('pointerdown', onDown);
-      canvas.removeEventListener('pointermove', onMove);
-      canvas.removeEventListener('pointerup', onUp);
-      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('contextmenu', onContextMenu);
+      controls.dispose();
+      controlsRef.current = null;
+    };
+  }, [status]);
+
+  /** Put the camera where the whole scan is visible. */
+  const frameScene = useCallback(() => {
+    const ctx = ctxRef.current;
+    const controls = controlsRef.current;
+    if (!ctx || !controls) return;
+
+    const box = new THREE.Box3();
+    if (ctx.splat) box.expandByObject(ctx.splat);
+    ctx.standInGroup.children.forEach((child) => box.expandByObject(child));
+    if (box.isEmpty()) box.setFromCenterAndSize(new THREE.Vector3(0, 1, 0), new THREE.Vector3(6, 3, 6));
+
+    const centre = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(0.5, size.length() / 2);
+    const distance = radius / Math.tan((ctx.camera.fov * Math.PI) / 360);
+
+    controls.target.copy(centre);
+    ctx.camera.position.set(centre.x, centre.y + radius * 0.25, centre.z + distance);
+    ctx.camera.near = Math.max(0.01, radius / 500);
+    ctx.camera.far = distance + radius * 8;
+    ctx.camera.updateProjectionMatrix();
+    controls.update();
+    forceReadout((n) => n + 1);
+  }, []);
+
+  // WASD/QE fly, because orbiting alone cannot get inside a room.
+  useEffect(() => {
+    if (status !== 'ready') return;
+    const held = new Set<string>();
+    const KEYS = new Set(['w', 'a', 's', 'd', 'q', 'e']);
+
+    const isTyping = (target: EventTarget | null) => (
+      target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
+    );
+    const onDown = (event: globalThis.KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (!KEYS.has(key) || isTyping(event.target)) return;
+      held.add(key);
+    };
+    const onUp = (event: globalThis.KeyboardEvent) => held.delete(event.key.toLowerCase());
+    const onBlur = () => held.clear();
+
+    let raf = 0;
+    const step = () => {
+      const ctx = ctxRef.current;
+      const orbit = controlsRef.current;
+      if (ctx && orbit && held.size) {
+        // Scale the step to how far out we are, so flying feels the same in a
+        // desk-sized capture and a street.
+        const pace = Math.max(0.02, ctx.camera.position.distanceTo(orbit.target) * 0.02);
+        const forward = new THREE.Vector3();
+        ctx.camera.getWorldDirection(forward);
+        const right = new THREE.Vector3().crossVectors(forward, ctx.camera.up).normalize();
+        const move = new THREE.Vector3();
+        if (held.has('w')) move.add(forward);
+        if (held.has('s')) move.sub(forward);
+        if (held.has('d')) move.add(right);
+        if (held.has('a')) move.sub(right);
+        if (held.has('e')) move.y += 1;
+        if (held.has('q')) move.y -= 1;
+        if (move.lengthSq() > 0) {
+          move.normalize().multiplyScalar(pace);
+          // Move the target too, or the camera swings round instead of advancing.
+          ctx.camera.position.add(move);
+          orbit.target.add(move);
+          orbit.update();
+          forceReadout((n) => n + 1);
+        }
+      }
+      raf = requestAnimationFrame(step);
+    };
+    step();
+
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [status]);
 
@@ -321,6 +396,72 @@ export function SetViewer({
 
       {controls && (
         <div className="set-viewer__panel">
+          <div className="set-viewer__group">
+            <h4>Scan</h4>
+            <div className="set-viewer__buttons">
+              <button type="button" className="set-viewer__add" data-testid="set-viewer-frame" onClick={frameScene}>
+                Frame scene
+              </button>
+              <button
+                type="button"
+                className="set-viewer__add"
+                data-testid="set-viewer-flip"
+                title="Turn the scan the right way up"
+                onClick={() => {
+                  const [x, y, z] = set.rotationDeg ?? [0, 0, 0];
+                  onSetChange?.({ rotationDeg: [(x + 180) % 360, y, z] });
+                }}
+              >
+                Flip upright
+              </button>
+            </div>
+            <label className="set-viewer__row">
+              Up axis
+              <select
+                aria-label="Up axis"
+                value={set.upAxis}
+                onChange={(event) => onSetChange?.({ upAxis: event.target.value === 'z' ? 'z' : 'y' })}
+              >
+                <option value="y">Y up</option>
+                <option value="z">Z up</option>
+              </select>
+            </label>
+            {(['Pitch', 'Yaw', 'Roll'] as const).map((label, axis) => {
+              const rotation = set.rotationDeg ?? [0, 0, 0];
+              return (
+                <label className="set-viewer__row" key={label}>
+                  {label}
+                  <input
+                    type="range"
+                    min={-180}
+                    max={180}
+                    step={1}
+                    value={rotation[axis]}
+                    aria-label={`${label} degrees`}
+                    onChange={(event) => {
+                      const next: [number, number, number] = [...rotation] as [number, number, number];
+                      next[axis] = Number(event.target.value);
+                      onSetChange?.({ rotationDeg: next });
+                    }}
+                  />
+                  <b>{Math.round(rotation[axis])}°</b>
+                </label>
+              );
+            })}
+            <label className="set-viewer__row">
+              Scale
+              <input
+                type="number" min={0.01} max={100} step={0.01} value={set.scaleToMeters}
+                aria-label="Metres per scan unit"
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  if (Number.isFinite(next) && next > 0) onSetChange?.({ scaleToMeters: next });
+                }}
+              />
+            </label>
+            <p className="set-viewer__hint">Drag to orbit · right-drag to pan · scroll to zoom · WASD/QE to fly</p>
+          </div>
+
           <div className="set-viewer__group">
             <h4>Lens</h4>
             <div className="set-viewer__lenses">

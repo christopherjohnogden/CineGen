@@ -199,3 +199,27 @@
     max-height: 40vh;
   }
 }
+
+.set-viewer__buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.set-viewer__buttons > button {
+  flex: 1;
+}
+
+.set-viewer__hint {
+  margin: 2px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.set-viewer__row > b {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  font-weight: 500;
+}

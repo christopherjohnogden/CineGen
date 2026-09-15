@@ -24,6 +24,8 @@ export interface ShapeShotResult {
 
 export interface ShapeShotModalProps {
   sets: ProjectSet[];
+  /** Orientation trim dialled in here sticks to the Set. */
+  onSetChange?: (setId: string, updates: Partial<ProjectSet>) => void;
   /** Output aspect of the pending generation, so renders match the shot. */
   aspect: string;
   /** Long edge in pixels for the renders. */
@@ -63,6 +65,7 @@ export function ShapeShotModal({
   onClose,
   onAttach,
   onSaveCamera,
+  onSetChange,
   maxReferences = 4,
 }: ShapeShotModalProps) {
   const usable = useMemo(() => sets.filter((set) => Boolean(set.splatPath)), [sets]);
@@ -167,6 +170,7 @@ export function ShapeShotModal({
                   onFocalChange={setFocalMm}
                   sensor={sensor}
                   onSensorChange={setSensor}
+                  onSetChange={(updates) => onSetChange?.(set.id, updates)}
                 />
               </Suspense>
               <FloorPlan set={set} standIns={standIns} />

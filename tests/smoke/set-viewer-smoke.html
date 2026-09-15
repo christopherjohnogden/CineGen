@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Set viewer smoke</title>
+    <style>
+      body { margin: 0; background: #08090c; }
+      canvas { display: block; width: 640px; height: 360px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <script type="module">
+      /**
+       * Drives the real Set viewer scene end to end against a procedurally
+       * built splat environment, so the four render passes can be verified
+       * without a scan file on disk.
+       *
+       * Served by the Vite dev server and driven by
+       * scripts/sets-smoke.mjs, which reads window.__SMOKE__.
+       */
+      import * as THREE from 'three';
+      import { constructGrid } from '@sparkjsdev/spark';
+      import { createScene, renderPass, syncStandIns, ALL_PASSES } from '/src/lib/sets/scene.ts';
+
+      const RESULT = { status: 'running', passes: {}, errors: [] };
+      window.__SMOKE__ = RESULT;
+
+      /** Mean channel values and how much of the frame is not background. */
+      function analyse(data, width, height) {
+        let r = 0, g = 0, b = 0, lit = 0, grey = 0;
+        const total = width * height;
+        for (let i = 0; i < data.length; i += 4) {
+          const pr = data[i], pg = data[i + 1], pb = data[i + 2];
+          r += pr; g += pg; b += pb;
+          // The stage background is #0e0f11; anything clearly above it is drawn.
+          if (pr > 30 || pg > 30 || pb > 30) lit += 1;
+          // The mannequin is flat #9aa0a6 — near-neutral and mid-bright.
+          if (Math.abs(pr - pg) < 14 && Math.abs(pg - pb) < 14 && pr > 90 && pr < 210) grey += 1;
+        }
+        return {
+          meanR: r / total, meanG: g / total, meanB: b / total,
+          litFraction: lit / total,
+          greyFraction: grey / total,
+        };
+      }
+
+      try {
+        const canvas = document.getElementById('stage');
+        const set = {
+          id: 'smoke', name: 'Smoke', createdAt: '', updatedAt: '',
+          upAxis: 'y', scaleToMeters: 1, marks: [], cameras: [],
+        };
+
+        // A coloured grid slab standing in for a scanned room.
+        const ctx = await createScene({
+          canvas,
+          set,
+          constructSplats: (splats) => constructGrid({
+            splats,
+            extents: new THREE.Box3(new THREE.Vector3(-4, 0, -4), new THREE.Vector3(4, 3, 4)),
+            stepSize: 0.35,
+            pointRadius: 0.05,
+            color: (color, point) => color.setRGB(
+              0.25 + (point.x + 4) / 16,
+              0.35,
+              0.25 + (point.z + 4) / 16,
+            ),
+          }),
+        });
+
+        syncStandIns(ctx.standInGroup, [
+          { id: 'a', heightM: 1.8, pose: 'standing', x: 0, z: 0, facing: Math.PI },
+        ]);
+
+        ctx.camera.position.set(0, 1.6, 4.5);
+        ctx.camera.lookAt(new THREE.Vector3(0, 0.9, 0));
+        ctx.camera.updateProjectionMatrix();
+
+        RESULT.splatLoaded = Boolean(ctx.splat);
+
+        for (const kind of ALL_PASSES) {
+          const { data, width, height } = await renderPass(ctx, kind, 320, 180);
+          RESULT.passes[kind] = { bytes: data.length, width, height, ...analyse(data, width, height) };
+        }
+
+        // Render one more plate AFTER the depth pass: if the depth modifier
+        // leaked, this second plate comes back depth-coloured.
+        const again = await renderPass(ctx, 'plate', 320, 180);
+        RESULT.plateAfterDepth = analyse(again.data, again.width, again.height);
+
+        RESULT.status = 'done';
+      } catch (error) {
+        RESULT.status = 'error';
+        RESULT.errors.push(String(error && error.stack ? error.stack : error));
+      }
+    </script>
+  </body>
+</html>

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SparkRenderer, SplatMesh, modifiers, utils as sparkUtils } from '@sparkjsdev/spark';
+import { SparkRenderer, SplatMesh, modifiers, utils as sparkUtils, type SplatMeshOptions } from '@sparkjsdev/spark';
 
 import type { ProjectSet, SetCamera } from '@/types/sets';
 import { FULL_FRAME, aspectRatio, verticalFov, type SensorSize } from './optics';
@@ -96,6 +96,20 @@ export function syncStandIns(group: THREE.Group, standIns: StandIn[]): void {
   for (const standIn of standIns) group.add(buildMannequin(standIn));
 }
 
+/**
+ * Orient a loaded scan.
+ *
+ * The up-axis preset is the coarse correction; `rotationDeg` is the per-Set trim
+ * on top, because captures land at arbitrary orientation and no preset covers
+ * upside-down, mirrored and yawed all at once.
+ */
+export function applySetOrientation(splat: SplatMesh, set: Pick<ProjectSet, 'upAxis' | 'rotationDeg' | 'scaleToMeters'>): void {
+  const [x, y, z] = set.rotationDeg ?? [0, 0, 0];
+  const base = set.upAxis === 'z' ? -Math.PI / 2 : 0;
+  splat.rotation.set(base + THREE.MathUtils.degToRad(x), THREE.MathUtils.degToRad(y), THREE.MathUtils.degToRad(z));
+  splat.scale.setScalar(set.scaleToMeters > 0 ? set.scaleToMeters : 1);
+}
+
 /** Apply a saved camera record to a live three.js camera. */
 export function applyCamera(
   camera: THREE.PerspectiveCamera,
@@ -114,13 +128,32 @@ export interface CreateSceneOptions {
   set: ProjectSet;
   /** Resolved to a fetchable url by the caller — local-media:// on desktop. */
   splatUrl?: string;
+  /**
+   * Build the splats procedurally instead of loading a file. Lets the viewer be
+   * exercised end to end without a scan on disk, and leaves room for generated
+   * environments later.
+   */
+  constructSplats?: SplatMeshOptions['constructSplats'];
   onSplatProgress?: (fraction: number) => void;
 }
 
 export async function createScene(options: CreateSceneOptions): Promise<SceneContext> {
   const { canvas, set, splatUrl } = options;
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  let renderer: THREE.WebGLRenderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  } catch (cause) {
+    // Desktop dev builds call app.disableHardwareAcceleration() on macOS for
+    // sleep/wake stability, which does not merely slow WebGL down — the context
+    // fails to create at all. Say what to do about it instead of surfacing
+    // three.js's own message, which reads like a broken graphics driver.
+    const noGpu = typeof window !== 'undefined' && Boolean(window.electronAPI);
+    throw new Error(noGpu
+      ? 'The 3D viewer needs the GPU, which desktop dev builds turn off. Restart with CINEGEN_GPU=1 npm run dev.'
+      : 'This browser could not open a WebGL context, which the 3D viewer needs.',
+      { cause });
+  }
   renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
 
   const scene = new THREE.Scene();
@@ -143,11 +176,14 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
   scene.add(standInGroup);
 
   let splat: SplatMesh | null = null;
-  if (splatUrl) {
-    splat = new SplatMesh({ url: splatUrl, onLoad: () => options.onSplatProgress?.(1) });
+  if (splatUrl || options.constructSplats) {
+    splat = new SplatMesh({
+      ...(splatUrl ? { url: splatUrl } : {}),
+      ...(options.constructSplats ? { constructSplats: options.constructSplats } : {}),
+      onLoad: () => options.onSplatProgress?.(1),
+    });
     // Scans come out of training in arbitrary units and orientation.
-    if (set.upAxis === 'z') splat.rotation.x = -Math.PI / 2;
-    splat.scale.setScalar(set.scaleToMeters);
+    applySetOrientation(splat, set);
     splat.layers.set(LAYER_ENVIRONMENT);
     scene.add(splat);
     await splat.initialized;

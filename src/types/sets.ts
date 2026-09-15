@@ -56,6 +56,14 @@ export interface ProjectSet {
   thumbnailUrl?: string;
   /** Which axis the capture treats as up. Scans vary; the viewer corrects on load. */
   upAxis: 'y' | 'z';
+  /**
+   * Degrees of extra rotation applied after the up-axis preset.
+   *
+   * Scans come out of training at essentially arbitrary orientation — upside
+   * down, mirrored, or yawed — and no preset covers every case, so this is the
+   * trim the user dials in once per Set and never touches again.
+   */
+  rotationDeg?: [number, number, number];
   /** Multiplier taking the capture's units to metres. */
   scaleToMeters: number;
   marks: SetMark[];
