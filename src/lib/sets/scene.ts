@@ -154,6 +154,7 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
       : 'This browser could not open a WebGL context, which the 3D viewer needs.',
       { cause });
   }
+  // Render at the display's real pixel density; a scan is judged on detail.
   renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
 
   const scene = new THREE.Scene();
@@ -164,7 +165,20 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
   camera.layers.enableAll();
 
   // depthWrite lets splats and mannequin meshes occlude each other correctly.
-  const spark = new SparkRenderer({ renderer, depthTest: true, depthWrite: true });
+  //
+  // The quality options are deliberate. Spark's defaults are tuned for
+  // streaming huge worlds to phones: `enableLod` is on and `blurAmount` is 0.3,
+  // which together read as a soft, smeared scan next to the same file in a
+  // desktop trainer's own viewer. A Set is one local capture being used to judge
+  // framing, so detail matters more than draw cost.
+  const spark = new SparkRenderer({
+    renderer,
+    depthTest: true,
+    depthWrite: true,
+    enableLod: false,
+    blurAmount: 0,
+    preBlurAmount: 0,
+  });
   scene.add(spark);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.75));
@@ -257,6 +271,11 @@ export async function renderPass(
     renderer: ctx.renderer,
     depthTest: true,
     depthWrite: true,
+    // Same quality settings as the viewport, or an export would not match what
+    // the user framed.
+    enableLod: false,
+    blurAmount: 0,
+    preBlurAmount: 0,
     target: { width, height, superXY: 2 },
   });
   ctx.scene.add(offscreen);

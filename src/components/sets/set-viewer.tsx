@@ -92,6 +92,7 @@ export function SetViewer({
   const ctxRef = useRef<SceneContext | null>(null);
   const rafRef = useRef<number | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const [navMode, setNavMode] = useState<'orbit' | 'look'>('orbit');
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [, forceReadout] = useState(0);
@@ -200,6 +201,11 @@ export function SetViewer({
     // is what made the old controls feel like they would not zoom.
     controls.minDistance = 0.05;
     controls.maxDistance = 2000;
+    // Never let the camera reach the poles. At phi 0 or PI the azimuth becomes
+    // degenerate and a horizontal drag stops turning the view at all, which
+    // reads as "I cannot rotate left or right".
+    controls.minPolarAngle = 0.08;
+    controls.maxPolarAngle = Math.PI - 0.08;
     controls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.DOLLY,
@@ -219,6 +225,72 @@ export function SetViewer({
     };
   }, [status]);
 
+  /**
+   * Look mode: turn the camera in place instead of orbiting a point.
+   *
+   * Orbiting is the wrong verb once you are standing inside a scanned room —
+   * you want to face a different wall, not swing around the middle of the
+   * floor. This keeps OrbitControls in charge of pan and dolly and only takes
+   * over rotation, moving the target around the camera rather than the camera
+   * around the target, so the two modes stay consistent.
+   */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || status !== 'ready' || navMode !== 'look') return;
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    controls.enableRotate = false;
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const onDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      dragging = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+    };
+    const onMove = (event: PointerEvent) => {
+      if (!dragging) return;
+      const ctx = ctxRef.current;
+      const orbit = controlsRef.current;
+      if (!ctx || !orbit) return;
+
+      const offset = orbit.target.clone().sub(ctx.camera.position);
+      const distance = offset.length();
+      const spherical = new THREE.Spherical().setFromVector3(offset);
+      spherical.theta -= (event.clientX - lastX) * 0.004;
+      // Stop just short of straight up or down, for the same reason as above.
+      spherical.phi = THREE.MathUtils.clamp(spherical.phi + (event.clientY - lastY) * 0.004, 0.08, Math.PI - 0.08);
+      spherical.radius = distance;
+
+      orbit.target.copy(ctx.camera.position).add(new THREE.Vector3().setFromSpherical(spherical));
+      orbit.update();
+      lastX = event.clientX;
+      lastY = event.clientY;
+      forceReadout((n) => n + 1);
+    };
+    const onUp = (event: PointerEvent) => {
+      dragging = false;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    };
+
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+    return () => {
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+      const live = controlsRef.current;
+      if (live) live.enableRotate = true;
+    };
+  }, [navMode, status]);
+
   /** Put the camera where the whole scan is visible. */
   const frameScene = useCallback(() => {
     const ctx = ctxRef.current;
@@ -235,9 +307,13 @@ export function SetViewer({
     const radius = Math.max(0.5, size.length() / 2);
     const distance = radius / Math.tan((ctx.camera.fov * Math.PI) / 360);
 
-    controls.target.copy(centre);
-    ctx.camera.position.set(centre.x, centre.y + radius * 0.25, centre.z + distance);
-    ctx.camera.near = Math.max(0.01, radius / 500);
+    // Stand in the space at eye height and look level, rather than hovering at
+    // the bounding box centre — which for a room is up near the ceiling and
+    // gives a tilted, disorienting first view.
+    const eye = Math.min(box.max.y, box.min.y + 1.6);
+    controls.target.set(centre.x, eye, centre.z);
+    ctx.camera.position.set(centre.x, eye, centre.z + distance);
+    ctx.camera.near = Math.max(0.01, radius / 1000);
     ctx.camera.far = distance + radius * 8;
     ctx.camera.updateProjectionMatrix();
     controls.update();
@@ -459,7 +535,26 @@ export function SetViewer({
                 }}
               />
             </label>
-            <p className="set-viewer__hint">Drag to orbit · right-drag to pan · scroll to zoom · WASD/QE to fly</p>
+            <div className="set-viewer__lenses" role="group" aria-label="Navigation mode">
+              {(['orbit', 'look'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`set-viewer__lens${navMode === mode ? ' is-active' : ''}`}
+                  data-testid={`set-viewer-nav-${mode}`}
+                  aria-pressed={navMode === mode}
+                  onClick={() => setNavMode(mode)}
+                >
+                  {mode === 'orbit' ? 'Orbit' : 'Look'}
+                </button>
+              ))}
+            </div>
+            <p className="set-viewer__hint">
+              {navMode === 'orbit'
+                ? 'Drag orbits the scene · right-drag pans · scroll zooms'
+                : 'Drag turns the camera where it stands · right-drag pans · scroll zooms'}
+              <br />WASD moves, Q/E down and up.
+            </p>
           </div>
 
           <div className="set-viewer__group">
