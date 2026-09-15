@@ -582,11 +582,27 @@ export function SetViewer({
 
           <div className="set-viewer__group">
             <h4>Detail</h4>
+            <label className="set-viewer__row">
+              Scan filtering
+              <select
+                aria-label="Scan filtering"
+                value={tuning.preBlurAmount > 0 ? 'standard' : 'mip'}
+                onChange={(event) => setTuning((current) => ({
+                  ...current,
+                  preBlurAmount: event.target.value === 'standard' ? 0.3 : 0,
+                  blurAmount: event.target.value === 'standard' ? 0 : 0.1,
+                }))}
+              >
+                <option value="standard">Standard 3DGS (Spirula)</option>
+                <option value="mip">Antialiased / Mip</option>
+              </select>
+            </label>
+            <p className="set-viewer__hint">Match the scan’s training mode. Standard suits Spirula’s 3DGS exports.</p>
             {([
-              ['Splat cap', 'maxPixelRadius', 16, 512, 4, 'Largest a single splat may draw, in pixels. Lower kills blobs.'],
-              ['Anti-alias', 'blurAmount', 0, 0.6, 0.05, 'The low-pass term training assumes. 0.3 is standard; 0 aliases.'],
-              ['Extent', 'maxStdDev', 2, 3, 0.05, 'Where a Gaussian is cut off. Lower is crisper but patchier.'],
-              ['Min alpha', 'minAlpha', 0, 0.05, 0.002, 'Cull faint splats. Raising it also removes blending.'],
+              ['Splat cap', 'maxPixelRadius', 128, 2048, 16, 'Maximum radius in pixels. Reducing it can shrink surfaces and open gaps.'],
+              ['Extra smoothing', 'blurAmount', 0, 0.6, 0.05, 'Opacity-compensated smoothing. Standard 3DGS already has its training filter applied.'],
+              ['Extent', 'maxStdDev', 2, 4, 0.01, 'Gaussian coverage. Reducing it cuts soft edges and can create patches.'],
+              ['Min alpha', 'minAlpha', 0, 0.05, 0.001, 'Cull faint splats. Raising it removes overlap and can create patches.'],
             ] as const).map(([label, key, min, max, step, hint]) => (
               <label className="set-viewer__row" key={key} title={hint}>
                 {label}

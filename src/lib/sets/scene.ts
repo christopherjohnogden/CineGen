@@ -10,40 +10,31 @@ import { FULL_FRAME, aspectRatio, verticalFov, type SensorSize } from './optics'
  * Splats and stand-in meshes live on separate layers so the four export passes
  * are the same scene rendered with different layers enabled, rather than four
  * scenes that could drift apart. Spark fuses splats into the normal three.js
- * pipeline, so a GLB mannequin occludes and is occluded correctly once
- * depth testing is on.
+ * pipeline; opaque stand-ins render first and splats blend over them wherever
+ * the splats pass the depth test.
  */
 
 /**
- * Render settings for looking at one local scan.
- *
- * Only two of Spark's defaults are actually wrong for this use:
- *
- * - `maxPixelRadius` 512 lets one Gaussian cover a 1024px-wide disc, which is
- *   what produces giant soft blobs near the camera.
- * - `enableLod` decimates a capture that is sitting on local disk and does not
- *   need streaming.
- *
- * The rest are left at Spark's values on purpose. `blurAmount` 0.3 is the
- * anti-aliasing term 3DGS training assumes — it adds to the 2D covariance
- * diagonal with a matching opacity adjustment, so zeroing it does not sharpen
- * the image, it removes the low-pass filter and leaves aliasing. `maxStdDev`
- * sqrt(8) is where a Gaussian is truncated; tightening it cuts coverage and
- * turns continuous surfaces into discrete patches. `minAlpha` near zero keeps
- * the faint splats that do the blending between them.
+ * Full-detail local scans. Transparent splats must not write depth: their
+ * low-opacity edges would reject other splats before they can blend. Z sorting
+ * matches conventional 3DGS training; radial sorting can change layer order.
+ * Extended accumulation preserves the precision of the extended source data.
  */
 export const SCAN_QUALITY = {
   depthTest: true,
-  depthWrite: true,
+  depthWrite: false,
+  sortRadial: false,
+  accumExtSplats: true,
   /** A local scan should render at full detail rather than stream. */
   enableLod: false,
-  /** No single splat may dominate the frame. This is the blob fix. */
-  maxPixelRadius: 128,
+  /** Preserve broad Gaussians that were trained to cover continuous surfaces. */
+  maxPixelRadius: 1024,
 } as const;
 
 /** The knobs worth exposing, because the right value differs per capture. */
 export interface ScanTuning {
   maxPixelRadius: number;
+  preBlurAmount: number;
   blurAmount: number;
   maxStdDev: number;
   minAlpha: number;
@@ -51,16 +42,18 @@ export interface ScanTuning {
 
 export const DEFAULT_SCAN_TUNING: ScanTuning = {
   maxPixelRadius: SCAN_QUALITY.maxPixelRadius,
-  // Spark's own defaults: the AA term training assumes, full Gaussian extent,
-  // and effectively no alpha cull.
-  blurAmount: 0.3,
-  maxStdDev: Math.sqrt(8),
-  minAlpha: 0.5 / 255,
+  // Spirula's standard 3DGS uses dilation WITHOUT opacity compensation.
+  // Mip-trained scans instead use blurAmount with compensation.
+  preBlurAmount: 0.3,
+  blurAmount: 0,
+  maxStdDev: 3.33,
+  minAlpha: 1 / 255,
 };
 
 /** Apply tuning to a live renderer — these are plain mutable fields. */
 export function applyScanTuning(spark: SparkRenderer, tuning: ScanTuning): void {
   spark.maxPixelRadius = tuning.maxPixelRadius;
+  spark.preBlurAmount = tuning.preBlurAmount;
   spark.blurAmount = tuning.blurAmount;
   spark.maxStdDev = tuning.maxStdDev;
   spark.minAlpha = tuning.minAlpha;
@@ -199,13 +192,11 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
   try {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   } catch (cause) {
-    // Desktop dev builds call app.disableHardwareAcceleration() on macOS for
-    // sleep/wake stability, which does not merely slow WebGL down — the context
-    // fails to create at all. Say what to do about it instead of surfacing
-    // three.js's own message, which reads like a broken graphics driver.
-    const noGpu = typeof window !== 'undefined' && Boolean(window.electronAPI);
-    throw new Error(noGpu
-      ? 'The 3D viewer needs the GPU, which desktop dev builds turn off. Restart with CINEGEN_GPU=1 npm run dev.'
+    // A failed context can also follow a graphics-process crash or resource
+    // exhaustion; do not claim that desktop acceleration is always disabled.
+    const isDesktop = typeof window !== 'undefined' && Boolean(window.electronAPI);
+    throw new Error(isDesktop
+      ? 'The 3D viewer could not start the graphics renderer. Restart CineGen and reopen this scan.'
       : 'This browser could not open a WebGL context, which the 3D viewer needs.',
       { cause });
   }
@@ -219,14 +210,7 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
   camera.position.set(0, 1.6, 4);
   camera.layers.enableAll();
 
-  // depthWrite lets splats and mannequin meshes occlude each other correctly.
-  //
-  // The quality options are deliberate. Spark's defaults are tuned for
-  // streaming huge worlds to phones: `enableLod` is on and `blurAmount` is 0.3,
-  // which together read as a soft, smeared scan next to the same file in a
-  // desktop trainer's own viewer. A Set is one local capture being used to judge
-  // framing, so detail matters more than draw cost.
-  const spark = new SparkRenderer({ renderer, ...SCAN_QUALITY });
+  const spark = new SparkRenderer({ renderer, ...SCAN_QUALITY, ...DEFAULT_SCAN_TUNING });
   scene.add(spark);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.75));
@@ -240,6 +224,10 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
   let splat: SplatMesh | null = null;
   if (splatUrl || options.constructSplats) {
     splat = new SplatMesh({
+      // Keep position/scale/color precision instead of the compact mobile format.
+      // Procedural builders use Spark's PackedSplats construction API.
+      extSplats: Boolean(splatUrl),
+      lod: false,
       ...(splatUrl ? { url: splatUrl } : {}),
       ...(options.constructSplats ? { constructSplats: options.constructSplats } : {}),
       onLoad: () => options.onSplatProgress?.(1),
@@ -261,6 +249,7 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
     dispose() {
       syncStandIns(standInGroup, [], 0);
       splat?.dispose?.();
+      spark.dispose();
       scene.clear();
       renderer.dispose();
     },
@@ -321,16 +310,25 @@ export async function renderPass(
   const offscreen = new SparkRenderer({
     renderer: ctx.renderer,
     ...SCAN_QUALITY,
+    autoUpdate: false,
     target: { width, height, superXY: 2 },
   });
   applyScanTuning(offscreen, tuning);
+  // Only one Spark draw may contribute, otherwise transparent splats blend twice.
+  const viewportVisible = ctx.spark.visible;
+  ctx.spark.visible = false;
   ctx.scene.add(offscreen);
 
   try {
+    // Sorting runs asynchronously. A fresh target must finish it before readback.
+    ctx.scene.updateMatrixWorld(true);
+    await offscreen.update({ scene: ctx.scene, camera: ctx.camera });
     const data = await offscreen.renderReadTarget({ scene: ctx.scene, camera: ctx.camera });
     return { data, width, height };
   } finally {
     ctx.scene.remove(offscreen);
+    ctx.spark.visible = viewportVisible;
+    offscreen.dispose();
     depthRestore?.();
     restore();
   }

@@ -89,6 +89,41 @@
         const again = await renderPass(ctx, 'plate', 320, 180);
         RESULT.plateAfterDepth = analyse(again.data, again.width, again.height);
 
+        ctx.dispose();
+
+        // These Gaussians overlap on screen, but radial distance reverses their
+        // Z order. Writing depth rejects the green layer instead of blending it.
+        const overlap = await createScene({
+          canvas: document.createElement('canvas'),
+          set,
+          constructSplats: (splats) => {
+            splats.pushSplat(new THREE.Vector3(1, 0, -4), new THREE.Vector3(1, 1, 0.1),
+              new THREE.Quaternion(), 0.6, new THREE.Color(1, 0, 0));
+            splats.pushSplat(new THREE.Vector3(0, 0, -4.01), new THREE.Vector3(1, 1, 0.1),
+              new THREE.Quaternion(), 0.6, new THREE.Color(0, 1, 0));
+          },
+        });
+        overlap.camera.position.set(0, 0, 0);
+        overlap.camera.lookAt(0, 0, -1);
+        overlap.scene.background = new THREE.Color(0);
+        const blended = await renderPass(overlap, 'plate', 64, 64);
+        const center = (32 * 64 + 32) * 4;
+        const red = blended.data[center], green = blended.data[center + 1];
+        if (red < 40 || green < 40) throw new Error(`Splat overlap lost a layer: ${red}, ${green}`);
+
+        // Keep depth testing: opaque geometry in front must still hide splats.
+        const blocker = new THREE.Mesh(new THREE.PlaneGeometry(10, 10),
+          new THREE.MeshBasicMaterial({ color: 0x0000ff }));
+        blocker.position.z = -3;
+        overlap.standInGroup.add(blocker);
+        const occluded = await renderPass(overlap, 'composite', 64, 64);
+        if (occluded.data[center] > 5 || occluded.data[center + 1] > 5 || occluded.data[center + 2] < 240) {
+          throw new Error('Splats leaked through opaque foreground geometry');
+        }
+        RESULT.overlapBlends = true;
+        RESULT.foregroundOccludes = true;
+        overlap.dispose();
+
         RESULT.status = 'done';
       } catch (error) {
         RESULT.status = 'error';
