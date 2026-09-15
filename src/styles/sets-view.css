@@ -1,0 +1,196 @@
+/* Sets — the third Spaces view mode, beside Canvas and Studio. */
+
+.sets-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  color: var(--text-primary);
+}
+
+.sets-view__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sets-view__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.sets-view__import {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--bg-void);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.sets-view__import:hover {
+  background: var(--accent-hover);
+}
+
+.sets-view__error {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--accent-dim);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+}
+
+.sets-view__empty,
+.sets-view__loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.sets-view__body {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.sets-view__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.sets-view__card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.sets-view__card:hover {
+  border-color: var(--border-medium);
+}
+
+.sets-view__card.is-active {
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+}
+
+.sets-view__card-name {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.sets-view__card-meta {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sets-view__card-warn {
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.sets-view__stage {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── Overhead plan ── */
+
+.floor-plan {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 150px;
+  margin: 0;
+  padding: 6px;
+  background: rgba(8, 9, 12, 0.85);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.floor-plan__caption {
+  margin-bottom: 4px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.floor-plan svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.floor-plan__ground {
+  fill: var(--bg-input);
+}
+
+.floor-plan__camera polygon {
+  fill: rgba(212, 160, 84, 0.18);
+  stroke: rgba(212, 160, 84, 0.5);
+  stroke-width: 0.5;
+}
+
+.floor-plan__camera circle {
+  fill: var(--accent);
+}
+
+.floor-plan__mark circle {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-width: 0.6;
+}
+
+.floor-plan__mark text {
+  font-size: 3.4px;
+  fill: var(--text-secondary);
+}
+
+.floor-plan__standin {
+  fill: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+  .sets-view__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .sets-view__list {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+}

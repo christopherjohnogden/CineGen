@@ -1,9 +1,12 @@
 import { registerMcpCommands } from '@/lib/mcp/app-commands';
 
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, Suspense, lazy } from 'react';
 import { WorkflowCanvas } from './workflow-canvas';
 import { SpaceStudio } from './space-studio';
 import { CreateTimeline } from './create-timeline';
+// three + Spark are large and none of the three Vite configs chunks; keep them
+// out of the main bundle by only reaching Sets through a dynamic import.
+const SetsView = lazy(() => import('@/components/sets/sets-view').then((m) => ({ default: m.SetsView })));
 import type { PreviewMode } from './timeline-preview';
 import { useWorkspace } from '@/components/workspace/workspace-shell';
 import { generateId, timestamp } from '@/lib/utils/ids';
@@ -22,7 +25,7 @@ import { placeStudioNodeOnCanvas, removeStudioNodeFromCanvas } from '@/lib/studi
 import { canvasMedia, canvasPrompt, importCanvasMedia, syncCanvasVideosToStudio, type StudioTransfer } from '@/lib/studio/canvas-import';
 
 type SidebarPanel = 'workflows' | 'models' | 'history' | null;
-type SpaceViewMode = 'canvas' | 'studio';
+type SpaceViewMode = 'canvas' | 'studio' | 'sets';
 
 const SPACE_VIEW_STORAGE_KEY = 'cinegen_spaces_view_mode';
 
@@ -31,7 +34,8 @@ function getInitialSpaceViewMode(): SpaceViewMode {
 
   try {
     const storedMode = window.localStorage.getItem(SPACE_VIEW_STORAGE_KEY);
-    return storedMode === 'studio' ? 'studio' : 'canvas';
+    if (storedMode === 'studio' || storedMode === 'sets') return storedMode;
+    return 'canvas';
   } catch {
     return 'canvas';
   }
@@ -195,7 +199,7 @@ export function CreateTab() {
       // The view still switches when storage is unavailable.
     }
 
-    if (mode === 'studio') {
+    if (mode !== 'canvas') {
       setTimelineOpen(false);
       setPreviewMode('pip');
     }
@@ -222,7 +226,7 @@ export function CreateTab() {
 
   useEffect(() => registerMcpCommands({ view: (args) => {
     const mode = args.view;
-    if (mode !== 'canvas' && mode !== 'studio') throw new Error('Unknown Space view.');
+    if (mode !== 'canvas' && mode !== 'studio' && mode !== 'sets') throw new Error('Unknown Space view.');
     handleViewModeChange(mode);
     return { view: mode };
   } }), [handleViewModeChange]);
@@ -610,13 +614,21 @@ export function CreateTab() {
           >
             Studio
           </button>
+          <button
+            type="button"
+            aria-pressed={viewMode === 'sets'}
+            className={viewMode === 'sets' ? 'is-active' : undefined}
+            onClick={() => handleViewModeChange('sets')}
+          >
+            Sets
+          </button>
         </div>
 
         <div className="create-tab__view-host">
           <div
-            className={`create-tab__canvas${isFullscreen ? ' create-tab__canvas--blurred' : ''}${viewMode === 'studio' ? ' create-tab__canvas--studio-hidden' : ''}`}
-            aria-hidden={viewMode === 'studio'}
-            inert={viewMode === 'studio'}
+            className={`create-tab__canvas${isFullscreen ? ' create-tab__canvas--blurred' : ''}${viewMode !== 'canvas' ? ' create-tab__canvas--studio-hidden' : ''}`}
+            aria-hidden={viewMode !== 'canvas'}
+            inert={viewMode !== 'canvas'}
           >
             <WorkflowCanvas key={state.activeSpaceId} onSendToStudio={handleSendToStudio} />
             {isFullscreen && (
@@ -626,6 +638,11 @@ export function CreateTab() {
               />
             )}
           </div>
+          {viewMode === 'sets' && (
+            <div className="create-tab__studio">
+              <Suspense fallback={null}><SetsView /></Suspense>
+            </div>
+          )}
           {viewMode === 'studio' && (
             <div className="create-tab__studio">
               <SpaceStudio onOpenInCanvas={handleOpenNodeInCanvas} onHideFromCanvas={handleHideNodeFromCanvas}
