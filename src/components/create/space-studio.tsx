@@ -44,6 +44,7 @@ import { primeVideoPoster } from '@/lib/studio/clips';
 import {
   endFieldFor,
   isImageField,
+  mediaFieldCapacity,
   promptFieldFor,
   referenceFieldFor,
   startFieldFor,
@@ -1504,8 +1505,14 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
       if (field.id === 'source_video') continue;
       const refs = attachedRefs.filter(ref => field.portType === 'media' && !['audio','video'].includes(field.mediaRole ?? '') ? ref.kind !== 'audio' : ref.kind === (field.mediaRole ?? field.portType));
       if (refs.length) {
-        if (!field.multiple && refs.length > 1) { setFormError(`Choose one ${field.label.toLowerCase()}.`); return; }
-        modelConfig[field.id] = field.multiple ? refs.map(ref => ref.url) : refs[0].url;
+        const capacity = mediaFieldCapacity(field);
+        if (refs.length > capacity) {
+          setFormError(capacity === 1
+            ? `Choose one ${field.label.toLowerCase()}.`
+            : `Choose at most ${capacity} ${field.label.toLowerCase()}.`);
+          return;
+        }
+        modelConfig[field.id] = capacity > 1 ? refs.map(ref => ref.url) : refs[0].url;
       }
     }
     const missingRequired = selectedModel.inputs.find((field) => {

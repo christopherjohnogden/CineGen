@@ -1534,4 +1534,58 @@ describe('Space Studio', () => {
     expect(screen.queryByRole('article', { name: 'Image Model generation' })).not.toBeInTheDocument();
     expect(within(filters).getByRole('button', { name: 'Video' })).toHaveAttribute('aria-pressed', 'true');
   });
+  it('sends every attached reference to a multi-slot field instead of refusing the submit', async () => {
+    // Regression: the guard used to key on `field.multiple`, which element-list
+    // fields almost never set — so a reference pack of four images was rejected
+    // with "Choose one reference." even though the field takes 15. Shape Shot
+    // attaches exactly this shape, so the block is load-bearing for it.
+    let counter = 0;
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      file: { getPathForFile: (file: File) => `/Users/chris/Pictures/${file.name}` },
+    };
+    vi.mocked(executeFromNode).mockResolvedValue(undefined as never);
+    vi.mocked(createWorkflowNodeFromSpec).mockImplementation((spec: { nodeType: string; label: string; config: Record<string, unknown> }, position: { x: number; y: number }) => ({
+      id: `made-${++counter}`,
+      type: spec.nodeType,
+      position,
+      data: { type: spec.nodeType, label: spec.label, config: spec.config },
+    }) as never);
+    workspaceHarness.state = makeState([]);
+
+    render(<SpaceStudio />);
+    fireEvent.click(within(screen.getByRole('group', { name: 'Output type' })).getByRole('button', { name: 'Image' }));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'A booth by the window.' } });
+    fireEvent.change(screen.getByTestId('space-studio-attach-input'), {
+      target: {
+        files: [
+          new File(['x'], 'plate.png', { type: 'image/png' }),
+          new File(['x'], 'composite.png', { type: 'image/png' }),
+          new File(['x'], 'depth.png', { type: 'image/png' }),
+          new File(['x'], 'standin.png', { type: 'image/png' }),
+        ],
+      },
+    });
+    await screen.findByText(/added as a reference/);
+
+    fireEvent.submit(screen.getByTestId('space-studio-generate').closest('form') as HTMLFormElement);
+
+    // The old guard aborted here, leaving an alert and making no node at all.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    const setNodes = workspaceHarness.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'SET_NODES') as { nodes: Array<{ data: { config: Record<string, unknown> } }> };
+    expect(setNodes).toBeDefined();
+    const config = setNodes.nodes[0].data.config;
+    // The reference field carries the element-list composite; all four urls ride in `urls`.
+    expect((config.extra_images as { urls: string[] }).urls).toHaveLength(4);
+    // And the ordered mirror keeps them in attach order, which is what the
+    // @imageN numbering downstream depends on.
+    expect(config.__studioAttachedRefs as string[]).toHaveLength(4);
+    expect((config.__studioAttachedRefs as string[]).map((url) => url.split('/').pop())).toEqual([
+      'plate.png', 'composite.png', 'depth.png', 'standin.png',
+    ]);
+
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+  });
 });

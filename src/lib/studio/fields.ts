@@ -59,6 +59,25 @@ export function endFieldFor(model: ModelDefinition): ModelInputField | undefined
     ?? imageFields.find(isExplicitEndField);
 }
 
+/**
+ * How many media references one input actually accepts.
+ *
+ * `multiple` is not a reliable cardinality signal on media inputs. Element-list
+ * fields express their bound with `max`/`maxItems` and mostly omit `multiple`
+ * altogether — Topview's omni `extra_images` takes 30 references and declares no
+ * flag — while the one element-list that does set `multiple: true` is a
+ * single-slot media tool pinned to `max: 1`. Reading the explicit bound first
+ * and falling back to `multiple` only when none is given gets both right.
+ *
+ * Only meaningful for image/video/audio/media inputs: on a numeric field `max`
+ * is a slider bound, not a capacity.
+ */
+export function mediaFieldCapacity(field: ModelInputField): number {
+  const declared = field.maxItems ?? field.max;
+  if (typeof declared === 'number' && Number.isFinite(declared)) return Math.max(1, declared);
+  return field.multiple ? Infinity : 1;
+}
+
 export function referenceFieldFor(model: ModelDefinition): ModelInputField | undefined {
   const imageFields = model.inputs.filter((field) => (
     isImageField(field) && !isExplicitStartField(field) && !isExplicitEndField(field)
