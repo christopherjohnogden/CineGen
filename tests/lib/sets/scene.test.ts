@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { ALL_PASSES, LAYER_STANDIN, buildMannequin, syncStandIns, type StandIn } from '@/lib/sets/scene';
+import { ALL_PASSES, LAYER_STANDIN, applyDepthColor, buildMannequin, syncStandIns, type StandIn } from '@/lib/sets/scene';
 
 function standIn(overrides: Partial<StandIn> = {}): StandIn {
   return { id: 'a', heightM: 1.8, pose: 'standing', x: 0, z: 0, facing: 0, ...overrides };
@@ -68,5 +68,70 @@ describe('ALL_PASSES', () => {
   it('is in the reference-slot order the attach mapping fixes', () => {
     // Ref1 plate, Ref2 composite, Ref3 depth, Ref4 stand-in.
     expect(ALL_PASSES).toEqual(['plate', 'composite', 'depth', 'standin']);
+  });
+});
+
+describe('applyDepthColor', () => {
+  // Spark's setDepthColor installs a *world* modifier and regenerates. Undoing
+  // it means clearing that same field and regenerating again — clearing the
+  // object modifier instead silently leaves the splat depth-coloured for every
+  // later pass and for the live viewport.
+  function fakeContext() {
+    const splat = {
+      enableWorldToView: false,
+      worldModifier: undefined as unknown,
+      objectModifier: undefined as unknown,
+      context: { worldToView: {} },
+      generatorUpdates: 0,
+      updateGenerator() { this.generatorUpdates += 1; },
+    };
+    const standInGroup = new THREE.Group();
+    standInGroup.add(buildMannequin(standIn()));
+    const scene = new THREE.Scene();
+    scene.add(standInGroup);
+    return {
+      scene,
+      standInGroup,
+      splat,
+      camera: new THREE.PerspectiveCamera(50, 1.78, 0.1, 1000),
+    };
+  }
+
+  it('recolours the splat and puts it back exactly as it was', () => {
+    const ctx = fakeContext();
+    const restore = applyDepthColor(ctx as never);
+
+    expect(ctx.splat.worldModifier).toBeDefined();
+    expect(ctx.splat.generatorUpdates).toBe(1);
+
+    restore();
+
+    expect(ctx.splat.worldModifier).toBeUndefined();
+    // A second regenerate is what actually makes the clear take effect.
+    expect(ctx.splat.generatorUpdates).toBe(2);
+  });
+
+  it('swaps the stand-in materials for depth and restores the originals', () => {
+    const ctx = fakeContext();
+    const meshes: THREE.Mesh[] = [];
+    ctx.standInGroup.traverse((node) => { if (node instanceof THREE.Mesh) meshes.push(node); });
+    const original = meshes.map((mesh) => mesh.material);
+
+    const restore = applyDepthColor(ctx as never);
+    for (const mesh of meshes) expect(mesh.material).toBeInstanceOf(THREE.MeshDepthMaterial);
+
+    restore();
+    meshes.forEach((mesh, index) => expect(mesh.material).toBe(original[index]));
+  });
+
+  it('restores the scene background', () => {
+    const ctx = fakeContext();
+    const background = new THREE.Color(0x0e0f11);
+    ctx.scene.background = background;
+
+    const restore = applyDepthColor(ctx as never);
+    restore();
+
+    expect(ctx.scene.background).toBe(background);
   });
 });

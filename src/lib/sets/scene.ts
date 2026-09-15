@@ -242,7 +242,7 @@ export async function renderPass(
  * equivalent, which is what MeshDepthMaterial already is. Both are keyed to the
  * same near/far window so the two halves of the map agree.
  */
-function applyDepthColor(ctx: SceneContext): () => void {
+export function applyDepthColor(ctx: SceneContext): () => void {
   const { splat, standInGroup, camera, scene } = ctx;
   const near = Math.max(0.1, camera.near);
   const far = Math.min(camera.far, 60);
@@ -272,8 +272,13 @@ function applyDepthColor(ctx: SceneContext): () => void {
     depthMaterial.dispose();
     scene.background = previousBackground;
     scene.overrideMaterial = previousOverride;
-    // Restoring the splat's own colours means clearing the depth recolour.
-    if (splat) splat.objectModifier = undefined;
+    // setDepthColor installs a *world* modifier and regenerates; clearing the
+    // object modifier would undo nothing and leave the splat depth-coloured for
+    // every later pass and for the live viewport.
+    if (splat) {
+      splat.worldModifier = undefined;
+      splat.updateGenerator();
+    }
   };
 }
 
