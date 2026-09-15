@@ -64,6 +64,14 @@ export interface ProjectSet {
    * trim the user dials in once per Set and never touches again.
    */
   rotationDeg?: [number, number, number];
+  /**
+   * Where the scan's floor sits on the Y axis, in metres, after orientation.
+   *
+   * Stand-ins are placed on the ground plane and camera height is reported
+   * against it, so a scan whose floor is not at the origin would otherwise
+   * float its mannequins and report negative eye heights.
+   */
+  groundY?: number;
   /** Multiplier taking the capture's units to metres. */
   scaleToMeters: number;
   marks: SetMark[];

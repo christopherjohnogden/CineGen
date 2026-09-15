@@ -14,6 +14,36 @@ import { FULL_FRAME, aspectRatio, verticalFov, type SensorSize } from './optics'
  * depth testing is on.
  */
 
+/**
+ * Render settings for looking at one local scan.
+ *
+ * Spark's defaults target streaming large worlds to phones, and three of them
+ * cost real fidelity here:
+ *
+ * - `maxPixelRadius` 512 lets a single Gaussian cover a 1024px-wide disc. Near
+ *   the camera — or with the camera inside geometry — those are the giant soft
+ *   blobs that smear a capture.
+ * - `minAlpha` 0.5/255 culls essentially nothing, so huge near-invisible
+ *   Gaussians still draw, which is what most of the blobs are.
+ * - `enableLod` decimates, and `blurAmount` 0.3 softens every splat.
+ *
+ * depthTest/depthWrite are what let splats and mannequin meshes occlude each
+ * other correctly.
+ */
+export const SCAN_QUALITY = {
+  depthTest: true,
+  depthWrite: true,
+  enableLod: false,
+  blurAmount: 0,
+  preBlurAmount: 0,
+  /** One splat may not dominate the frame. */
+  maxPixelRadius: 96,
+  /** Drop Gaussians too faint to contribute but large enough to haze the shot. */
+  minAlpha: 0.02,
+  /** Docs give sqrt(4)..sqrt(9) as usable; tighter reads crisper. */
+  maxStdDev: Math.sqrt(5),
+} as const;
+
 /** Layer 0 is the splat environment, layer 1 the stand-ins. */
 export const LAYER_ENVIRONMENT = 0;
 export const LAYER_STANDIN = 1;
@@ -86,13 +116,16 @@ export function buildMannequin(standIn: StandIn): THREE.Group {
   return group;
 }
 
-export function syncStandIns(group: THREE.Group, standIns: StandIn[]): void {
+export function syncStandIns(group: THREE.Group, standIns: StandIn[], groundY = 0): void {
   for (const child of [...group.children]) {
     group.remove(child);
     child.traverse((node) => {
       if (node instanceof THREE.Mesh) node.geometry.dispose();
     });
   }
+  // Mannequins are built standing on y=0, so the whole group rides the scan's
+  // floor rather than the world origin.
+  group.position.y = groundY;
   for (const standIn of standIns) group.add(buildMannequin(standIn));
 }
 
@@ -171,14 +204,7 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
   // which together read as a soft, smeared scan next to the same file in a
   // desktop trainer's own viewer. A Set is one local capture being used to judge
   // framing, so detail matters more than draw cost.
-  const spark = new SparkRenderer({
-    renderer,
-    depthTest: true,
-    depthWrite: true,
-    enableLod: false,
-    blurAmount: 0,
-    preBlurAmount: 0,
-  });
+  const spark = new SparkRenderer({ renderer, ...SCAN_QUALITY });
   scene.add(spark);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.75));
@@ -211,7 +237,7 @@ export async function createScene(options: CreateSceneOptions): Promise<SceneCon
     splat,
     standInGroup,
     dispose() {
-      syncStandIns(standInGroup, []);
+      syncStandIns(standInGroup, [], 0);
       splat?.dispose?.();
       scene.clear();
       renderer.dispose();
@@ -267,15 +293,11 @@ export async function renderPass(
   // In Spark 2.2 the offscreen viewpoint is a SparkRenderer configured with a
   // `target`, so a pass renders at the generation's exact output resolution
   // rather than whatever size the viewer happens to be on screen.
+  // Same quality settings as the viewport, or an export would not match what
+  // the user framed.
   const offscreen = new SparkRenderer({
     renderer: ctx.renderer,
-    depthTest: true,
-    depthWrite: true,
-    // Same quality settings as the viewport, or an export would not match what
-    // the user framed.
-    enableLod: false,
-    blurAmount: 0,
-    preBlurAmount: 0,
+    ...SCAN_QUALITY,
     target: { width, height, superXY: 2 },
   });
   ctx.scene.add(offscreen);

@@ -111,7 +111,7 @@ export function SetViewer({
       .then((ctx) => {
         if (disposed) { ctx.dispose(); return; }
         ctxRef.current = ctx;
-        syncStandIns(ctx.standInGroup, standIns);
+        syncStandIns(ctx.standInGroup, standIns, set.groundY ?? 0);
         setStatus('ready');
         setMessage('');
 
@@ -142,8 +142,8 @@ export function SetViewer({
 
   useEffect(() => {
     const ctx = ctxRef.current;
-    if (ctx) syncStandIns(ctx.standInGroup, standIns);
-  }, [standIns]);
+    if (ctx) syncStandIns(ctx.standInGroup, standIns, set.groundY ?? 0);
+  }, [standIns, set.groundY]);
 
   // Re-orienting must not rebuild the scene — reloading a 500MB scan on every
   // nudge of a rotation slider would make the trim unusable.
@@ -382,9 +382,11 @@ export function SetViewer({
   // --- readouts ------------------------------------------------------------
   const primary = standIns[0];
   const ctx = ctxRef.current;
-  const cameraHeight = ctx?.camera.position.y ?? 1.6;
+  // Against the scan's floor, so the readout is an eye height rather than a
+  // world coordinate that can read negative.
+  const cameraHeight = (ctx?.camera.position.y ?? 1.6) - (set.groundY ?? 0);
   const subjectDistance = primary && ctx
-    ? ctx.camera.position.distanceTo(new THREE.Vector3(primary.x, primary.heightM * 0.5, primary.z))
+    ? ctx.camera.position.distanceTo(new THREE.Vector3(primary.x, (set.groundY ?? 0) + primary.heightM * 0.5, primary.z))
     : undefined;
   const tilt = ctx
     ? THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(
@@ -397,7 +399,7 @@ export function SetViewer({
     if (!live || !primary) return undefined;
     const point = new THREE.Vector3(primary.x, primary.heightM * 0.5, primary.z).project(live.camera);
     return (point.x + 1) / 2;
-  }, [primary]);
+  }, [primary, set.groundY]);
 
   useImperativeHandle(handleRef, (): SetViewerHandle => ({
     async capture(kinds, width, height) {
@@ -477,6 +479,18 @@ export function SetViewer({
             <div className="set-viewer__buttons">
               <button type="button" className="set-viewer__add" data-testid="set-viewer-frame" onClick={frameScene}>
                 Frame scene
+              </button>
+              <button
+                type="button"
+                className="set-viewer__add"
+                data-testid="set-viewer-ground"
+                title="Treat the current camera height as 1.6m above the floor"
+                onClick={() => {
+                  const live = ctxRef.current;
+                  if (live) onSetChange?.({ groundY: live.camera.position.y - 1.6 });
+                }}
+              >
+                Set floor here
               </button>
               <button
                 type="button"

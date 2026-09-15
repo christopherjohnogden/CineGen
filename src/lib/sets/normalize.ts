@@ -90,6 +90,7 @@ export function normalizeProjectSets(value: unknown): ProjectSet[] {
     // A zero or negative scale would collapse the whole scene, so it is not merely defaulted when absent.
     const scale = num(record.scaleToMeters);
     const rotation = vec3(record.rotationDeg);
+    const groundY = num(record.groundY);
 
     return [{
       id: str(record.id, generateId()),
@@ -101,6 +102,7 @@ export function normalizeProjectSets(value: unknown): ProjectSet[] {
       ...(thumbnailUrl ? { thumbnailUrl } : {}),
       upAxis: record.upAxis === 'z' ? 'z' : 'y',
       ...(rotation ? { rotationDeg: rotation } : {}),
+      ...(groundY !== undefined ? { groundY } : {}),
       scaleToMeters: scale !== undefined && scale > 0 ? scale : 1,
       marks: Array.isArray(record.marks) ? record.marks.flatMap(normalizeMark) : [],
       cameras: Array.isArray(record.cameras) ? record.cameras.flatMap(normalizeCamera) : [],
