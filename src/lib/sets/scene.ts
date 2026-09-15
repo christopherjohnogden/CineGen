@@ -17,32 +17,54 @@ import { FULL_FRAME, aspectRatio, verticalFov, type SensorSize } from './optics'
 /**
  * Render settings for looking at one local scan.
  *
- * Spark's defaults target streaming large worlds to phones, and three of them
- * cost real fidelity here:
+ * Only two of Spark's defaults are actually wrong for this use:
  *
- * - `maxPixelRadius` 512 lets a single Gaussian cover a 1024px-wide disc. Near
- *   the camera — or with the camera inside geometry — those are the giant soft
- *   blobs that smear a capture.
- * - `minAlpha` 0.5/255 culls essentially nothing, so huge near-invisible
- *   Gaussians still draw, which is what most of the blobs are.
- * - `enableLod` decimates, and `blurAmount` 0.3 softens every splat.
+ * - `maxPixelRadius` 512 lets one Gaussian cover a 1024px-wide disc, which is
+ *   what produces giant soft blobs near the camera.
+ * - `enableLod` decimates a capture that is sitting on local disk and does not
+ *   need streaming.
  *
- * depthTest/depthWrite are what let splats and mannequin meshes occlude each
- * other correctly.
+ * The rest are left at Spark's values on purpose. `blurAmount` 0.3 is the
+ * anti-aliasing term 3DGS training assumes — it adds to the 2D covariance
+ * diagonal with a matching opacity adjustment, so zeroing it does not sharpen
+ * the image, it removes the low-pass filter and leaves aliasing. `maxStdDev`
+ * sqrt(8) is where a Gaussian is truncated; tightening it cuts coverage and
+ * turns continuous surfaces into discrete patches. `minAlpha` near zero keeps
+ * the faint splats that do the blending between them.
  */
 export const SCAN_QUALITY = {
   depthTest: true,
   depthWrite: true,
+  /** A local scan should render at full detail rather than stream. */
   enableLod: false,
-  blurAmount: 0,
-  preBlurAmount: 0,
-  /** One splat may not dominate the frame. */
-  maxPixelRadius: 96,
-  /** Drop Gaussians too faint to contribute but large enough to haze the shot. */
-  minAlpha: 0.02,
-  /** Docs give sqrt(4)..sqrt(9) as usable; tighter reads crisper. */
-  maxStdDev: Math.sqrt(5),
+  /** No single splat may dominate the frame. This is the blob fix. */
+  maxPixelRadius: 128,
 } as const;
+
+/** The knobs worth exposing, because the right value differs per capture. */
+export interface ScanTuning {
+  maxPixelRadius: number;
+  blurAmount: number;
+  maxStdDev: number;
+  minAlpha: number;
+}
+
+export const DEFAULT_SCAN_TUNING: ScanTuning = {
+  maxPixelRadius: SCAN_QUALITY.maxPixelRadius,
+  // Spark's own defaults: the AA term training assumes, full Gaussian extent,
+  // and effectively no alpha cull.
+  blurAmount: 0.3,
+  maxStdDev: Math.sqrt(8),
+  minAlpha: 0.5 / 255,
+};
+
+/** Apply tuning to a live renderer — these are plain mutable fields. */
+export function applyScanTuning(spark: SparkRenderer, tuning: ScanTuning): void {
+  spark.maxPixelRadius = tuning.maxPixelRadius;
+  spark.blurAmount = tuning.blurAmount;
+  spark.maxStdDev = tuning.maxStdDev;
+  spark.minAlpha = tuning.minAlpha;
+}
 
 /** Layer 0 is the splat environment, layer 1 the stand-ins. */
 export const LAYER_ENVIRONMENT = 0;
@@ -286,6 +308,7 @@ export async function renderPass(
   kind: PassKind,
   width: number,
   height: number,
+  tuning: ScanTuning = DEFAULT_SCAN_TUNING,
 ): Promise<{ data: Uint8Array; width: number; height: number }> {
   const restore = applyPassVisibility(ctx, kind);
   const depthRestore = kind === 'depth' ? applyDepthColor(ctx) : undefined;
@@ -300,6 +323,7 @@ export async function renderPass(
     ...SCAN_QUALITY,
     target: { width, height, superXY: 2 },
   });
+  applyScanTuning(offscreen, tuning);
   ctx.scene.add(offscreen);
 
   try {

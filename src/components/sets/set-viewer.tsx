@@ -15,7 +15,9 @@ import {
   type SensorSize,
 } from '@/lib/sets/optics';
 import {
+  DEFAULT_SCAN_TUNING,
   applyCamera,
+  applyScanTuning,
   applySetOrientation,
   createScene,
   renderPass,
@@ -23,6 +25,7 @@ import {
   syncStandIns,
   type PassKind,
   type SceneContext,
+  type ScanTuning,
   type StandIn,
 } from '@/lib/sets/scene';
 import { generateId } from '@/lib/utils/ids';
@@ -93,6 +96,7 @@ export function SetViewer({
   const rafRef = useRef<number | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const [navMode, setNavMode] = useState<'orbit' | 'look'>('orbit');
+  const [tuning, setTuning] = useState<ScanTuning>(DEFAULT_SCAN_TUNING);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [, forceReadout] = useState(0);
@@ -144,6 +148,11 @@ export function SetViewer({
     const ctx = ctxRef.current;
     if (ctx) syncStandIns(ctx.standInGroup, standIns, set.groundY ?? 0);
   }, [standIns, set.groundY]);
+
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (ctx) applyScanTuning(ctx.spark, tuning);
+  }, [tuning, status]);
 
   // Re-orienting must not rebuild the scene — reloading a 500MB scan on every
   // nudge of a rotation slider would make the trim unusable.
@@ -408,7 +417,7 @@ export function SetViewer({
       const out: Record<string, Blob> = {};
       // Sequential on purpose — the passes share one scene and one GL context.
       for (const kind of kinds) {
-        const { data } = await renderPass(live, kind, width, height);
+        const { data } = await renderPass(live, kind, width, height, tuning);
         out[kind] = await rgbaToPngBlob(data, width, height);
       }
       return out;
@@ -433,7 +442,7 @@ export function SetViewer({
     },
     subjectFrameX,
     subjectDistance: () => subjectDistance,
-  }), [aspect, focalMm, sensor, subjectDistance, subjectFrameX]);
+  }), [aspect, focalMm, sensor, subjectDistance, subjectFrameX, tuning]);
 
   const updateStandIn = (id: string, updates: Partial<StandIn>) => {
     onStandInsChange?.(standIns.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry)));
@@ -569,6 +578,35 @@ export function SetViewer({
                 : 'Drag turns the camera where it stands · right-drag pans · scroll zooms'}
               <br />WASD moves, Q/E down and up.
             </p>
+          </div>
+
+          <div className="set-viewer__group">
+            <h4>Detail</h4>
+            {([
+              ['Splat cap', 'maxPixelRadius', 16, 512, 4, 'Largest a single splat may draw, in pixels. Lower kills blobs.'],
+              ['Anti-alias', 'blurAmount', 0, 0.6, 0.05, 'The low-pass term training assumes. 0.3 is standard; 0 aliases.'],
+              ['Extent', 'maxStdDev', 2, 3, 0.05, 'Where a Gaussian is cut off. Lower is crisper but patchier.'],
+              ['Min alpha', 'minAlpha', 0, 0.05, 0.002, 'Cull faint splats. Raising it also removes blending.'],
+            ] as const).map(([label, key, min, max, step, hint]) => (
+              <label className="set-viewer__row" key={key} title={hint}>
+                {label}
+                <input
+                  type="range" min={min} max={max} step={step}
+                  value={tuning[key]}
+                  aria-label={`${label}: ${hint}`}
+                  onChange={(event) => setTuning((current) => ({ ...current, [key]: Number(event.target.value) }))}
+                />
+                <b>{tuning[key] >= 10 ? Math.round(tuning[key]) : tuning[key].toFixed(2)}</b>
+              </label>
+            ))}
+            <button
+              type="button"
+              className="set-viewer__add"
+              data-testid="set-viewer-reset-tuning"
+              onClick={() => setTuning(DEFAULT_SCAN_TUNING)}
+            >
+              Reset detail
+            </button>
           </div>
 
           <div className="set-viewer__group">
