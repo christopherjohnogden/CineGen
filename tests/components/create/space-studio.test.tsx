@@ -320,6 +320,7 @@ function makeState(nodes: Record<string, unknown>[] = []) {
     edges: [],
     assets: [],
     elements: [],
+    sets: [],
     runningNodeIds: new Set<string>(),
     providerUsage: { topview: { connected: true, creditsRemaining: 100, creditsUsed: 0 } },
   };

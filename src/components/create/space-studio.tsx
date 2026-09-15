@@ -2,6 +2,8 @@ import { isTopviewMediaTool } from '@/lib/topview/media-tools';
 import { isHiggsfieldGenjutsu, validateHiggsfieldMediaTool } from '@/lib/higgsfield/media-tools';
 import { resolveCloudMediaReference } from '@/lib/cloud/media-references';
 import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -41,6 +43,9 @@ import { resolveStudioRecipe } from '@/lib/studio/recipe';
 import { captureGenerationMetadata } from '@/lib/studio/generation-metadata';
 import { classifyFeedError } from '@/lib/studio/errors';
 import { primeVideoPoster } from '@/lib/studio/clips';
+// Lazy: Shape Shot pulls in three + Spark, which must not land in the main chunk.
+const ShapeShotModal = lazy(() => import('@/components/sets/shape-shot-modal').then((m) => ({ default: m.ShapeShotModal })));
+import type { ShapeShotResult } from '@/components/sets/shape-shot-modal';
 import {
   endFieldFor,
   isImageField,
@@ -103,6 +108,7 @@ import { isSeedance2ModelName } from '@/lib/topview/model-catalog';
 import { TOPVIEW_INHERITED_VIDEO_DURATION } from '@/lib/topview/video-duration';
 import { clipEditResolutions, supportsTopviewClipEdit } from '@/lib/topview/clip-edit';
 import type { Asset } from '@/types/project';
+import type { SetCamera } from '@/types/sets';
 // Aliased: the DOM's global `Element` would otherwise win.
 import type { Element as CineElement } from '@/types/elements';
 import type {
@@ -812,6 +818,11 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
   const [outputKind, setOutputKind] = useState<OutputKind>(draft.outputKind);
   const [videoMode, setVideoMode] = useState<StudioVideoMode>(draft.videoMode);
   const [prompt, setPrompt] = useState(draft.prompt);
+  const [shapeShotOpen, setShapeShotOpen] = useState(false);
+  // WorkspaceState also reaches this component structurally through the MCP
+  // host-state path, where an older caller may not carry the collection.
+  const projectSets = state.sets ?? [];
+  const [shapeShotCamera, setShapeShotCamera] = useState<{ setId: string; camera: SetCamera; block: string } | null>(null);
   const [modelType, setModelType] = useState('');
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>(draft.elementIds);
   const [missingReferences, setMissingReferences] = useState(0);
@@ -1537,6 +1548,14 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     const composedPrompt = selectedModel.provider === 'topview' && isTopviewMediaTool(selectedModel.name) ? trimmedPrompt : composePresetPrompt(trimmedPrompt, activePreset);
     if (promptField) modelConfig[promptField.id] = composedPrompt;
     modelConfig.__studioPromptBody = trimmedPrompt;
+    // The camera block itself needs no mirror: it was appended into the prompt
+    // state, so it is part of trimmedPrompt and survives Reuse with the body.
+    // The camera RECORD is mirrored so a take knows which framing produced it —
+    // that is what "regenerate from the same camera" will read.
+    if (shapeShotCamera) {
+      modelConfig.__studioShapeShotSetId = shapeShotCamera.setId;
+      modelConfig.__studioShapeShotCamera = shapeShotCamera.camera;
+    }
     if (activePreset && activePreset.promptSuffix) {
       modelConfig.__studioPresetId = activePreset.id;
       modelConfig.__studioPresetName = activePreset.name;
@@ -1926,6 +1945,58 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
     }
   }, [dispatch, showNotice]);
 
+  /**
+   * How many reference slots Shape Shot may take.
+   *
+   * The model's own capacity, less what is already attached and the Elements
+   * that will be appended after. Under pressure the modal drops depth first and
+   * the stand-in pass second; the plate and composite always ship.
+   */
+  const shapeShotReferenceBudget = useMemo(() => {
+    const capacity = referenceField ? mediaFieldCapacity(referenceField) : 4;
+    const spoken = attachedRefs.length + selectedElementIds.length;
+    return Math.max(2, Math.min(4, (Number.isFinite(capacity) ? capacity : 30) - spoken));
+  }, [attachedRefs.length, referenceField, selectedElementIds.length]);
+
+  /** The aspect the pending generation will output, for framing and render size. */
+  const outputAspect = useMemo(() => {
+    const field = controls.find(isAspectField);
+    const value = field ? controlValue(controlValuesByModel[modelType], field) : undefined;
+    return typeof value === 'string' && value !== 'adaptive' ? value : '16:9';
+  }, [controls, controlValuesByModel, modelType]);
+
+  /**
+   * Take the Shape Shot renders into the composer.
+   *
+   * The files go through attachLocalFile one at a time so they reuse the normal
+   * asset path and land in attach order — that order is what makes the slot tags
+   * (@image1 the plate, @image2 the composite, …) name the right reference.
+   *
+   * The camera block is appended to the prompt AND mirrored to its own config
+   * key, because `__studioPromptBody` is an unconditional override on Reuse set
+   * to the undecorated body: without the mirror the block is silently lost the
+   * moment a generation is reused.
+   */
+  const handleShapeShotAttach = useCallback(async (result: ShapeShotResult) => {
+    if (outputKind === 'video') setVideoMode('references');
+    for (const file of result.files) {
+      await attachLocalFile(file);
+    }
+    setPrompt((current) => (current.trim() ? `${current.trim()}\n\n${result.promptBlock}` : result.promptBlock));
+    setShapeShotCamera({ setId: result.setId, camera: result.camera, block: result.promptBlock });
+    showNotice(`${result.files.length} Shape Shot references attached.`);
+  }, [attachLocalFile, outputKind, showNotice]);
+
+  const saveShapeShotCamera = useCallback((setId: string, camera: SetCamera) => {
+    const target = projectSets.find((entry) => entry.id === setId);
+    if (!target) return;
+    dispatch({
+      type: 'UPDATE_SET',
+      setId,
+      updates: { cameras: [...target.cameras, camera], updatedAt: timestamp() },
+    });
+  }, [dispatch, projectSets]);
+
   const useAsStartFrame = useCallback((asset: Asset) => {
     setVideoMode('frames');
     setStartAssetId(asset.id);
@@ -2198,6 +2269,26 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
                     </svg>
                     Elements
                     {selectedElementCount > 0 && <em>{selectedElementCount}</em>}
+                  </button>
+                )}
+                {supportsReferences && projectSets.length > 0 && (
+                  <button
+                    type="button"
+                    className="space-studio__prompt-chip"
+                    data-testid="space-studio-shape-shot"
+                    disabled={!referencesActive}
+                    title="Frame this shot inside a 3D scan"
+                    onClick={() => {
+                      if (outputKind === 'video') setVideoMode('references');
+                      setFormError('');
+                      setShapeShotOpen(true);
+                    }}
+                  >
+                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                      <path d="M8 1.6 14 5v6L8 14.4 2 11V5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                      <path d="M2 5l6 3.4L14 5M8 8.4v6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                    </svg>
+                    Shape Shot
                   </button>
                 )}
                 {toggleControls.map((field) => {
@@ -3709,6 +3800,19 @@ export function SpaceStudio({ onOpenInCanvas, onHideFromCanvas, transfer, onTran
           )}
         </div>
       </section>
+
+      {shapeShotOpen && (
+        <Suspense fallback={null}>
+          <ShapeShotModal
+            sets={projectSets}
+            aspect={outputAspect}
+            maxReferences={shapeShotReferenceBudget}
+            onClose={() => setShapeShotOpen(false)}
+            onAttach={handleShapeShotAttach}
+            onSaveCamera={saveShapeShotCamera}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
